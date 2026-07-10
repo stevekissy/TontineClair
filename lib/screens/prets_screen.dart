@@ -101,8 +101,15 @@ class PretsScreen extends StatelessWidget {
     TontineProvider provider,
     TontineData data,
   ) async {
-    final membres = data.membres;
-    String? emprunteurId = membres.isNotEmpty ? membres[0].id : null;
+    // CORRECTION : menu emprunteur basé sur ordre[] (comme la fiche l'exige)
+    final membreParId = {for (final m in data.membres) m.id: m};
+    final membresOrdre = data.ordre.isNotEmpty
+        ? data.ordre
+            .map((id) => membreParId[id])
+            .whereType<Membre>()
+            .toList()
+        : data.membres;
+    String? emprunteurId = membresOrdre.isNotEmpty ? membresOrdre.first.id : null;
     final montantCtrl = TextEditingController();
     final tauxCtrl = TextEditingController(text: '5');
     final dureesCtrl = TextEditingController(text: '3');
@@ -149,10 +156,11 @@ class PretsScreen extends StatelessWidget {
               DropdownButtonFormField<String>(
                 value: emprunteurId,
                 decoration: const InputDecoration(),
-                items: membres
+                isExpanded: true,
+                items: membresOrdre
                     .map((m) => DropdownMenuItem(
                           value: m.id,
-                          child: Text(m.nom),
+                          child: Text(m.nom, overflow: TextOverflow.ellipsis),
                         ))
                     .toList(),
                 onChanged: (v) => setS(() => emprunteurId = v),
@@ -204,7 +212,9 @@ class PretsScreen extends StatelessWidget {
     }
 
     if (montant > data.soldeCaisse) {
-      afficherToast(context, 'Solde insuffisant en caisse', estErreur: true);
+      afficherToast(context,
+          'Solde insuffisant — caisse : ${Formatters.montantFCFA(data.soldeCaisse)}',
+          estErreur: true);
       return;
     }
 
@@ -214,11 +224,12 @@ class PretsScreen extends StatelessWidget {
       sousTitre: '${Formatters.montantFCFA(montant)} · Taux $taux% · $durees mois',
       onValider: (pin) async {
         final ref = Formatters.genererReference();
-        final emprunteur = membres.firstWhere((m) => m.id == emprunteurId);
+        // CORRECTION : résoudre l'emprunteur depuis membresOrdre (pas membres)
+        final emprunteur = membresOrdre.firstWhere((m) => m.id == emprunteurId);
         final dateDebut = DateTime.now().toIso8601String();
 
-        // Générer l'échéancier
-        final interet = (montant * taux / 100 * durees / 12).round();
+        // Générer l'échéancier — formule fiche : totalDu = montant × (1 + taux/100)
+        final interet = (montant * taux / 100).round();
         final totalDu = montant + interet;
         final mensualite = (totalDu / durees).round();
 

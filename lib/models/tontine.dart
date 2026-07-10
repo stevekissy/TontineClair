@@ -208,7 +208,9 @@ class Pret {
       remboursements.fold(0, (sum, r) => sum + r.montant);
 
   int get totalDu {
-    final interet = (montant * taux / 100 * dureesMois / 12).round();
+    // Formule de la fiche : totalDu = montant × (1 + taux/100)
+    // (intérêt total fixe, pas proratisé sur la durée)
+    final interet = (montant * taux / 100).round();
     return montant + interet;
   }
 
@@ -326,13 +328,17 @@ class Vote {
   });
 
   factory Vote.fromJson(Map<String, dynamic> json) {
-    final statut = json['statut'] as String? ?? 'ouvert';
+    // Statut : Supabase stocke 'ouvert'/'clos' OU bool clos:true
+    final closBool = json['clos'] as bool? ?? false;
+    final statut = json['statut'] as String?
+        ?? (closBool ? 'clos' : 'ouvert');
     final leRaw = json['le'];
     String dateCreation;
     if (leRaw is int) {
       dateCreation = DateTime.fromMillisecondsSinceEpoch(leRaw).toIso8601String();
     } else {
-      dateCreation = json['dateCreation'] as String? ?? '';
+      dateCreation = json['dateCreation'] as String?
+          ?? (leRaw as String? ?? '');
     }
 
     // closLe timestamp → string
@@ -353,17 +359,22 @@ class Vote {
       voix = Map<String, dynamic>.from(voixRaw);
     }
 
+    // candidat : peut contenir le nom du nouveau membre (admission)
+    final candidatRaw = json['candidat'] as Map<String, dynamic>?;
+    final nouveauMembreNomResolu = json['nouveauMembreNom'] as String?
+        ?? candidatRaw?['nom'] as String?;
+
     return Vote(
       id: json['id'] as String? ?? '',
       type: json['type'] as String? ?? 'libre',
       question: json['sujet'] as String? ?? json['question'] as String? ?? '',
       createur: json['creePar'] as String? ?? json['createur'] as String? ?? '',
       dateCreation: dateCreation,
-      clos: statut == 'clos',
+      clos: statut == 'clos' || closBool,
       adopte: json['adopte'] as bool?,
       statut: statut,
       dateCloture: dateCloture,
-      nouveauMembreNom: json['nouveauMembreNom'] as String?,
+      nouveauMembreNom: nouveauMembreNomResolu,
       ancienOrdreId: json['ancienOrdreId'] as String?,
       decompte: json['decompte'] as Map<String, dynamic>?,
       candidat: json['candidat'] as Map<String, dynamic>?,
@@ -378,12 +389,16 @@ class Vote {
         'id': id,
         'type': type,
         'sujet': question,
+        'question': question,          // compatibilité double clé
         'creePar': createur,
+        'createur': createur,          // compatibilité double clé
         'le': dateCreation,
-        'statut': statut,
+        'dateCreation': dateCreation,  // compatibilité double clé
+        'statut': clos ? 'clos' : 'ouvert',
         'clos': clos,
         if (adopte != null) 'adopte': adopte,
         if (dateCloture != null) 'dateCloture': dateCloture,
+        if (dateCloture != null) 'closLe': dateCloture,
         if (nouveauMembreNom != null) 'nouveauMembreNom': nouveauMembreNom,
         if (ancienOrdreId != null) 'ancienOrdreId': ancienOrdreId,
         if (decompte != null) 'decompte': decompte,
@@ -528,7 +543,24 @@ class TontineData {
   int get soldeCaisse {
     int total = 0;
     for (final m in caisse) {
-      total += m.montant; // montant déjà signé (négatif pour dépenses/prêts)
+      // Les montants sont toujours positifs dans la DB.
+      // On détermine le signe selon le type de mouvement.
+      switch (m.type) {
+        case 'apport':
+        case 'cotisation':
+        case 'depot':
+        case 'remboursement':
+        case 'penalite':
+          total += m.montant.abs();
+        case 'depense':
+        case 'pret':
+        case 'retrait':
+        case 'correction':
+          total -= m.montant.abs();
+        default:
+          // Montant déjà signé (ancien format)
+          total += m.montant;
+      }
     }
     return total;
   }

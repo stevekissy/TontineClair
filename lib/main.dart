@@ -6,6 +6,7 @@ import 'services/storage_service.dart';
 import 'services/tontine_provider.dart';
 import 'utils/app_theme.dart';
 import 'utils/app_colors.dart';
+import 'widgets/app_widgets.dart';
 import 'screens/accueil_screen.dart';
 
 void main() async {
@@ -41,6 +42,8 @@ class TontineClaireApp extends StatelessWidget {
         title: 'TontineClair',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.theme,
+        // Wrapper responsive : centre l'UI sur tablette/ordinateur (≥ 600px)
+        builder: (context, child) => PageResponsive(child: child ?? const SizedBox()),
         home: const AppShell(),
         locale: const Locale('fr', 'FR'),
       ),

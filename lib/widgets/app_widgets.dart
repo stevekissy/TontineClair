@@ -773,3 +773,42 @@ class ScoreConfiance extends StatelessWidget {
     );
   }
 }
+
+// ============================================================
+// RESPONSIVE — Enveloppe pour adaptation ordinateur/tablette
+// ============================================================
+//
+// Sur mobile  (< 600 px) : l'enfant prend toute la largeur.
+// Sur tablette/desktop (≥ 600 px) : l'enfant est centré dans
+// une colonne de largeur max 480 px, avec un fond neutre sur
+// les côtés pour ne pas "étirer" l'interface mobile.
+//
+// Usage : PageResponsive(child: Scaffold(...))
+//         ou directement autour du body d'un Scaffold existant.
+
+class PageResponsive extends StatelessWidget {
+  final Widget child;
+  const PageResponsive({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 600) {
+          // Mobile : plein écran, pas de changement
+          return child;
+        }
+        // Tablette / ordinateur : centrer dans 480 px max
+        return Container(
+          color: AppColors.fondPapier,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: child,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
