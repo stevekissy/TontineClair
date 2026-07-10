@@ -141,7 +141,13 @@ class CotisationsScreen extends StatelessWidget {
       final ok = await afficherModalePin(
         context,
         titre: 'Confirmer le paiement',
-        sousTitre: 'Valide le paiement de ${membre.nom} (${Formatters.montantFCFA(data.montant)})',
+        sousTitre: 'Vérifie les détails avant de confirmer avec ton PIN.',
+        recap: [
+          (label: 'Membre', valeur: membre.nom),
+          (label: 'Montant', valeur: Formatters.montantFCFA(data.montant)),
+          (label: 'Méthode', valeur: Formatters.methodePaiement(methode)),
+          (label: 'Tour', valeur: 'N° ${data.numerTour}'),
+        ],
         onValider: (pin) async {
           final newData = data.toJson();
           final membres = List<Map<String, dynamic>>.from(
@@ -179,7 +185,11 @@ class CotisationsScreen extends StatelessWidget {
       final ok = await afficherModalePin(
         context,
         titre: 'Annuler le paiement',
-        sousTitre: 'Annule le paiement de ${membre.nom}',
+        sousTitre: 'Cette action supprime le paiement enregistré.',
+        recap: [
+          (label: 'Membre', valeur: membre.nom),
+          (label: 'Montant', valeur: Formatters.montantFCFA(data.montant)),
+        ],
         onValider: (pin) async {
           final newData = data.toJson();
           final membres = List<Map<String, dynamic>>.from(

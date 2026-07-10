@@ -986,7 +986,13 @@ class _BarreDetail extends StatelessWidget {
     final ok = await afficherModalePin(
       context,
       titre: 'Clôturer le tour $numerTourAffiche',
-      sousTitre: 'Confirme ton identité pour décaisser et passer au tour suivant.',
+      sousTitre: 'Cette action est définitive et déclenche le versement.',
+      recap: [
+        (label: 'Bénéficiaire', valeur: benefNom),
+        (label: 'Montant versé', valeur: Formatters.montantFCFA(data.montant * data.membres.length)),
+        (label: 'Cotisants payés', valeur: '$nbPayesClot / ${data.membres.length}'),
+        (label: 'Tour', valeur: 'N° $numerTourAffiche → N° ${numerTourAffiche + 1}'),
+      ],
       onValider: (pin) async {
         // Préparer les nouvelles données
         final newData = data.toJson();

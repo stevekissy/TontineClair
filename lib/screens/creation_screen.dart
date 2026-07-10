@@ -74,11 +74,22 @@ class _CreationScreenState extends State<CreationScreen> {
     }
 
     final provider = context.read<TontineProvider>();
-    final isPremium = false; // À intégrer avec le plan
+    // Plan Premium : pour l'instant toujours false côté client
+    // (le plan réel est vérifié au chargement de chaque tontine via lire_plan)
+    const isPremium = false;
 
+    // Limite Freemium : 5 membres max par tontine
     if (!isPremium && membres.length > 5) {
       setState(() =>
           _erreur = 'Formule gratuite : 5 membres max. Passez au Premium pour plus.');
+      return;
+    }
+
+    // Limite Freemium : 1 tontine par appareil
+    if (!isPremium && provider.mesTontines.isNotEmpty) {
+      setState(() => _erreur =
+          'Formule gratuite : 1 tontine par appareil. '
+          'Passez au Premium pour en créer plusieurs.');
       return;
     }
 
@@ -90,6 +101,16 @@ class _CreationScreenState extends State<CreationScreen> {
       final pin = gestPins[i];
       if (pin.length < 4) {
         setState(() => _erreur = 'PIN de ${gestNoms[i]} trop court (4 chiffres min.).');
+        return;
+      }
+    }
+
+    // Vérifier que tous les PINs gestionnaires sont différents entre eux
+    if (gestPins.length > 1) {
+      final pinsUniques = gestPins.toSet();
+      if (pinsUniques.length < gestPins.length) {
+        setState(() => _erreur =
+            'Chaque gestionnaire doit avoir un PIN différent. Deux PINs identiques détectés.');
         return;
       }
     }

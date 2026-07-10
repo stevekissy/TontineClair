@@ -521,11 +521,80 @@ class EtatVide extends StatelessWidget {
 // MODALE PIN
 // ============================================================
 
+/// Ligne individuelle dans le tableau récapitulatif d'une ModalePin.
+/// Exemple : (label: 'Montant', valeur: '15 000 FCFA')
+typedef LigneRecap = ({String label, String valeur});
+
+/// Tableau récapitulatif affiché entre le sous-titre et le champ PIN.
+/// [lignes] est une liste de paires label/valeur.
+class _TableauRecap extends StatelessWidget {
+  final List<LigneRecap> lignes;
+
+  const _TableauRecap({required this.lignes});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: 14, bottom: 4),
+      decoration: BoxDecoration(
+        color: AppColors.fondSecondaire,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.lignes, width: 1),
+      ),
+      child: Column(
+        children: List.generate(lignes.length, (i) {
+          final ligne = lignes[i];
+          final estDerniere = i == lignes.length - 1;
+          return Container(
+            decoration: BoxDecoration(
+              border: estDerniere
+                  ? null
+                  : Border(
+                      bottom: BorderSide(color: AppColors.lignes, width: 1),
+                    ),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  ligne.label,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: AppColors.texteDoux,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Flexible(
+                  child: Text(
+                    ligne.valeur,
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      color: AppColors.encre,
+                    ),
+                    textAlign: TextAlign.end,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 2,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
 class ModalePin extends StatefulWidget {
   final String titre;
   final String sousTitre;
   final Future<bool> Function(String pin) onValider;
   final String labelValider;
+  /// Lignes du tableau récapitulatif (optionnel).
+  /// Affiché entre le sous-titre et le champ PIN.
+  final List<LigneRecap>? recap;
 
   const ModalePin({
     super.key,
@@ -533,6 +602,7 @@ class ModalePin extends StatefulWidget {
     required this.sousTitre,
     required this.onValider,
     this.labelValider = 'Confirmer',
+    this.recap,
   });
 
   @override
@@ -611,6 +681,8 @@ class _ModalePinState extends State<ModalePin> {
               color: AppColors.texteDoux,
             ),
           ),
+          if (widget.recap != null && widget.recap!.isNotEmpty)
+            _TableauRecap(lignes: widget.recap!),
           const SizedBox(height: 16),
           TextField(
             controller: _ctrl,
@@ -669,6 +741,9 @@ Future<bool?> afficherModalePin(
   required String sousTitre,
   required Future<bool> Function(String pin) onValider,
   String labelValider = 'Confirmer',
+  /// Lignes du tableau récapitulatif (optionnel).
+  /// Exemple : [(label: 'Montant', valeur: '15 000 FCFA')]
+  List<LigneRecap>? recap,
 }) {
   return showModalBottomSheet<bool>(
     context: context,
@@ -682,6 +757,7 @@ Future<bool?> afficherModalePin(
       sousTitre: sousTitre,
       onValider: onValider,
       labelValider: labelValider,
+      recap: recap,
     ),
   );
 }

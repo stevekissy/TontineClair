@@ -163,12 +163,6 @@ class _MembresScreenState extends State<MembresScreen> {
     String pin,
     TontineData data,
   ) async {
-    final tel = (membre.tel ?? '').replaceAll(RegExp(r'[^0-9+]'), '');
-    if (tel.isEmpty) {
-      afficherToast(ctx, 'Aucun numéro de téléphone pour ${membre.nom}.',
-          estErreur: true);
-      return;
-    }
     final msg = '🔑 *TON PIN DE VOTE — Tontine ${data.nom}*\n'
         'Bonjour ${membre.nom}, voici ton PIN de vote personnel : *$pin*\n'
         'Change-le dès maintenant (2 minutes) :\n'
@@ -177,13 +171,14 @@ class _MembresScreenState extends State<MembresScreen> {
         '3. Choisis ton nom, entre ce PIN provisoire puis ton nouveau PIN secret\n'
         'Après ça, toi seul connais ton PIN. Personne d\'autre ne peut voter à ta place. 🔒';
     final encoded = Uri.encodeComponent(msg);
-    final url = Uri.parse('https://wa.me/$tel?text=$encoded');
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-    } else {
-      if (!ctx.mounted) return;
-      afficherToast(ctx, 'Impossible d\'ouvrir WhatsApp.', estErreur: true);
-    }
+
+    // Utiliser le numéro si disponible (message privé direct), sinon sélecteur de contact
+    final tel = (membre.tel ?? '').replaceAll(RegExp(r'[^0-9+]'), '');
+    final url = tel.isNotEmpty
+        ? Uri.parse('https://wa.me/$tel?text=$encoded')
+        : Uri.parse('https://wa.me/?text=$encoded');
+
+    await launchUrl(url, mode: LaunchMode.externalApplication);
   }
 
   // ── Modal : attribuer PIN (gestionnaire) ─────────────────────────────────

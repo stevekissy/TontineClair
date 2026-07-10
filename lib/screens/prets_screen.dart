@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
 import '../utils/app_colors.dart';
@@ -218,10 +219,23 @@ class PretsScreen extends StatelessWidget {
       return;
     }
 
+    final totalDuOctroyer = (montant * (1 + taux / 100)).round();
+    final nomEmprunteur = membresOrdre
+        .where((m) => m.id == emprunteurId)
+        .map((m) => m.nom)
+        .firstOrNull ?? '—';
+
     final ok = await afficherModalePin(
       context,
       titre: 'Confirmer le prêt',
-      sousTitre: '${Formatters.montantFCFA(montant)} · Taux $taux% · $durees mois',
+      sousTitre: 'Vérifie les détails avant de confirmer avec ton PIN.',
+      recap: [
+        (label: 'Emprunteur', valeur: nomEmprunteur),
+        (label: 'Montant prêté', valeur: Formatters.montantFCFA(montant)),
+        (label: 'Taux', valeur: '$taux %'),
+        (label: 'Durée', valeur: '$durees mois'),
+        (label: 'Total dû', valeur: Formatters.montantFCFA(totalDuOctroyer)),
+      ],
       onValider: (pin) async {
         final ref = Formatters.genererReference();
         // CORRECTION : résoudre l'emprunteur depuis membresOrdre (pas membres)
@@ -246,9 +260,16 @@ class PretsScreen extends StatelessWidget {
 
         final newData = data.toJson();
 
-        // Déduire de la caisse
+        // ── Caisse : lire/écrire dans le format {mouvements:[...]} ───────────
+        final caisseMapO = newData['caisse'];
         final caisse = List<Map<String, dynamic>>.from(
-          (newData['caisse'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
+          caisseMapO is Map<String, dynamic>
+              ? ((caisseMapO['mouvements'] as List<dynamic>?)
+                      ?.cast<Map<String, dynamic>>() ??
+                  [])
+              : caisseMapO is List
+                  ? (caisseMapO as List<dynamic>).cast<Map<String, dynamic>>()
+                  : [],
         );
         caisse.add({
           'id': '${ref}D',
@@ -259,7 +280,7 @@ class PretsScreen extends StatelessWidget {
           'date': dateDebut,
           'reference': ref,
         });
-        newData['caisse'] = caisse;
+        newData['caisse'] = {'mouvements': caisse};
 
         final prets = List<Map<String, dynamic>>.from(
           (newData['prets'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
@@ -471,18 +492,40 @@ class _CartePret extends StatelessWidget {
       return;
     }
 
+    // Variable partagée entre le callback onValider et le code post-confirmation
+    bool pretSolde = false;
+    String refRemboursement = '';
+
+    final resteAvant = pret.resteADu;
+    final resteApres = (resteAvant - montant).clamp(0, resteAvant);
+
     final ok = await afficherModalePin(
       context,
       titre: 'Confirmer le remboursement',
-      sousTitre:
-          '${Formatters.montantFCFA(montant)} · ${Formatters.methodePaiement(methode)}',
+      sousTitre: 'Vérifie les détails avant de confirmer avec ton PIN.',
+      recap: [
+        (label: 'Emprunteur', valeur: pret.emprunteurNom),
+        (label: 'Montant remboursé', valeur: Formatters.montantFCFA(montant)),
+        (label: 'Méthode', valeur: Formatters.methodePaiement(methode)),
+        (label: 'Reste après', valeur: Formatters.montantFCFA(resteApres)),
+        if (resteApres == 0) (label: 'Statut', valeur: '✅ Soldé'),
+      ],
       onValider: (pin) async {
         final ref = Formatters.genererReference();
+        refRemboursement = ref;
+        final now = DateTime.now().toIso8601String();
         final newData = data.toJson();
 
-        // Ajouter à la caisse
+        // ── Caisse : lire/écrire dans le format {mouvements:[...]} ───────────
+        final caisseMap = newData['caisse'];
         final caisse = List<Map<String, dynamic>>.from(
-          (newData['caisse'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
+          caisseMap is Map<String, dynamic>
+              ? ((caisseMap['mouvements'] as List<dynamic>?)
+                      ?.cast<Map<String, dynamic>>() ??
+                  [])
+              : caisseMap is List
+                  ? (caisseMap as List<dynamic>).cast<Map<String, dynamic>>()
+                  : [],
         );
         caisse.add({
           'id': '${ref}R',
@@ -490,16 +533,17 @@ class _CartePret extends StatelessWidget {
           'montant': montant,
           'description': 'Remboursement prêt ${pret.emprunteurNom}',
           'gestionnaire': provider.gestActifNom ?? '',
-          'date': DateTime.now().toIso8601String(),
+          'date': now,
           'reference': ref,
         });
-        newData['caisse'] = caisse;
+        newData['caisse'] = {'mouvements': caisse};
 
-        // Ajouter remboursement au prêt
+        // ── Prêt : ajouter le remboursement + passage auto à "soldé" ─────────
         final prets = List<Map<String, dynamic>>.from(
           (newData['prets'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
         );
         final idx = prets.indexWhere((p) => p['id'] == pret.id);
+        bool estSoldeMaintenant = false;
         if (idx >= 0) {
           final rembs = List<Map<String, dynamic>>.from(
             (prets[idx]['remboursements'] as List<dynamic>?)
@@ -509,21 +553,54 @@ class _CartePret extends StatelessWidget {
           rembs.add({
             'id': ref,
             'montant': montant,
-            'date': DateTime.now().toIso8601String(),
+            'date': now,
             'methode': methode,
             'reference': ref,
           });
           prets[idx]['remboursements'] = rembs;
+
+          // Recalculer resteADu : totalDu − Σ remboursements
+          final totalDu = (prets[idx]['totalDu'] as num?)?.toInt() ?? pret.totalDu;
+          final totalRembourse = rembs.fold<int>(
+            0,
+            (sum, r) => sum + ((r['montant'] as num?)?.toInt() ?? 0),
+          );
+          final nouveauReste = (totalDu - totalRembourse).clamp(0, totalDu);
+          prets[idx]['resteADu'] = nouveauReste;
+
+          // Passage automatique à "soldé" quand resteADu atteint 0
+          if (nouveauReste <= 0) {
+            prets[idx]['statut'] = 'solde';
+            estSoldeMaintenant = true;
+            pretSolde = true; // expose au code externe
+          }
         }
         newData['prets'] = prets;
 
+        // ── Membres : incrémenter pretsRembourses si prêt soldé ──────────────
+        if (estSoldeMaintenant && pret.emprunteurId.isNotEmpty) {
+          final membres = List<Map<String, dynamic>>.from(
+            (newData['membres'] as List<dynamic>).cast<Map<String, dynamic>>(),
+          );
+          final mIdx = membres.indexWhere((m) => m['id'] == pret.emprunteurId);
+          if (mIdx >= 0) {
+            membres[mIdx]['pretsRembourses'] =
+                ((membres[mIdx]['pretsRembourses'] as int?) ?? 0) + 1;
+            // Le score de confiance est calculé dynamiquement — pas besoin de modifier 'score' ici
+          }
+          newData['membres'] = membres;
+        }
+
+        // ── Journal ───────────────────────────────────────────────────────────
         final journal = List<Map<String, dynamic>>.from(
           (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
         );
         journal.insert(0, {
-          'quoi': 'REMBOURSEMENT_${pret.emprunteurNom}_${montant}FCFA',
+          'quoi': estSoldeMaintenant
+              ? 'REMBOURSEMENT_SOLDE_${pret.emprunteurNom}_${montant}FCFA'
+              : 'REMBOURSEMENT_${pret.emprunteurNom}_${montant}FCFA',
           'gestionnaire': provider.gestActifNom ?? '',
-          'quand': DateTime.now().toIso8601String(),
+          'quand': now,
           'reference': ref,
         });
         newData['journal'] = journal;
@@ -533,7 +610,77 @@ class _CartePret extends StatelessWidget {
     );
 
     if (ok == true && context.mounted) {
-      afficherToast(context, 'Remboursement enregistré !');
+      afficherToast(
+        context,
+        pretSolde
+            ? '✅ Prêt soldé intégralement !'
+            : 'Remboursement enregistré !',
+      );
+
+      // ── Reçu WhatsApp remboursement ───────────────────────────────────────
+      final telEmprunteur = data.membres
+          .where((m) => m.id == pret.emprunteurId)
+          .map((m) => m.tel ?? '')
+          .firstOrNull ?? '';
+
+      final texteRecu = Uri.encodeComponent(
+        '🧾 *Reçu de remboursement — ${data.nom}*\n\n'
+        '👤 Emprunteur : ${pret.emprunteurNom}\n'
+        '💰 Montant remboursé : ${Formatters.montantFCFA(montant)}\n'
+        '📋 Méthode : ${Formatters.methodePaiement(methode)}\n'
+        '🔖 Réf. : $refRemboursement\n'
+        '📅 Date : ${Formatters.dateHeure(DateTime.now())}\n'
+        '${pretSolde ? '✅ Prêt entièrement soldé !\n' : '💳 Reste à rembourser : ${Formatters.montantFCFA(pret.resteADu - montant > 0 ? pret.resteADu - montant : 0)}\n'}'
+        '\n_TontineClair_',
+      );
+
+      // Si on a un numéro de téléphone, on l'inclut (message privé)
+      // Sinon, sélecteur de contact
+      final waUrl = telEmprunteur.isNotEmpty
+          ? Uri.parse('https://wa.me/$telEmprunteur?text=$texteRecu')
+          : Uri.parse('https://wa.me/?text=$texteRecu');
+
+      if (context.mounted) {
+        await showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: AppColors.fondPapier,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            title: const Text(
+              '📲 Envoyer le reçu ?',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: AppColors.encre,
+              ),
+            ),
+            content: Text(
+              'Envoyer un reçu WhatsApp à ${pret.emprunteurNom} ?',
+              style: const TextStyle(color: AppColors.texte),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Non'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  await launchUrl(waUrl, mode: LaunchMode.externalApplication);
+                },
+                child: const Text(
+                  'Envoyer',
+                  style: TextStyle(
+                    color: AppColors.succes,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
     }
   }
 }

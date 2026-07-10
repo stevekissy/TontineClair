@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
 import '../services/supabase_service.dart';
@@ -136,11 +137,11 @@ class _VotesScreenState extends State<VotesScreen> {
                             (v) => _CarteVote(
                               vote: v,
                               voix: _voixParVote[v.id] ?? [],
-                              // Passer l'ordre complet + les membres pour le menu
                               ordre: data.ordre,
                               membres: data.membres,
                               estGest: estGest,
                               code: tontine.code,
+                              nomTontine: data.nom,
                               onVoter: () =>
                                   _voter(context, provider, data, v),
                               onClore: estGest && !v.clos
@@ -266,10 +267,17 @@ class _VotesScreenState extends State<VotesScreen> {
       return;
     }
 
+    final typeVoteStr = type == 'binaire' ? 'Oui / Non' : 'Candidats';
+
     final ok = await afficherModalePin(
       context,
       titre: 'Créer le vote',
-      sousTitre: question,
+      sousTitre: 'Vérifie les détails avant de confirmer avec ton PIN.',
+      recap: [
+        (label: 'Question', valeur: question),
+        (label: 'Type', valeur: typeVoteStr),
+        (label: 'Tontine', valeur: data.nom),
+      ],
       onValider: (pin) async {
         final ref = Formatters.genererReference();
         final now = DateTime.now().toIso8601String();
@@ -558,8 +566,13 @@ class _VotesScreenState extends State<VotesScreen> {
     final ok = await afficherModalePin(
       context,
       titre: 'Clore le vote',
-      sousTitre:
-          'Résultat : $oui pour, $non contre, $abstention abstentions. ${adopte ? '✅ ADOPTÉ' : '❌ REJETÉ'}',
+      sousTitre: 'Le résultat sera enregistré définitivement.',
+      recap: [
+        (label: 'Pour', valeur: '$oui voix'),
+        (label: 'Contre', valeur: '$non voix'),
+        (label: 'Abstention', valeur: '$abstention voix'),
+        (label: 'Résultat', valeur: adopte ? '✅ ADOPTÉ' : '❌ REJETÉ'),
+      ],
       onValider: (pin) async {
         final now = DateTime.now().toIso8601String();
         final ref = Formatters.genererReference();
@@ -636,6 +649,7 @@ class _CarteVote extends StatelessWidget {
   final List<Membre> membres;
   final bool estGest;
   final String code;
+  final String nomTontine;
   final VoidCallback onVoter;
   final VoidCallback? onClore;
   final VoidCallback onRecharger;
@@ -647,6 +661,7 @@ class _CarteVote extends StatelessWidget {
     required this.membres,
     required this.estGest,
     required this.code,
+    required this.nomTontine,
     required this.onVoter,
     this.onClore,
     required this.onRecharger,
@@ -767,9 +782,109 @@ class _CarteVote extends StatelessWidget {
                 ],
               ],
             ),
+            // ── Notifications WhatsApp gestionnaire (vote ouvert) ────────────
+            if (estGest) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: _BtnWaVote(
+                      label: '📢 Annoncer',
+                      tooltip: 'Annoncer l\'ouverture du vote',
+                      onTap: () => _annoncerOuverture(context),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _BtnWaVote(
+                      label: '🔔 Relancer',
+                      tooltip: 'Relancer les non-votants',
+                      onTap: () => _relancerNonVotants(context),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+
+          // ── Partager résultat (vote clos, gestionnaire) ──────────────────
+          if (vote.clos && estGest) ...[
+            const SizedBox(height: 10),
+            _BtnWaVote(
+              label: '📊 Partager le résultat',
+              tooltip: 'Publier le résultat sur WhatsApp',
+              onTap: () => _partagerResultat(context, oui, non, abstention),
+            ),
           ],
         ],
       ),
+    );
+  }
+
+  // ── Texte d'annonce d'ouverture ───────────────────────────────────────────
+  void _annoncerOuverture(BuildContext context) {
+    final texte = Uri.encodeComponent(
+      '🗳️ *Nouveau vote ouvert — $nomTontine*\n\n'
+      '📋 Question : ${vote.question}\n'
+      '🏷️ Type : ${_labelType(vote.type)}\n'
+      '📅 Ouvert le : ${Formatters.dateFormatee(DateTime.tryParse(vote.dateCreation))}\n\n'
+      'Connectez-vous à TontineClair avec le code *$code* pour voter.',
+    );
+    launchUrl(
+      Uri.parse('https://wa.me/?text=$texte'),
+      mode: LaunchMode.externalApplication,
+    );
+  }
+
+  // ── Relancer les non-votants ──────────────────────────────────────────────
+  void _relancerNonVotants(BuildContext context) {
+    final membreParId = {for (final m in membres) m.id: m.nom};
+    final ayantVote = voix.map((v) => v['membre_id'] as String? ?? '').toSet();
+    final nonVotants = ordre
+        .where((id) => !ayantVote.contains(id))
+        .map((id) => membreParId[id] ?? id)
+        .toList();
+
+    final listeNoms = nonVotants.isEmpty
+        ? '(tous ont voté)'
+        : nonVotants.join(', ');
+
+    final texte = Uri.encodeComponent(
+      '⏰ *Rappel de vote — $nomTontine*\n\n'
+      '📋 Vote en cours : ${vote.question}\n\n'
+      '🔔 Membres n\'ayant pas encore voté :\n$listeNoms\n\n'
+      'Connectez-vous avec le code *$code* pour voter avant la clôture.',
+    );
+    launchUrl(
+      Uri.parse('https://wa.me/?text=$texte'),
+      mode: LaunchMode.externalApplication,
+    );
+  }
+
+  // ── Partager le résultat ──────────────────────────────────────────────────
+  void _partagerResultat(
+    BuildContext context,
+    int oui,
+    int non,
+    int abstention,
+  ) {
+    final statut = vote.adopte == true
+        ? '✅ Adopté'
+        : vote.adopte == false
+            ? '❌ Rejeté'
+            : '⚪ Clos sans décision';
+
+    final texte = Uri.encodeComponent(
+      '📊 *Résultat du vote — $nomTontine*\n\n'
+      '📋 Question : ${vote.question}\n'
+      '🏁 Résultat : $statut\n\n'
+      '✓ Oui : $oui  ·  ✗ Non : $non  ·  ○ Abstention : $abstention\n'
+      '👥 Participation : ${voix.length} / ${ordre.isNotEmpty ? ordre.length : membres.length}\n\n'
+      '_TontineClair · Code ${vote.id.substring(0, 6).toUpperCase()}',
+    );
+    launchUrl(
+      Uri.parse('https://wa.me/?text=$texte'),
+      mode: LaunchMode.externalApplication,
     );
   }
 
@@ -782,6 +897,49 @@ class _CarteVote extends StatelessWidget {
       default:
         return 'Libre';
     }
+  }
+}
+
+// ─── Petit bouton WhatsApp inline pour les votes ─────────────────────────────
+
+class _BtnWaVote extends StatelessWidget {
+  final String label;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  const _BtnWaVote({
+    required this.label,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF25D366).withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: const Color(0xFF25D366).withValues(alpha: 0.35),
+            ),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF128C7E),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

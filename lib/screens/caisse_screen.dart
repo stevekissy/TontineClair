@@ -300,16 +300,37 @@ class CaisseScreen extends StatelessWidget {
         ? descCtrl.text.trim()
         : (type == 'penalite' && nomMembre.isNotEmpty ? 'Pénalité — $nomMembre' : '');
 
+    final libelleType = type == 'apport'
+        ? 'Apport'
+        : type == 'depense'
+            ? 'Dépense'
+            : 'Pénalité';
+
     final ok = await afficherModalePin(
       context,
       titre: 'Confirmer le mouvement',
-      sousTitre: '${Formatters.montantFCFA(montant)} · $descFinale',
+      sousTitre: 'Vérifie les détails avant de confirmer avec ton PIN.',
+      recap: [
+        (label: 'Type', valeur: libelleType),
+        (label: 'Montant', valeur: Formatters.montantFCFA(montant)),
+        if (descFinale.isNotEmpty) (label: 'Description', valeur: descFinale),
+        (label: 'Solde actuel', valeur: Formatters.montantFCFA(data.soldeCaisse)),
+      ],
       onValider: (pin) async {
         final ref = Formatters.genererReference();
         final now = DateTime.now().toIso8601String();
         final newData = data.toJson();
+        // ── Correction : caisse est stockée comme {mouvements:[...]} ─────────
+        // toJson() produit {'mouvements':[...]}, on lit donc dans cette Map.
+        final caisseMap = newData['caisse'];
         final caisse = List<Map<String, dynamic>>.from(
-          (newData['caisse'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
+          caisseMap is Map<String, dynamic>
+              ? ((caisseMap['mouvements'] as List<dynamic>?)
+                      ?.cast<Map<String, dynamic>>() ??
+                  [])
+              : caisseMap is List
+                  ? (caisseMap as List<dynamic>).cast<Map<String, dynamic>>()
+                  : [],
         );
         final entree = {
           'id': ref,
@@ -325,7 +346,8 @@ class CaisseScreen extends StatelessWidget {
           entree['membreNom'] = nomMembre;
         }
         caisse.add(entree);
-        newData['caisse'] = caisse;
+        // Toujours écrire dans le format attendu par TontineData.fromJson()
+        newData['caisse'] = {'mouvements': caisse};
 
         // Pénalité : incrémenter compteur + baisser score de confiance du membre
         if (type == 'penalite' && membrePenaliteId != null) {

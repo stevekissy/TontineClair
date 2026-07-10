@@ -2,7 +2,6 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import '../models/tontine.dart';
 import '../utils/app_colors.dart';
-import '../utils/formatters.dart';
 
 class RoueRotation extends StatelessWidget {
   final TontineData data;
@@ -46,7 +45,7 @@ class RoueRotation extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          // Roue SVG-like avec Canvas
+          // Roue Canvas — le montant total est affiché au centre géométrique
           SizedBox(
             width: 250,
             height: 250,
@@ -55,32 +54,23 @@ class RoueRotation extends StatelessWidget {
               ordre: data.ordre,
               tourActuel: data.tourActuel,
               cycleTermine: cycleTermine,
+              montantTotal: montant,
             ),
           ),
           const SizedBox(height: 12),
-          // Info centre
+          // Sous la roue : nom du bénéficiaire uniquement
           if (!cycleTermine && beneficiaire != null) ...[
             Text(
-              beneficiaire.nom,
+              '${beneficiaire.nom} — bénéficiaire du tour',
               style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
                 color: Colors.white,
               ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 4),
-            Text(
-              'reçoit ${Formatters.montantFCFA(montant)}',
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 22,
-                color: AppColors.or,
-              ),
-              textAlign: TextAlign.center,
-            ),
           ],
-          if (cycleTermine) ...[  
+          if (cycleTermine) ...[
             const Text(
               'Tous les membres ont été servis !',
               style: TextStyle(
@@ -104,12 +94,14 @@ class _RoueCanvas extends StatelessWidget {
   final List<String> ordre;
   final int tourActuel; // index 0-based
   final bool cycleTermine;
+  final int montantTotal;
 
   const _RoueCanvas({
     required this.membres,
     required this.ordre,
     required this.tourActuel,
     required this.cycleTermine,
+    required this.montantTotal,
   });
 
   @override
@@ -122,6 +114,7 @@ class _RoueCanvas extends StatelessWidget {
         ordre: ordre,
         tourActuel: tourActuel,
         cycleTermine: cycleTermine,
+        montantTotal: montantTotal,
       ),
       child: Container(),
     );
@@ -133,12 +126,14 @@ class _RouePainter extends CustomPainter {
   final List<String> ordre;     // IDs dans l'ordre de passage
   final int tourActuel;          // index 0-based dans ordre[]
   final bool cycleTermine;
+  final int montantTotal;        // montant × nb membres — affiché au centre
 
   _RouePainter({
     required this.membres,
     required this.ordre,
     required this.tourActuel,
     required this.cycleTermine,
+    required this.montantTotal,
   });
 
   @override
@@ -236,6 +231,79 @@ class _RouePainter extends CustomPainter {
         Offset(pos.dx - textPainter.width / 2, pos.dy - textPainter.height / 2),
       );
     }
+
+    // ── Centre de la roue : montant total (spec §4 — jamais tronqué) ─────────
+    if (!cycleTermine && montantTotal > 0) {
+      // Formater le montant sans troncature : ex. "150 000 FCFA"
+      final montantStr = _formatMontant(montantTotal);
+      // Deux lignes : libellé + montant
+      final labelPainter = TextPainter(
+        text: const TextSpan(
+          text: 'Cagnotte',
+          style: TextStyle(
+            color: Color(0xFFD99A2B), // AppColors.or
+            fontWeight: FontWeight.w600,
+            fontSize: 10,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+        textAlign: TextAlign.center,
+      )..layout(maxWidth: radius * 1.2);
+
+      final montantPainter = TextPainter(
+        text: TextSpan(
+          text: montantStr,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+            fontSize: 13,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+        textAlign: TextAlign.center,
+      )..layout(maxWidth: radius * 1.2);
+
+      final totalH = labelPainter.height + 2 + montantPainter.height;
+      final startY = center.dy - totalH / 2;
+
+      labelPainter.paint(
+        canvas,
+        Offset(center.dx - labelPainter.width / 2, startY),
+      );
+      montantPainter.paint(
+        canvas,
+        Offset(center.dx - montantPainter.width / 2, startY + labelPainter.height + 2),
+      );
+    } else if (cycleTermine) {
+      // Cycle terminé : afficher ✔ au centre
+      final checkPainter = TextPainter(
+        text: const TextSpan(
+          text: '✔',
+          style: TextStyle(
+            color: Color(0xFFD99A2B),
+            fontSize: 28,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      checkPainter.paint(
+        canvas,
+        Offset(center.dx - checkPainter.width / 2, center.dy - checkPainter.height / 2),
+      );
+    }
+  }
+
+  /// Formate un montant entier en "150 000 FCFA" sans troncature.
+  String _formatMontant(int montant) {
+    final s = montant.toString();
+    final buffer = StringBuffer();
+    int count = 0;
+    for (int i = s.length - 1; i >= 0; i--) {
+      if (count > 0 && count % 3 == 0) buffer.write('\u202F'); // espace fine
+      buffer.write(s[i]);
+      count++;
+    }
+    return '${buffer.toString().split('').reversed.join()} FCFA';
   }
 
   String _initiales(String nom) {
@@ -249,7 +317,8 @@ class _RouePainter extends CustomPainter {
   bool shouldRepaint(covariant _RouePainter oldDelegate) =>
       oldDelegate.tourActuel != tourActuel ||
       oldDelegate.cycleTermine != cycleTermine ||
-      oldDelegate.ordre.length != ordre.length;
+      oldDelegate.ordre.length != ordre.length ||
+      oldDelegate.montantTotal != montantTotal;
 }
 
 class _StatsCotisations extends StatelessWidget {
