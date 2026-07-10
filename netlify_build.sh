@@ -1,67 +1,88 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════════
 # TontineClair — Script de build Netlify (Flutter Web)
+# Technologie : Flutter 3.35.4
 #
-# Ce script est appelé par Netlify à chaque déploiement.
-# Il installe Flutter 3.35.4, récupère les dépendances et génère build/web.
+# Variables à définir dans Netlify UI > Site settings > Environment variables :
+#   SUPABASE_URL       https://mkmkpjdcydtpjwrmvbzd.supabase.co
+#   SUPABASE_ANON_KEY  eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...  (clé anon uniquement)
 #
-# Variables d'environnement à configurer dans Netlify UI > Site settings >
-# Environment variables :
-#   SUPABASE_URL       = https://xxxxx.supabase.co
-#   SUPABASE_ANON_KEY  = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+# NE JAMAIS ajouter service_role ici — la clé anon est suffisante pour le client.
 # ═══════════════════════════════════════════════════════════════════════════════
 
-set -euo pipefail
+# Arrêt immédiat sur toute erreur non gérée
+set -e
 
 FLUTTER_VERSION="3.35.4"
-FLUTTER_DIR="$HOME/flutter"
-FLUTTER_BIN="$FLUTTER_DIR/bin/flutter"
+FLUTTER_DIR="${HOME}/flutter"
+FLUTTER_BIN="${FLUTTER_DIR}/bin/flutter"
 
-# ── 1. Vérifier si Flutter est déjà en cache (Netlify cache les répertoires) ──
-if [ -f "$FLUTTER_BIN" ]; then
-  INSTALLED_VERSION=$("$FLUTTER_BIN" --version 2>/dev/null | grep -oP 'Flutter \K[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown")
-  echo "✓ Flutter $INSTALLED_VERSION trouvé dans le cache"
+# ── 1. Résolution des credentials ─────────────────────────────────────────────
+# Priorité : variable Netlify > defaultValue codée dans supabase_service.dart
+# Les defaultValue dans String.fromEnvironment() servent de fallback si les
+# variables ne sont pas définies — l'app reste fonctionnelle dans les deux cas.
+
+RESOLVED_URL="${SUPABASE_URL:-}"
+RESOLVED_KEY="${SUPABASE_ANON_KEY:-}"
+
+if [ -z "$RESOLVED_URL" ] || [ -z "$RESOLVED_KEY" ]; then
+  echo "⚠️  SUPABASE_URL ou SUPABASE_ANON_KEY non définies en variable Netlify."
+  echo "   → Le build utilisera les valeurs defaultValue du code source (supabase_service.dart)."
+  echo "   → Pour injecter vos propres credentials, ajoutez les variables dans :"
+  echo "      Netlify UI > Site settings > Environment variables"
+  echo ""
+  # On ne bloque PAS le build — String.fromEnvironment prend ses defaultValue
+  BUILD_ARGS=""
 else
-  echo "⬇ Installation de Flutter $FLUTTER_VERSION..."
+  echo "✓ Credentials Supabase trouvés dans les variables Netlify"
+  BUILD_ARGS="--dart-define=SUPABASE_URL=${RESOLVED_URL} --dart-define=SUPABASE_ANON_KEY=${RESOLVED_KEY}"
+fi
+
+# ── 2. Installation Flutter (si absent du cache) ───────────────────────────────
+if [ -f "$FLUTTER_BIN" ]; then
+  INSTALLED_VER=$("$FLUTTER_BIN" --version 2>/dev/null \
+    | grep -oE 'Flutter [0-9]+\.[0-9]+\.[0-9]+' \
+    | awk '{print $2}' \
+    | head -1 || echo "unknown")
+  echo "✓ Flutter ${INSTALLED_VER} trouvé dans le cache (${FLUTTER_DIR})"
+else
+  echo "⬇  Installation de Flutter ${FLUTTER_VERSION} (première fois, ~2 min)..."
   git clone https://github.com/flutter/flutter.git \
-    --branch "$FLUTTER_VERSION" \
+    --branch "${FLUTTER_VERSION}" \
     --depth 1 \
-    "$FLUTTER_DIR"
-  echo "✓ Flutter $FLUTTER_VERSION installé"
+    "${FLUTTER_DIR}"
+  echo "✓ Flutter ${FLUTTER_VERSION} cloné"
 fi
 
-# ── 2. Ajouter Flutter au PATH ─────────────────────────────────────────────────
-export PATH="$FLUTTER_DIR/bin:$PATH"
+# ── 3. PATH ───────────────────────────────────────────────────────────────────
+export PATH="${FLUTTER_DIR}/bin:${HOME}/.pub-cache/bin:${PATH}"
 
-# ── 3. Vérifier les variables d'environnement obligatoires ────────────────────
-if [ -z "${SUPABASE_URL:-}" ]; then
-  echo "❌ ERREUR : SUPABASE_URL non définie dans les variables Netlify"
-  exit 1
-fi
-if [ -z "${SUPABASE_ANON_KEY:-}" ]; then
-  echo "❌ ERREUR : SUPABASE_ANON_KEY non définie dans les variables Netlify"
-  exit 1
-fi
+# ── 4. Préconfiguration Flutter (désactive analytics, précharge web) ──────────
+flutter config --no-analytics --no-cli-animations 2>/dev/null || true
+flutter precache --web 2>/dev/null || true
 
-# ── 4. Préconfiguration Flutter Web (désactive analytics/telemetrie) ──────────
-flutter config --no-analytics
-flutter precache --web
+echo "── Version Flutter active ──────────────────────────────────────────────"
+flutter --version
+echo "────────────────────────────────────────────────────────────────────────"
 
-# ── 5. Récupérer les dépendances ──────────────────────────────────────────────
-echo "📦 flutter pub get..."
+# ── 5. Dépendances ───────────────────────────────────────────────────────────
+echo "📦  flutter pub get..."
 flutter pub get
 
-# ── 6. Build Flutter Web release avec les credentials Supabase ────────────────
-echo "🔨 flutter build web --release..."
+# ── 6. Build Flutter Web release ─────────────────────────────────────────────
+echo "🔨  flutter build web --release ${BUILD_ARGS}..."
+# shellcheck disable=SC2086
 flutter build web --release \
-  --dart-define="SUPABASE_URL=${SUPABASE_URL}" \
-  --dart-define="SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}"
+  --no-tree-shake-icons \
+  $BUILD_ARGS
 
-# ── 7. Vérifier que build/web existe ─────────────────────────────────────────
+# ── 7. Vérification du dossier de publication ────────────────────────────────
 if [ ! -f "build/web/index.html" ]; then
-  echo "❌ ERREUR : build/web/index.html introuvable après le build"
+  echo "❌  ERREUR : build/web/index.html introuvable — le build a échoué."
   exit 1
 fi
 
-echo "✅ Build terminé — dossier build/web généré avec succès"
+echo "✅  Build terminé avec succès"
+echo "── Contenu de build/web ─────────────────────────────────────────────────"
 ls -lh build/web/
+echo "────────────────────────────────────────────────────────────────────────"
