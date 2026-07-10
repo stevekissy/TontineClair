@@ -517,6 +517,52 @@ class TontineData {
   /// Numéro de tour affiché à l'utilisateur (1-based)
   int get numerTour => tourActuel + 1;
 
+  // ── SOURCE UNIQUE DE MEMBRES — utilisée par TOUS les modules ──────────────
+  //
+  // RÈGLE : cette méthode est la SEULE référence pour construire la liste de
+  // membres affichée dans Cotisations, Votes, Prêts, Relances WhatsApp.
+  //
+  // Algorithme en 3 niveaux de priorité :
+  //
+  //   1. ordre[] non vide ET la jointure avec membres[] donne ≥1 résultat
+  //      → retourne les membres dans l'ordre de passage (cas normal)
+  //
+  //   2. ordre[] vide OU la jointure donne 0 résultat (IDs divergents)
+  //      → retourne directement data.membres (même liste que l'onglet Membres)
+  //      → identique à ce que MembresScreen affiche toujours
+  //
+  //   3. membres[] lui-même est vide (tontine sans membres)
+  //      → retourne []
+  //
+  // Pourquoi le problème survenait :
+  //   ordre[] peut contenir des IDs (ex: 'm1','m2') qui ne matchent plus
+  //   les membres[] si la tontine a été modifiée côté Supabase/index.html
+  //   avec des IDs différents (UUIDs, etc.). La jointure .whereType<Membre>()
+  //   filtrait alors tous les null → liste vide → "Aucun membre à afficher".
+  //   MembresScreen lisait membres[] directement → 10 membres visibles.
+  //   Cette divergence est maintenant gérée par le fallback niveau 2.
+  List<Membre> get membresActifs {
+    if (membres.isEmpty) return const [];
+
+    // Niveau 1 : ordre[] avec jointure réussie
+    if (ordre.isNotEmpty) {
+      final parId = {for (final m in membres) m.id: m};
+      final ordonnes = ordre
+          .map((id) => parId[id])
+          .whereType<Membre>()
+          .toList();
+      if (ordonnes.isNotEmpty) return ordonnes;
+      // Niveau 2 : IDs de ordre[] ne correspondent pas aux IDs de membres[]
+      // → fallback sur membres[] bruts (même liste que MembresScreen)
+    }
+
+    // Niveau 2 : ordre[] vide ou jointure échouée → membres[] directement
+    return List<Membre>.unmodifiable(membres);
+  }
+
+  /// Nombre de membres éligibles au vote / à la cotisation
+  int get nbMembresActifs => membresActifs.length;
+
   /// ID du bénéficiaire courant (null si cycle terminé ou ordre vide)
   String? get beneficiaireId {
     if (cycleTermine || ordre.isEmpty || tourActuel >= ordre.length) return null;

@@ -162,10 +162,8 @@ class CaisseScreen extends StatelessWidget {
     String methode = 'especes';
 
     // Pour les pénalités : menu de sélection du membre pénalisé
-    final membreParId = {for (final m in data.membres) m.id: m};
-    final membresOrdre = data.ordre.isNotEmpty
-        ? data.ordre.map((id) => membreParId[id]).whereType<Membre>().toList()
-        : data.membres;
+    // SOURCE UNIQUE DE MEMBRES : membresActifs avec double fallback
+    final membresOrdre = data.membresActifs;
     String? membrePenaliteId =
         (type == 'penalite' && membresOrdre.isNotEmpty) ? membresOrdre.first.id : null;
 
@@ -294,7 +292,7 @@ class CaisseScreen extends StatelessWidget {
     }
 
     final nomMembre = (type == 'penalite' && membrePenaliteId != null)
-        ? (membreParId[membrePenaliteId]?.nom ?? '')
+        ? (membresOrdre.where((m) => m.id == membrePenaliteId).firstOrNull?.nom ?? '')
         : '';
     final descFinale = descCtrl.text.trim().isNotEmpty
         ? descCtrl.text.trim()

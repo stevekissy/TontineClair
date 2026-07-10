@@ -129,15 +129,9 @@ class _PretsScreenState extends State<PretsScreen> {
     TontineProvider provider,
     TontineData data,
   ) async {
-    // CORRECTION Bug #3 : utiliser data.membres directement (rechargé à l'ouverture)
-    // Fallback : si ordre[] vide → afficher tous les membres
-    final membreParId = {for (final m in data.membres) m.id: m};
-    final List<Membre> membresOrdre = data.ordre.isNotEmpty
-        ? data.ordre
-            .map((id) => membreParId[id])
-            .whereType<Membre>()
-            .toList()
-        : List<Membre>.from(data.membres);
+    // SOURCE UNIQUE DE MEMBRES (Bug #membres fix) — même liste que MembresScreen
+    // data.membresActifs : ordre[] avec double fallback sur membres[] si IDs divergents
+    final List<Membre> membresOrdre = data.membresActifs;
 
     // Si aucun membre disponible → erreur explicite
     if (membresOrdre.isEmpty) {

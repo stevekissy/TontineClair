@@ -66,11 +66,11 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
     final estGest = provider.estDebloque;
     final membres = data.membres;
 
-    // Membres affichés dans l'ordre de passage (ordre[]) — spec FICHE-REGLE-BENEFICIAIRE
-    final membreParId = {for (final m in membres) m.id: m};
-    final membresOrdre = data.ordre.isNotEmpty
-        ? data.ordre.map((id) => membreParId[id]).whereType<Membre>().toList()
-        : membres;
+    // ── SOURCE UNIQUE DE MEMBRES (Bug #membres fix) ───────────────────────
+    // data.membresActifs résout ordre[] → membres[] avec double fallback :
+    // si ordre[] vide ou IDs divergents → data.membres directement
+    // = même liste que l'onglet Membres (toujours 10/10 membres affichés)
+    final membresOrdre = data.membresActifs;
     final benefId = data.beneficiaireId; // null si cycleTermine
 
     return Scaffold(

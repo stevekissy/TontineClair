@@ -174,7 +174,7 @@ class _VotesScreenState extends State<VotesScreen> {
                               vote: v,
                               voix: _voixParVote[v.id] ?? [],
                               ordre: data.ordre,
-                              membres: data.membres,
+                              membres: data.membresActifs, // SOURCE UNIQUE : fallback si IDs divergents
                               estGest: estGest,
                               code: tontine.code,
                               nomTontine: data.nom,
@@ -387,19 +387,19 @@ class _VotesScreenState extends State<VotesScreen> {
 
     // IDs des membres qui ont déjà voté sur CE vote
     final voixCeVote = _voixParVote[vote.id] ?? [];
-    final dejaVote = voixCeVote.map((v) => v['membre_id'] as String? ?? '').toSet();
+    // Bug membres fix : gère aussi membreId camelCase (RPC peut retourner les deux)
+    final dejaVote = voixCeVote
+        .map((v) => v['membre_id'] as String? ?? v['membreId'] as String? ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
 
-    // Construire le menu : tous les membres dans ordre[], moins ceux qui ont déjà voté
-    final membreParId = {for (final m in data.membres) m.id: m};
-    final restants = data.ordre.isNotEmpty
-        ? data.ordre
-            .where((id) => !dejaVote.contains(id))
-            .map((id) => membreParId[id])
-            .whereType<Membre>()
-            .toList()
-        : data.membres
-            .where((m) => !dejaVote.contains(m.id))
-            .toList();
+    // SOURCE UNIQUE DE MEMBRES : data.membresActifs avec double fallback
+    // Si ordre[] contient des IDs qui ne matchent pas membres[] → fallback membres[]
+    // = même liste que l'onglet Membres (évite "Tous ont voté" sur liste vide)
+    final tousLesMembres = data.membresActifs;
+    final restants = tousLesMembres
+        .where((m) => !dejaVote.contains(m.id))
+        .toList();
 
     if (restants.isEmpty) {
       afficherToast(context, 'Tous les membres ont déjà voté.', estErreur: true);
@@ -720,8 +720,9 @@ class _CarteVote extends StatelessWidget {
     final non = voix.where((v) => v['choix'] == 'non').length;
     final abstention = voix.where((v) => v['choix'] == 'abstention').length;
 
-    // Total des votants = nombre de membres dans ordre[] (ou tous les membres si ordre vide)
-    final total = ordre.isNotEmpty ? ordre.length : membres.length;
+    // Total des votants = membres actifs (membresActifs passé depuis le parent)
+    // Ne plus utiliser ordre.length qui peut diverger de membres[] réels
+    final total = membres.isNotEmpty ? membres.length : ordre.length;
     final participation = voix.length;
 
     return CarteTC(
@@ -932,7 +933,7 @@ class _CarteVote extends StatelessWidget {
       '📋 Question : ${vote.question}\n'
       '🏁 Résultat : $statut\n\n'
       '✓ Oui : $oui  ·  ✗ Non : $non  ·  ○ Abstention : $abstention\n'
-      '👥 Participation : ${voix.length} / ${ordre.isNotEmpty ? ordre.length : membres.length}\n\n'
+      '👥 Participation : ${voix.length} / ${membres.isNotEmpty ? membres.length : ordre.length}\n\n'
       '_TontineClair · Code ${vote.id.substring(0, 6).toUpperCase()}',
     );
     launchUrl(

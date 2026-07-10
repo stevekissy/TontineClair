@@ -682,7 +682,8 @@ class _BoutonPartagerRecap extends StatelessWidget {
   String _construireMessage() {
     final data = tontine.data;
     final membres = data.membres;
-    final n = data.ordre.isNotEmpty ? data.ordre.length : membres.length;
+    // SOURCE UNIQUE : membresActifs.length = vrai nombre de membres (fallback si IDs divergents)
+    final n = data.membresActifs.length;
 
     if (data.cycleTermine) {
       // Cas 2 : cycle terminé
