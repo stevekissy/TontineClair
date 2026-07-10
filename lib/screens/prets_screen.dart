@@ -7,16 +7,43 @@ import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 
-class PretsScreen extends StatelessWidget {
+// ── Bug #3 fix : StatefulWidget pour permettre le rechargement des membres ──
+class PretsScreen extends StatefulWidget {
   final String code;
 
   const PretsScreen({super.key, required this.code});
 
   @override
+  State<PretsScreen> createState() => _PretsScreenState();
+}
+
+class _PretsScreenState extends State<PretsScreen> {
+  bool _chargement = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Recharger depuis Supabase à l'ouverture pour avoir les membres à jour
+    WidgetsBinding.instance.addPostFrameCallback((_) => _recharger());
+  }
+
+  Future<void> _recharger() async {
+    if (!mounted) return;
+    setState(() => _chargement = true);
+    try {
+      await context.read<TontineProvider>().chargerTontine(widget.code);
+    } finally {
+      if (mounted) setState(() => _chargement = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final provider = context.watch<TontineProvider>();
     final tontine = provider.courante;
-    if (tontine == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (tontine == null || _chargement) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     final data = tontine.data;
     final estGest = provider.estDebloque;
@@ -102,15 +129,27 @@ class PretsScreen extends StatelessWidget {
     TontineProvider provider,
     TontineData data,
   ) async {
-    // CORRECTION : menu emprunteur basé sur ordre[] (comme la fiche l'exige)
+    // CORRECTION Bug #3 : utiliser data.membres directement (rechargé à l'ouverture)
+    // Fallback : si ordre[] vide → afficher tous les membres
     final membreParId = {for (final m in data.membres) m.id: m};
-    final membresOrdre = data.ordre.isNotEmpty
+    final List<Membre> membresOrdre = data.ordre.isNotEmpty
         ? data.ordre
             .map((id) => membreParId[id])
             .whereType<Membre>()
             .toList()
-        : data.membres;
-    String? emprunteurId = membresOrdre.isNotEmpty ? membresOrdre.first.id : null;
+        : List<Membre>.from(data.membres);
+
+    // Si aucun membre disponible → erreur explicite
+    if (membresOrdre.isEmpty) {
+      afficherToast(
+        context,
+        'Aucun membre disponible. Rechargez la page.',
+        estErreur: true,
+      );
+      return;
+    }
+
+    String? emprunteurId = membresOrdre.first.id;
     final montantCtrl = TextEditingController();
     final tauxCtrl = TextEditingController(text: '5');
     final dureesCtrl = TextEditingController(text: '3');
@@ -130,72 +169,74 @@ class PretsScreen extends StatelessWidget {
             top: 16,
             bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.lignes,
-                    borderRadius: BorderRadius.circular(2),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.lignes,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Nouveau prêt',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 20,
-                  color: AppColors.encre,
+                const SizedBox(height: 16),
+                const Text(
+                  'Nouveau prêt',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 20,
+                    color: AppColors.encre,
+                  ),
                 ),
-              ),
-              const ChampLabel(label: 'Emprunteur'),
-              DropdownButtonFormField<String>(
-                value: emprunteurId,
-                decoration: const InputDecoration(),
-                isExpanded: true,
-                items: membresOrdre
-                    .map((m) => DropdownMenuItem(
-                          value: m.id,
-                          child: Text(m.nom, overflow: TextOverflow.ellipsis),
-                        ))
-                    .toList(),
-                onChanged: (v) => setS(() => emprunteurId = v),
-              ),
-              const ChampLabel(label: 'Montant (FCFA)'),
-              TextField(
-                controller: montantCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(hintText: '50 000'),
-                autofocus: true,
-              ),
-              const ChampLabel(label: 'Taux d\'intérêt (%)'),
-              TextField(
-                controller: tauxCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(hintText: '5'),
-              ),
-              const ChampLabel(label: 'Durée (mois)'),
-              TextField(
-                controller: dureesCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(hintText: '3'),
-              ),
-              const SizedBox(height: 16),
-              BtnPrincipal(
-                label: 'Créer le prêt',
-                onTap: () => Navigator.pop(ctx, true),
-              ),
-              const SizedBox(height: 8),
-              BtnSecondaire(
-                label: 'Annuler',
-                onTap: () => Navigator.pop(ctx, false),
-              ),
-            ],
+                const ChampLabel(label: 'Emprunteur'),
+                DropdownButtonFormField<String>(
+                  value: emprunteurId,
+                  decoration: const InputDecoration(),
+                  isExpanded: true,
+                  items: membresOrdre
+                      .map((m) => DropdownMenuItem(
+                            value: m.id,
+                            child: Text(m.nom, overflow: TextOverflow.ellipsis),
+                          ))
+                      .toList(),
+                  onChanged: (v) => setS(() => emprunteurId = v),
+                ),
+                const ChampLabel(label: 'Montant (FCFA)'),
+                TextField(
+                  controller: montantCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(hintText: '50 000'),
+                  autofocus: true,
+                ),
+                const ChampLabel(label: 'Taux d\'intérêt (%)'),
+                TextField(
+                  controller: tauxCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(hintText: '5'),
+                ),
+                const ChampLabel(label: 'Durée (mois)'),
+                TextField(
+                  controller: dureesCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(hintText: '3'),
+                ),
+                const SizedBox(height: 16),
+                BtnPrincipal(
+                  label: 'Créer le prêt',
+                  onTap: () => Navigator.pop(ctx, true),
+                ),
+                const SizedBox(height: 8),
+                BtnSecondaire(
+                  label: 'Annuler',
+                  onTap: () => Navigator.pop(ctx, false),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -238,11 +279,9 @@ class PretsScreen extends StatelessWidget {
       ],
       onValider: (pin) async {
         final ref = Formatters.genererReference();
-        // CORRECTION : résoudre l'emprunteur depuis membresOrdre (pas membres)
         final emprunteur = membresOrdre.firstWhere((m) => m.id == emprunteurId);
         final dateDebut = DateTime.now().toIso8601String();
 
-        // Générer l'échéancier — formule fiche : totalDu = montant × (1 + taux/100)
         final interet = (montant * taux / 100).round();
         final totalDu = montant + interet;
         final mensualite = (totalDu / durees).round();
@@ -293,6 +332,7 @@ class PretsScreen extends StatelessWidget {
           'taux': taux,
           'dureesMois': durees,
           'dateDebut': dateDebut,
+          'statut': 'en_cours',
           'remboursements': [],
           'echeancier': echeancier,
           'gestionnaire': provider.gestActifNom ?? '',
@@ -339,6 +379,8 @@ class _CartePret extends StatelessWidget {
     final progression = pret.totalDu > 0
         ? (pret.totalRembourse / pret.totalDu).clamp(0.0, 1.0)
         : 0.0;
+    // Bug #2 fix : utiliser statutCalcule (computed) et non statut (stocké périmé)
+    final statut = pret.statutCalcule;
 
     return CarteTC(
       child: Column(
@@ -368,7 +410,7 @@ class _CartePret extends StatelessWidget {
                   ],
                 ),
               ),
-              BadgeStatut(statut: pret.statut),
+              BadgeStatut(statut: statut),
             ],
           ),
           const SizedBox(height: 12),
@@ -448,11 +490,38 @@ class _CartePret extends StatelessWidget {
               ),
             )),
           ],
-          if (estGest && pret.statut != 'solde') ...[
+          // Bug #2 fix : bouton désactivé si statutCalcule == 'solde'
+          if (estGest && statut != 'solde') ...[
             const SizedBox(height: 12),
             BtnSecondaire(
               label: 'Enregistrer un remboursement',
               onTap: () => _rembourser(context),
+            ),
+          ],
+          // Indicateur "Prêt soldé" si statutCalcule == 'solde'
+          if (statut == 'solde') ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.succesFond,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.check_circle_outline, size: 16, color: AppColors.succes),
+                  SizedBox(width: 6),
+                  Text(
+                    'Prêt entièrement remboursé',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.succes,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ],
@@ -503,7 +572,7 @@ class _CartePret extends StatelessWidget {
           prets[idx]['resteADu'] = nouveauReste;
 
           // Si le prêt était soldé, le repasser en cours
-          if (prets[idx]['statut'] == 'solde' && nouveauReste > 0) {
+          if ((prets[idx]['statut'] == 'solde' || prets[idx]['statut'] == 'soldé') && nouveauReste > 0) {
             prets[idx]['statut'] = 'en_cours';
 
             // Décrémenter pretsRembourses dans membres
@@ -644,7 +713,6 @@ class _CartePret extends StatelessWidget {
       return;
     }
 
-    // Variable partagée entre le callback onValider et le code post-confirmation
     bool pretSolde = false;
     String refRemboursement = '';
 
@@ -724,7 +792,7 @@ class _CartePret extends StatelessWidget {
           if (nouveauReste <= 0) {
             prets[idx]['statut'] = 'solde';
             estSoldeMaintenant = true;
-            pretSolde = true; // expose au code externe
+            pretSolde = true;
           }
         }
         newData['prets'] = prets;
@@ -738,7 +806,6 @@ class _CartePret extends StatelessWidget {
           if (mIdx >= 0) {
             membres[mIdx]['pretsRembourses'] =
                 ((membres[mIdx]['pretsRembourses'] as int?) ?? 0) + 1;
-            // Le score de confiance est calculé dynamiquement — pas besoin de modifier 'score' ici
           }
           newData['membres'] = membres;
         }
@@ -782,12 +849,10 @@ class _CartePret extends StatelessWidget {
         '📋 Méthode : ${Formatters.methodePaiement(methode)}\n'
         '🔖 Réf. : $refRemboursement\n'
         '📅 Date : ${Formatters.dateHeure(DateTime.now())}\n'
-        '${pretSolde ? '✅ Prêt entièrement soldé !\n' : '💳 Reste à rembourser : ${Formatters.montantFCFA(pret.resteADu - montant > 0 ? pret.resteADu - montant : 0)}\n'}'
+        '${pretSolde ? '✅ Prêt entièrement soldé !\n' : '💳 Reste à rembourser : ${Formatters.montantFCFA(resteApres)}\n'}'
         '\n_TontineClair_',
       );
 
-      // Si on a un numéro de téléphone, on l'inclut (message privé)
-      // Sinon, sélecteur de contact
       final waUrl = telEmprunteur.isNotEmpty
           ? Uri.parse('https://wa.me/$telEmprunteur?text=$texteRecu')
           : Uri.parse('https://wa.me/?text=$texteRecu');

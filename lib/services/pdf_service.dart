@@ -2,13 +2,21 @@
 // PdfService — Relevé complet TontineClair
 // Spécification : FICHE-MODULE-DASHBOARD-PARTAGE.pdf §2
 // 4 sections dans l'ordre : En-tête / Caisse / Tours clôturés / Prêts / Journal
+//
+// Bug #4 fix : Printing.sharePdf() ne déclenche pas de téléchargement sur Flutter
+// Web. Utilisation de Printing.layoutPdf() → Uint8List → download via <a href>
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Import conditionnel : web_download_web.dart sur Flutter Web, stub sur mobile
+// Ceci évite l'erreur "dart:html not available" lors de la compilation Android
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import '../models/tontine.dart';
 import '../utils/formatters.dart';
+import '../utils/web_download_stub.dart'
+    if (dart.library.html) '../utils/web_download_web.dart';
 
 class PdfService {
   // Couleurs
@@ -16,6 +24,23 @@ class PdfService {
   static const _encre = PdfColor.fromInt(0xFF1C2447);
   static const _fondGris = PdfColor.fromInt(0xFFEEEEEE);
   static const _texteDoux = PdfColor.fromInt(0xFF6E6C60);
+
+  // ── Bug #4 : téléchargement PDF unifié Web + Mobile ─────────────────────
+  // Web  → downloadPdfBytes() depuis web_download_web.dart (dart:html Blob)
+  // Mobile → Printing.sharePdf() sélecteur natif
+  static Future<void> _telechargerPdf(
+    pw.Document doc,
+    String filename,
+  ) async {
+    final bytes = await doc.save();
+    if (kIsWeb) {
+      // Web : import conditionnel → web_download_web.dart → dart:html Blob
+      downloadPdfBytes(bytes, filename);
+    } else {
+      // Mobile : sélecteur de partage natif
+      await Printing.sharePdf(bytes: bytes, filename: filename);
+    }
+  }
 
   /// Génère et partage le PDF du relevé complet.
   static Future<void> exporterReleve({
@@ -53,11 +78,9 @@ class PdfService {
       ),
     );
 
-    final bytes = await doc.save();
-
-    await Printing.sharePdf(
-      bytes: bytes,
-      filename: 'TontineClair_${data.nom.replaceAll(' ', '_')}_${tontine.code}.pdf',
+    await _telechargerPdf(
+      doc,
+      'TontineClair_${data.nom.replaceAll(' ', '_')}_${tontine.code}.pdf',
     );
   }
 
@@ -219,8 +242,6 @@ class PdfService {
                   ?? 0;
               final total = (h['totalAttendu'] as num?)?.toInt()
                   ?? data.membres.length * data.montant;
-              // BUG FIX : h['date'] et h['closLe'] peuvent être des int (timestamp ms)
-              // → ne jamais caster directement en String? (TypeError si int)
               DateTime? dateD;
               final dateRaw = h['date'] ?? h['closLe'];
               if (dateRaw is int) {
@@ -282,7 +303,7 @@ class PdfService {
                         style: pw.TextStyle(font: bold, fontSize: 9),
                       ),
                       pw.Text(
-                        'Statut : ${p.statut}  |  Restant : ${Formatters.montantFCFA(p.resteADu)}',
+                        'Statut : ${p.statutCalcule}  |  Restant : ${Formatters.montantFCFA(p.resteADu)}',
                         style: pw.TextStyle(font: regular, fontSize: 9, color: _texteDoux),
                       ),
                     ],
@@ -354,8 +375,6 @@ class PdfService {
 
   // ── §PV : Procès-verbal de vote nominatif ───────────────────────────────
   /// Génère et partage le PDF du PV d'un vote.
-  /// [voixDetaillees] est la liste raw depuis Supabase (membresAvecPin RPC
-  /// ou voix stockées) : [{membreId, membreNom, choix, le}]
   static Future<void> exporterPvVote({
     required Tontine tontine,
     required Vote vote,
@@ -369,7 +388,7 @@ class PdfService {
     final bold = await PdfGoogleFonts.notoSansBold();
     final theme = pw.ThemeData.withFont(base: regular, bold: bold);
 
-    // Décompte
+    // Décompte — Bug #1 fix : utiliser membre_id (clé snake_case de Supabase)
     final oui = voixDetaillees.where((v) => v['choix'] == 'oui').length;
     final non = voixDetaillees.where((v) => v['choix'] == 'non').length;
     final abstention = voixDetaillees.where((v) => v['choix'] == 'abstention').length;
@@ -377,8 +396,10 @@ class PdfService {
     final totalVotants = voixDetaillees.length;
     final totalMembres = data.membres.length;
 
-    // Membres n'ayant pas voté
-    final ayantVoteIds = voixDetaillees.map((v) => v['membreId'] as String? ?? '').toSet();
+    // Bug #1 fix : utiliser membre_id (snake_case) comme dans lire_voix_tontine RPC
+    final ayantVoteIds = voixDetaillees
+        .map((v) => v['membre_id'] as String? ?? v['membreId'] as String? ?? '')
+        .toSet();
     final nonVotants = data.membres.where((m) => !ayantVoteIds.contains(m.id)).toList();
 
     doc.addPage(
@@ -404,10 +425,10 @@ class PdfService {
                   children: [
                     pw.Text(
                       adopte == true
-                          ? '✓ ADOPTÉ'
+                          ? 'ADOPTE'
                           : adopte == false
-                              ? '✗ REJETÉ'
-                              : 'SANS DÉCISION',
+                              ? 'REJETE'
+                              : 'SANS DECISION',
                       style: pw.TextStyle(font: bold, fontSize: 14, color: _or),
                     ),
                     pw.SizedBox(height: 4),
@@ -433,23 +454,20 @@ class PdfService {
           pw.SizedBox(height: 16),
 
           // ── Tableau nominatif des votes ───────────────────────────────────
-          _titreSousSection('Dépouillement nominatif', bold),
+          _titreSousSection('Depouillement nominatif', bold),
           pw.SizedBox(height: 6),
           if (voixDetaillees.isEmpty)
             pw.Text(
               'Aucune voix enregistrée.',
-              style: pw.TextStyle(font: regular, fontSize: 10,
-                  color: _texteDoux),
+              style: pw.TextStyle(font: regular, fontSize: 10, color: _texteDoux),
             )
           else
             pw.TableHelper.fromTextArray(
               headers: ['#', 'Membre', 'Vote', 'Horodatage'],
-              headerStyle: pw.TextStyle(font: bold, fontSize: 9,
-                  color: PdfColors.white),
+              headerStyle: pw.TextStyle(font: bold, fontSize: 9, color: PdfColors.white),
               headerDecoration: const pw.BoxDecoration(color: _encre),
               cellStyle: pw.TextStyle(font: regular, fontSize: 9),
-              cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6,
-                  vertical: 4),
+              cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
               columnWidths: {
                 0: const pw.FixedColumnWidth(24),
                 1: const pw.FlexColumnWidth(2),
@@ -459,22 +477,25 @@ class PdfService {
               data: voixDetaillees.asMap().entries.map((e) {
                 final i = e.key + 1;
                 final v = e.value;
-                final membreNom = v['membreNom'] as String?
+                // Bug #1 fix : prioriser membre_id (clé snake_case de Supabase)
+                final membreId = v['membre_id'] as String? ?? v['membreId'] as String? ?? '';
+                final membreNom = v['membre_nom'] as String?
+                    ?? v['membreNom'] as String?
                     ?? data.membres
-                        .where((m) => m.id == (v['membreId'] as String?))
+                        .where((m) => m.id == membreId)
                         .map((m) => m.nom)
                         .firstOrNull
                     ?? '—';
                 final choix = v['choix'] as String? ?? '—';
                 final choixLabel = choix == 'oui'
-                    ? '✓ Oui'
+                    ? 'Oui'
                     : choix == 'non'
-                        ? '✗ Non'
-                        : '○ Abst.';
+                        ? 'Non'
+                        : 'Abst.';
 
-                // Timestamp du vote
+                // Timestamp du vote — Bug fix : gérer les deux formats
                 DateTime? ts;
-                final leRaw = v['le'] ?? v['date'];
+                final leRaw = v['le'] ?? v['date'] ?? v['horodatage'];
                 if (leRaw is int) {
                   ts = DateTime.fromMillisecondsSinceEpoch(leRaw);
                 } else if (leRaw is String && leRaw.isNotEmpty) {
@@ -493,23 +514,18 @@ class PdfService {
 
           // ── Non-votants ──────────────────────────────────────────────────
           if (nonVotants.isNotEmpty) ...[
-            _titreSousSection(
-                'Membres n\'ayant pas voté (${nonVotants.length})', bold),
+            _titreSousSection('Membres n\'ayant pas vote (${nonVotants.length})', bold),
             pw.SizedBox(height: 6),
             pw.Wrap(
               spacing: 8,
               runSpacing: 4,
               children: nonVotants.map((m) => pw.Container(
-                padding: const pw.EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 4),
+                padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: pw.BoxDecoration(
                   color: _fondGris,
-                  borderRadius:
-                      const pw.BorderRadius.all(pw.Radius.circular(4)),
+                  borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
                 ),
-                child: pw.Text(m.nom,
-                    style:
-                        pw.TextStyle(font: regular, fontSize: 9)),
+                child: pw.Text(m.nom, style: pw.TextStyle(font: regular, fontSize: 9)),
               )).toList(),
             ),
             pw.SizedBox(height: 16),
@@ -524,33 +540,27 @@ class PdfService {
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
                   pw.Text('Gestionnaire :',
-                      style: pw.TextStyle(font: regular, fontSize: 9,
-                          color: _texteDoux)),
+                      style: pw.TextStyle(font: regular, fontSize: 9, color: _texteDoux)),
                   pw.SizedBox(height: 2),
                   pw.Text(nomGestionnaire,
-                      style: pw.TextStyle(font: bold, fontSize: 10,
-                          color: _encre)),
+                      style: pw.TextStyle(font: bold, fontSize: 10, color: _encre)),
                   pw.SizedBox(height: 24),
-                  pw.Container(width: 120, height: 1,
-                      color: _encre),
+                  pw.Container(width: 120, height: 1, color: _encre),
                   pw.Text('Signature',
-                      style: pw.TextStyle(font: regular, fontSize: 8,
-                          color: _texteDoux)),
+                      style: pw.TextStyle(font: regular, fontSize: 8, color: _texteDoux)),
                 ],
               ),
               pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.end,
                 children: [
                   pw.Text('Clos le :',
-                      style: pw.TextStyle(font: regular, fontSize: 9,
-                          color: _texteDoux)),
+                      style: pw.TextStyle(font: regular, fontSize: 9, color: _texteDoux)),
                   pw.SizedBox(height: 2),
                   pw.Text(
                     vote.dateCloture != null
                         ? Formatters.dateHeure(DateTime.tryParse(vote.dateCloture!))
                         : Formatters.dateHeure(DateTime.now()),
-                    style: pw.TextStyle(font: bold, fontSize: 10,
-                        color: _encre),
+                    style: pw.TextStyle(font: bold, fontSize: 10, color: _encre),
                   ),
                 ],
               ),
@@ -560,11 +570,132 @@ class PdfService {
       ),
     );
 
-    final bytes = await doc.save();
-    await Printing.sharePdf(
-      bytes: bytes,
-      filename: 'TontineClair_PV_Vote_${data.nom.replaceAll(' ', '_')}'
+    await _telechargerPdf(
+      doc,
+      'TontineClair_PV_Vote_${data.nom.replaceAll(' ', '_')}'
           '_${vote.id.substring(0, 6).toUpperCase()}.pdf',
+    );
+  }
+
+  // ── §Reçu : Reçu de cotisation nominatif ─────────────────────────────────
+  /// Bug #6 : génère un PDF reçu pour un paiement de cotisation.
+  static Future<void> exporterRecuCotisation({
+    required dynamic tontine,
+    required Membre membre,
+    required String ref,
+    required String methode,
+    required String dateStr,
+  }) async {
+    final data = tontine.data;
+    final doc = pw.Document();
+
+    final regular = await PdfGoogleFonts.notoSansRegular();
+    final bold = await PdfGoogleFonts.notoSansBold();
+    final theme = pw.ThemeData.withFont(base: regular, bold: bold);
+
+    final datePaiement = DateTime.tryParse(dateStr);
+
+    doc.addPage(
+      pw.Page(
+        theme: theme,
+        pageFormat: PdfPageFormat.a5,
+        margin: const pw.EdgeInsets.all(24),
+        build: (ctx) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            // En-tête
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text('TontineClair',
+                    style: pw.TextStyle(font: bold, fontSize: 20, color: _encre)),
+                pw.Text(
+                  'Généré le ${Formatters.dateHeure(DateTime.now())}',
+                  style: pw.TextStyle(font: regular, fontSize: 8, color: _texteDoux),
+                ),
+              ],
+            ),
+            pw.Divider(color: _or, thickness: 1.5),
+            pw.SizedBox(height: 12),
+            pw.Text(
+              'RECU DE COTISATION',
+              style: pw.TextStyle(font: bold, fontSize: 16, color: _encre),
+            ),
+            pw.SizedBox(height: 16),
+            // Bloc principal
+            pw.Container(
+              padding: const pw.EdgeInsets.all(14),
+              decoration: pw.BoxDecoration(
+                color: _encre,
+                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+              ),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Text('Montant',
+                          style: pw.TextStyle(font: regular, fontSize: 10, color: PdfColors.white)),
+                      pw.Text(
+                        Formatters.montantFCFA(data.montant),
+                        style: pw.TextStyle(font: bold, fontSize: 18, color: _or),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 14),
+            // Détails
+            _ligneRecu('Tontine', data.nom, bold, regular),
+            _ligneRecu('Membre', membre.nom, bold, regular),
+            _ligneRecu('Tour N°', '${data.numerTour}', bold, regular),
+            _ligneRecu('Méthode', Formatters.methodePaiement(methode), bold, regular),
+            _ligneRecu('Date', Formatters.dateHeure(datePaiement), bold, regular),
+            _ligneRecu('Référence', ref, bold, regular),
+            _ligneRecu('Code tontine', tontine.code as String, bold, regular),
+            pw.SizedBox(height: 20),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(10),
+              decoration: pw.BoxDecoration(
+                color: const PdfColor.fromInt(0xFFE8F5E9),
+                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+              ),
+              child: pw.Text(
+                'Paiement enregistre et valide par TontineClair',
+                style: pw.TextStyle(font: bold, fontSize: 10, color: const PdfColor.fromInt(0xFF2E7D5B)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await _telechargerPdf(
+      doc,
+      'TontineClair_Recu_${membre.nom.replaceAll(' ', '_')}_Tour${data.numerTour}_$ref.pdf',
+    );
+  }
+
+  // ── Helper : ligne reçu ──────────────────────────────────────────────────
+  static pw.Widget _ligneRecu(
+    String label,
+    String valeur,
+    pw.Font bold,
+    pw.Font regular,
+  ) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 4),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(label,
+              style: pw.TextStyle(font: regular, fontSize: 9, color: _texteDoux)),
+          pw.Text(valeur,
+              style: pw.TextStyle(font: bold, fontSize: 9, color: _encre)),
+        ],
+      ),
     );
   }
 
@@ -583,25 +714,22 @@ class PdfService {
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
             pw.Text('TontineClair',
-                style: pw.TextStyle(font: bold, fontSize: 18,
-                    color: _encre)),
+                style: pw.TextStyle(font: bold, fontSize: 18, color: _encre)),
             pw.Text(
-              'PV généré le ${Formatters.dateHeure(DateTime.now())}',
-              style: pw.TextStyle(font: regular, fontSize: 9,
-                  color: _texteDoux),
+              'PV genere le ${Formatters.dateHeure(DateTime.now())}',
+              style: pw.TextStyle(font: regular, fontSize: 9, color: _texteDoux),
             ),
           ],
         ),
         pw.SizedBox(height: 4),
         pw.Text(
-          'Procès-verbal de vote — ${data.nom}',
+          'Proces-verbal de vote — ${data.nom}',
           style: pw.TextStyle(font: bold, fontSize: 14, color: _encre),
         ),
         pw.SizedBox(height: 3),
         pw.Text(
-          'Code tontine : $code  ·  Vote réf. : ${vote.id.substring(0, 8).toUpperCase()}',
-          style: pw.TextStyle(font: regular, fontSize: 10,
-              color: _texteDoux),
+          'Code tontine : $code  ·  Vote ref. : ${vote.id.substring(0, 8).toUpperCase()}',
+          style: pw.TextStyle(font: regular, fontSize: 10, color: _texteDoux),
         ),
         pw.SizedBox(height: 4),
         pw.Container(
@@ -631,11 +759,9 @@ class PdfService {
     return pw.Column(
       children: [
         pw.Text('$count',
-            style: pw.TextStyle(font: bold, fontSize: 16,
-                color: PdfColors.white)),
+            style: pw.TextStyle(font: bold, fontSize: 16, color: PdfColors.white)),
         pw.Text(label,
-            style: pw.TextStyle(font: regular, fontSize: 8,
-                color: PdfColors.grey400)),
+            style: pw.TextStyle(font: regular, fontSize: 8, color: PdfColors.grey400)),
       ],
     );
   }

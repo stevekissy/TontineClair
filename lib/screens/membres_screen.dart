@@ -419,14 +419,14 @@ class _MembresScreenState extends State<MembresScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              if (membre.tel != null && membre.tel!.isNotEmpty)
-                BtnWhatsApp(
-                  label: 'Envoyer par WhatsApp',
-                  onTap: () {
-                    Navigator.of(sheetCtx).pop();
-                    _envoyerWhatsApp(ctx, membre, pin, data);
-                  },
-                ),
+              // Bug #5 fix : bouton WhatsApp toujours visible (fallback wa.me/?text= si pas de tel)
+              BtnWhatsApp(
+                label: 'Envoyer le PIN par WhatsApp',
+                onTap: () {
+                  Navigator.of(sheetCtx).pop();
+                  _envoyerWhatsApp(ctx, membre, pin, data);
+                },
+              ),
               const SizedBox(height: 8),
               BtnSecondaire(
                 label: 'Fermer',
@@ -1013,7 +1013,7 @@ class _CarteMembreState extends State<_CarteMembre> {
                   ),
                   const SizedBox(height: 8),
 
-                  // Statut PIN de vote
+                  // Statut PIN de vote (+ badge provisoire si applicable)
                   Row(
                     children: [
                       Icon(
@@ -1034,6 +1034,26 @@ class _CarteMembreState extends State<_CarteMembre> {
                               : AppColors.alerte,
                         ),
                       ),
+                      // Bug #5 : badge "PIN provisoire" si en attente de changement
+                      if (widget.pinProvisoire != null) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.or.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppColors.or.withValues(alpha: 0.4)),
+                          ),
+                          child: Text(
+                            '⏳ Provisoire',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.or,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ],
@@ -1138,10 +1158,9 @@ class _CarteMembreState extends State<_CarteMembre> {
                             ),
                           ),
                         ),
-                        // Bouton WhatsApp (si PIN provisoire en mémoire)
-                        if (widget.pinProvisoire != null &&
-                            m.tel != null &&
-                            m.tel!.isNotEmpty) ...[
+                        // Bug #5 fix : bouton WhatsApp visible dès qu'un PIN provisoire existe
+                        // (fallback wa.me/?text= géré dans _envoyerWhatsApp si pas de tel)
+                        if (widget.pinProvisoire != null) ...[
                           const SizedBox(height: 8),
                           SizedBox(
                             width: double.infinity,

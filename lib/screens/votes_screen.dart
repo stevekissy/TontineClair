@@ -23,6 +23,7 @@ class _VotesScreenState extends State<VotesScreen> {
   // Clé = vote_id, valeur = liste des voix de ce vote
   Map<String, List<Map<String, dynamic>>> _voixParVote = {};
   bool _chargementVoix = true;
+  String? _erreurVoix;
 
   @override
   void initState() {
@@ -32,19 +33,28 @@ class _VotesScreenState extends State<VotesScreen> {
   }
 
   Future<void> _chargerVoix() async {
-    setState(() => _chargementVoix = true);
+    setState(() {
+      _chargementVoix = true;
+      _erreurVoix = null;
+    });
     try {
       final tontine = context.read<TontineProvider>().courante;
       if (tontine == null) return;
       final voix = await SupabaseService.lireVoix(tontine.code);
       final map = <String, List<Map<String, dynamic>>>{};
       for (final v in voix) {
-        final voteId = v['vote_id'] as String? ?? '';
-        map.putIfAbsent(voteId, () => []).add(v);
+        // Bug #1 fix : RPC retourne vote_id (snake_case)
+        final voteId = v['vote_id'] as String?
+            ?? v['voteId'] as String?
+            ?? '';
+        if (voteId.isNotEmpty) {
+          map.putIfAbsent(voteId, () => []).add(v);
+        }
       }
       if (mounted) setState(() => _voixParVote = map);
-    } catch (_) {
-      // silencieux — la liste reste vide, le menu affiche tous les membres
+    } catch (e) {
+      // Bug #1 fix : afficher l'erreur à l'utilisateur au lieu de l'ignorer
+      if (mounted) setState(() => _erreurVoix = 'Erreur chargement votes : $e');
     } finally {
       if (mounted) setState(() => _chargementVoix = false);
     }
@@ -98,7 +108,32 @@ class _VotesScreenState extends State<VotesScreen> {
                         ],
                       ),
                     )
-                  : ListView(
+                  : _erreurVoix != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.wifi_off,
+                                    size: 40, color: AppColors.alerte),
+                                const SizedBox(height: 12),
+                                Text(
+                                  _erreurVoix!,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                      color: AppColors.alerte),
+                                ),
+                                const SizedBox(height: 16),
+                                TextButton(
+                                  onPressed: _chargerVoix,
+                                  child: const Text('Réessayer'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : ListView(
                       padding: const EdgeInsets.all(16),
                       children: [
                         const Text(

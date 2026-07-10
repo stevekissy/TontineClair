@@ -4,20 +4,63 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
+import '../services/pdf_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 
-class CotisationsScreen extends StatelessWidget {
+// ── Bug #6 fix : StatefulWidget pour rechargement depuis Supabase à l'ouverture ──
+class CotisationsScreen extends StatefulWidget {
   final String code;
 
   const CotisationsScreen({super.key, required this.code});
 
   @override
+  State<CotisationsScreen> createState() => _CotisationsScreenState();
+}
+
+class _CotisationsScreenState extends State<CotisationsScreen> {
+  bool _chargement = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Recharger depuis Supabase pour avoir la liste membres à jour
+    WidgetsBinding.instance.addPostFrameCallback((_) => _recharger());
+  }
+
+  Future<void> _recharger() async {
+    if (!mounted) return;
+    setState(() => _chargement = true);
+    try {
+      await context.read<TontineProvider>().chargerTontine(widget.code);
+    } finally {
+      if (mounted) setState(() => _chargement = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final provider = context.watch<TontineProvider>();
     final tontine = provider.courante;
-    if (tontine == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+
+    if (tontine == null || _chargement) {
+      return const Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: AppColors.encre),
+              SizedBox(height: 12),
+              Text(
+                'Chargement des cotisations…',
+                style: TextStyle(color: AppColors.texteDoux),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     final data = tontine.data;
     final estGest = provider.estDebloque;
@@ -57,62 +100,83 @@ class CotisationsScreen extends StatelessWidget {
               ),
             ),
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-                children: [
-                  const Text(
-                    'Cotisations',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 28,
-                      color: AppColors.encre,
+              child: RefreshIndicator(
+                onRefresh: _recharger,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                  children: [
+                    const Text(
+                      'Cotisations',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 28,
+                        color: AppColors.encre,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    data.cycleTermine
-                        ? 'Cycle terminé ✔ · ${membres.length} membres servis'
-                        : 'Tour ${data.numerTour} · ${Formatters.montantFCFA(data.montant)} par membre · ${data.nbPayes}/${membres.length} payés',
-                    style: const TextStyle(fontSize: 14, color: AppColors.texteDoux),
-                  ),
-                  if (data.echeance != null) ...[
-                    const SizedBox(height: 8),
-                    _BandeauEcheance(echeance: data.echeance!),
+                    const SizedBox(height: 4),
+                    Text(
+                      data.cycleTermine
+                          ? 'Cycle terminé ✔ · ${membres.length} membres servis'
+                          : 'Tour ${data.numerTour} · ${Formatters.montantFCFA(data.montant)} par membre · ${data.nbPayes}/${membres.length} payés',
+                      style: const TextStyle(fontSize: 14, color: AppColors.texteDoux),
+                    ),
+                    if (data.echeance != null) ...[
+                      const SizedBox(height: 8),
+                      _BandeauEcheance(echeance: data.echeance!),
+                    ],
+                    const SizedBox(height: 16),
+
+                    // Bug #6 fix : afficher un message si liste vide
+                    if (membresOrdre.isEmpty)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Text(
+                            'Aucun membre à afficher.\nTirez vers le bas pour recharger.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: AppColors.texteDoux),
+                          ),
+                        ),
+                      )
+                    else
+                      // Liste dans l'ordre de passage (ordre[]) — badge BÉNÉF. indépendant de paye
+                      ...membresOrdre.asMap().entries.map(
+                        (e) => _CarteMembre(
+                          membre: e.value,
+                          rang: e.key + 1,
+                          montant: data.montant,
+                          estGest: estGest,
+                          echeance: data.echeance,
+                          tontine: tontine,
+                          // Badge BÉNÉFICIAIRE : indépendant du statut paye
+                          isBeneficiaire: !data.cycleTermine && e.value.id == benefId,
+                          onToggle: estGest && !data.cycleTermine
+                              ? () => _togglePaiement(
+                                    context,
+                                    provider,
+                                    tontine,
+                                    e.value,
+                                  )
+                              : null,
+                          onEnvoyerRecu: () => _envoyerRecu(context, tontine, e.value),
+                          onRelancer: () => _relancer(context, tontine, e.value),
+                          onGenererPdf: estGest && e.value.paye
+                              ? () => _genererRecuPdf(context, tontine, e.value)
+                              : null,
+                        ),
+                      ),
+                    const SizedBox(height: 16),
+                    // Partage récap WhatsApp (accessible à tous)
+                    _BoutonRecapWhatsApp(tontine: tontine),
+                    if (estGest) ...[
+                      const SizedBox(height: 10),
+                      BtnWhatsApp(
+                        label: 'Relancer tous les retardataires',
+                        onTap: () => _relancerTous(context, tontine),
+                      ),
+                    ],
                   ],
-                  const SizedBox(height: 16),
-                  // Liste dans l'ordre de passage (ordre[]) — badge BÉNÉF. indépendant de paye
-                  ...membresOrdre.asMap().entries.map(
-                    (e) => _CarteMembre(
-                      membre: e.value,
-                      rang: e.key + 1,
-                      montant: data.montant,
-                      estGest: estGest,
-                      echeance: data.echeance,
-                      // Badge BÉNÉFICIAIRE : indépendant du statut paye
-                      isBeneficiaire: !data.cycleTermine && e.value.id == benefId,
-                      onToggle: estGest && !data.cycleTermine
-                          ? () => _togglePaiement(
-                                context,
-                                provider,
-                                tontine,
-                                e.value,
-                              )
-                          : null,
-                      onEnvoyerRecu: () => _envoyerRecu(context, tontine, e.value),
-                      onRelancer: () => _relancer(context, tontine, e.value),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  // Partage récap WhatsApp (accessible à tous)
-                  _BoutonRecapWhatsApp(tontine: tontine),
-                  if (estGest) ...[
-                    const SizedBox(height: 10),
-                    BtnWhatsApp(
-                      label: 'Relancer tous les retardataires',
-                      onTap: () => _relancerTous(context, tontine),
-                    ),
-                  ],
-                ],
+                ),
               ),
             ),
           ],
@@ -162,6 +226,27 @@ class CotisationsScreen extends StatelessWidget {
           }
           newData['membres'] = membres;
 
+          // ── Caisse : ajouter l'apport ─────────────────────────────────────
+          final caisseMap = newData['caisse'];
+          final caisse = List<Map<String, dynamic>>.from(
+            caisseMap is Map<String, dynamic>
+                ? ((caisseMap['mouvements'] as List<dynamic>?)
+                        ?.cast<Map<String, dynamic>>() ?? [])
+                : caisseMap is List
+                    ? (caisseMap as List<dynamic>).cast<Map<String, dynamic>>()
+                    : [],
+          );
+          caisse.add({
+            'id': '${ref}C',
+            'type': 'apport',
+            'montant': data.montant,
+            'description': 'Cotisation ${membre.nom} — Tour ${data.numerTour}',
+            'gestionnaire': provider.gestActifNom ?? '',
+            'date': nowStr,
+            'reference': ref,
+          });
+          newData['caisse'] = {'mouvements': caisse};
+
           final journal = List<Map<String, dynamic>>.from(
             (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
           );
@@ -179,6 +264,22 @@ class CotisationsScreen extends StatelessWidget {
 
       if (ok == true && context.mounted) {
         afficherToast(context, 'Paiement de ${membre.nom} enregistré !');
+
+        // Bug #6 : proposer le reçu WhatsApp après validation
+        final membreActualise = Membre(
+          id: membre.id,
+          nom: membre.nom,
+          tel: membre.tel,
+          role: membre.role,
+          paye: true,
+          datePaiement: nowStr,
+          methodePaiement: methode,
+          referencePaiement: ref,
+          score: membre.score,
+        );
+        if (context.mounted) {
+          await _proposerRecuPostPaiement(context, tontine, membreActualise, ref, methode);
+        }
       }
     } else {
       // Annuler le paiement
@@ -209,6 +310,120 @@ class CotisationsScreen extends StatelessWidget {
 
       if (ok == true && context.mounted) {
         afficherToast(context, 'Paiement annulé.');
+      }
+    }
+  }
+
+  // ── Bug #6 : proposer reçu (WhatsApp + PDF) après validation paiement ────
+  Future<void> _proposerRecuPostPaiement(
+    BuildContext context,
+    dynamic tontine,
+    Membre membre,
+    String ref,
+    String methode,
+  ) async {
+    final data = tontine.data;
+    if (!context.mounted) return;
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.fondPapier,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text(
+          '📲 Envoyer le reçu ?',
+          style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.encre),
+        ),
+        content: Text(
+          'Paiement de ${membre.nom} enregistré (${Formatters.montantFCFA(data.montant)}).\n\nComment souhaitez-vous partager le reçu ?',
+          style: const TextStyle(color: AppColors.texte),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Ignorer'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              if (context.mounted) {
+                await _genererRecuPdfInterne(
+                  context,
+                  tontine,
+                  membre,
+                  ref,
+                  methode,
+                  DateTime.now().toIso8601String(),
+                );
+              }
+            },
+            child: const Text(
+              '📄 PDF',
+              style: TextStyle(color: AppColors.encre, fontWeight: FontWeight.w700),
+            ),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              if (context.mounted) {
+                _envoyerRecuDirect(context, tontine, membre, ref, methode, DateTime.now().toIso8601String());
+              }
+            },
+            child: const Text(
+              'WhatsApp',
+              style: TextStyle(color: AppColors.whatsapp, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _envoyerRecuDirect(
+    BuildContext context,
+    dynamic tontine,
+    Membre membre,
+    String ref,
+    String methode,
+    String dateStr,
+  ) {
+    final data = tontine.data;
+    final msg = Uri.encodeComponent(
+      '✅ Reçu de cotisation — TontineClair\n'
+      'Tontine : ${data.nom}\n'
+      'Membre : ${membre.nom}\n'
+      'Montant : ${Formatters.montantFCFA(data.montant)}\n'
+      'Tour : ${data.numerTour}\n'
+      'Date : ${Formatters.dateHeure(DateTime.tryParse(dateStr))}\n'
+      'Méthode : ${Formatters.methodePaiement(methode)}\n'
+      'Réf. : $ref\n'
+      'Code tontine : ${tontine.code}',
+    );
+    final tel = (membre.tel ?? '').replaceAll(RegExp(r'[^0-9+]'), '');
+    final url = tel.isNotEmpty
+        ? Uri.parse('https://wa.me/$tel?text=$msg')
+        : Uri.parse('https://wa.me/?text=$msg');
+    launchUrl(url, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _genererRecuPdfInterne(
+    BuildContext context,
+    dynamic tontine,
+    Membre membre,
+    String ref,
+    String methode,
+    String dateStr,
+  ) async {
+    try {
+      await PdfService.exporterRecuCotisation(
+        tontine: tontine,
+        membre: membre,
+        ref: ref,
+        methode: methode,
+        dateStr: dateStr,
+      );
+    } catch (e) {
+      if (context.mounted) {
+        afficherToast(context, 'Erreur PDF : $e', estErreur: true);
       }
     }
   }
@@ -261,10 +476,35 @@ class CotisationsScreen extends StatelessWidget {
       'Réf. : ${membre.referencePaiement ?? ''}\n'
       'Code tontine : ${tontine.code}',
     );
-    launchUrl(
-      Uri.parse('https://wa.me/?text=$msg'),
-      mode: LaunchMode.externalApplication,
-    );
+    final tel = (membre.tel ?? '').replaceAll(RegExp(r'[^0-9+]'), '');
+    final url = tel.isNotEmpty
+        ? Uri.parse('https://wa.me/$tel?text=$msg')
+        : Uri.parse('https://wa.me/?text=$msg');
+    launchUrl(url, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _genererRecuPdf(
+    BuildContext context,
+    dynamic tontine,
+    Membre membre,
+  ) async {
+    if (!membre.paye) {
+      afficherToast(context, 'Le membre n\'a pas encore payé.', estErreur: true);
+      return;
+    }
+    try {
+      await PdfService.exporterRecuCotisation(
+        tontine: tontine,
+        membre: membre,
+        ref: membre.referencePaiement ?? '—',
+        methode: membre.methodePaiement ?? 'especes',
+        dateStr: membre.datePaiement ?? DateTime.now().toIso8601String(),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        afficherToast(context, 'Erreur PDF : $e', estErreur: true);
+      }
+    }
   }
 
   void _relancer(BuildContext context, dynamic tontine, Membre membre) {
@@ -277,10 +517,11 @@ class CotisationsScreen extends StatelessWidget {
       '${data.echeance != null ? 'Échéance : ${Formatters.dateFormatee(DateTime.tryParse(data.echeance!))}\n' : ''}'
       'Code tontine : ${tontine.code}',
     );
-    launchUrl(
-      Uri.parse('https://wa.me/?text=$msg'),
-      mode: LaunchMode.externalApplication,
-    );
+    final tel = (membre.tel ?? '').replaceAll(RegExp(r'[^0-9+]'), '');
+    final url = tel.isNotEmpty
+        ? Uri.parse('https://wa.me/$tel?text=$msg')
+        : Uri.parse('https://wa.me/?text=$msg');
+    launchUrl(url, mode: LaunchMode.externalApplication);
   }
 
   void _relancerTous(BuildContext context, dynamic tontine) {
@@ -326,7 +567,6 @@ class _BoutonRecapWhatsApp extends StatelessWidget {
         final montant = (h['totalRecu'] as num?)?.toInt()
             ?? (h['total'] as num?)?.toInt()
             ?? membres.length * data.montant;
-        // BUG FIX : h['date'] peut être un int (timestamp ms) ou une String ISO
         final dateRaw = h['date'];
         DateTime? dateD;
         if (dateRaw is int) {
@@ -350,7 +590,6 @@ class _BoutonRecapWhatsApp extends StatelessWidget {
     buf.writeln('🏦 TONTINE — ${data.nom}');
     buf.writeln('Tour ${data.numerTour}/${membres.length} · ${Formatters.montantFCFA(data.montant)} par membre');
     if (data.echeance != null) {
-      // BUG FIX : data.echeance est déjà une String nullable — pas besoin de cast
       final echD = DateTime.tryParse(data.echeance!);
       if (echD != null) buf.writeln('📅 Échéance : ${Formatters.dateFormatee(echD)}');
     }
@@ -407,17 +646,20 @@ class _BoutonRecapWhatsApp extends StatelessWidget {
   }
 }
 
+// ─── Carte d'un membre ────────────────────────────────────────────────────────
 class _CarteMembre extends StatelessWidget {
   final Membre membre;
   final int rang;
   final int montant;
   final bool estGest;
   final String? echeance;
+  final dynamic tontine;
   /// Badge BÉNÉFICIAIRE — totalement indépendant du statut paye
   final bool isBeneficiaire;
   final VoidCallback? onToggle;
   final VoidCallback? onEnvoyerRecu;
   final VoidCallback? onRelancer;
+  final VoidCallback? onGenererPdf;
 
   const _CarteMembre({
     required this.membre,
@@ -425,10 +667,12 @@ class _CarteMembre extends StatelessWidget {
     required this.montant,
     required this.estGest,
     this.echeance,
+    required this.tontine,
     this.isBeneficiaire = false,
     this.onToggle,
     this.onEnvoyerRecu,
     this.onRelancer,
+    this.onGenererPdf,
   });
 
   bool get _enRetard {
@@ -459,7 +703,7 @@ class _CarteMembre extends StatelessWidget {
               Container(
                 width: 32,
                 height: 32,
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   color: AppColors.fondCode,
                   shape: BoxShape.circle,
                 ),
@@ -533,6 +777,7 @@ class _CarteMembre extends StatelessWidget {
                   ],
                 ),
               ),
+              // ── Bouton statut / toggle ──
               if (estGest)
                 GestureDetector(
                   onTap: onToggle,
@@ -546,7 +791,7 @@ class _CarteMembre extends StatelessWidget {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      membre.paye ? '✓ Payé' : 'Marquer payé',
+                      membre.paye ? '✓ Payé' : 'Approuver',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 12,
@@ -577,33 +822,70 @@ class _CarteMembre extends StatelessWidget {
                 ),
             ],
           ),
-          if (membre.referencePaiement != null) ...[
+          // ── Ligne de référence + actions ──
+          if (membre.referencePaiement != null || membre.paye) ...[
             const SizedBox(height: 8),
             Row(
               children: [
-                Expanded(
-                  child: Text(
-                    'Réf. ${membre.referencePaiement}',
-                    style: const TextStyle(
-                      fontSize: 11.5,
-                      color: AppColors.texteDoux,
-                      fontFamily: 'monospace',
+                if (membre.referencePaiement != null)
+                  Expanded(
+                    child: Text(
+                      'Réf. ${membre.referencePaiement}',
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: AppColors.texteDoux,
+                        fontFamily: 'monospace',
+                      ),
                     ),
-                  ),
-                ),
+                  )
+                else
+                  const Spacer(),
+                // ── Bug #6 : boutons Reçu PDF + WhatsApp pour membres payés ──
                 if (membre.paye) ...[
-                  TextButton(
-                    onPressed: onEnvoyerRecu,
-                    style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      minimumSize: Size.zero,
+                  // Bouton PDF reçu
+                  if (onGenererPdf != null) ...[
+                    GestureDetector(
+                      onTap: onGenererPdf,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.fondCode,
+                          borderRadius: BorderRadius.circular(7),
+                          border: Border.all(color: AppColors.lignes),
+                        ),
+                        child: const Text(
+                          '📄 PDF',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.encre,
+                          ),
+                        ),
+                      ),
                     ),
-                    child: const Text(
-                      'Envoyer reçu',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.whatsapp,
-                        fontWeight: FontWeight.w600,
+                    const SizedBox(width: 6),
+                  ],
+                  // Bouton WhatsApp reçu
+                  GestureDetector(
+                    onTap: onEnvoyerRecu,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF25D366).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(7),
+                        border: Border.all(
+                          color: const Color(0xFF25D366).withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: const Text(
+                        '📲 Reçu',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF128C7E),
+                        ),
                       ),
                     ),
                   ),
@@ -611,6 +893,7 @@ class _CarteMembre extends StatelessWidget {
               ],
             ),
           ],
+          // ── Relancer (non-payés, gestionnaire) ──
           if (!membre.paye && estGest) ...[
             const SizedBox(height: 8),
             Align(
