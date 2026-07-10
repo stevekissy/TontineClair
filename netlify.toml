@@ -1,17 +1,31 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 # TontineClair — netlify.toml
+# Technologie : Flutter Web
 #
-# STRATÉGIE : déploiement par ZIP direct depuis le sandbox (pas de build Netlify)
-# Le build Flutter se fait dans le sandbox, le résultat est uploadé via API.
+# Le build est exécuté par netlify_build.sh qui :
+#   1. installe Flutter 3.35.4
+#   2. exécute flutter build web --release
+#   3. génère le dossier build/web
 #
-# Ce fichier est présent uniquement pour les redirections SPA et headers.
-# La commande de build est intentionnellement "exit 0" pour éviter toute erreur
-# si Netlify tente quand même un build.
+# Variables d'environnement OBLIGATOIRES à configurer dans :
+#   Netlify UI > Site settings > Environment variables
+#     SUPABASE_URL      = https://mkmkpjdcydtpjwrmvbzd.supabase.co
+#     SUPABASE_ANON_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 # ═══════════════════════════════════════════════════════════════════════════════
 
 [build]
-  command = "exit 0"
+  command = "bash netlify_build.sh"
   publish = "build/web"
+
+# Cache Flutter entre les builds pour accélérer les déploiements suivants
+[build.environment]
+  FLUTTER_VERSION = "3.35.4"
+
+[build.cache]
+  paths = [
+    "$HOME/flutter",
+    "$HOME/.pub-cache",
+  ]
 
 # Redirections SPA — OBLIGATOIRE pour Flutter Web
 # Toutes les routes renvoient vers index.html (routage côté Flutter)
@@ -24,7 +38,7 @@
 [[headers]]
   for = "/*"
   [headers.values]
-    X-Frame-Options        = "DENY"
+    X-Frame-Options        = "SAMEORIGIN"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy        = "strict-origin-when-cross-origin"
 
