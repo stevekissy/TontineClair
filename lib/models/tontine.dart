@@ -293,6 +293,7 @@ class Vote {
   final String createur;    // = creePar
   final String dateCreation; // = le (timestamp)
   bool clos;                // = (statut == 'clos')
+  bool? adopte;             // true/false/null selon résultat du vote clos
   String statut;            // 'ouvert' ou 'clos'
   String? dateCloture;
   String? nouveauMembreNom;
@@ -311,6 +312,7 @@ class Vote {
     required this.createur,
     required this.dateCreation,
     this.clos = false,
+    this.adopte,
     this.statut = 'ouvert',
     this.dateCloture,
     this.nouveauMembreNom,
@@ -358,6 +360,7 @@ class Vote {
       createur: json['creePar'] as String? ?? json['createur'] as String? ?? '',
       dateCreation: dateCreation,
       clos: statut == 'clos',
+      adopte: json['adopte'] as bool?,
       statut: statut,
       dateCloture: dateCloture,
       nouveauMembreNom: json['nouveauMembreNom'] as String?,
@@ -379,6 +382,7 @@ class Vote {
         'le': dateCreation,
         'statut': statut,
         'clos': clos,
+        if (adopte != null) 'adopte': adopte,
         if (dateCloture != null) 'dateCloture': dateCloture,
         if (nouveauMembreNom != null) 'nouveauMembreNom': nouveauMembreNom,
         if (ancienOrdreId != null) 'ancienOrdreId': ancienOrdreId,

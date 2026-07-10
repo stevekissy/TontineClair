@@ -4,16 +4,32 @@ import 'package:http/http.dart' as http;
 import '../models/tontine.dart';
 
 class SupabaseService {
-  // Valeurs du projet de référence — injectées au démarrage si aucune config utilisateur.
-  // L'utilisateur peut les remplacer via ConfigScreen → StorageService.
-  static const String _defaultUrl = 'https://ubrqtcxbxcmvmxleiglh.supabase.co';
-  static const String _defaultKey =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'
-      '.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVicnF0Y3hieGNtdm14bGVpZ2xoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyNzYwMzYsImV4cCI6MjA5ODg1MjAzNn0'
-      '.GaCZwMG34cFcxR3lkLuq-7uMM7sQoc_VIqiDEzMgEq4';
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CREDENTIALS — lus depuis les variables de compilation (--dart-define).
+  // En l'absence de variable, la valeur de secours (defaultValue) est utilisée.
+  //
+  // Pour le build web (Netlify) :
+  //   flutter build web --release \
+  //     --dart-define=SUPABASE_URL=$SUPABASE_URL \
+  //     --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
+  //
+  // Pour un build local sans variables, les valeurs codées en dur prennent
+  // le relais automatiquement — l'app reste fonctionnelle.
+  // ═══════════════════════════════════════════════════════════════════════════
+  static const String _url = String.fromEnvironment(
+    'SUPABASE_URL',
+    defaultValue: 'https://ubrqtcxbxcmvmxleiglh.supabase.co',
+  );
+  static const String _key = String.fromEnvironment(
+    'SUPABASE_ANON_KEY',
+    defaultValue: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'
+        '.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVicnF0Y3hieGNtdm14bGVpZ2xoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyNzYwMzYsImV4cCI6MjA5ODg1MjAzNn0'
+        '.GaCZwMG34cFcxR3lkLuq-7uMM7sQoc_VIqiDEzMgEq4',
+  );
 
-  static String supabaseUrl     = _defaultUrl;
-  static String supabaseAnonKey = _defaultKey;
+  // Accesseurs publics en lecture seule (pour le diagnostic dev)
+  static String get supabaseUrl      => _url;
+  static String get supabaseAnonKey  => _key;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Couche HTTP RPC — fidèle à la fonction rpc() de index.html de référence.
@@ -32,8 +48,8 @@ class SupabaseService {
   //   • [{...}]      → List  (ex: lire_voix_tontine retourne jsonb agrégé)
   // ─────────────────────────────────────────────────────────────────────────
   static Future<dynamic> rpc(String fn, Map<String, dynamic> args) async {
-    final url = supabaseUrl.isNotEmpty ? supabaseUrl : _defaultUrl;
-    final key = supabaseAnonKey.isNotEmpty ? supabaseAnonKey : _defaultKey;
+    const url = _url;
+    const key = _key;
 
     final uri = Uri.parse('$url/rest/v1/rpc/$fn');
     if (kDebugMode) debugPrint('[RPC] → $fn  args=$args');
@@ -108,7 +124,7 @@ class SupabaseService {
   //     On utilise directement un appel RPC pour tester clé + fonctions SQL.
   // ─────────────────────────────────────────────────────────────────────────
   static Future<DiagnosticResult> diagnostiquer() async {
-    final url = supabaseUrl.isNotEmpty ? supabaseUrl : _defaultUrl;
+    const url = _url;
 
     // Test unique : appel RPC lire_tontine avec un code bidon.
     // • Si HTTP 200 / null retourné   → clé OK + SQL initialisé ✅

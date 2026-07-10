@@ -1,26 +1,150 @@
-# Flutter/Dart
-# Build outputs (exclude to save space)
+# ═══════════════════════════════════════════════════════════════════════════════
+# .gitignore — TontineClair Flutter App
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 🔒 SÉCURITÉ — Secrets et clés (JAMAIS dans Git)
+# ─────────────────────────────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.env
+
+# Clés de signature Android
+android/key.properties
+android/*.jks
+android/*.keystore
+*.jks
+*.keystore
+
+# Clés de service Firebase / Google
+google-services.json
+GoogleService-Info.plist
+serviceAccountKey.json
+firebase-adminsdk*.json
+
+# Clés API et secrets divers
+secrets.yaml
+secrets.json
+*secret*
+*private*
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Flutter / Dart — Fichiers générés
+# ─────────────────────────────────────────────────────────────────────────────
+# Build outputs
 /build/
 /.dart_tool/
+
+# Pub cache
 .packages
 .pub-cache/
 .pub/
+pubspec.lock.bak
 
-# IDE
+# Generated files
+*.g.dart
+*.freezed.dart
+*.gr.dart
+
+# Coverage
+/coverage/
+/test/coverage/
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Android
+# ─────────────────────────────────────────────────────────────────────────────
+android/.gradle/
+android/local.properties
+android/app/debug/
+android/app/profile/
+android/app/release/
+android/captures/
+android/gradle-wrapper.jar
+**/android/**/GeneratedPluginRegistrant.java
+**/android/**/GeneratedPluginRegistrant.kt
+
+# ─────────────────────────────────────────────────────────────────────────────
+# iOS / macOS
+# ─────────────────────────────────────────────────────────────────────────────
+**/ios/**/*.mode1v3
+**/ios/**/*.mode2v3
+**/ios/**/*.moved-aside
+**/ios/**/*.pbxuser
+**/ios/**/*.perspectivev3
+**/ios/**/DerivedData/
+**/ios/**/.generated/
+**/ios/**/Flutter/App.framework
+**/ios/**/Flutter/Flutter.framework
+**/ios/**/Flutter/Flutter.podspec
+**/ios/**/Flutter/Generated.xcconfig
+**/ios/**/Flutter/ephemeral
+**/ios/**/Flutter/app.flx
+**/ios/**/Flutter/app.zip
+**/ios/**/Flutter/flutter_assets/
+**/ios/**/Flutter/flutter_export_environment.sh
+**/ios/**/ServiceDefinitions.json
+**/ios/**/Runner/GeneratedPluginRegistrant.*
+**/ios/Pods/
+**/ios/.symlinks/
+**/macos/Pods/
+**/macos/.symlinks/
+
+# ─────────────────────────────────────────────────────────────────────────────
+# IDE et éditeurs
+# ─────────────────────────────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
 
-# OS Files
+# ─────────────────────────────────────────────────────────────────────────────
+# Systèmes d'exploitation
+# ─────────────────────────────────────────────────────────────────────────────
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+Desktop.ini
 
-# Logs
+# ─────────────────────────────────────────────────────────────────────────────
+# Logs et fichiers temporaires
+# ─────────────────────────────────────────────────────────────────────────────
 *.log
-
-# Temporary files
 *.tmp
 *.temp
+*.swp
+*.swo
+*~
+npm-debug.log*
 
-# Keep lib/ directory for source code!
+# ─────────────────────────────────────────────────────────────────────────────
+# APK / IPA de release (distribués séparément, pas dans le code source)
+# ─────────────────────────────────────────────────────────────────────────────
+*.apk
+*.ipa
+*.aab
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Netlify
+# ─────────────────────────────────────────────────────────────────────────────
+.netlify/
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NOTE : Les fichiers suivants SONT inclus dans Git (ne pas les exclure) :
+#   pubspec.yaml       → Déclaration des dépendances
+#   pubspec.lock       → Versions exactes (reproductibilité du build)
+#   netlify.toml       → Configuration de déploiement
+#   .env.example       → Modèle de variables (sans vraies valeurs)
+#   android/app/src/   → Code source Android
+#   lib/               → Code source Flutter/Dart
+# ─────────────────────────────────────────────────────────────────────────────

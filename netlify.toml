@@ -1,0 +1,62 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# netlify.toml — Configuration de déploiement TontineClair
+#
+# Architecture :  GitHub → Netlify (build Flutter Web) → Supabase (données)
+#
+# Variables d'environnement à configurer dans Netlify UI :
+#   Site settings → Environment variables :
+#     SUPABASE_URL      = https://ubrqtcxbxcmvmxleiglh.supabase.co
+#     SUPABASE_ANON_KEY = eyJhbGci... (clé anon publique uniquement)
+#
+# ⚠️  NE JAMAIS mettre la clé service_role dans Netlify côté Flutter Web.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[build]
+  # Commande de build : installe Flutter, récupère les dépendances,
+  # construit l'app Web en injectant les credentials via --dart-define.
+  command = """
+    git clone https://github.com/flutter/flutter.git --depth 1 -b 3.35.4 /opt/flutter-build 2>/dev/null || true &&
+    export PATH="$PATH:/opt/flutter-build/bin" &&
+    flutter pub get &&
+    flutter build web --release \
+      --dart-define=SUPABASE_URL=$SUPABASE_URL \
+      --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
+  """
+  # Dossier publié sur Netlify après le build
+  publish = "build/web"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Redirections SPA — OBLIGATOIRE pour Flutter Web
+#
+# Sans cette règle, toute navigation directe vers une URL interne (ex: /tontine/ABC)
+# ou toute actualisation de page retourne une erreur 404 Netlify.
+# Toutes les routes sont renvoyées vers index.html qui gère le routage Flutter.
+# ─────────────────────────────────────────────────────────────────────────────
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
+
+# ─────────────────────────────────────────────────────────────────────────────
+# En-têtes de sécurité HTTP
+# ─────────────────────────────────────────────────────────────────────────────
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options        = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy        = "strict-origin-when-cross-origin"
+    # Permissions-Policy restreint les APIs navigateur inutilisées
+    Permissions-Policy     = "camera=(), microphone=(), geolocation=()"
+
+[[headers]]
+  for = "/flutter_service_worker.js"
+  [headers.values]
+    # Le Service Worker doit être revalidé à chaque visite
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/assets/**"
+  [headers.values]
+    # Les assets Flutter ont des noms hashés → cache agressif OK
+    Cache-Control = "public, max-age=31536000, immutable"

@@ -161,6 +161,14 @@ class CaisseScreen extends StatelessWidget {
     final descCtrl = TextEditingController();
     String methode = 'especes';
 
+    // Pour les pénalités : menu de sélection du membre pénalisé
+    final membreParId = {for (final m in data.membres) m.id: m};
+    final membresOrdre = data.ordre.isNotEmpty
+        ? data.ordre.map((id) => membreParId[id]).whereType<Membre>().toList()
+        : data.membres;
+    String? membrePenaliteId =
+        (type == 'penalite' && membresOrdre.isNotEmpty) ? membresOrdre.first.id : null;
+
     final result = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -176,74 +184,95 @@ class CaisseScreen extends StatelessWidget {
             top: 16,
             bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.lignes,
-                    borderRadius: BorderRadius.circular(2),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.lignes,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                type == 'apport'
-                    ? 'Apport en caisse'
-                    : type == 'depense'
-                        ? 'Dépense de caisse'
-                        : 'Pénalité',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 20,
-                  color: AppColors.encre,
+                const SizedBox(height: 16),
+                Text(
+                  type == 'apport'
+                      ? 'Apport en caisse'
+                      : type == 'depense'
+                          ? 'Dépense de caisse'
+                          : 'Appliquer une pénalité',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 20,
+                    color: AppColors.encre,
+                  ),
                 ),
-              ),
-              const ChampLabel(label: 'Montant (FCFA)'),
-              TextField(
-                controller: montantCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(hintText: '5 000'),
-                autofocus: true,
-              ),
-              const ChampLabel(label: 'Description'),
-              TextField(
-                controller: descCtrl,
-                maxLength: 100,
-                decoration: const InputDecoration(
-                  hintText: 'Ex : Frais de local',
-                  counterText: '',
+                // Membre pénalisé (pénalité uniquement)
+                if (type == 'penalite' && membresOrdre.isNotEmpty) ...[
+                  const ChampLabel(label: 'Membre pénalisé'),
+                  DropdownButtonFormField<String>(
+                    value: membrePenaliteId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(),
+                    items: membresOrdre
+                        .map((m) => DropdownMenuItem(
+                              value: m.id,
+                              child: Text(m.nom, overflow: TextOverflow.ellipsis),
+                            ))
+                        .toList(),
+                    onChanged: (v) => setS(() => membrePenaliteId = v),
+                  ),
+                ],
+                const ChampLabel(label: 'Montant (FCFA)'),
+                TextField(
+                  controller: montantCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(hintText: '5 000'),
+                  autofocus: true,
                 ),
-              ),
-              if (type != 'penalite') ...[
-                const ChampLabel(label: 'Mode de paiement'),
-                DropdownButtonFormField<String>(
-                  value: methode,
-                  decoration: const InputDecoration(),
-                  items: ['especes', 'orange', 'mtn', 'moov', 'wave']
-                      .map((m) => DropdownMenuItem(
-                            value: m,
-                            child: Text(Formatters.methodePaiement(m)),
-                          ))
-                      .toList(),
-                  onChanged: (v) => setS(() => methode = v!),
+                const ChampLabel(label: 'Description / Motif'),
+                TextField(
+                  controller: descCtrl,
+                  maxLength: 100,
+                  decoration: InputDecoration(
+                    hintText: type == 'penalite'
+                        ? 'Ex : Retard de cotisation'
+                        : 'Ex : Frais de local',
+                    counterText: '',
+                  ),
                 ),
+                if (type != 'penalite') ...[
+                  const ChampLabel(label: 'Mode de paiement'),
+                  DropdownButtonFormField<String>(
+                    value: methode,
+                    decoration: const InputDecoration(),
+                    items: ['especes', 'orange', 'mtn', 'moov', 'wave']
+                        .map((m) => DropdownMenuItem(
+                              value: m,
+                              child: Text(Formatters.methodePaiement(m)),
+                            ))
+                        .toList(),
+                    onChanged: (v) => setS(() => methode = v!),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                BtnPrincipal(
+                  label: 'Enregistrer',
+                  onTap: () => Navigator.pop(ctx, true),
+                ),
+                const SizedBox(height: 8),
+                BtnSecondaire(
+                  label: 'Annuler',
+                  onTap: () => Navigator.pop(ctx, false),
+                ),
+                const SizedBox(height: 8),
               ],
-              const SizedBox(height: 16),
-              BtnPrincipal(
-                label: 'Enregistrer',
-                onTap: () => Navigator.pop(ctx, true),
-              ),
-              const SizedBox(height: 8),
-              BtnSecondaire(
-                label: 'Annuler',
-                onTap: () => Navigator.pop(ctx, false),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -256,35 +285,70 @@ class CaisseScreen extends StatelessWidget {
       afficherToast(context, 'Montant invalide', estErreur: true);
       return;
     }
+    // Vérification solde pour les dépenses
+    if (type == 'depense' && montant > data.soldeCaisse) {
+      afficherToast(context,
+          'Solde insuffisant (${Formatters.montantFCFA(data.soldeCaisse)} disponibles)',
+          estErreur: true);
+      return;
+    }
+
+    final nomMembre = (type == 'penalite' && membrePenaliteId != null)
+        ? (membreParId[membrePenaliteId]?.nom ?? '')
+        : '';
+    final descFinale = descCtrl.text.trim().isNotEmpty
+        ? descCtrl.text.trim()
+        : (type == 'penalite' && nomMembre.isNotEmpty ? 'Pénalité — $nomMembre' : '');
 
     final ok = await afficherModalePin(
       context,
       titre: 'Confirmer le mouvement',
-      sousTitre: '${Formatters.montantFCFA(montant)} · ${descCtrl.text.trim()}',
+      sousTitre: '${Formatters.montantFCFA(montant)} · $descFinale',
       onValider: (pin) async {
         final ref = Formatters.genererReference();
+        final now = DateTime.now().toIso8601String();
         final newData = data.toJson();
         final caisse = List<Map<String, dynamic>>.from(
           (newData['caisse'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
         );
-        caisse.add({
+        final entree = {
           'id': ref,
           'type': type,
           'montant': montant,
-          'description': descCtrl.text.trim(),
+          'description': descFinale,
           'gestionnaire': provider.gestActifNom ?? '',
-          'date': DateTime.now().toIso8601String(),
+          'date': now,
           'reference': ref,
-        });
+        };
+        if (type == 'penalite' && membrePenaliteId != null) {
+          entree['membreId'] = membrePenaliteId!;
+          entree['membreNom'] = nomMembre;
+        }
+        caisse.add(entree);
         newData['caisse'] = caisse;
+
+        // Pénalité : incrémenter compteur + baisser score de confiance du membre
+        if (type == 'penalite' && membrePenaliteId != null) {
+          final membres = List<Map<String, dynamic>>.from(
+            (newData['membres'] as List<dynamic>).cast<Map<String, dynamic>>(),
+          );
+          final idx = membres.indexWhere((m) => m['id'] == membrePenaliteId);
+          if (idx >= 0) {
+            membres[idx]['penalites'] = ((membres[idx]['penalites'] as int?) ?? 0) + 1;
+            membres[idx]['score'] = (((membres[idx]['score'] as int?) ?? 50) - 5).clamp(0, 100);
+          }
+          newData['membres'] = membres;
+        }
 
         final journal = List<Map<String, dynamic>>.from(
           (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
         );
         journal.insert(0, {
-          'quoi': '${type.toUpperCase()}_CAISSE_${montant}FCFA',
+          'quoi': type == 'penalite'
+              ? 'PENALITE_${nomMembre}_${montant}FCFA'
+              : '${type.toUpperCase()}_CAISSE_${montant}FCFA',
           'gestionnaire': provider.gestActifNom ?? '',
-          'quand': DateTime.now().toIso8601String(),
+          'quand': now,
           'reference': ref,
         });
         newData['journal'] = journal;
@@ -294,7 +358,8 @@ class CaisseScreen extends StatelessWidget {
     );
 
     if (ok == true && context.mounted) {
-      afficherToast(context, 'Mouvement enregistré !');
+      afficherToast(context,
+          type == 'penalite' ? 'Pénalité appliquée !' : 'Mouvement enregistré !');
     }
   }
 }

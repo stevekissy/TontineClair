@@ -80,6 +80,11 @@ class Formatters {
     return s[0].toUpperCase() + s.substring(1);
   }
 
+  static String heureFormatee(DateTime? date) {
+    if (date == null) return '';
+    return DateFormat('HH:mm', 'fr_FR').format(date.toLocal());
+  }
+
   static String genererReference() {
     final now = DateTime.now();
     final ts = now.millisecondsSinceEpoch.toString().substring(7);
