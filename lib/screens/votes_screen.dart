@@ -408,7 +408,7 @@ class _VotesScreenState extends State<VotesScreen> {
 
     String? membreId = restants.first.id;
     final pinCtrl = TextEditingController();
-    String choix = 'oui';
+    String choix = 'Oui';
 
     final result = await showModalBottomSheet<bool>(
       context: context,
@@ -485,7 +485,7 @@ class _VotesScreenState extends State<VotesScreen> {
                 ),
                 const ChampLabel(label: 'Ton vote'),
                 Row(
-                  children: ['oui', 'non', 'abstention'].map((c) {
+                  children: ['Oui', 'Non', 'Abstention'].map((c) {
                     final sel = choix == c;
                     return Expanded(
                       child: GestureDetector(
@@ -495,9 +495,9 @@ class _VotesScreenState extends State<VotesScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           decoration: BoxDecoration(
                             color: sel
-                                ? (c == 'oui'
+                                ? (c == 'Oui'
                                     ? AppColors.succes
-                                    : c == 'non'
+                                    : c == 'Non'
                                         ? AppColors.alerte
                                         : AppColors.encreDoux)
                                 : AppColors.fondCode,
@@ -505,9 +505,9 @@ class _VotesScreenState extends State<VotesScreen> {
                           ),
                           child: Center(
                             child: Text(
-                              c == 'oui'
+                              c == 'Oui'
                                   ? '✓ Oui'
-                                  : c == 'non'
+                                  : c == 'Non'
                                       ? '✗ Non'
                                       : '○ Abs.',
                               style: TextStyle(
@@ -603,9 +603,9 @@ class _VotesScreenState extends State<VotesScreen> {
     Vote vote,
   ) async {
     final voix = _voixParVote[vote.id] ?? [];
-    final oui = voix.where((v) => v['choix'] == 'oui').length;
-    final non = voix.where((v) => v['choix'] == 'non').length;
-    final abstention = voix.where((v) => v['choix'] == 'abstention').length;
+    final oui = voix.where((v) => (v['choix'] as String? ?? '').toLowerCase() == 'oui').length;
+    final non = voix.where((v) => (v['choix'] as String? ?? '').toLowerCase() == 'non').length;
+    final abstention = voix.where((v) => (v['choix'] as String? ?? '').toLowerCase() == 'abstention').length;
     final adopte = oui > non;
 
     final ok = await afficherModalePin(
@@ -716,9 +716,9 @@ class _CarteVote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final oui = voix.where((v) => v['choix'] == 'oui').length;
-    final non = voix.where((v) => v['choix'] == 'non').length;
-    final abstention = voix.where((v) => v['choix'] == 'abstention').length;
+    final oui = voix.where((v) => (v['choix'] as String? ?? '').toLowerCase() == 'oui').length;
+    final non = voix.where((v) => (v['choix'] as String? ?? '').toLowerCase() == 'non').length;
+    final abstention = voix.where((v) => (v['choix'] as String? ?? '').toLowerCase() == 'abstention').length;
 
     // Total des votants = membres actifs (membresActifs passé depuis le parent)
     // Ne plus utiliser ordre.length qui peut diverger de membres[] réels
@@ -1136,7 +1136,8 @@ class _BadgeChoix extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (label, couleur) = switch (choix) {
+    final choixNorm = choix.toLowerCase();
+    final (label, couleur) = switch (choixNorm) {
       'oui' => ('✓', AppColors.succes),
       'non' => ('✗', AppColors.alerte),
       _ => ('○', AppColors.texteDoux),
