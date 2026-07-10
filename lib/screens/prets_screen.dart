@@ -400,6 +400,54 @@ class _CartePret extends StatelessWidget {
             borderRadius: BorderRadius.circular(4),
             minHeight: 6,
           ),
+          // ── Liste des remboursements avec bouton Annuler ─────────────────
+          if (estGest && pret.remboursements.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Divider(height: 1, color: AppColors.lignes),
+            const SizedBox(height: 8),
+            const Text(
+              'Remboursements',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+                color: AppColors.texteDoux,
+              ),
+            ),
+            const SizedBox(height: 6),
+            ...pret.remboursements.map((r) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${Formatters.dateFormatee(DateTime.tryParse(r.date))} — '
+                      '${Formatters.montantFCFA(r.montant)}',
+                      style: const TextStyle(fontSize: 12, color: AppColors.texte),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => _annulerRemboursement(context, r),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppColors.alerteFond,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'Annuler',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.alerte,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )),
+          ],
           if (estGest && pret.statut != 'solde') ...[
             const SizedBox(height: 12),
             BtnSecondaire(
@@ -410,6 +458,110 @@ class _CartePret extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _annulerRemboursement(
+    BuildContext context,
+    Remboursement remb,
+  ) async {
+    final ok = await afficherModalePin(
+      context,
+      titre: 'Annuler ce remboursement',
+      sousTitre: 'Cette action est irréversible et contre-passe la caisse.',
+      recap: [
+        (label: 'Emprunteur', valeur: pret.emprunteurNom),
+        (label: 'Montant annulé', valeur: Formatters.montantFCFA(remb.montant)),
+        (label: 'Date initiale', valeur: Formatters.dateFormatee(DateTime.tryParse(remb.date))),
+        (label: 'Réf.', valeur: remb.reference),
+      ],
+      labelValider: 'Confirmer l\'annulation',
+      onValider: (pin) async {
+        final ref = Formatters.genererReference();
+        final now = DateTime.now().toIso8601String();
+        final newData = data.toJson();
+
+        // ── 1. Supprimer le remboursement du prêt ───────────────────────────
+        final prets = List<Map<String, dynamic>>.from(
+          (newData['prets'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
+        );
+        final idx = prets.indexWhere((p) => p['id'] == pret.id);
+        if (idx >= 0) {
+          final rembs = List<Map<String, dynamic>>.from(
+            (prets[idx]['remboursements'] as List<dynamic>?)
+                    ?.cast<Map<String, dynamic>>() ?? [],
+          );
+          rembs.removeWhere((r) => r['id'] == remb.id || r['reference'] == remb.reference);
+          prets[idx]['remboursements'] = rembs;
+
+          // Recalculer resteADu après suppression
+          final totalDu = (prets[idx]['totalDu'] as num?)?.toInt() ?? pret.totalDu;
+          final totalRembourse = rembs.fold<int>(
+            0,
+            (sum, r) => sum + ((r['montant'] as num?)?.toInt() ?? 0),
+          );
+          final nouveauReste = (totalDu - totalRembourse).clamp(0, totalDu);
+          prets[idx]['resteADu'] = nouveauReste;
+
+          // Si le prêt était soldé, le repasser en cours
+          if (prets[idx]['statut'] == 'solde' && nouveauReste > 0) {
+            prets[idx]['statut'] = 'en_cours';
+
+            // Décrémenter pretsRembourses dans membres
+            if (pret.emprunteurId.isNotEmpty) {
+              final membres = List<Map<String, dynamic>>.from(
+                (newData['membres'] as List<dynamic>).cast<Map<String, dynamic>>(),
+              );
+              final mIdx = membres.indexWhere((m) => m['id'] == pret.emprunteurId);
+              if (mIdx >= 0) {
+                final actuel = (membres[mIdx]['pretsRembourses'] as int?) ?? 0;
+                membres[mIdx]['pretsRembourses'] = (actuel - 1).clamp(0, actuel);
+              }
+              newData['membres'] = membres;
+            }
+          }
+        }
+        newData['prets'] = prets;
+
+        // ── 2. Contre-passe caisse : retirer le montant (dépense) ──────────
+        final caisseMap = newData['caisse'];
+        final caisse = List<Map<String, dynamic>>.from(
+          caisseMap is Map<String, dynamic>
+              ? ((caisseMap['mouvements'] as List<dynamic>?)
+                      ?.cast<Map<String, dynamic>>() ?? [])
+              : caisseMap is List
+                  ? (caisseMap as List<dynamic>).cast<Map<String, dynamic>>()
+                  : [],
+        );
+        caisse.add({
+          'id': '${ref}A',
+          'type': 'depense',
+          'montant': remb.montant,
+          'description': 'Annulation remb. ${pret.emprunteurNom} (réf. ${remb.reference})',
+          'gestionnaire': provider.gestActifNom ?? '',
+          'date': now,
+          'reference': ref,
+        });
+        newData['caisse'] = {'mouvements': caisse};
+
+        // ── 3. Journal ───────────────────────────────────────────────────────
+        final journal = List<Map<String, dynamic>>.from(
+          (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
+        );
+        journal.insert(0, {
+          'quoi': 'ANNUL_REMBOURSEMENT_${pret.emprunteurNom}_${remb.montant}FCFA',
+          'gestionnaire': provider.gestActifNom ?? '',
+          'quand': now,
+          'reference': ref,
+        });
+        newData['journal'] = journal;
+
+        return provider.ecrire(newData, pin);
+      },
+    );
+
+    if (ok == true && context.mounted) {
+      afficherToast(context, 'Remboursement annulé et caisse corrigée.');
+    }
   }
 
   Future<void> _rembourser(BuildContext context) async {

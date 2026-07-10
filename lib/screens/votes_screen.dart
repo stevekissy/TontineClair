@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/tontine.dart';
+import '../services/pdf_service.dart';
 import '../services/tontine_provider.dart';
 import '../services/supabase_service.dart';
 import '../utils/app_colors.dart';
@@ -149,6 +150,15 @@ class _VotesScreenState extends State<VotesScreen> {
                                       context, provider, data, v)
                                   : null,
                               onRecharger: _chargerVoix,
+                              onExporterPdf: v.clos
+                                  ? () => PdfService.exporterPvVote(
+                                        tontine: tontine,
+                                        vote: v,
+                                        voixDetaillees: _voixParVote[v.id] ?? [],
+                                        nomGestionnaire:
+                                            provider.gestActifNom ?? '',
+                                      )
+                                  : null,
                             ),
                           ),
                       ],
@@ -653,6 +663,7 @@ class _CarteVote extends StatelessWidget {
   final VoidCallback onVoter;
   final VoidCallback? onClore;
   final VoidCallback onRecharger;
+  final Future<void> Function()? onExporterPdf;
 
   const _CarteVote({
     required this.vote,
@@ -665,6 +676,7 @@ class _CarteVote extends StatelessWidget {
     required this.onVoter,
     this.onClore,
     required this.onRecharger,
+    this.onExporterPdf,
   });
 
   @override
@@ -807,7 +819,7 @@ class _CarteVote extends StatelessWidget {
             ],
           ],
 
-          // ── Partager résultat (vote clos, gestionnaire) ──────────────────
+          // ── Partager résultat + PV PDF (vote clos, gestionnaire) ────────
           if (vote.clos && estGest) ...[
             const SizedBox(height: 10),
             _BtnWaVote(
@@ -815,6 +827,12 @@ class _CarteVote extends StatelessWidget {
               tooltip: 'Publier le résultat sur WhatsApp',
               onTap: () => _partagerResultat(context, oui, non, abstention),
             ),
+            if (onExporterPdf != null) ...[  
+              const SizedBox(height: 8),
+              _BtnPdfVote(
+                onTap: onExporterPdf!,
+              ),
+            ],
           ],
         ],
       ),
@@ -938,6 +956,72 @@ class _BtnWaVote extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─── Bouton export PV PDF ─────────────────────────────────────────────────────
+
+class _BtnPdfVote extends StatefulWidget {
+  final Future<void> Function() onTap;
+  const _BtnPdfVote({required this.onTap});
+
+  @override
+  State<_BtnPdfVote> createState() => _BtnPdfVoteState();
+}
+
+class _BtnPdfVoteState extends State<_BtnPdfVote> {
+  bool _loading = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: _loading
+          ? null
+          : () async {
+              setState(() => _loading = true);
+              try {
+                await widget.onTap();
+              } catch (e) {
+                if (context.mounted) {
+                  afficherToast(context, 'Erreur export PDF : $e',
+                      estErreur: true);
+                }
+              } finally {
+                if (mounted) setState(() => _loading = false);
+              }
+            },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 12),
+        decoration: BoxDecoration(
+          color: AppColors.encre.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: AppColors.encre.withValues(alpha: 0.20),
+          ),
+        ),
+        child: _loading
+            ? const Center(
+                child: SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.encre,
+                  ),
+                ),
+              )
+            : const Text(
+                '📄 Exporter le PV (PDF)',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.encre,
+                ),
+              ),
       ),
     );
   }

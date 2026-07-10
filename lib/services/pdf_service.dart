@@ -352,6 +352,294 @@ class PdfService {
     );
   }
 
+  // ── §PV : Procès-verbal de vote nominatif ───────────────────────────────
+  /// Génère et partage le PDF du PV d'un vote.
+  /// [voixDetaillees] est la liste raw depuis Supabase (membresAvecPin RPC
+  /// ou voix stockées) : [{membreId, membreNom, choix, le}]
+  static Future<void> exporterPvVote({
+    required Tontine tontine,
+    required Vote vote,
+    required List<Map<String, dynamic>> voixDetaillees,
+    required String nomGestionnaire,
+  }) async {
+    final data = tontine.data;
+    final doc = pw.Document();
+
+    final regular = await PdfGoogleFonts.notoSansRegular();
+    final bold = await PdfGoogleFonts.notoSansBold();
+    final theme = pw.ThemeData.withFont(base: regular, bold: bold);
+
+    // Décompte
+    final oui = voixDetaillees.where((v) => v['choix'] == 'oui').length;
+    final non = voixDetaillees.where((v) => v['choix'] == 'non').length;
+    final abstention = voixDetaillees.where((v) => v['choix'] == 'abstention').length;
+    final adopte = vote.adopte;
+    final totalVotants = voixDetaillees.length;
+    final totalMembres = data.membres.length;
+
+    // Membres n'ayant pas voté
+    final ayantVoteIds = voixDetaillees.map((v) => v['membreId'] as String? ?? '').toSet();
+    final nonVotants = data.membres.where((m) => !ayantVoteIds.contains(m.id)).toList();
+
+    doc.addPage(
+      pw.MultiPage(
+        theme: theme,
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        header: (_) => _buildPvHeader(data, tontine.code, vote, bold, regular),
+        footer: (ctx) => _buildFooter(ctx, regular),
+        build: (_) => [
+          // ── Bloc résumé ───────────────────────────────────────────────────
+          pw.Container(
+            padding: const pw.EdgeInsets.all(12),
+            decoration: pw.BoxDecoration(
+              color: _encre,
+              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+            ),
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      adopte == true
+                          ? '✓ ADOPTÉ'
+                          : adopte == false
+                              ? '✗ REJETÉ'
+                              : 'SANS DÉCISION',
+                      style: pw.TextStyle(font: bold, fontSize: 14, color: _or),
+                    ),
+                    pw.SizedBox(height: 4),
+                    pw.Text(
+                      'Participation : $totalVotants / $totalMembres membres',
+                      style: pw.TextStyle(font: regular, fontSize: 9,
+                          color: PdfColors.white),
+                    ),
+                  ],
+                ),
+                pw.Row(
+                  children: [
+                    _compteurVote('Oui', oui, bold, regular),
+                    pw.SizedBox(width: 16),
+                    _compteurVote('Non', non, bold, regular),
+                    pw.SizedBox(width: 16),
+                    _compteurVote('Abst.', abstention, bold, regular),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: 16),
+
+          // ── Tableau nominatif des votes ───────────────────────────────────
+          _titreSousSection('Dépouillement nominatif', bold),
+          pw.SizedBox(height: 6),
+          if (voixDetaillees.isEmpty)
+            pw.Text(
+              'Aucune voix enregistrée.',
+              style: pw.TextStyle(font: regular, fontSize: 10,
+                  color: _texteDoux),
+            )
+          else
+            pw.TableHelper.fromTextArray(
+              headers: ['#', 'Membre', 'Vote', 'Horodatage'],
+              headerStyle: pw.TextStyle(font: bold, fontSize: 9,
+                  color: PdfColors.white),
+              headerDecoration: const pw.BoxDecoration(color: _encre),
+              cellStyle: pw.TextStyle(font: regular, fontSize: 9),
+              cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6,
+                  vertical: 4),
+              columnWidths: {
+                0: const pw.FixedColumnWidth(24),
+                1: const pw.FlexColumnWidth(2),
+                2: const pw.FixedColumnWidth(60),
+                3: const pw.FixedColumnWidth(90),
+              },
+              data: voixDetaillees.asMap().entries.map((e) {
+                final i = e.key + 1;
+                final v = e.value;
+                final membreNom = v['membreNom'] as String?
+                    ?? data.membres
+                        .where((m) => m.id == (v['membreId'] as String?))
+                        .map((m) => m.nom)
+                        .firstOrNull
+                    ?? '—';
+                final choix = v['choix'] as String? ?? '—';
+                final choixLabel = choix == 'oui'
+                    ? '✓ Oui'
+                    : choix == 'non'
+                        ? '✗ Non'
+                        : '○ Abst.';
+
+                // Timestamp du vote
+                DateTime? ts;
+                final leRaw = v['le'] ?? v['date'];
+                if (leRaw is int) {
+                  ts = DateTime.fromMillisecondsSinceEpoch(leRaw);
+                } else if (leRaw is String && leRaw.isNotEmpty) {
+                  ts = DateTime.tryParse(leRaw);
+                }
+
+                return [
+                  '$i',
+                  membreNom,
+                  choixLabel,
+                  ts != null ? Formatters.dateHeure(ts) : '—',
+                ];
+              }).toList(),
+            ),
+          pw.SizedBox(height: 16),
+
+          // ── Non-votants ──────────────────────────────────────────────────
+          if (nonVotants.isNotEmpty) ...[
+            _titreSousSection(
+                'Membres n\'ayant pas voté (${nonVotants.length})', bold),
+            pw.SizedBox(height: 6),
+            pw.Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: nonVotants.map((m) => pw.Container(
+                padding: const pw.EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 4),
+                decoration: pw.BoxDecoration(
+                  color: _fondGris,
+                  borderRadius:
+                      const pw.BorderRadius.all(pw.Radius.circular(4)),
+                ),
+                child: pw.Text(m.nom,
+                    style:
+                        pw.TextStyle(font: regular, fontSize: 9)),
+              )).toList(),
+            ),
+            pw.SizedBox(height: 16),
+          ],
+
+          // ── Signature du gestionnaire ────────────────────────────────────
+          pw.SizedBox(height: 24),
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text('Gestionnaire :',
+                      style: pw.TextStyle(font: regular, fontSize: 9,
+                          color: _texteDoux)),
+                  pw.SizedBox(height: 2),
+                  pw.Text(nomGestionnaire,
+                      style: pw.TextStyle(font: bold, fontSize: 10,
+                          color: _encre)),
+                  pw.SizedBox(height: 24),
+                  pw.Container(width: 120, height: 1,
+                      color: _encre),
+                  pw.Text('Signature',
+                      style: pw.TextStyle(font: regular, fontSize: 8,
+                          color: _texteDoux)),
+                ],
+              ),
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.end,
+                children: [
+                  pw.Text('Clos le :',
+                      style: pw.TextStyle(font: regular, fontSize: 9,
+                          color: _texteDoux)),
+                  pw.SizedBox(height: 2),
+                  pw.Text(
+                    vote.dateCloture != null
+                        ? Formatters.dateHeure(DateTime.tryParse(vote.dateCloture!))
+                        : Formatters.dateHeure(DateTime.now()),
+                    style: pw.TextStyle(font: bold, fontSize: 10,
+                        color: _encre),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    final bytes = await doc.save();
+    await Printing.sharePdf(
+      bytes: bytes,
+      filename: 'TontineClair_PV_Vote_${data.nom.replaceAll(' ', '_')}'
+          '_${vote.id.substring(0, 6).toUpperCase()}.pdf',
+    );
+  }
+
+  // En-tête spécifique PV vote
+  static pw.Widget _buildPvHeader(
+    TontineData data,
+    String code,
+    Vote vote,
+    pw.Font bold,
+    pw.Font regular,
+  ) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text('TontineClair',
+                style: pw.TextStyle(font: bold, fontSize: 18,
+                    color: _encre)),
+            pw.Text(
+              'PV généré le ${Formatters.dateHeure(DateTime.now())}',
+              style: pw.TextStyle(font: regular, fontSize: 9,
+                  color: _texteDoux),
+            ),
+          ],
+        ),
+        pw.SizedBox(height: 4),
+        pw.Text(
+          'Procès-verbal de vote — ${data.nom}',
+          style: pw.TextStyle(font: bold, fontSize: 14, color: _encre),
+        ),
+        pw.SizedBox(height: 3),
+        pw.Text(
+          'Code tontine : $code  ·  Vote réf. : ${vote.id.substring(0, 8).toUpperCase()}',
+          style: pw.TextStyle(font: regular, fontSize: 10,
+              color: _texteDoux),
+        ),
+        pw.SizedBox(height: 4),
+        pw.Container(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: pw.BoxDecoration(
+            color: _fondGris,
+            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+          ),
+          child: pw.Text(
+            'Question : ${vote.question}',
+            style: pw.TextStyle(font: bold, fontSize: 11, color: _encre),
+          ),
+        ),
+        pw.Divider(color: _or, thickness: 1.5),
+        pw.SizedBox(height: 8),
+      ],
+    );
+  }
+
+  // Compteur de vote pour le bloc résumé
+  static pw.Widget _compteurVote(
+    String label,
+    int count,
+    pw.Font bold,
+    pw.Font regular,
+  ) {
+    return pw.Column(
+      children: [
+        pw.Text('$count',
+            style: pw.TextStyle(font: bold, fontSize: 16,
+                color: PdfColors.white)),
+        pw.Text(label,
+            style: pw.TextStyle(font: regular, fontSize: 8,
+                color: PdfColors.grey400)),
+      ],
+    );
+  }
+
   // ── Titre de section avec soulignement or ──────────────────────────────
   static pw.Widget _titreSousSection(String titre, pw.Font bold) {
     return pw.Column(
