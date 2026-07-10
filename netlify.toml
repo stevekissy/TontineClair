@@ -11,19 +11,28 @@
 # ⚠️  NE JAMAIS mettre la clé service_role dans Netlify côté Flutter Web.
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# IMPORTANT — Stratégie de déploiement TontineClair
+#
+# Flutter n'est pas disponible dans l'environnement de build Netlify standard.
+# Le build est donc réalisé dans le sandbox de développement, et le résultat
+# (dossier build/web zippé) est uploadé directement via l'API Netlify.
+#
+# Le repo GitHub sert UNIQUEMENT de sauvegarde du code source.
+# Les pushs GitHub ne déclenchent PAS de build automatique (stop_builds=true).
+#
+# Workflow de mise en production :
+#   1. Modifier le code dans le sandbox
+#   2. flutter build web --release --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...
+#   3. Upload ZIP via API Netlify (automatique depuis le sandbox)
+# ═══════════════════════════════════════════════════════════════════════════════
+
 [build]
-  # Commande de build : installe Flutter, récupère les dépendances,
-  # construit l'app Web en injectant les credentials via --dart-define.
-  command = """
-    git clone https://github.com/flutter/flutter.git --depth 1 -b 3.35.4 /opt/flutter-build 2>/dev/null || true &&
-    export PATH="$PATH:/opt/flutter-build/bin" &&
-    flutter pub get &&
-    flutter build web --release \
-      --dart-define=SUPABASE_URL=$SUPABASE_URL \
-      --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
-  """
-  # Dossier publié sur Netlify après le build
+  # Commande intentionnellement vide — le build se fait dans le sandbox, pas ici.
+  # Si Netlify tente quand même un build, il se termine immédiatement sans erreur.
+  command = "echo 'Build géré depuis le sandbox de développement — voir README.md'"
   publish = "build/web"
+  ignore = "/bin/true"  # Ignore toujours → jamais de build automatique
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Redirections SPA — OBLIGATOIRE pour Flutter Web
