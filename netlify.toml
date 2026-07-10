@@ -1,71 +1,39 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-# netlify.toml — Configuration de déploiement TontineClair
+# TontineClair — netlify.toml
 #
-# Architecture :  GitHub → Netlify (build Flutter Web) → Supabase (données)
+# STRATÉGIE : déploiement par ZIP direct depuis le sandbox (pas de build Netlify)
+# Le build Flutter se fait dans le sandbox, le résultat est uploadé via API.
 #
-# Variables d'environnement à configurer dans Netlify UI :
-#   Site settings → Environment variables :
-#     SUPABASE_URL      = https://ubrqtcxbxcmvmxleiglh.supabase.co
-#     SUPABASE_ANON_KEY = eyJhbGci... (clé anon publique uniquement)
-#
-# ⚠️  NE JAMAIS mettre la clé service_role dans Netlify côté Flutter Web.
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# IMPORTANT — Stratégie de déploiement TontineClair
-#
-# Flutter n'est pas disponible dans l'environnement de build Netlify standard.
-# Le build est donc réalisé dans le sandbox de développement, et le résultat
-# (dossier build/web zippé) est uploadé directement via l'API Netlify.
-#
-# Le repo GitHub sert UNIQUEMENT de sauvegarde du code source.
-# Les pushs GitHub ne déclenchent PAS de build automatique (stop_builds=true).
-#
-# Workflow de mise en production :
-#   1. Modifier le code dans le sandbox
-#   2. flutter build web --release --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...
-#   3. Upload ZIP via API Netlify (automatique depuis le sandbox)
+# Ce fichier est présent uniquement pour les redirections SPA et headers.
+# La commande de build est intentionnellement "exit 0" pour éviter toute erreur
+# si Netlify tente quand même un build.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 [build]
-  # Commande intentionnellement vide — le build se fait dans le sandbox, pas ici.
-  # Si Netlify tente quand même un build, il se termine immédiatement sans erreur.
-  command = "echo 'Build géré depuis le sandbox de développement — voir README.md'"
+  command = "exit 0"
   publish = "build/web"
-  ignore = "/bin/true"  # Ignore toujours → jamais de build automatique
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Redirections SPA — OBLIGATOIRE pour Flutter Web
-#
-# Sans cette règle, toute navigation directe vers une URL interne (ex: /tontine/ABC)
-# ou toute actualisation de page retourne une erreur 404 Netlify.
-# Toutes les routes sont renvoyées vers index.html qui gère le routage Flutter.
-# ─────────────────────────────────────────────────────────────────────────────
+# Toutes les routes renvoient vers index.html (routage côté Flutter)
 [[redirects]]
   from   = "/*"
   to     = "/index.html"
   status = 200
 
-# ─────────────────────────────────────────────────────────────────────────────
-# En-têtes de sécurité HTTP
-# ─────────────────────────────────────────────────────────────────────────────
+# En-têtes de sécurité
 [[headers]]
   for = "/*"
   [headers.values]
     X-Frame-Options        = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy        = "strict-origin-when-cross-origin"
-    # Permissions-Policy restreint les APIs navigateur inutilisées
-    Permissions-Policy     = "camera=(), microphone=(), geolocation=()"
 
 [[headers]]
   for = "/flutter_service_worker.js"
   [headers.values]
-    # Le Service Worker doit être revalidé à chaque visite
     Cache-Control = "no-cache"
 
 [[headers]]
   for = "/assets/**"
   [headers.values]
-    # Les assets Flutter ont des noms hashés → cache agressif OK
     Cache-Control = "public, max-age=31536000, immutable"
