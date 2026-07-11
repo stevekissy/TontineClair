@@ -416,6 +416,98 @@ class SupabaseService {
     });
     return result == true;
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ADMIN DASHBOARD — RPCs v1 (supabase-admin.sql)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// KPI cards : total tontines, Premium, Gratuites, membres, revenus, alertes
+  static Future<Map<String, dynamic>> adminStatsGlobales(String cle) async {
+    final result = await rpc('admin_stats_globales', {'p_cle': cle});
+    if (result == null) return {};
+    if (result is Map<String, dynamic>) return result;
+    return {};
+  }
+
+  /// Tableau des tontines (filtre: toutes|premium|gratuites|expires)
+  static Future<List<Map<String, dynamic>>> adminDashboardTontines(
+    String cle, {
+    String filtre = 'toutes',
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final result = await rpc('admin_dashboard_tontines', {
+      'p_cle':    cle,
+      'p_filtre': filtre,
+      'p_limit':  limit,
+      'p_offset': offset,
+    });
+    if (result == null) return [];
+    if (result is List) return result.cast<Map<String, dynamic>>();
+    return [];
+  }
+
+  /// Liste des abonnements (statut: tous|actif|expire|en_attente)
+  static Future<List<Map<String, dynamic>>> adminListerAbonnements(
+    String cle, {
+    String statut = 'tous',
+    int limit = 50,
+  }) async {
+    final result = await rpc('admin_lister_abonnements', {
+      'p_cle':    cle,
+      'p_statut': statut,
+      'p_limit':  limit,
+    });
+    if (result == null) return [];
+    if (result is List) return result.cast<Map<String, dynamic>>();
+    return [];
+  }
+
+  /// Alertes admin (expirations, demandes en attente, inactivité)
+  static Future<List<Map<String, dynamic>>> adminAlertes(String cle) async {
+    final result = await rpc('admin_alertes', {'p_cle': cle});
+    if (result == null) return [];
+    if (result is List) return result.cast<Map<String, dynamic>>();
+    return [];
+  }
+
+  /// Enregistrer un abonnement Premium lors de l'activation
+  static Future<bool> adminEnregistrerAbonnement({
+    required String cle,
+    required String code,
+    String formule = 'mensuel',
+    int montant = 2500,
+    String? moyen,
+    String? reference,
+    String? note,
+  }) async {
+    final result = await rpc('admin_enregistrer_abonnement', {
+      'p_cle':       cle,
+      'p_code':      code.toUpperCase(),
+      'p_formule':   formule,
+      'p_montant':   montant,
+      if (moyen != null)     'p_moyen':     moyen,
+      if (reference != null) 'p_reference': reference,
+      if (note != null)      'p_note':      note,
+    });
+    return result == true;
+  }
+
+  /// Évolution mensuelle : nouvelles tontines, Premium actives, revenus (12 mois)
+  static Future<List<Map<String, dynamic>>> adminStatsMensuelles(String cle) async {
+    final result = await rpc('admin_stats_mensuelles', {'p_cle': cle});
+    if (result == null) return [];
+    if (result is List) return result.cast<Map<String, dynamic>>();
+    return [];
+  }
+
+  /// Top 10 tontines par nombre de membres
+  static Future<List<Map<String, dynamic>>> adminTopTontines(String cle) async {
+    final result = await rpc('admin_top_tontines', {'p_cle': cle});
+    if (result == null) return [];
+    if (result is List) return result.cast<Map<String, dynamic>>();
+    return [];
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

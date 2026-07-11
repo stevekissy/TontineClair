@@ -3,6 +3,7 @@ import '../services/supabase_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
+import 'admin_dashboard_screen.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -19,6 +20,7 @@ class _AdminScreenState extends State<AdminScreen> {
   List<Map<String, dynamic>> _demandes = [];
   List<Map<String, dynamic>> _tontines = [];
   int _onglet = 0;
+  String get _cle => _cleCtrl.text.trim();
 
   @override
   void dispose() {
@@ -179,27 +181,38 @@ class _AdminScreenState extends State<AdminScreen> {
       children: [
         // Onglets
         Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              _OngletBtn(
-                label: 'Demandes (${_demandes.length})',
-                selected: _onglet == 0,
-                onTap: () => setState(() => _onglet = 0),
-              ),
-              const SizedBox(width: 10),
-              _OngletBtn(
-                label: 'Tontines (${_tontines.length})',
-                selected: _onglet == 1,
-                onTap: () => setState(() => _onglet = 1),
-              ),
-            ],
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _OngletBtn(
+                  label: 'Demandes (${_demandes.length})',
+                  selected: _onglet == 0,
+                  onTap: () => setState(() => _onglet = 0),
+                ),
+                const SizedBox(width: 10),
+                _OngletBtn(
+                  label: 'Tontines (${_tontines.length})',
+                  selected: _onglet == 1,
+                  onTap: () => setState(() => _onglet = 1),
+                ),
+                const SizedBox(width: 10),
+                _OngletBtn(
+                  label: '📊 Dashboard',
+                  selected: _onglet == 2,
+                  onTap: () => setState(() => _onglet = 2),
+                ),
+              ],
+            ),
           ),
         ),
         Expanded(
           child: _onglet == 0
               ? _ListeDemandes()
-              : _ListeTontines(),
+              : _onglet == 1
+                  ? _ListeTontines()
+                  : AdminDashboardScreen(cle: _cle),
         ),
       ],
     );
