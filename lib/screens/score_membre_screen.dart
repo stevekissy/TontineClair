@@ -104,7 +104,13 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
           .where((v) => (v['membre_id'] as String?) == widget.membre.id)
           .toList();
 
-      // Historique des scores (v6)
+      // ── Calcul du score (SOURCE UNIQUE : ScoreService) ───────────────────
+      if (!mounted) return;
+      final data   = context.read<TontineProvider>().courante!.data;
+      final detail = ScoreService.calculerScore(data, widget.membre.id, voixMembre);
+      final recs   = ScoreService.genererRecommandations(data, widget.membre, detail, voixMembre);
+
+      // ── Historique des scores (v6) ───────────────────────────────────────
       List<HistoriqueScore> historique = [];
       try {
         final histRaw = await SupabaseService.rpc(
@@ -117,10 +123,37 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
               .toList();
         }
       } catch (_) {
-        // Table scores_historique absente (avant v6) — mode dégradé
+        // Table scores_historique absente (avant v6) — mode dégradé silencieux
       }
 
-      // Propositions de retrait (v6)
+      // ── Backfill automatique : initialiser le score si historique vide ───
+      // Si la table v6 vient d'être créée et qu'aucun historique n'existe
+      // pour ce membre, on insère l'entrée initiale avec le score calculé.
+      if (historique.isEmpty && detail.score != 50) {
+        try {
+          await SupabaseService.rpc('init_score_membre', {
+            'p_code':      widget.code,
+            'p_membre_id': widget.membre.id,
+            'p_score':     detail.score,
+            'p_desc':      'Score calculé depuis les données existantes '
+                           '(${detail.composantes.length} composantes)',
+          });
+          // Re-lire l'historique après init
+          final histRaw2 = await SupabaseService.rpc(
+            'lire_historique_score',
+            {'p_code': widget.code, 'p_membre_id': widget.membre.id},
+          );
+          if (histRaw2 is List) {
+            historique = histRaw2
+                .map((e) => HistoriqueScore.fromJson(e as Map<String, dynamic>))
+                .toList();
+          }
+        } catch (_) {
+          // v6 non déployée — silencieux, l'app reste fonctionnelle
+        }
+      }
+
+      // ── Propositions de retrait (v6) ─────────────────────────────────────
       List<PropositionRetrait> propositions = [];
       try {
         final propRaw = await SupabaseService.rpc(
@@ -137,10 +170,6 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
       } catch (_) {}
 
       if (!mounted) return;
-
-      final data = context.read<TontineProvider>().courante!.data;
-      final detail = ScoreService.calculerScore(data, widget.membre.id, voixMembre);
-      final recs = ScoreService.genererRecommandations(data, widget.membre, detail, voixMembre);
 
       setState(() {
         _historique = historique;
@@ -1268,8 +1297,8 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 32),
               child: Text(
-                'L\'historique sera alimenté après déploiement de supabase-v6.sql '
-                'et après chaque événement (cotisation, prêt, vote...).',
+                'L\'historique s\'enrichit automatiquement après chaque événement '
+                '(cotisation, prêt, vote, sanction...).',
                 style: const TextStyle(color: AppColors.texteDoux, fontSize: 11),
                 textAlign: TextAlign.center,
               ),
@@ -1990,7 +2019,7 @@ class _CarteHistoriqueSimulee extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Pour voir l\'historique complet des évolutions, déployez supabase-v6.sql dans Supabase › SQL Editor.',
+            'L\'historique s\'enrichira après les prochains événements (cotisations, votes, prêts).',
             style: TextStyle(fontSize: 10, color: AppColors.texteDoux),
             textAlign: TextAlign.center,
           ),

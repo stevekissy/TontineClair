@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
+import '../services/score_service.dart';
 import '../services/supabase_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
@@ -41,64 +42,10 @@ String _labelScore(int score) {
   return 'Très risqué';
 }
 
-// ─── Formule scoreConfiance (fidèle au PDF et à index.html) ──────────────────
-int _scoreConfiance(TontineData data, String membreId) {
-  int score = 50;
-
-  // Stats du membre dans data.stats[membreId]
-  final statsRaw = data.stats[membreId];
-  if (statsRaw is Map) {
-    final toursTotal = (statsRaw['toursTotal'] as num?)?.toInt() ?? 0;
-    final toursPayes = (statsRaw['toursPayes'] as num?)?.toInt() ?? 0;
-    final retards = (statsRaw['retards'] as num?)?.toInt() ?? 0;
-    final penalites = (statsRaw['penalites'] as num?)?.toInt() ?? 0;
-    final pretsRembourses = (statsRaw['pretsRembourses'] as num?)?.toInt() ?? 0;
-
-    if (toursTotal > 0) {
-      score += (30 * toursPayes / toursTotal).round(); // max +30
-      score -= math.min(20, retards * 4);              // max -20
-    }
-    score -= math.min(15, penalites * 5); // max -15
-    score += math.min(10, pretsRembourses * 5); // max +10
-  }
-
-  // Prêts en retard (actifs, dont des échéances sont dépassées)
-  final maintenant = DateTime.now();
-  final pretsEnRetard = data.prets.where((p) {
-    if (p.emprunteurId != membreId) return false;
-    if (p.statut == 'soldé' || p.statut == 'solde') return false;
-    // Vérifier si une échéance est en retard
-    for (final ech in p.echeancier) {
-      final dateEch = ech['date'] as String?;
-      final paye = ech['paye'] as bool? ?? false;
-      if (!paye && dateEch != null) {
-        final d = DateTime.tryParse(dateEch);
-        if (d != null && d.isBefore(maintenant)) return true;
-      }
-    }
-    return false;
-  }).length;
-  score -= pretsEnRetard * 15; // -15 par prêt en retard
-
-  // Ancienneté du membre (creeLe dans stats ou dans membre)
-  final statsRaw2 = data.stats[membreId];
-  if (statsRaw2 is Map) {
-    final creeLe = statsRaw2['creeLe'];
-    DateTime? dateCreation;
-    if (creeLe is int) {
-      dateCreation = DateTime.fromMillisecondsSinceEpoch(creeLe);
-    } else if (creeLe is String) {
-      dateCreation = DateTime.tryParse(creeLe);
-    }
-    if (dateCreation != null) {
-      final moisAnciennete =
-          maintenant.difference(dateCreation).inDays ~/ 30;
-      score += math.min(10, moisAnciennete); // max +10
-    }
-  }
-
-  return score.clamp(0, 100);
-}
+// ─── Score via ScoreService (SOURCE UNIQUE de calcul) ────────────────────────
+// Les voix du membre sont passées depuis _voixParMembre chargé via Supabase.
+// Cela garantit que la liste des membres affiche exactement le même score
+// que la fiche détaillée et le classement.
 
 // ─── Écran principal ──────────────────────────────────────────────────────────
 class MembresScreen extends StatefulWidget {
@@ -760,10 +707,11 @@ class _MembresScreenState extends State<MembresScreen> {
                               ...membres.asMap().entries.map((e) {
                                 final idx = e.key;
                                 final m = e.value;
-                                final score = _scoreConfiance(data, m.id);
+                                final voixM = _voixParMembre[m.id] ?? [];
+                                final scoreCalc = ScoreService.calculerScore(data, m.id, voixM);
+                                final score = scoreCalc.score;
                                 final aPin = _membresAvecPin.contains(m.id);
                                 final pinProvisoire = _pinsProvisoires[m.id];
-                                final voix = _voixParMembre[m.id] ?? [];
 
                                 return _CarteMembre(
                                   membre: m,
@@ -771,7 +719,7 @@ class _MembresScreenState extends State<MembresScreen> {
                                   score: score,
                                   aPin: aPin,
                                   pinProvisoire: pinProvisoire,
-                                  voixMembre: voix,
+                                  voixMembre: voixM,
                                   data: data,
                                   estGest: estGest,
                                   code: widget.code,
