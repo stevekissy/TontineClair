@@ -1,7 +1,7 @@
 -- ============================================================
--- TontineClair — Migration Admin Dashboard v1.1 (FIX)
+-- TontineClair — Migration Admin Dashboard v1.2 (FIX)
 -- Fichier   : supabase-admin-fix.sql
--- Version   : 1.1 — corrige les conflits avec supabase-v5.sql
+-- Version   : 1.2 — corrige admin_alertes ORDER BY (42703)
 -- Date      : 2025-07
 --
 -- PROBLÈME CORRIGÉ :
@@ -378,6 +378,9 @@ grant execute on function admin_lister_abonnements(text, text, int) to anon;
 -- ─────────────────────────────────────────────────────────────
 
 -- 3d) Alertes administrateur
+-- FIX v1.2 : priorite extraite comme vraie colonne SQL (ORDER BY fonctionne)
+--            Dans un UNION ALL, ORDER BY dans jsonb_agg ne peut pas référencer
+--            une clé JSONB — on crée une colonne SQL séparée "prio".
 create or replace function admin_alertes(p_cle text)
 returns jsonb
 language plpgsql security definer set search_path = public
@@ -386,18 +389,19 @@ begin
   if not _verif_admin_cle(p_cle) then return '[]'::jsonb; end if;
 
   return (
-    select coalesce(jsonb_agg(alerte order by priorite), '[]'::jsonb)
+    -- ✅ FIX : ORDER BY sur la colonne SQL "prio", pas sur la clé JSONB
+    select coalesce(jsonb_agg(alerte order by prio), '[]'::jsonb)
     from (
 
-      -- Abonnements qui expirent dans 7 jours
+      -- Abonnements qui expirent dans 7 jours (priorité 1 — critique)
       select jsonb_build_object(
         'type',     'expiration_proche',
         'titre',    count(*)::text || ' abonnement(s) expire(nt) dans moins de 7 jours',
         'detail',   string_agg(code || ' (' || to_char(plan_expire, 'DD/MM/YYYY') || ')', ', '),
         'nb',       count(*),
-        'niveau',   'alerte',
-        'priorite', 1
-      ) as alerte
+        'niveau',   'alerte'
+      ) as alerte,
+      1 as prio   -- ✅ vraie colonne SQL, ORDER BY la trouve
       from tontines
       where plan = 'premium'
         and plan_expire > now()
@@ -406,15 +410,15 @@ begin
 
       union all
 
-      -- Premium expirés non renouvelés
+      -- Premium expirés non renouvelés (priorité 2)
       select jsonb_build_object(
         'type',     'abonnements_expires',
         'titre',    count(*)::text || ' tontine(s) Premium expirée(s)',
         'detail',   'Ces tontines sont repassées en mode gratuit',
         'nb',       count(*),
-        'niveau',   'info',
-        'priorite', 2
-      )
+        'niveau',   'info'
+      ) as alerte,
+      2 as prio
       from tontines
       where plan = 'premium'
         and plan_expire is not null
@@ -423,30 +427,30 @@ begin
 
       union all
 
-      -- Demandes Premium en attente
+      -- Demandes Premium en attente (priorité 1 — critique)
       select jsonb_build_object(
         'type',     'demandes_attente',
         'titre',    count(*)::text || ' demande(s) Premium en attente de validation',
         'detail',   'Vérifier l''onglet Demandes',
         'nb',       count(*),
-        'niveau',   'alerte',
-        'priorite', 1
-      )
+        'niveau',   'alerte'
+      ) as alerte,
+      1 as prio
       from demandes_premium
       where statut = 'en attente'
       having count(*) > 0
 
       union all
 
-      -- Tontines Premium inactives (aucun vote ni prêt depuis 30 jours)
+      -- Tontines Premium inactives depuis 30 jours (priorité 3 — info)
       select jsonb_build_object(
         'type',     'tontines_inactives',
         'titre',    count(*)::text || ' tontine(s) Premium sans activité depuis 30 jours',
         'detail',   'Pas de vote ni de prêt enregistré',
         'nb',       count(*),
-        'niveau',   'info',
-        'priorite', 3
-      )
+        'niveau',   'info'
+      ) as alerte,
+      3 as prio
       from tontines
       where plan = 'premium'
         and (plan_expire is null or plan_expire > now())

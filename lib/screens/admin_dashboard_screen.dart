@@ -132,45 +132,101 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   }
 
   // ─── Chargement ────────────────────────────────────────────────────────────
+  // FIX v1.2 : chargements indépendants avec catchError
+  // → si un seul RPC échoue, le dashboard reste fonctionnel
+  // → les données disponibles s'affichent, les autres restent vides
 
   Future<void> _charger() async {
     setState(() {
       _loading = true;
-      _erreur = null;
+      _erreur  = null;
     });
+
+    // Erreurs collectées par RPC (affichage en console, pas écran blanc)
+    final erreurs = <String>[];
+
+    // ── RPC 1 : stats globales (KPI) ─────────────────────────────────────
+    Map<String, dynamic> statsJson = {};
     try {
-      final results = await Future.wait([
-        SupabaseService.adminStatsGlobales(widget.cle),
-        SupabaseService.adminDashboardTontines(widget.cle, filtre: 'toutes', limit: 200),
-        SupabaseService.adminListerAbonnements(widget.cle, statut: 'tous', limit: 100),
-        SupabaseService.adminAlertes(widget.cle),
-        SupabaseService.adminStatsMensuelles(widget.cle),
-        SupabaseService.adminTopTontines(widget.cle),
-      ]);
-
-      final statsJson = results[0] as Map<String, dynamic>;
-      final tontines  = results[1] as List<Map<String, dynamic>>;
-      final abos      = results[2] as List<Map<String, dynamic>>;
-      final alertes   = results[3] as List<Map<String, dynamic>>;
-      final mensuel   = results[4] as List<Map<String, dynamic>>;
-      final top10     = results[5] as List<Map<String, dynamic>>;
-
-      setState(() {
-        _stats         = _StatsGlobales.fromJson(statsJson);
-        _tontines      = tontines;
-        _tontinesFiltrees = tontines;
-        _abonnements   = abos;
-        _alertes       = alertes;
-        _mensuel       = mensuel;
-        _top10         = top10;
-        _loading       = false;
-      });
+      statsJson = await SupabaseService.adminStatsGlobales(widget.cle);
     } catch (e) {
-      setState(() {
-        _erreur  = 'Erreur de chargement : $e';
-        _loading = false;
-      });
+      erreurs.add('stats_globales: $e');
     }
+
+    // ── RPC 2 : liste tontines ────────────────────────────────────────────
+    List<Map<String, dynamic>> tontines = [];
+    try {
+      tontines = await SupabaseService.adminDashboardTontines(
+        widget.cle, filtre: 'toutes', limit: 200,
+      );
+    } catch (e) {
+      erreurs.add('dashboard_tontines: $e');
+    }
+
+    // ── RPC 3 : abonnements ───────────────────────────────────────────────
+    List<Map<String, dynamic>> abos = [];
+    try {
+      abos = await SupabaseService.adminListerAbonnements(
+        widget.cle, statut: 'tous', limit: 100,
+      );
+    } catch (e) {
+      erreurs.add('lister_abonnements: $e');
+    }
+
+    // ── RPC 4 : alertes (était le RPC qui faisait tout échouer) ──────────
+    List<Map<String, dynamic>> alertes = [];
+    try {
+      alertes = await SupabaseService.adminAlertes(widget.cle);
+    } catch (e) {
+      // Échec toléré — alertes affichées vides, dashboard reste accessible
+      erreurs.add('admin_alertes: $e');
+    }
+
+    // ── RPC 5 : stats mensuelles (graphiques) ─────────────────────────────
+    List<Map<String, dynamic>> mensuel = [];
+    try {
+      mensuel = await SupabaseService.adminStatsMensuelles(widget.cle);
+    } catch (e) {
+      erreurs.add('stats_mensuelles: $e');
+    }
+
+    // ── RPC 6 : top tontines ─────────────────────────────────────────────
+    List<Map<String, dynamic>> top10 = [];
+    try {
+      top10 = await SupabaseService.adminTopTontines(widget.cle);
+    } catch (e) {
+      erreurs.add('top_tontines: $e');
+    }
+
+    // Logger les erreurs partielles en console (sans bloquer l'UI)
+    if (erreurs.isNotEmpty) {
+      for (final err in erreurs) {
+        debugPrint('[AdminDashboard] RPC partiel: $err');
+      }
+    }
+
+    // Si TOUS les RPCs ont échoué et que statsJson est vide → erreur totale
+    final echecTotal = statsJson.isEmpty && tontines.isEmpty &&
+        abos.isEmpty && mensuel.isEmpty && top10.isEmpty;
+
+    setState(() {
+      if (echecTotal && erreurs.isNotEmpty) {
+        // Afficher seulement si tout est vide (pas d'écran blanc pour erreur partielle)
+        _erreur = 'Impossible de charger le dashboard.\n'
+            'Vérifiez votre clé admin et que les RPCs Supabase sont déployés.\n'
+            '(${erreurs.first})';
+      }
+      _stats            = statsJson.isNotEmpty
+          ? _StatsGlobales.fromJson(statsJson)
+          : _StatsGlobales.vide();
+      _tontines         = tontines;
+      _tontinesFiltrees = tontines;
+      _abonnements      = abos;
+      _alertes          = alertes;
+      _mensuel          = mensuel;
+      _top10            = top10;
+      _loading          = false;
+    });
   }
 
   Future<void> _recharger() => _charger();
