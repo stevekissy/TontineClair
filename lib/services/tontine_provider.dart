@@ -175,6 +175,87 @@ class TontineProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Nouveau Cycle ──────────────────────────────────────────────────────────
+
+  /// Propose un nouveau cycle en créant un vote de redémarrage.
+  /// [pin] : PIN du gestionnaire actif.
+  /// Retourne {ok: bool, vote_id?: String, erreur?: String}
+  Future<Map<String, dynamic>> proposerNouveauCycle({required String pin}) async {
+    if (_courante == null || _gestActifNom == null) {
+      return {'ok': false, 'erreur': 'Session gestionnaire non active.'};
+    }
+    try {
+      final result = await SupabaseService.proposerNouveauCycle(
+        code: _courante!.code,
+        nom: _gestActifNom!,
+        pin: pin,
+      );
+      if (result['ok'] == true) {
+        await chargerTontine(_courante!.code);
+      }
+      return result;
+    } catch (e) {
+      return {'ok': false, 'erreur': e.toString()};
+    }
+  }
+
+  /// Clôture le vote de redémarrage et calcule le résultat.
+  Future<Map<String, dynamic>> cloreVoteRedemarrage({
+    required String voteId,
+    required String pin,
+  }) async {
+    if (_courante == null || _gestActifNom == null) {
+      return {'ok': false, 'erreur': 'Session gestionnaire non active.'};
+    }
+    try {
+      final result = await SupabaseService.cloreVoteRedemarrage(
+        code: _courante!.code,
+        nom: _gestActifNom!,
+        pin: pin,
+        voteId: voteId,
+      );
+      if (result['ok'] == true) {
+        await chargerTontine(_courante!.code);
+      }
+      return result;
+    } catch (e) {
+      return {'ok': false, 'erreur': e.toString()};
+    }
+  }
+
+  /// Démarre le nouveau cycle après un vote favorable.
+  /// Retourne {ok: bool, cycleNum?: int, message?: String, erreur?: String}
+  Future<Map<String, dynamic>> demarrerNouveauCycle({
+    required String voteId,
+    required String pin,
+    int? montant,
+    String? periodicite,
+    String? echeance,
+    String? methodeOrdre,
+  }) async {
+    if (_courante == null || _gestActifNom == null) {
+      return {'ok': false, 'erreur': 'Session gestionnaire non active.'};
+    }
+    try {
+      final result = await SupabaseService.demarrerNouveauCycle(
+        code: _courante!.code,
+        nom: _gestActifNom!,
+        pin: pin,
+        voteId: voteId,
+        montant: montant,
+        periodicite: periodicite,
+        echeance: echeance,
+        methodeOrdre: methodeOrdre,
+      );
+      if (result['ok'] == true) {
+        await chargerTontine(_courante!.code);
+      }
+      return result;
+    } catch (e) {
+      return {'ok': false, 'erreur': e.toString()};
+    }
+  }
+
   String _genererCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     final rand = DateTime.now().millisecondsSinceEpoch;

@@ -15,6 +15,7 @@ import '../services/pdf_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
+import 'nouveau_cycle_screen.dart';
 
 // ─── Constante seuil score faible ────────────────────────────────────────────
 const int _seuilScoreFaible = 40;
@@ -339,7 +340,11 @@ class DashboardScreen extends StatelessWidget {
                     ],
 
                     // ── Prochain bénéficiaire ─────────────────────────────
-                    _CarteBeneficiaire(info: benefInfo),
+                    _CarteBeneficiaire(
+                      info: benefInfo,
+                      code: code,
+                      estGest: estGest,
+                    ),
                     const SizedBox(height: 16),
 
                     // ── Grille 8 indicateurs (2 colonnes) ────────────────
@@ -500,8 +505,14 @@ class _CarteAlerte extends StatelessWidget {
 // ─── Carte Prochain bénéficiaire ──────────────────────────────────────────────
 class _CarteBeneficiaire extends StatelessWidget {
   final ({String? nom, int montant, bool cycleTermine, DateTime? echeance, String periode}) info;
+  final String code;
+  final bool estGest;
 
-  const _CarteBeneficiaire({required this.info});
+  const _CarteBeneficiaire({
+    required this.info,
+    required this.code,
+    required this.estGest,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -525,10 +536,43 @@ class _CarteBeneficiaire extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Chaque membre a été servi. Relancez un nouveau cycle depuis la gestion.',
+                  'Tous les membres ont été servis. Souhaitez-vous proposer un nouveau cycle ?',
                   style: GoogleFonts.inter(
                     fontSize: 13,
                     color: Colors.white.withValues(alpha: 0.8),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => NouveauCycleScreen(code: code),
+                      ),
+                    ),
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: Text(
+                      estGest
+                          ? 'Proposer un nouveau cycle'
+                          : 'Voir le vote de redémarrage',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.or,
+                      foregroundColor: AppColors.encre,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
                   ),
                 ),
               ],

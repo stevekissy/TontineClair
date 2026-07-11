@@ -20,6 +20,7 @@ import 'tirage_screen.dart';
 import 'cotisations_screen.dart';
 import 'membres_screen.dart';
 import 'dashboard_screen.dart';
+import 'nouveau_cycle_screen.dart';
 
 class DetailScreen extends StatefulWidget {
   final String code;
@@ -683,6 +684,18 @@ class _ActionsRapides extends StatelessWidget {
                 ),
               ),
             ),
+            if (data.cycleTermine)
+              _ActionBtn(
+                icon: Icons.refresh_rounded,
+                label: 'Nouveau cycle',
+                badge: '🎉',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => NouveauCycleScreen(code: code),
+                  ),
+                ),
+              ),
           ],
         ),
       ],

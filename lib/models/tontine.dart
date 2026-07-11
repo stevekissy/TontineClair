@@ -482,6 +482,9 @@ class TontineData {
   /// true quand tous les membres ont été servis
   bool cycleTermine;
 
+  /// Numéro du cycle courant (1-based, incrémenté à chaque nouveau cycle)
+  int cycleNumero;
+
   bool tirageVerrouille;    // = ordreVerrouille ou ordreMeta.verrouille
   List<Gestionnaire> gestionnaires; // liste de noms seulement dans data (sans PIN)
   List<Membre> membres;
@@ -492,6 +495,7 @@ class TontineData {
   List<String> ordre;            // ordre de passage des membres (IDs)
   Map<String, dynamic> paiements; // paiements du tour courant {membreId: {...}}
   List<Map<String, dynamic>> historique; // historique des tours
+  List<Map<String, dynamic>> cyclesArchives; // archives des anciens cycles
   Map<String, dynamic> stats;    // stats par membre
 
   TontineData({
@@ -502,6 +506,7 @@ class TontineData {
     this.echeance,
     this.tourActuel = 0,
     this.cycleTermine = false,
+    this.cycleNumero = 1,
     this.tirageVerrouille = false,
     required this.gestionnaires,
     required this.membres,
@@ -512,6 +517,7 @@ class TontineData {
     this.ordre = const [],
     this.paiements = const {},
     this.historique = const [],
+    this.cyclesArchives = const [],
     this.stats = const {},
   });
 
@@ -632,6 +638,130 @@ class TontineData {
   /// true si le membre donné est le bénéficiaire de ce tour
   bool isBeneficiaire(String membreId) => beneficiaireId == membreId;
 
+  // ── Nouveau Cycle ──────────────────────────────────────────────────────────
+
+  /// Numéro du cycle courant (1-based, incrémenté à chaque redémarrage).
+  /// Alias lisible vers cycleNumero.
+  int get cycleNum => cycleNumero;
+
+  /// Vote de redémarrage actif (ouvert ou clos récent)
+  /// Retourne le vote 'nouveau_cycle' le plus récent, ou null.
+  Vote? get voteRedemarrage {
+    Vote? candidat;
+    for (final v in votes) {
+      if (v.type == 'nouveau_cycle') {
+        if (candidat == null) {
+          candidat = v;
+        } else {
+          // Garder le plus récent
+          if (v.dateCreation.compareTo(candidat.dateCreation) > 0) {
+            candidat = v;
+          }
+        }
+      }
+    }
+    return candidat;
+  }
+
+  /// true si le gestionnaire peut proposer un nouveau cycle :
+  ///   - cycleTermine == true
+  ///   - aucun vote 'nouveau_cycle' déjà ouvert
+  ///   - la tontine a au moins 2 membres et un ordre de passage défini
+  bool get peutProposerNouveauCycle {
+    if (!cycleTermine) return false;
+    // Ne pas proposer si ordre vide (tontine jamais lancée)
+    if (ordre.isEmpty) return false;
+    // Vérifier qu'il n'y a pas déjà un vote ouvert
+    for (final v in votes) {
+      if (v.type == 'nouveau_cycle' && !v.clos) return false;
+    }
+    return true;
+  }
+
+  /// true si un vote de redémarrage ouvert existe (membres peuvent voter)
+  bool get voteRedemarrageOuvert {
+    final v = voteRedemarrage;
+    return v != null && !v.clos;
+  }
+
+  /// true si le vote de redémarrage est clos et accepté
+  bool get voteRedemarrageAccepte {
+    final v = voteRedemarrage;
+    return v != null && v.clos && (v.adopte == true);
+  }
+
+  /// true si le vote de redémarrage est clos et refusé
+  bool get voteRedemarrageRefuse {
+    final v = voteRedemarrage;
+    return v != null && v.clos && (v.adopte != true);
+  }
+
+  /// Nombre de membres ayant voté sur le vote de redémarrage
+  int get nbVotesCastesRedemarrage {
+    final v = voteRedemarrage;
+    if (v == null) return 0;
+    return v.voix.length;
+  }
+
+  /// Décompte du vote de redémarrage {oui, non, abstention}
+  Map<String, int> get decompteRedemarrage {
+    final v = voteRedemarrage;
+    if (v == null) return {'oui': 0, 'non': 0, 'abstention': 0};
+    if (v.decompte != null) {
+      return {
+        'oui':        (v.decompte!['oui'] as num?)?.toInt() ?? 0,
+        'non':        (v.decompte!['non'] as num?)?.toInt() ?? 0,
+        'abstention': (v.decompte!['abstention'] as num?)?.toInt() ?? 0,
+      };
+    }
+    // Calculer depuis voix{}
+    int oui = 0, non = 0, abs = 0;
+    for (final choix in v.voix.values) {
+      switch (choix.toString()) {
+        case 'oui':        oui++; break;
+        case 'non':        non++; break;
+        case 'abstention': abs++; break;
+      }
+    }
+    return {'oui': oui, 'non': non, 'abstention': abs};
+  }
+
+  /// Membres n'ayant pas encore voté sur le vote de redémarrage
+  List<Membre> get membresNonVotesRedemarrage {
+    final v = voteRedemarrage;
+    if (v == null || v.clos) return [];
+    return membresActifs.where((m) => !v.voix.containsKey(m.id)).toList();
+  }
+
+  /// Nombre de membres qui ont déjà voté sur le vote de redémarrage
+  int get nbMembresVotesRedemarrage {
+    final v = voteRedemarrage;
+    if (v == null) return 0;
+    return v.voix.length;
+  }
+
+  /// Nombre de membres qui n'ont pas encore voté
+  int get nbMembresRestantAVoterRedemarrage {
+    return membresNonVotesRedemarrage.length;
+  }
+
+  /// Numéro de quorum requis pour le vote de redémarrage
+  int get quorumRedemarrage {
+    final v = voteRedemarrage;
+    if (v?.candidat != null) {
+      final q = v!.candidat!['quorum'] as int?;
+      if (q != null) return q;
+    }
+    return (membresActifs.length / 2).ceil();
+  }
+
+  /// Nombre de membres qui ont voté dans le vote de redémarrage, 
+  /// un membre peut voter Oui, Non ou Abstention
+  bool aMemberVoteRedemarrage(String membreId) {
+    final v = voteRedemarrage;
+    return v != null && v.voix.containsKey(membreId);
+  }
+
   /// Nombre de membres qui ont payé (selon paiements{} — source de vérité)
   int get nbPayes => membres.where((m) => m.paye).length;
 
@@ -736,6 +866,15 @@ class TontineData {
     // ── Stats ──
     final stats = json['stats'] as Map<String, dynamic>? ?? {};
 
+    // ── CycleNumero ──
+    final cycleNumero = (json['cycleNum'] as num?)?.toInt() ?? 1;
+
+    // ── CyclesArchives ──
+    final cyclesArchives = (json['cyclesArchives'] as List<dynamic>?)
+            ?.map((h) => h as Map<String, dynamic>)
+            .toList() ??
+        [];
+
     // ── tourActuel : INDEX 0-based (aligné sur index.html) ────────────────
     // Supabase stocke 'tourActuel' comme index 0-based dans ordre[].
     // Ancien format Flutter stockait 'tourCourant' comme numéro 1-based.
@@ -839,6 +978,7 @@ class TontineData {
       echeance: echeanceRaw,
       tourActuel: tourActuel,
       cycleTermine: cycleTermine,
+      cycleNumero: cycleNumero,
       tirageVerrouille: tirageVerrouille,
       gestionnaires: gests,
       membres: membres,
@@ -849,6 +989,7 @@ class TontineData {
       ordre: ordre,
       paiements: paiements,
       historique: historique,
+      cyclesArchives: cyclesArchives,
       stats: stats,
     );
   }
@@ -857,7 +998,9 @@ class TontineData {
         'nom': nom,
         'montant': montant,
         'periodicite': periode,
+        'periode': periode,
         'methodeOrdre': methodeOrdre,
+        'cycleNum': cycleNumero,
         if (echeance != null) 'echeance': echeance,
         // Supabase attend 'tourActuel' (index 0-based)
         'tourActuel': tourActuel,
@@ -873,6 +1016,7 @@ class TontineData {
         'ordre': ordre,
         'paiements': paiements,
         'historique': historique,
+        'cyclesArchives': cyclesArchives,
         'stats': stats,
       };
 }

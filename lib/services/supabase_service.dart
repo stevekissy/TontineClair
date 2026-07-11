@@ -579,6 +579,96 @@ class SupabaseService {
     if (result is Map<String, dynamic>) return result;
     return null;
   }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // NOUVEAU CYCLE
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /// Propose un nouveau cycle en créant un vote de redémarrage.
+  ///
+  /// Prérequis : cycleTermine == true, aucun vote ouvert de type 'nouveau_cycle'.
+  /// Retourne {ok: bool, vote_id?: String, erreur?: String}
+  static Future<Map<String, dynamic>> proposerNouveauCycle({
+    required String code,
+    required String nom,
+    required String pin,
+    String question = 'Souhaitez-vous recommencer un nouveau cycle de tontine ?',
+  }) async {
+    final result = await rpc('proposer_nouveau_cycle', {
+      'p_code':     code.toUpperCase(),
+      'p_nom':      nom,
+      'p_pin':      pin,
+      'p_question': question,
+    });
+    if (result is Map<String, dynamic>) return result;
+    return {'ok': false, 'erreur': 'Réponse inattendue du serveur.'};
+  }
+
+  /// Lit l'état du cycle courant + le vote de redémarrage s'il existe.
+  ///
+  /// Retourne : cycleTermine, cycleNum, tourActuel, nbMembres, nbTours,
+  ///            voteRedemarrage (objet vote complet), peutProposer
+  static Future<Map<String, dynamic>?> lireEtatCycle(String code) async {
+    final result = await rpc('lire_etat_cycle', {
+      'p_code': code.toUpperCase(),
+    });
+    if (result is Map<String, dynamic>) return result;
+    return null;
+  }
+
+  /// Démarre le nouveau cycle après un vote favorable.
+  ///
+  /// [voteId]      : ID du vote 'nouveau_cycle' clos et adopté
+  /// [montant]     : nouveau montant (null = conserver l'ancien)
+  /// [periodicite] : nouvelle périodicité (null = conserver l'ancienne)
+  /// [echeance]    : 1ère échéance ISO 8601 (null = calculer auto)
+  /// [methodeOrdre]: méthode d'ordre (null = conserver l'ancienne)
+  ///
+  /// Retourne {ok: bool, cycleNum?: int, message?: String, erreur?: String}
+  static Future<Map<String, dynamic>> demarrerNouveauCycle({
+    required String code,
+    required String nom,
+    required String pin,
+    required String voteId,
+    int? montant,
+    String? periodicite,
+    String? echeance,
+    String? methodeOrdre,
+  }) async {
+    final params = <String, dynamic>{
+      'p_code':     code.toUpperCase(),
+      'p_nom':      nom,
+      'p_pin':      pin,
+      'p_vote_id':  voteId,
+    };
+    if (montant != null)      params['p_montant']       = montant;
+    if (periodicite != null)  params['p_periodicite']   = periodicite;
+    if (echeance != null)     params['p_echeance']      = echeance;
+    if (methodeOrdre != null) params['p_methode_ordre'] = methodeOrdre;
+
+    final result = await rpc('demarrer_nouveau_cycle', params);
+    if (result is Map<String, dynamic>) return result;
+    return {'ok': false, 'erreur': 'Réponse inattendue du serveur.'};
+  }
+
+  /// Clôture le vote de redémarrage et calcule le résultat.
+  ///
+  /// Retourne {ok: bool, adopte: bool, oui: int, non: int, abstention: int, message: String}
+  static Future<Map<String, dynamic>> cloreVoteRedemarrage({
+    required String code,
+    required String nom,
+    required String pin,
+    required String voteId,
+  }) async {
+    final result = await rpc('clore_vote_redemarrage', {
+      'p_code':    code.toUpperCase(),
+      'p_nom':     nom,
+      'p_pin':     pin,
+      'p_vote_id': voteId,
+    });
+    if (result is Map<String, dynamic>) return result;
+    return {'ok': false, 'erreur': 'Réponse inattendue du serveur.'};
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
