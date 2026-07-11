@@ -145,7 +145,6 @@ BEGIN
         || ':' || v_ancien || '->' || p_nouveau
         || ':' || left(trim(p_motif), 100)
     );
-  EXCEPTION WHEN undefined_table THEN NULL;
   EXCEPTION WHEN others THEN NULL;
   END;
 
