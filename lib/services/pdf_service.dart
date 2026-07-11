@@ -208,58 +208,137 @@ class PdfService {
     );
   }
 
-  // ── §3 : Tours clôturés ──────────────────────────────────────────────────
+  // ── §3 : Tours ───────────────────────────────────────────────────────────
   static pw.Widget _sectionTours(
     TontineData data,
     pw.Font bold,
     pw.Font regular,
   ) {
     final historique = data.historique;
+    final nbTours = data.nbTours;
+
+    // Construire la liste des widgets de la section
+    final List<pw.Widget> contenu = [
+      _titreSousSection('Tours du cycle (Tour ${data.numerTour} sur $nbTours)', bold),
+      pw.SizedBox(height: 6),
+    ];
+
+    // ── Tour en cours ────────────────────────────────────────────────────────
+    if (!data.cycleTermine && !data.cycleEnAttente) {
+      contenu.add(
+        pw.Container(
+          padding: const pw.EdgeInsets.all(10),
+          decoration: pw.BoxDecoration(
+            color: _encre,
+            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+          ),
+          child: pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    'Tour ${data.numerTour} / $nbTours — EN COURS',
+                    style: pw.TextStyle(font: bold, fontSize: 10, color: PdfColors.white),
+                  ),
+                  pw.SizedBox(height: 2),
+                  pw.Text(
+                    'Bénéficiaire : ${data.beneficiaireNomOuFallback}',
+                    style: pw.TextStyle(font: regular, fontSize: 9, color: _or),
+                  ),
+                ],
+              ),
+              pw.Text(
+                '${data.nbPayes}/${data.membres.length} cotisations',
+                style: pw.TextStyle(font: bold, fontSize: 9, color: PdfColors.white),
+              ),
+            ],
+          ),
+        ),
+      );
+      contenu.add(pw.SizedBox(height: 8));
+    } else if (data.cycleEnAttente) {
+      contenu.add(
+        pw.Container(
+          padding: const pw.EdgeInsets.all(8),
+          decoration: pw.BoxDecoration(
+            color: _fondGris,
+            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+          ),
+          child: pw.Text(
+            'Tontine en attente de démarrage — aucun tour commencé.',
+            style: pw.TextStyle(font: regular, fontSize: 10, color: _texteDoux),
+          ),
+        ),
+      );
+      contenu.add(pw.SizedBox(height: 8));
+    }
+
+    // ── Tours clôturés ──────────────────────────────────────────────────────
+    if (historique.isEmpty) {
+      contenu.add(
+        pw.Text(
+          'Aucun tour clôturé pour l\'instant.',
+          style: pw.TextStyle(font: regular, fontSize: 10, color: _texteDoux),
+        ),
+      );
+    } else {
+      contenu.add(
+        pw.TableHelper.fromTextArray(
+          headers: ['Tour', 'Bénéficiaire', 'Cotisations', 'Montant', 'Date'],
+          headerStyle: pw.TextStyle(font: bold, fontSize: 9, color: PdfColors.white),
+          headerDecoration: const pw.BoxDecoration(color: _encre),
+          cellStyle: pw.TextStyle(font: regular, fontSize: 9),
+          cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          data: historique.asMap().entries.map((e) {
+            final h = e.value;
+            final numTour = (h['tour'] as num?)?.toInt() ?? (e.key + 1);
+            // Résoudre le bénéficiaire : historique → beneficiaireId → 'non désigné'
+            String benef = h['beneficiaire'] as String?
+                ?? h['membre'] as String?
+                ?? h['beneficiaireNom'] as String?
+                ?? '';
+            if (benef.isEmpty) {
+              final benefId = h['beneficiaireId'] as String?
+                  ?? h['ordreId'] as String?;
+              if (benefId != null) {
+                benef = data.membres
+                    .where((m) => m.id == benefId)
+                    .map((m) => m.nom)
+                    .firstOrNull ?? 'Bénéficiaire non encore désigné';
+              } else {
+                benef = 'Bénéficiaire non encore désigné';
+              }
+            }
+            final recu = (h['totalRecu'] as num?)?.toInt()
+                ?? (h['total'] as num?)?.toInt()
+                ?? 0;
+            final total = (h['totalAttendu'] as num?)?.toInt()
+                ?? data.membres.length * data.montant;
+            DateTime? dateD;
+            final dateRaw = h['date'] ?? h['closLe'];
+            if (dateRaw is int) {
+              dateD = DateTime.fromMillisecondsSinceEpoch(dateRaw);
+            } else if (dateRaw is String && dateRaw.isNotEmpty) {
+              dateD = DateTime.tryParse(dateRaw);
+            }
+
+            return [
+              'Tour $numTour',
+              benef,
+              '${(h['nbPayes'] as num?)?.toInt() ?? '?'}/$nbTours',
+              Formatters.montantFCFA(recu > 0 ? recu : total),
+              dateD != null ? Formatters.dateFormatee(dateD) : '—',
+            ];
+          }).toList(),
+        ),
+      );
+    }
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        _titreSousSection('Tours clôturés', bold),
-        pw.SizedBox(height: 6),
-        if (historique.isEmpty)
-          pw.Text(
-            'Aucun tour clôturé pour l\'instant.',
-            style: pw.TextStyle(font: regular, fontSize: 10, color: _texteDoux),
-          )
-        else
-          pw.TableHelper.fromTextArray(
-            headers: ['Tour', 'Bénéficiaire', 'Cotisations', 'Montant', 'Date'],
-            headerStyle: pw.TextStyle(font: bold, fontSize: 9, color: PdfColors.white),
-            headerDecoration: const pw.BoxDecoration(color: _encre),
-            cellStyle: pw.TextStyle(font: regular, fontSize: 9),
-            cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            data: historique.asMap().entries.map((e) {
-              final h = e.value;
-              final tour = (h['tour'] as num?)?.toInt() ?? (e.key + 1);
-              final beneficiaire = h['beneficiaire'] as String? ?? h['membre'] as String? ?? '—';
-              final recu = (h['totalRecu'] as num?)?.toInt()
-                  ?? (h['total'] as num?)?.toInt()
-                  ?? 0;
-              final total = (h['totalAttendu'] as num?)?.toInt()
-                  ?? data.membres.length * data.montant;
-              DateTime? dateD;
-              final dateRaw = h['date'] ?? h['closLe'];
-              if (dateRaw is int) {
-                dateD = DateTime.fromMillisecondsSinceEpoch(dateRaw);
-              } else if (dateRaw is String && dateRaw.isNotEmpty) {
-                dateD = DateTime.tryParse(dateRaw);
-              }
-
-              return [
-                'Tour $tour',
-                beneficiaire,
-                '${(h['nbPayes'] as num?)?.toInt() ?? '?'}/${data.membres.length}',
-                Formatters.montantFCFA(recu > 0 ? recu : total),
-                dateD != null ? Formatters.dateFormatee(dateD) : '—',
-              ];
-            }).toList(),
-          ),
-      ],
+      children: contenu,
     );
   }
 
@@ -650,7 +729,8 @@ class PdfService {
             // Détails
             _ligneRecu('Tontine', data.nom, bold, regular),
             _ligneRecu('Membre', membre.nom, bold, regular),
-            _ligneRecu('Tour N°', '${data.numerTour}', bold, regular),
+            _ligneRecu('Tour N°', 'Tour ${data.numerTour} sur ${data.nbTours}', bold, regular),
+            _ligneRecu('Bénéficiaire', data.beneficiaireNomOuFallback, bold, regular),
             _ligneRecu('Méthode', Formatters.methodePaiement(methode), bold, regular),
             _ligneRecu('Date', Formatters.dateHeure(datePaiement), bold, regular),
             _ligneRecu('Référence', ref, bold, regular),

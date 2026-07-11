@@ -73,7 +73,7 @@ class _TirageScreenState extends State<TirageScreen> {
                   ),
                   const SizedBox(height: 20),
                   if (data.tirageVerrouille) ...[
-                    _BandeauVerrouille(membres: membres, estGest: estGest),
+                    _BandeauVerrouille(data: data, estGest: estGest),
                   ] else if (_tirageFait) ...[
                     _ResultatTirage(
                       membres: _membresOrdonnes,
@@ -190,15 +190,14 @@ class _TirageScreenState extends State<TirageScreen> {
             .toUpperCase();
 
         final newData = data.toJson();
+        // IMPORTANT : on conserve les IDs Supabase originaux des membres.
+        // Ne PAS réassigner m['id'] = 'm${e.key + 1}' — cela casserait la
+        // jointure entre ordre[] et membres[] dans membresActifs.
         newData['membres'] = _membresOrdonnes
-            .asMap()
-            .entries
-            .map((e) {
-              final m = e.value.toJson();
-              m['id'] = 'm${e.key + 1}';
-              return m;
-            })
+            .map((m) => m.toJson())
             .toList();
+        // ordre[] = liste des IDs des membres dans l'ordre de passage
+        newData['ordre'] = _membresOrdonnes.map((m) => m.id).toList();
         newData['tirageVerrouille'] = true;
         newData['ordreVerrouille'] = true;
         // tourActuel = index 0-based (0 = premier tour, 1-based affiché = 1)
@@ -229,13 +228,19 @@ class _TirageScreenState extends State<TirageScreen> {
 }
 
 class _BandeauVerrouille extends StatelessWidget {
-  final List<Membre> membres;
+  final TontineData data;
   final bool estGest;
 
-  const _BandeauVerrouille({required this.membres, required this.estGest});
+  const _BandeauVerrouille({required this.data, required this.estGest});
 
   @override
   Widget build(BuildContext context) {
+    // Utilise membresActifs pour respecter l'ordre de passage défini dans ordre[]
+    final membresOrdonnes = data.membresActifs;
+    final nbTours = data.nbTours;
+    final tourActuel = data.tourActuel; // index 0-based
+    final beneficiaireId = data.beneficiaireId;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -250,11 +255,11 @@ class _BandeauVerrouille extends StatelessWidget {
             children: [
               const Text('🔒', style: TextStyle(fontSize: 24)),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    const Text(
                       'Tirage verrouillé',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
@@ -263,8 +268,8 @@ class _BandeauVerrouille extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      'L\'ordre est définitif. Seul un vote peut le modifier.',
-                      style: TextStyle(
+                      'L\'ordre est définitif. Tour ${data.numerTour} sur $nbTours.',
+                      style: const TextStyle(
                         fontSize: 12.5,
                         color: AppColors.succes,
                       ),
@@ -276,17 +281,109 @@ class _BandeauVerrouille extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        const Text(
-          'Ordre de passage',
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-            fontSize: 18,
-            color: AppColors.encre,
+        // ── Carte bénéficiaire actuel ────────────────────────────────────
+        if (!data.cycleTermine && !data.cycleEnAttente && beneficiaireId != null) ...[
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.encre,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                const Text('🏆', style: TextStyle(fontSize: 20)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Bénéficiaire du tour actuel',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.white70,
+                        ),
+                      ),
+                      Text(
+                        data.beneficiaireNomOuFallback,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.or.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    'Tour ${data.numerTour}/$nbTours',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                      color: AppColors.or,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
+          const SizedBox(height: 12),
+        ] else if (data.cycleEnAttente) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.fondConsultation,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Row(
+              children: [
+                Text('⏳', style: TextStyle(fontSize: 16)),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Aucun tour démarré — le premier tour n\'a pas encore commencé.',
+                    style: TextStyle(fontSize: 13, color: AppColors.encre),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Ordre de passage',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 18,
+                color: AppColors.encre,
+              ),
+            ),
+            Text(
+              '${membresOrdonnes.length} membre${membresOrdonnes.length > 1 ? 's' : ''}',
+              style: const TextStyle(fontSize: 13, color: AppColors.texteDoux),
+            ),
+          ],
         ),
         const SizedBox(height: 10),
-        ...membres.asMap().entries.map(
-          (e) => _LigneOrdre(membre: e.value, rang: e.key + 1),
+        ...membresOrdonnes.asMap().entries.map(
+          (e) => _LigneOrdre(
+            membre: e.value,
+            rang: e.key + 1,
+            // La ligne est "active" si c'est le bénéficiaire du tour actuel
+            estBeneficiaireActuel: e.value.id == beneficiaireId,
+            // La ligne est "servie" si ce membre a déjà été bénéficiaire
+            // (son rang est inférieur au tour actuel, qui est 0-based)
+            estServi: !data.cycleTermine && !data.cycleEnAttente && e.key < tourActuel,
+          ),
         ),
       ],
     );
@@ -358,65 +455,130 @@ class _LigneOrdre extends StatelessWidget {
   final Membre membre;
   final int rang;
   final bool isNouvel;
+  // true = c'est le bénéficiaire du tour actuel (mise en évidence)
+  final bool estBeneficiaireActuel;
+  // true = ce membre a déjà été servi dans ce cycle
+  final bool estServi;
 
   const _LigneOrdre({
     required this.membre,
     required this.rang,
     this.isNouvel = false,
+    this.estBeneficiaireActuel = false,
+    this.estServi = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    // Couleurs selon l'état
+    final Color couleurFond;
+    final Color couleurBordure;
+    final Color couleurCercle;
+    final Color couleurTexte;
+
+    if (estBeneficiaireActuel) {
+      couleurFond = AppColors.or.withValues(alpha: 0.12);
+      couleurBordure = AppColors.or.withValues(alpha: 0.6);
+      couleurCercle = AppColors.or;
+      couleurTexte = AppColors.encre;
+    } else if (estServi) {
+      couleurFond = AppColors.succesFond;
+      couleurBordure = AppColors.succes.withValues(alpha: 0.3);
+      couleurCercle = AppColors.succes;
+      couleurTexte = AppColors.texteDoux;
+    } else if (isNouvel) {
+      couleurFond = AppColors.fondGestion;
+      couleurBordure = AppColors.encreDoux;
+      couleurCercle = AppColors.encre;
+      couleurTexte = AppColors.texte;
+    } else {
+      couleurFond = AppColors.carte;
+      couleurBordure = AppColors.lignes;
+      couleurCercle = AppColors.encre;
+      couleurTexte = AppColors.texte;
+    }
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: isNouvel ? AppColors.fondGestion : AppColors.carte,
+        color: couleurFond,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isNouvel ? AppColors.encreDoux : AppColors.lignes,
-        ),
+        border: Border.all(color: couleurBordure),
       ),
       child: Row(
         children: [
+          // Cercle avec le numéro de rang
           Container(
-            width: 32,
-            height: 32,
+            width: 36,
+            height: 36,
             decoration: BoxDecoration(
-              color: AppColors.encre,
+              color: couleurCercle,
               shape: BoxShape.circle,
             ),
             child: Center(
-              child: Text(
-                '$rang',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                  color: Colors.white,
-                ),
-              ),
+              child: estServi
+                  ? const Text(
+                      '✓',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Text(
+                      '$rang',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                        color: Colors.white,
+                      ),
+                    ),
             ),
           ),
           const SizedBox(width: 12),
-          Text(
-            membre.nom,
-            style: const TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 15,
-              color: AppColors.texte,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  membre.nom,
+                  style: TextStyle(
+                    fontWeight: estBeneficiaireActuel
+                        ? FontWeight.w700
+                        : FontWeight.w600,
+                    fontSize: 15,
+                    color: couleurTexte,
+                  ),
+                ),
+                if (estServi)
+                  const Text(
+                    'Déjà servi ce cycle',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppColors.succes,
+                    ),
+                  ),
+              ],
             ),
           ),
-          if (rang == 1) ...[
-            const Spacer(),
-            const Text(
-              'Tour 1',
-              style: TextStyle(
-                fontSize: 12,
-                color: AppColors.encreDoux,
-                fontWeight: FontWeight.w600,
+          // Badge bénéficiaire actuel
+          if (estBeneficiaireActuel)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.or,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Text(
+                '🏆 Tour actuel',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.encre,
+                ),
               ),
             ),
-          ],
         ],
       ),
     );

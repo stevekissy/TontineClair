@@ -232,21 +232,23 @@ class DashboardScreen extends StatelessWidget {
   }
 
   // ── Prochain bénéficiaire ─────────────────────────────────────────────────
-  static ({String? nom, int montant, bool cycleTermine, bool cycleEnAttente, DateTime? echeance, String periode})
+  static ({String? nom, int montant, bool cycleTermine, bool cycleEnAttente, DateTime? echeance, String periode, int numerTour, int nbTours})
       _prochainBeneficiaire(TontineData data) {
+    final numerTour = data.numerTour;
+    final nbTours = data.nbTours; // Ne retourne jamais 0 si des membres existent
+
     // Cas 1 : tontine en attente de démarrage (ordre vide, jamais lancée)
     if (data.cycleEnAttente) {
-      return (nom: null, montant: 0, cycleTermine: false, cycleEnAttente: true, echeance: null, periode: data.periode);
+      return (nom: null, montant: 0, cycleTermine: false, cycleEnAttente: true, echeance: null, periode: data.periode, numerTour: numerTour, nbTours: nbTours);
     }
     // Cas 2 : cycle réellement terminé (tous les membres ont été servis)
     if (data.cycleTermine) {
-      return (nom: null, montant: 0, cycleTermine: true, cycleEnAttente: false, echeance: null, periode: data.periode);
+      return (nom: null, montant: 0, cycleTermine: true, cycleEnAttente: false, echeance: null, periode: data.periode, numerTour: numerTour, nbTours: nbTours);
     }
     // beneficiaire = membres[ ordre[tourActuel] ] (tourActuel = index 0-based)
     final beneficiaire = data.beneficiaire;
     // Montant qu'il recevra = N cotisations (tout le monde cotise, bénéficiaire inclus)
-    final n = data.ordre.length;
-    final montantRecu = n * data.montant;
+    final montantRecu = nbTours * data.montant;
     // Prochaine échéance effective (stockée ou calculée)
     final prochaineEch = EcheanceService.prochaineEcheance(
       echeanceStockee: data.echeance,
@@ -259,6 +261,8 @@ class DashboardScreen extends StatelessWidget {
       cycleEnAttente: false,
       echeance: prochaineEch,
       periode: data.periode,
+      numerTour: numerTour,
+      nbTours: nbTours,
     );
   }
 
@@ -510,7 +514,7 @@ class _CarteAlerte extends StatelessWidget {
 
 // ─── Carte Prochain bénéficiaire ──────────────────────────────────────────────
 class _CarteBeneficiaire extends StatelessWidget {
-  final ({String? nom, int montant, bool cycleTermine, bool cycleEnAttente, DateTime? echeance, String periode}) info;
+  final ({String? nom, int montant, bool cycleTermine, bool cycleEnAttente, DateTime? echeance, String periode, int numerTour, int nbTours}) info;
   final String code;
   final bool estGest;
 
@@ -610,6 +614,35 @@ class _CarteBeneficiaire extends StatelessWidget {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // ── Badge Tour X sur N ──────────────────────────────────────
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Bénéficiaire du tour',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: Colors.white.withValues(alpha: 0.65),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppColors.or.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        'Tour ${info.numerTour} sur ${info.nbTours}',
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                          color: AppColors.or,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
                 Row(
                   children: [
                     Container(
@@ -629,14 +662,7 @@ class _CarteBeneficiaire extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Prochain bénéficiaire',
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              color: Colors.white.withValues(alpha: 0.65),
-                            ),
-                          ),
-                          Text(
-                            info.nom ?? '—',
+                            info.nom ?? 'Bénéficiaire non encore désigné',
                             style: GoogleFonts.bricolageGrotesque(
                               fontWeight: FontWeight.w700,
                               fontSize: 18,
@@ -892,9 +918,11 @@ class _BoutonPartagerRecap extends StatelessWidget {
       final echD = DateTime.tryParse(data.echeance!);
       if (echD != null) buf.writeln('📅 Échéance : ${Formatters.dateFormatee(echD)}');
     }
-    if (beneficiaire != null) {
-      buf.writeln('🏆 Bénéficiaire du tour : ${beneficiaire.nom} — reçoit ${Formatters.montantFCFA(totalAttendu)}');
-    }
+    buf.writeln(
+      beneficiaire != null
+          ? '🏆 Bénéficiaire du tour : ${beneficiaire.nom} — reçoit ${Formatters.montantFCFA(totalAttendu)}'
+          : '🏆 Bénéficiaire du tour : Bénéficiaire non encore désigné',
+    );
     buf.writeln('');
     buf.writeln('✅ Ont cotisé (${payes.length}/$n)');
     for (final m in payes) {

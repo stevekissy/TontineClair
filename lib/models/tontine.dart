@@ -625,6 +625,24 @@ class TontineData {
   /// Nombre de membres éligibles au vote / à la cotisation
   int get nbMembresActifs => membresActifs.length;
 
+  /// Nombre total de tours du cycle = nombre de membres participants.
+  /// Utilisé pour afficher "Tour X sur N".
+  /// - Si ordre[] non vide → N = ordre.length (source de vérité Supabase)
+  /// - Sinon → N = membres.length (fallback, avant verrouillage tirage)
+  /// Ne retourne JAMAIS 0 si des membres existent.
+  int get nbTours {
+    if (ordre.isNotEmpty) return ordre.length;
+    return membres.length;
+  }
+
+  /// Nom du bénéficiaire courant pour l'affichage.
+  /// Retourne "Bénéficiaire non encore désigné" si non défini.
+  String get beneficiaireNomOuFallback {
+    final b = beneficiaire;
+    if (b != null) return b.nom;
+    return 'Bénéficiaire non encore désigné';
+  }
+
   /// ID du bénéficiaire courant (null si cycle terminé ou ordre vide)
   String? get beneficiaireId {
     if (cycleTermine || ordre.isEmpty || tourActuel >= ordre.length) return null;

@@ -118,7 +118,9 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
                     Text(
                       data.cycleTermine
                           ? 'Cycle terminé ✔ · ${membres.length} membres servis'
-                          : 'Tour ${data.numerTour} · ${Formatters.montantFCFA(data.montant)} par membre · ${data.nbPayes}/${membres.length} payés',
+                          : data.cycleEnAttente
+                              ? 'En attente de démarrage · ${membres.length} membres'
+                              : 'Tour ${data.numerTour} sur ${data.nbTours} · ${Formatters.montantFCFA(data.montant)} par membre · ${data.nbPayes}/${membres.length} payés',
                       style: const TextStyle(fontSize: 14, color: AppColors.texteDoux),
                     ),
                     // Bandeau échéance : affiché toujours (calcul auto si non définie)
@@ -591,12 +593,16 @@ class _BoutonRecapWhatsApp extends StatelessWidget {
 
     final buf = StringBuffer();
     buf.writeln('🏦 TONTINE — ${data.nom}');
-    buf.writeln('Tour ${data.numerTour}/${membres.length} · ${Formatters.montantFCFA(data.montant)} par membre');
+    buf.writeln('Tour ${data.numerTour}/${data.nbTours} · ${Formatters.montantFCFA(data.montant)} par membre');
     if (data.echeance != null) {
       final echD = DateTime.tryParse(data.echeance!);
       if (echD != null) buf.writeln('📅 Échéance : ${Formatters.dateFormatee(echD)}');
     }
-    buf.writeln('🏆 Bénéficiaire du tour : ${beneficiaire?.nom ?? '—'} — reçoit ${Formatters.montantFCFA(montantTotal)}');
+    if (beneficiaire != null) {
+      buf.writeln('🏆 Bénéficiaire du tour : ${beneficiaire.nom} — reçoit ${Formatters.montantFCFA(montantTotal)}');
+    } else {
+      buf.writeln('🏆 Bénéficiaire du tour : Bénéficiaire non encore désigné');
+    }
     buf.writeln('');
     buf.writeln('✅ Ont cotisé (${payes.length}/${membres.length})');
     for (final m in payes) buf.writeln('  ✓ ${m.nom}');
