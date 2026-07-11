@@ -365,14 +365,41 @@ class SupabaseService {
     required String nom,
     required String pin,
     required String contact,
+    String formule = 'mensuel',
   }) async {
     final result = await rpc('demander_premium', {
       'p_code':    code.toUpperCase(),
       'p_nom':     nom,
       'p_pin':     pin,
       'p_contact': contact,
+      'p_formule': formule,
     });
     return result == true;
+  }
+
+  /// Lire les demandes Premium en attente — liste complète pour l'admin
+  static Future<List<Map<String, dynamic>>> adminListerDemandesPremium(String cle) async {
+    final result = await rpc('admin_lister_demandes', {'p_cle': cle});
+    if (result == null) return [];
+    if (result is List) return result.cast<Map<String, dynamic>>();
+    return [];
+  }
+
+  /// Refuser une demande Premium
+  static Future<bool> adminRefuserDemande({
+    required String cle,
+    required String code,
+  }) async {
+    try {
+      final result = await rpc('admin_refuser_demande', {
+        'p_cle':  cle,
+        'p_code': code.toUpperCase(),
+      });
+      return result == true;
+    } catch (_) {
+      // Fallback : marquer comme refusée via lister_tontines
+      return false;
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

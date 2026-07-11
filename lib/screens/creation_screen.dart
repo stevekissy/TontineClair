@@ -5,6 +5,7 @@ import '../services/tontine_provider.dart';
 import '../services/subscription_service.dart';
 import '../services/feature_gate_service.dart';
 import '../services/platform_service.dart';
+import '../services/storage_service.dart';
 import '../utils/app_colors.dart';
 import '../widgets/app_widgets.dart';
 import 'abonnement_screen.dart';
@@ -81,9 +82,10 @@ class _CreationScreenState extends State<CreationScreen> {
     // Plan Premium : lu depuis SubscriptionService (source unique)
     final isPremium = SubscriptionService.isPremium;
 
-    // Limite Gratuit : 5 membres max par tontine
-    if (!SubscriptionService.peutAjouterMembre(membres.length - 1) &&
-        membres.length > FeatureGate.maxMembresGratuit) {
+    // ── Limite Gratuit : 5 membres MAX par tontine ────────────────────────
+    // Bloquer UNIQUEMENT si l'utilisateur essaie d'ajouter un 6e membre ou plus.
+    // Un compte Gratuit peut avoir exactement 5 membres dans sa tontine.
+    if (!isPremium && membres.length > FeatureGate.maxMembresGratuit) {
       if (!mounted) return;
       afficherDialogUpgrade(
         context,
@@ -110,8 +112,12 @@ class _CreationScreenState extends State<CreationScreen> {
       return;
     }
 
-    // Limite Gratuit : 1 tontine
-    if (!isPremium && provider.mesTontines.isNotEmpty) {
+    // ── Limite Gratuit : 1 tontine CRÉÉE max ──────────────────────────────
+    // Compter uniquement les tontines où l'utilisateur est gestionnaire
+    // (créées par lui), pas celles qu'il a simplement rejointes.
+    // On utilise nbTontinesCrees stocké localement.
+    final nbCrees = await StorageService.getNbTontinesCrees();
+    if (!isPremium && nbCrees >= FeatureGate.maxTontinesGratuit) {
       if (!mounted) return;
       afficherDialogUpgrade(
         context,
@@ -120,10 +126,10 @@ class _CreationScreenState extends State<CreationScreen> {
           titre: 'Limite de tontines atteinte',
           message: FeatureGate.messageLimite(
             limite: LimiteType.tontines,
-            actuel: provider.mesTontines.length,
+            actuel: nbCrees,
             max: FeatureGate.maxTontinesGratuit,
           ),
-          actuel: provider.mesTontines.length,
+          actuel: nbCrees,
           max: FeatureGate.maxTontinesGratuit,
         ),
         onUpgrade: () => Navigator.of(context).push(
@@ -196,6 +202,30 @@ class _CreationScreenState extends State<CreationScreen> {
   }
 
   void _ajouterMembre() {
+    final isPremium = SubscriptionService.isPremium;
+    // Gratuit : max 5 membres. Bloquer l'ajout du 6e et plus.
+    if (!isPremium && _membresCtrl.length >= FeatureGate.maxMembresGratuit) {
+      afficherDialogUpgrade(
+        context,
+        limiteInfo: LimiteInfo(
+          type: LimiteType.membres,
+          titre: 'Limite atteinte — 5 membres max',
+          message: 'La formule Gratuite autorise jusqu\'à ${FeatureGate.maxMembresGratuit} membres. '
+              'Passez à Premium pour ajouter plus de membres.',
+          actuel: _membresCtrl.length,
+          max: FeatureGate.maxMembresGratuit,
+        ),
+        onUpgrade: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => AbonnementScreen(
+              code: '',
+              platformeForce: PlatformService.current,
+            ),
+          ),
+        ),
+      );
+      return;
+    }
     setState(() => _membresCtrl.add(TextEditingController()));
   }
 

@@ -3,8 +3,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/tontine.dart';
 
 class StorageService {
-  static const String _keyListe      = 'tontines_liste';
-  static const String _keyGestActif  = 'gest_actif';
+  static const String _keyListe         = 'tontines_liste';
+  static const String _keyGestActif     = 'gest_actif';
+  // _keyNbCrees conservé pour compatibilité future (migration de données)
+  // ignore: unused_field
+  static const String _keyNbCrees       = 'tontines_nb_crees';
+  static const String _keyTontinesCrees = 'tontines_crees_codes';
 
   // ─── Liste locale des tontines ──────────────────────────────
 
@@ -96,5 +100,52 @@ class StorageService {
   static Future<void> effacerGestActif(String code) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('${_keyGestActif}_$code');
+  }
+
+  // ─── Compteur tontines CRÉÉES (pas rejointes) ────────────────
+  // Distingue les tontines créées par cet appareil des tontines rejointes.
+
+  /// Retourne le nombre de tontines que CET appareil a créées.
+  static Future<int> getNbTontinesCrees() async {
+    final prefs = await SharedPreferences.getInstance();
+    // Utilise la liste des codes créés pour une source de vérité fiable
+    final raw = prefs.getString(_keyTontinesCrees);
+    if (raw == null) return 0;
+    try {
+      final list = jsonDecode(raw) as List<dynamic>;
+      return list.length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// Enregistre qu'une nouvelle tontine a été créée par cet appareil.
+  static Future<void> enregistrerTontineCree(String code) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_keyTontinesCrees);
+    List<String> codes = [];
+    if (raw != null) {
+      try {
+        codes = (jsonDecode(raw) as List<dynamic>).map((e) => e.toString()).toList();
+      } catch (_) {}
+    }
+    if (!codes.contains(code.toUpperCase())) {
+      codes.add(code.toUpperCase());
+      await prefs.setString(_keyTontinesCrees, jsonEncode(codes));
+    }
+  }
+
+  /// Supprime une tontine créée du compteur (si supprimée).
+  static Future<void> retirerTontineCree(String code) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_keyTontinesCrees);
+    if (raw == null) return;
+    try {
+      final codes = (jsonDecode(raw) as List<dynamic>)
+          .map((e) => e.toString())
+          .where((c) => c != code.toUpperCase())
+          .toList();
+      await prefs.setString(_keyTontinesCrees, jsonEncode(codes));
+    } catch (_) {}
   }
 }

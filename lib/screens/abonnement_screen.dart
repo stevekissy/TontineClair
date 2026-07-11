@@ -183,29 +183,133 @@ class _AbonnementScreenState extends State<AbonnementScreen> {
       return;
     }
 
-    setState(() => _loading = true);
-    try {
-      // demanderPremium envoie une demande dans demandes_premium
-      // Les champs nom/pin/contact sont des métadonnées de la demande
-      await SupabaseService.demanderPremium(
-        code: code,
-        nom: 'Demande web $_formule',
-        pin: '0000',
-        contact: 'demande@tontineclair.com',
-      );
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _demandeEnvoyee = true;
-        });
-        afficherToast(context, 'Demande envoyée ! L\'administrateur va vous contacter.');
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _loading = false);
-        afficherToast(context, 'Erreur : $e', estErreur: true);
-      }
-    }
+    // Afficher le formulaire de collecte des infos avant d'envoyer
+    await _afficherFormulaireDemandeWeb(code);
+  }
+
+  Future<void> _afficherFormulaireDemandeWeb(String code) async {
+    final nomCtrl     = TextEditingController();
+    final contactCtrl = TextEditingController();
+    String? erreur;
+    bool loading = false;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.fondPapier,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (sCtx, setSt) => Padding(
+          padding: EdgeInsets.only(
+            left: 20, right: 20, top: 20,
+            bottom: MediaQuery.of(sCtx).viewInsets.bottom + 28,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.lignes,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                '⭐ Demande d\'activation Premium',
+                style: GoogleFonts.bricolageGrotesque(
+                  fontWeight: FontWeight.w700, fontSize: 18, color: AppColors.encre,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Formule : ${_formule == "annuel" ? "Annuel — 25 000 FCFA/an" : "Mensuel — 2 500 FCFA/mois"}\n'
+                'Code tontine : $code',
+                style: GoogleFonts.inter(fontSize: 13, color: AppColors.texteDoux),
+              ),
+              const SizedBox(height: 18),
+              Text('Votre nom', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13.5, color: AppColors.encre)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: nomCtrl,
+                textCapitalization: TextCapitalization.words,
+                decoration: InputDecoration(
+                  hintText: 'Prénom et nom',
+                  filled: true, fillColor: Colors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.lignes, width: 1.5)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.lignes, width: 1.5)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.encre, width: 1.5)),
+                ),
+                onChanged: (_) { if (erreur != null) setSt(() => erreur = null); },
+              ),
+              const SizedBox(height: 14),
+              Text('WhatsApp ou Email', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13.5, color: AppColors.encre)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: contactCtrl,
+                keyboardType: TextInputType.emailAddress,
+                decoration: InputDecoration(
+                  hintText: '+225 07 00 00 00 00 ou email@exemple.com',
+                  filled: true, fillColor: Colors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.lignes, width: 1.5)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.lignes, width: 1.5)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.encre, width: 1.5)),
+                ),
+                onChanged: (_) { if (erreur != null) setSt(() => erreur = null); },
+              ),
+              if (erreur != null) ...[
+                const SizedBox(height: 8),
+                Text(erreur!, style: const TextStyle(color: AppColors.alerte, fontSize: 13)),
+              ],
+              const SizedBox(height: 20),
+              if (loading)
+                const Center(child: CircularProgressIndicator())
+              else
+                BtnPrincipal(
+                  label: 'Envoyer ma demande',
+                  icone: Icons.workspace_premium,
+                  couleur: AppColors.orFonce,
+                  onTap: () async {
+                    if (nomCtrl.text.trim().length < 2) {
+                      setSt(() => erreur = 'Entrez votre nom complet.');
+                      return;
+                    }
+                    if (contactCtrl.text.trim().length < 6) {
+                      setSt(() => erreur = 'Entrez votre WhatsApp ou email.');
+                      return;
+                    }
+                    setSt(() { loading = true; erreur = null; });
+                    try {
+                      await SupabaseService.demanderPremium(
+                        code: code,
+                        nom: nomCtrl.text.trim(),
+                        pin: '0000',
+                        contact: contactCtrl.text.trim(),
+                        formule: _formule,
+                      );
+                      if (sCtx.mounted) Navigator.of(sCtx).pop();
+                      if (mounted) {
+                        setState(() => _demandeEnvoyee = true);
+                        afficherToast(context,
+                          '✅ Demande envoyée ! L\'administrateur vous contactera sous 24h.');
+                      }
+                    } catch (e) {
+                      setSt(() { loading = false; erreur = 'Erreur : $e'; });
+                    }
+                  },
+                ),
+              const SizedBox(height: 8),
+              BtnSecondaire(label: 'Annuler', onTap: () => Navigator.of(sheetCtx).pop()),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildNotesLegales() {
@@ -328,7 +432,8 @@ class _SectionWeb extends StatelessWidget {
     final msg = Uri.encodeComponent(
       'Bonjour, je souhaite activer Premium TontineClair ($montant) pour la tontine $code.',
     );
-    final url = Uri.parse('https://wa.me/?text=$msg');
+    // Numéro WhatsApp admin : +225 02 43 21 76 (format international sans espaces)
+    final url = Uri.parse('https://wa.me/22502432176?text=$msg');
     launchUrl(url, mode: LaunchMode.externalApplication).catchError((_) {});
   }
 }

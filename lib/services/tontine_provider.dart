@@ -132,6 +132,8 @@ class TontineProvider extends ChangeNotifier {
       );
 
       await StorageService.ajouterTontine(TontineLocale(code: code, nom: nom));
+      // Enregistrer que cette tontine a été CRÉÉE (pas juste rejointe)
+      await StorageService.enregistrerTontineCree(code);
       _mesTontines = await StorageService.getListe();
       notifyListeners();
       return code;

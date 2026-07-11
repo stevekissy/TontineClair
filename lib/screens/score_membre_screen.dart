@@ -1032,6 +1032,19 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                       await provider.chargerTontine(widget.code);
                       await _charger();
 
+                      // ── Mise à jour immédiate du score affiché ──────────────
+                      // _charger() recalcule _scoreDetail via ScoreService,
+                      // mais le widget.membre.score (passé en paramètre) reste
+                      // l'ancienne valeur. On force une mise à jour du state
+                      // APRÈS _charger() pour que l'UI soit synchrone.
+                      if (mounted) {
+                        setState(() {
+                          // Le nouveau _scoreDetail a été calculé dans _charger()
+                          // avec le score fraîchement écrit dans Supabase.
+                          // On force le rebuild complet de l'écran.
+                        });
+                      }
+
                       if (sCtx.mounted) {
                         Navigator.pop(sCtx);
                         afficherToast(ctx,
