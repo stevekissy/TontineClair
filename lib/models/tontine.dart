@@ -3,6 +3,9 @@
 // Vérifié contre la réponse brute de lire_tontine('D4CQZZ').
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ignore: unused_import — utilisé via EcheanceService dans les getters de TontineData
+// (import circulaire évité : EcheanceService n'importe pas tontine.dart)
+
 class Gestionnaire {
   final String nom;
   final String pin; // uniquement côté création locale, jamais retourné par lire_tontine
@@ -517,6 +520,52 @@ class TontineData {
   /// Numéro de tour affiché à l'utilisateur (1-based)
   int get numerTour => tourActuel + 1;
 
+  /// Prochaine échéance effective : utilise l'échéance stockée si disponible
+  /// et valide, sinon calcule automatiquement selon la périodicité.
+  /// Retourne toujours une date dans le futur (ou aujourd'hui).
+  DateTime get prochaineEcheanceDate {
+    final now = DateTime.now();
+    if (echeance != null && echeance!.isNotEmpty) {
+      final d = DateTime.tryParse(echeance!);
+      if (d != null && d.isAfter(now)) return d;
+    }
+    // Calcul automatique selon la périodicité (sans importer EcheanceService)
+    return _calculerProchaineEcheance(now);
+  }
+
+  DateTime _calculerProchaineEcheance(DateTime depuis) {
+    switch (periode) {
+      case 'journalier':
+        return depuis.add(const Duration(days: 1));
+      case 'hebdo':
+        return depuis.add(const Duration(days: 7));
+      case 'mensuel':
+        final mois = depuis.month == 12 ? 1 : depuis.month + 1;
+        final annee = depuis.month == 12 ? depuis.year + 1 : depuis.year;
+        final maxJour = DateTime(annee, mois + 1, 0).day;
+        return DateTime(annee, mois, depuis.day.clamp(1, maxJour));
+      case 'trimestriel':
+        var m = depuis.month + 3;
+        var a = depuis.year;
+        while (m > 12) { m -= 12; a++; }
+        final maxJ = DateTime(a, m + 1, 0).day;
+        return DateTime(a, m, depuis.day.clamp(1, maxJ));
+      default:
+        return depuis.add(const Duration(days: 30));
+    }
+  }
+
+  /// Durée d'un cycle en jours (approximatif pour l'affichage)
+  int get joursCycle {
+    switch (periode) {
+      case 'journalier':   return 1;
+      case 'hebdo':        return 7;
+      case 'mensuel':      return 30;
+      case 'trimestriel':  return 90;
+      default:             return 30;
+    }
+  }
+
   // ── SOURCE UNIQUE DE MEMBRES — utilisée par TOUS les modules ──────────────
   //
   // RÈGLE : cette méthode est la SEULE référence pour construire la liste de
@@ -775,12 +824,19 @@ class TontineData {
     }
     // ── Fin réconciliation ──────────────────────────────────────────────────
 
+    // ── Échéance : lire depuis Supabase ou calculer automatiquement ──────────
+    // Si aucune échéance n'est stockée dans data, on ne bloque pas l'app :
+    // EcheanceService calcule la prochaine échéance à la volée dans l'UI.
+    // On stocke la valeur brute de Supabase sans modification ici.
+    // La normalisation (recalcul si passée) est faite dans EcheanceService.
+    final echeanceRaw = json['echeance'] as String?;
+
     return TontineData(
       nom: json['nom'] as String? ?? '',
       montant: (json['montant'] as num?)?.toInt() ?? 0,
       periode: periode,
       methodeOrdre: json['methodeOrdre'] as String? ?? 'rotation',
-      echeance: json['echeance'] as String?,
+      echeance: echeanceRaw,
       tourActuel: tourActuel,
       cycleTermine: cycleTermine,
       tirageVerrouille: tirageVerrouille,

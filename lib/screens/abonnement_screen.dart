@@ -434,7 +434,7 @@ class _SectionWeb extends StatelessWidget {
     );
     // Numéro WhatsApp admin : +225 02 43 21 76 (format international sans espaces)
     final url = Uri.parse('https://wa.me/22502432176?text=$msg');
-    launchUrl(url, mode: LaunchMode.externalApplication).catchError((_) {});
+    launchUrl(url, mode: LaunchMode.externalApplication).catchError((_) => false);
   }
 }
 

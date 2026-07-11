@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
+import '../services/echeance_service.dart';
+import '../services/supabase_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
@@ -200,10 +203,15 @@ class _DetailScreenState extends State<DetailScreen> {
                         ),
                       ],
                     ),
-                    if (data.echeance != null) ...[
-                      const SizedBox(height: 4),
-                      _BandeauEcheance(echeance: data.echeance!),
-                    ],
+                    // Bandeau échéance toujours visible (calcul auto si non définie)
+                    const SizedBox(height: 4),
+                    _BandeauEcheance(
+                      echeance: data.echeance,
+                      periode: data.periode,
+                      estGest: estGest,
+                      code: tontine.code,
+                      gestNom: gestNom,
+                    ),
                     const SizedBox(height: 16),
                     // Roue de rotation
                     RoueRotation(data: data),
@@ -348,30 +356,187 @@ class _BandeauMode extends StatelessWidget {
   }
 }
 
-class _BandeauEcheance extends StatelessWidget {
-  final String echeance;
+class _BandeauEcheance extends StatefulWidget {
+  final String? echeance;
+  final String periode;
+  final bool estGest;
+  final String code;
+  final String? gestNom;
 
-  const _BandeauEcheance({required this.echeance});
+  const _BandeauEcheance({
+    required this.echeance,
+    required this.periode,
+    this.estGest = false,
+    this.code = '',
+    this.gestNom,
+  });
+
+  @override
+  State<_BandeauEcheance> createState() => _BandeauEcheanceState();
+}
+
+class _BandeauEcheanceState extends State<_BandeauEcheance> {
+  bool _enSauvegarde = false;
+
+  Future<void> _choisirEtSauvegarder() async {
+    final now = DateTime.now();
+    if (!mounted) return;
+
+    final DateTime? picked;
+    if (kIsWeb) {
+      picked = await showDatePicker(
+        context: context,
+        initialDate: now.add(const Duration(days: 1)),
+        firstDate: now,
+        lastDate: now.add(const Duration(days: 365 * 5)),
+        builder: (ctx, child) => Theme(
+          data: Theme.of(ctx).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppColors.encre,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: AppColors.encre,
+            ),
+          ),
+          child: child!,
+        ),
+      );
+    } else {
+      picked = await showDatePicker(
+        context: context,
+        initialDate: now.add(const Duration(days: 1)),
+        firstDate: now,
+        lastDate: now.add(const Duration(days: 365 * 5)),
+        locale: const Locale('fr', 'FR'),
+        builder: (ctx, child) => Theme(
+          data: Theme.of(ctx).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppColors.encre,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: AppColors.encre,
+            ),
+          ),
+          child: child!,
+        ),
+      );
+    }
+
+    if (picked == null || !mounted) return;
+
+    // Demander le PIN du gestionnaire
+    final pin = await _demanderPin();
+    if (pin == null || pin.isEmpty || !mounted) return;
+
+    setState(() => _enSauvegarde = true);
+    final echeanceIso = picked.toIso8601String();
+    final ok = await SupabaseService.majEcheance(
+      code: widget.code,
+      nom: widget.gestNom ?? '',
+      pin: pin,
+      echeance: echeanceIso,
+    );
+    if (!mounted) return;
+    setState(() => _enSauvegarde = false);
+
+    if (ok) {
+      // Recharger la tontine pour rafraîchir l'échéance
+      context.read<TontineProvider>().chargerTontine(widget.code);
+      afficherToast(context, 'Échéance mise à jour.');
+    } else {
+      afficherToast(context, 'PIN incorrect ou erreur réseau.', estErreur: true);
+    }
+  }
+
+  Future<String?> _demanderPin() async {
+    final ctrl = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirmer avec votre PIN'),
+        content: TextField(
+          controller: ctrl,
+          obscureText: true,
+          keyboardType: TextInputType.number,
+          maxLength: 6,
+          decoration: const InputDecoration(
+            hintText: 'PIN gestionnaire',
+            counterText: '',
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Confirmer',
+                style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final date = DateTime.tryParse(echeance);
-    if (date == null) return const SizedBox.shrink();
-    final restant = Formatters.joursRestants(date);
-    final estRetard = date.isBefore(DateTime.now());
+    final prochaineDate = EcheanceService.prochaineEcheance(
+      echeanceStockee: widget.echeance,
+      periode: widget.periode,
+    );
+    final statut   = EcheanceService.statutEcheance(prochaineDate, widget.periode);
+    final isRetard = statut == 'alerte';
+    final delai    = EcheanceService.texteDelai(prochaineDate, periode: widget.periode);
+    final periodeL = EcheanceService.labelPeriode(widget.periode);
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: estRetard ? AppColors.alerteFond : AppColors.succesFond,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        '📅 Échéance : ${Formatters.dateFormatee(date)} · $restant',
-        style: TextStyle(
-          fontSize: 12.5,
-          fontWeight: FontWeight.w600,
-          color: estRetard ? AppColors.alerte : AppColors.succes,
+    return GestureDetector(
+      onTap: widget.estGest ? _choisirEtSauvegarder : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: isRetard ? AppColors.alerteFond : AppColors.succesFond,
+          borderRadius: BorderRadius.circular(8),
+          border: widget.estGest
+              ? Border.all(
+                  color: (isRetard ? AppColors.alerte : AppColors.succes)
+                      .withValues(alpha: 0.4),
+                  width: 1,
+                )
+              : null,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                '📅 $periodeL · ${Formatters.dateFormatee(prochaineDate)} · $delai',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: isRetard ? AppColors.alerte : AppColors.succes,
+                ),
+              ),
+            ),
+            if (widget.estGest) ...[  
+              const SizedBox(width: 6),
+              _enSauvegarde
+                  ? SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: isRetard ? AppColors.alerte : AppColors.succes,
+                      ),
+                    )
+                  : Icon(
+                      Icons.edit_calendar_outlined,
+                      size: 14,
+                      color: (isRetard ? AppColors.alerte : AppColors.succes)
+                          .withValues(alpha: 0.7),
+                    ),
+            ],
+          ],
         ),
       ),
     );

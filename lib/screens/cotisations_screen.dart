@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
+import '../services/echeance_service.dart';
 import '../services/pdf_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
@@ -120,10 +121,12 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
                           : 'Tour ${data.numerTour} · ${Formatters.montantFCFA(data.montant)} par membre · ${data.nbPayes}/${membres.length} payés',
                       style: const TextStyle(fontSize: 14, color: AppColors.texteDoux),
                     ),
-                    if (data.echeance != null) ...[
-                      const SizedBox(height: 8),
-                      _BandeauEcheance(echeance: data.echeance!),
-                    ],
+                    // Bandeau échéance : affiché toujours (calcul auto si non définie)
+                    const SizedBox(height: 8),
+                    _BandeauEcheance(
+                      echeance: data.echeance,
+                      periode: data.periode,
+                    ),
                     const SizedBox(height: 16),
 
                     // Bug #6 fix : afficher un message si liste vide
@@ -922,28 +925,64 @@ class _CarteMembre extends StatelessWidget {
 }
 
 class _BandeauEcheance extends StatelessWidget {
-  final String echeance;
+  final String? echeance;
+  final String periode;
 
-  const _BandeauEcheance({required this.echeance});
+  const _BandeauEcheance({
+    required this.echeance,
+    required this.periode,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final date = DateTime.tryParse(echeance);
-    if (date == null) return const SizedBox.shrink();
-    final estRetard = date.isBefore(DateTime.now());
+    // Calculer la prochaine échéance effective (stockée ou auto)
+    final prochaineDate = EcheanceService.prochaineEcheance(
+      echeanceStockee: echeance,
+      periode: periode,
+    );
+    final statut    = EcheanceService.statutEcheance(prochaineDate, periode);
+    final isRetard  = statut == 'alerte';
+    final isUrgent  = statut == 'avertissement';
+    final delai     = EcheanceService.texteDelai(prochaineDate, periode: periode);
+    final periodeLbl = EcheanceService.labelPeriode(periode);
+    final isAuto    = echeance == null || echeance!.isEmpty ||
+        (DateTime.tryParse(echeance!) != null &&
+         DateTime.tryParse(echeance!)!.isBefore(DateTime.now()));
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: estRetard ? AppColors.alerteFond : AppColors.succesFond,
+        color: isRetard ? AppColors.alerteFond
+             : isUrgent ? AppColors.fondConsultation
+             : AppColors.succesFond,
         borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        '📅 Échéance : ${Formatters.dateFormatee(date)} · ${Formatters.joursRestants(date)}',
-        style: TextStyle(
-          fontSize: 12.5,
-          fontWeight: FontWeight.w600,
-          color: estRetard ? AppColors.alerte : AppColors.succes,
+        border: Border.all(
+          color: isRetard ? AppColors.alerte.withValues(alpha: 0.3)
+               : isUrgent ? AppColors.or.withValues(alpha: 0.3)
+               : AppColors.succes.withValues(alpha: 0.3),
         ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            isRetard ? '⚠️' : '📅',
+            style: const TextStyle(fontSize: 13),
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              '${isAuto ? 'Auto ' : ''}$periodeLbl · ${Formatters.dateFormatee(prochaineDate)} · $delai',
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: isRetard ? AppColors.alerte
+                     : isUrgent ? AppColors.orFonce
+                     : AppColors.succes,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

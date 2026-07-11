@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/tontine.dart';
@@ -6,6 +7,7 @@ import '../services/subscription_service.dart';
 import '../services/feature_gate_service.dart';
 import '../services/platform_service.dart';
 import '../services/storage_service.dart';
+import '../services/echeance_service.dart';
 import '../utils/app_colors.dart';
 import '../widgets/app_widgets.dart';
 import 'abonnement_screen.dart';
@@ -201,6 +203,15 @@ class _CreationScreenState extends State<CreationScreen> {
     }
   }
 
+  /// Libellé de l'échéance calculée automatiquement (si aucune date choisie)
+  String _labelEcheanceAuto() {
+    final auto = EcheanceService.prochaineEcheance(periode: _periode);
+    final d = auto.day.toString().padLeft(2, '0');
+    final m = auto.month.toString().padLeft(2, '0');
+    final y = auto.year;
+    return '$d/$m/$y';
+  }
+
   void _ajouterMembre() {
     final isPremium = SubscriptionService.isPremium;
     // Gratuit : max 5 membres. Bloquer l'ajout du 6e et plus.
@@ -252,23 +263,52 @@ class _CreationScreenState extends State<CreationScreen> {
 
   Future<void> _choisirDate() async {
     final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: now.add(const Duration(days: 30)),
-      firstDate: now,
-      lastDate: now.add(const Duration(days: 365 * 5)),
-      locale: const Locale('fr', 'FR'),
-      builder: (ctx, child) => Theme(
-        data: Theme.of(ctx).copyWith(
-          colorScheme: const ColorScheme.light(
-            primary: AppColors.encre,
-            onPrimary: Colors.white,
+    // Sur Web, showDatePicker peut ignorer la locale 'fr_FR' sur certains
+    // navigateurs — on omet le paramètre locale pour éviter un crash
+    // et on s'assure que le context est encore monté.
+    if (!mounted) return;
+    final DateTime? picked;
+    if (kIsWeb) {
+      // Sur Web : utilise le date picker sans locale forcée (évite crash WebAssembly)
+      picked = await showDatePicker(
+        context: context,
+        initialDate: now.add(const Duration(days: 1)),
+        firstDate: now,
+        lastDate: now.add(const Duration(days: 365 * 5)),
+        builder: (ctx, child) => Theme(
+          data: Theme.of(ctx).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppColors.encre,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: AppColors.encre,
+            ),
           ),
+          child: child!,
         ),
-        child: child!,
-      ),
-    );
-    if (picked != null) {
+      );
+    } else {
+      // Mobile : avec locale française
+      picked = await showDatePicker(
+        context: context,
+        initialDate: now.add(const Duration(days: 1)),
+        firstDate: now,
+        lastDate: now.add(const Duration(days: 365 * 5)),
+        locale: const Locale('fr', 'FR'),
+        builder: (ctx, child) => Theme(
+          data: Theme.of(ctx).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppColors.encre,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: AppColors.encre,
+            ),
+          ),
+          child: child!,
+        ),
+      );
+    }
+    if (picked != null && mounted) {
       setState(() => _echeance = picked);
     }
   }
@@ -346,44 +386,91 @@ class _CreationScreenState extends State<CreationScreen> {
                         const ChampLabel(label: 'Périodicité'),
                         _SelectChamp(
                           value: _periode,
-                          items: const {
-                            'hebdo': 'Chaque semaine',
-                            'mensuel': 'Chaque mois',
-                          },
+                          items: EcheanceService.periodiciteOptions,
                           onChanged: (v) => setState(() => _periode = v!),
                         ),
+                        // Aide contextuelle selon la périodicité
+                        if (_periode == 'journalier')
+                          const ChampAide(
+                            texte: 'Cotisation quotidienne : chaque membre verse sa part chaque jour. L\'échéance sera calculée automatiquement si vous n\'en définissez pas.',
+                          ),
                         const ChampLabel(
                             label: 'Prochaine échéance (facultatif)'),
-                        GestureDetector(
-                          onTap: _choisirDate,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 13),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              border: Border.all(
-                                  color: AppColors.lignes, width: 1.5),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              children: [
-                                Text(
-                                  _echeance == null
-                                      ? 'Choisir une date...'
-                                      : '${_echeance!.day.toString().padLeft(2, '0')}/${_echeance!.month.toString().padLeft(2, '0')}/${_echeance!.year}',
-                                  style: TextStyle(
-                                    fontSize: 15.5,
-                                    color: _echeance == null
-                                        ? AppColors.texteDoux
-                                        : AppColors.texte,
-                                  ),
-                                ),
-                                const Spacer(),
-                                const Icon(Icons.calendar_today,
-                                    size: 18, color: AppColors.texteDoux),
-                              ],
+                        // Afficher la date calculée automatiquement si aucune n'est choisie
+                        if (_echeance == null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Text(
+                              'Auto : ${_labelEcheanceAuto()}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppColors.texteDoux,
+                                fontStyle: FontStyle.italic,
+                              ),
                             ),
                           ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: _choisirDate,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 14, vertical: 13),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    border: Border.all(
+                                        color: _echeance != null
+                                            ? AppColors.encre
+                                            : AppColors.lignes,
+                                        width: _echeance != null ? 2 : 1.5),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Text(
+                                        _echeance == null
+                                            ? 'Choisir une date...'
+                                            : '${_echeance!.day.toString().padLeft(2, '0')}/${_echeance!.month.toString().padLeft(2, '0')}/${_echeance!.year}',
+                                        style: TextStyle(
+                                          fontSize: 15.5,
+                                          color: _echeance == null
+                                              ? AppColors.texteDoux
+                                              : AppColors.encre,
+                                          fontWeight: _echeance != null
+                                              ? FontWeight.w600
+                                              : FontWeight.normal,
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                      const Icon(Icons.calendar_today,
+                                          size: 18, color: AppColors.texteDoux),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            // Bouton effacer la date
+                            if (_echeance != null) ...[  
+                              const SizedBox(width: 8),
+                              GestureDetector(
+                                onTap: () => setState(() => _echeance = null),
+                                child: Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.fondSecondaire,
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: AppColors.lignes),
+                                  ),
+                                  child: const Icon(
+                                    Icons.clear,
+                                    size: 18,
+                                    color: AppColors.texteDoux,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                         const ChampLabel(label: "Méthode d'ordre de passage"),
                         _SelectChamp(

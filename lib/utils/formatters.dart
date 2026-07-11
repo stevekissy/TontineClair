@@ -36,13 +36,34 @@ class Formatters {
 
   static String periodicite(String p) {
     switch (p) {
+      case 'journalier':
+        return 'Journalière';
       case 'hebdo':
         return 'Hebdomadaire';
       case 'mensuel':
-        return 'Mensuel';
+        return 'Mensuelle';
+      case 'bimensuel':
+        return 'Bimensuelle';
+      case 'trimestriel':
+        return 'Trimestrielle';
       default:
         return p;
     }
+  }
+
+  /// Libellé court de la prochaine échéance (ex: "Aujourd'hui", "Dans 3 jours")
+  static String delaiEcheance(DateTime? echeance) {
+    if (echeance == null) return '';
+    final now = DateTime.now();
+    final nowDate = DateTime(now.year, now.month, now.day);
+    final echDate = DateTime(echeance.year, echeance.month, echeance.day);
+    final diff = echDate.difference(nowDate).inDays;
+    if (diff < 0) return 'En retard de ${-diff} j.';
+    if (diff == 0) return "Aujourd'hui";
+    if (diff == 1) return 'Demain';
+    if (diff < 7)  return 'Dans $diff jours';
+    if (diff < 14) return 'Dans 1 sem.';
+    return 'Dans ${(diff / 7).round()} sem.';
   }
 
   static String methodeOrdre(String m) {

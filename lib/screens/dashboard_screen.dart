@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
+import '../services/echeance_service.dart';
 import '../services/pdf_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
@@ -87,19 +88,45 @@ class DashboardScreen extends StatelessWidget {
     final alertes = <_Alerte>[];
     final maintenant = DateTime.now();
 
-    // 1. Échéance de cotisation dépassée + retardataires
-    if (data.echeance != null) {
-      final ech = DateTime.tryParse(data.echeance!);
-      if (ech != null && ech.isBefore(maintenant)) {
-        final nb = _membresEnAttente(data);
-        if (nb > 0) {
-          alertes.add(_Alerte(
-            emoji: '⚠️',
-            message: 'Échéance dépassée : $nb membre${nb > 1 ? 's' : ''} n\'ont pas cotisé.',
-            couleur: AppColors.alerte,
-            fond: AppColors.alerteFond,
-          ));
-        }
+    // 1. Échéance de cotisation — gestion automatique selon périodicité
+    {
+      // Calculer la prochaine échéance effective (stockée OU auto)
+      final prochaineEch = EcheanceService.prochaineEcheance(
+        echeanceStockee: data.echeance,
+        periode: data.periode,
+      );
+      final joursRestants = EcheanceService.joursRestants(prochaineEch);
+      final nb = _membresEnAttente(data);
+
+      // Seuil d'alerte proactive selon la périodicité
+      final seuilAlerte = data.periode == 'journalier' ? 0 :
+                          data.periode == 'hebdo'      ? 2 : 3;
+
+      if (joursRestants < 0 && nb > 0) {
+        // Échéance DÉPASSÉE
+        final retard = -joursRestants;
+        alertes.add(_Alerte(
+          emoji: '⚠️',
+          message: 'Échéance dépassée ($retard j. de retard) : $nb membre${nb > 1 ? 's' : ''} n\'ont pas cotisé.',
+          couleur: AppColors.alerte,
+          fond: AppColors.alerteFond,
+        ));
+      } else if (joursRestants == 0 && nb > 0) {
+        // Échéance AUJOURD'HUI
+        alertes.add(_Alerte(
+          emoji: '📅',
+          message: 'Cotisation ${data.periode == 'journalier' ? 'journalière' : ''} due aujourd\'hui : $nb membre${nb > 1 ? 's' : ''} n\'ont pas encore cotisé.',
+          couleur: AppColors.or,
+          fond: AppColors.fondConsultation,
+        ));
+      } else if (joursRestants <= seuilAlerte && joursRestants > 0 && nb > 0) {
+        // Échéance PROCHE
+        alertes.add(_Alerte(
+          emoji: '⏰',
+          message: 'Cotisation dans $joursRestants jour${joursRestants > 1 ? 's' : ''} : $nb membre${nb > 1 ? 's' : ''} n\'ont pas cotisé.',
+          couleur: AppColors.or,
+          fond: AppColors.fondConsultation,
+        ));
       }
     }
 
@@ -204,17 +231,28 @@ class DashboardScreen extends StatelessWidget {
   }
 
   // ── Prochain bénéficiaire ─────────────────────────────────────────────────
-  static ({String? nom, int montant, bool cycleTermine}) _prochainBeneficiaire(
-      TontineData data) {
+  static ({String? nom, int montant, bool cycleTermine, DateTime? echeance, String periode})
+      _prochainBeneficiaire(TontineData data) {
     if (data.cycleTermine || data.ordre.isEmpty) {
-      return (nom: null, montant: 0, cycleTermine: true);
+      return (nom: null, montant: 0, cycleTermine: true, echeance: null, periode: data.periode);
     }
     // beneficiaire = membres[ ordre[tourActuel] ] (tourActuel = index 0-based)
     final beneficiaire = data.beneficiaire;
     // Montant qu'il recevra = N cotisations (tout le monde cotise, bénéficiaire inclus)
     final n = data.ordre.length;
     final montantRecu = n * data.montant;
-    return (nom: beneficiaire?.nom, montant: montantRecu, cycleTermine: false);
+    // Prochaine échéance effective (stockée ou calculée)
+    final prochaineEch = EcheanceService.prochaineEcheance(
+      echeanceStockee: data.echeance,
+      periode: data.periode,
+    );
+    return (
+      nom: beneficiaire?.nom,
+      montant: montantRecu,
+      cycleTermine: false,
+      echeance: prochaineEch,
+      periode: data.periode,
+    );
   }
 
   @override
@@ -461,7 +499,7 @@ class _CarteAlerte extends StatelessWidget {
 
 // ─── Carte Prochain bénéficiaire ──────────────────────────────────────────────
 class _CarteBeneficiaire extends StatelessWidget {
-  final ({String? nom, int montant, bool cycleTermine}) info;
+  final ({String? nom, int montant, bool cycleTermine, DateTime? echeance, String periode}) info;
 
   const _CarteBeneficiaire({required this.info});
 
@@ -495,65 +533,124 @@ class _CarteBeneficiaire extends StatelessWidget {
                 ),
               ],
             )
-          : Row(
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: AppColors.or.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Center(
-                    child: Text('🏆', style: TextStyle(fontSize: 22)),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Prochain bénéficiaire',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: Colors.white.withValues(alpha: 0.65),
-                        ),
-                      ),
-                      Text(
-                        info.nom ?? '—',
-                        style: GoogleFonts.bricolageGrotesque(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 18,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                Row(
                   children: [
-                    Text(
-                      'Recevra',
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        color: Colors.white.withValues(alpha: 0.65),
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: AppColors.or.withValues(alpha: 0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Center(
+                        child: Text('🏆', style: TextStyle(fontSize: 22)),
                       ),
                     ),
-                    Text(
-                      Formatters.montantFCFA(info.montant),
-                      style: GoogleFonts.bricolageGrotesque(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                        color: AppColors.or,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Prochain bénéficiaire',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: Colors.white.withValues(alpha: 0.65),
+                            ),
+                          ),
+                          Text(
+                            info.nom ?? '—',
+                            style: GoogleFonts.bricolageGrotesque(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 18,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
                       ),
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          'Recevra',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: Colors.white.withValues(alpha: 0.65),
+                          ),
+                        ),
+                        Text(
+                          Formatters.montantFCFA(info.montant),
+                          style: GoogleFonts.bricolageGrotesque(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                            color: AppColors.or,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
+                // ── Prochaine échéance de cotisation ──────────────────────────
+                if (info.echeance != null) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.calendar_today_outlined,
+                            size: 13, color: AppColors.or),
+                        const SizedBox(width: 7),
+                        Text(
+                          'Prochaine cotisation : ${Formatters.dateFormatee(info.echeance)}',
+                          style: GoogleFonts.inter(
+                            fontSize: 12.5,
+                            color: Colors.white.withValues(alpha: 0.9),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: _couleurDelai(info.echeance!, info.periode),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            Formatters.delaiEcheance(info.echeance),
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
     );
+  }
+
+  Color _couleurDelai(DateTime ech, String periode) {
+    final statut = EcheanceService.statutEcheance(ech, periode);
+    switch (statut) {
+      case 'alerte':
+        return AppColors.alerte;
+      case 'avertissement':
+        return AppColors.or;
+      default:
+        return AppColors.succes;
+    }
   }
 }
 

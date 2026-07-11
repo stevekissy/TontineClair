@@ -535,6 +535,50 @@ class SupabaseService {
     if (result is List) return result.cast<Map<String, dynamic>>();
     return [];
   }
+
+  // ── Gestion des échéances ─────────────────────────────────────────────────
+
+  /// Met à jour l'échéance d'une tontine dans Supabase.
+  ///
+  /// [code]     : code de la tontine (ex: 'A1B2C3')
+  /// [nom]      : nom du gestionnaire (pour authentification)
+  /// [pin]      : PIN du gestionnaire
+  /// [echeance] : nouvelle date au format ISO 8601 (ex: '2024-12-31T00:00:00.000Z')
+  ///              Passer null ou '' pour effacer l'échéance.
+  ///
+  /// Retourne true si la mise à jour a réussi.
+  static Future<bool> majEcheance({
+    required String code,
+    required String nom,
+    required String pin,
+    required String echeance,
+  }) async {
+    final result = await rpc('maj_echeance', {
+      'p_code':     code.toUpperCase(),
+      'p_nom':      nom,
+      'p_pin':      pin,
+      'p_echeance': echeance,
+    });
+    return result == true;
+  }
+
+  /// Lit uniquement la config (periodicite + echeance) d'une tontine.
+  /// Utile pour rafraîchir les paramètres sans recharger toute la tontine.
+  static Future<Map<String, dynamic>?> lireConfigTontine(String code) async {
+    final result = await rpc('lire_config_tontine', {
+      'p_code': code.toUpperCase(),
+    });
+    if (result is Map<String, dynamic>) return result;
+    return null;
+  }
+
+  /// Recalcule les échéances passées pour toutes les tontines actives.
+  /// Appel admin — retourne un résumé des mises à jour.
+  static Future<Map<String, dynamic>?> recalculerEcheancesExpir() async {
+    final result = await rpc('recalculer_echeances_expir', {});
+    if (result is Map<String, dynamic>) return result;
+    return null;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
