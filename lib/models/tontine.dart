@@ -954,9 +954,17 @@ class TontineData {
     // Une tontine nouvellement créée (ordre vide, cycleTermine absent) n'est PAS terminée.
     // Elle est en attente de démarrage.
     final cycleTermineBrut = json['cycleTermine'] as bool?;
+    // ── Historique pour la garde anti-corruption ──────────────────────────
+    final historiquePourGarde = (json['historique'] as List?)?.length ?? 0;
     final bool cycleTermine;
-    if (cycleTermineBrut != null) {
-      // Supabase l'a posé explicitement → source de vérité absolue
+    if (cycleTermineBrut == true && ordre.isEmpty && historiquePourGarde == 0) {
+      // ⚠️  Donnée corrompue : Supabase dit "terminé" mais la tontine n'a
+      //     jamais démarré (ordre vide, historique vide).
+      //     → On force cycleEnAttente (pas cycleTermine).
+      //     La migration SQL v15 corrige aussi ce cas côté serveur.
+      cycleTermine = false;
+    } else if (cycleTermineBrut != null) {
+      // Supabase l'a posé explicitement → source de vérité
       cycleTermine = cycleTermineBrut;
     } else if (ordre.isEmpty) {
       // Tontine jamais lancée (ordre non défini) → PAS terminée, en attente

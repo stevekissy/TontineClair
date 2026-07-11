@@ -322,40 +322,23 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
     required String titre,
     required String sousTitre,
     required List<({String label, String valeur})> recap,
-  }) {
-    return afficherModalePin(
+  }) async {
+    // Capturer le PIN saisi dans afficherModalePin via le callback onValider.
+    // On stocke le PIN dans une variable locale et on retourne true pour fermer la modale.
+    String? pinCapture;
+    final ok = await afficherModalePin(
       context,
       titre: titre,
       sousTitre: sousTitre,
       recap: recap,
-      onValider: (pin) async => true,
-    ).then((ok) async {
-      if (ok != true) return null;
-      // Demander le PIN séparément
-      final ctrl = TextEditingController();
-      if (!mounted) return null;
-      return showDialog<String>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(titre),
-          content: TextField(
-            controller: ctrl,
-            obscureText: true,
-            keyboardType: TextInputType.number,
-            maxLength: 6,
-            decoration: const InputDecoration(hintText: 'PIN gestionnaire', counterText: ''),
-            autofocus: true,
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('Confirmer', style: TextStyle(fontWeight: FontWeight.w700)),
-            ),
-          ],
-        ),
-      );
-    });
+      onValider: (pin) async {
+        if (pin.isEmpty || pin.length < 4) return false;
+        pinCapture = pin;
+        return true; // ferme la modale
+      },
+    );
+    if (ok != true || pinCapture == null || pinCapture!.isEmpty) return null;
+    return pinCapture;
   }
 
   Future<String?> _choisirChoix(BuildContext context, String nomMembre) {
@@ -693,10 +676,17 @@ class _EtatPeutProposer extends StatelessWidget {
                 style: const TextStyle(fontSize: 14, color: Colors.white70),
               ),
               const SizedBox(height: 12),
-              Text(
-                'Cycle ${data.cycleNum} · ${data.ordre.length} tour${data.ordre.length > 1 ? 's' : ''} · ${EcheanceService.labelPeriode(data.periode)}',
-                style: const TextStyle(fontSize: 13, color: Colors.white54),
-              ),
+              Builder(builder: (ctx) {
+                // Nombre de tours : ordre.length en priorité, sinon historique.length
+                // (après un demarrer_nouveau_cycle, ordre[] est réinitialisé à [])
+                final nbTours = data.ordre.isNotEmpty
+                    ? data.ordre.length
+                    : data.historique.length;
+                return Text(
+                  'Cycle ${data.cycleNum} · $nbTours tour${nbTours > 1 ? 's' : ''} · ${EcheanceService.labelPeriode(data.periode)}',
+                  style: const TextStyle(fontSize: 13, color: Colors.white54),
+                );
+              }),
             ],
           ),
         ),
