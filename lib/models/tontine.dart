@@ -479,8 +479,15 @@ class TontineData {
   /// Numéro humain = tourActuel + 1
   int tourActuel;
 
-  /// true quand tous les membres ont été servis
+  /// true quand tous les membres ont été servis (cycle réellement terminé)
   bool cycleTermine;
+
+  /// true si la tontine a été créée mais n'a pas encore démarré (ordre vide, cycleTermine false).
+  /// DIFFÉRENT de cycleTermine : une tontine en attente n'est PAS terminée, elle n'a jamais commencé.
+  bool get cycleEnAttente => ordre.isEmpty && !cycleTermine;
+
+  /// true si le cycle est actif (a démarré et n'est pas encore terminé)
+  bool get cycleActif => ordre.isNotEmpty && !cycleTermine;
 
   /// Numéro du cycle courant (1-based, incrémenté à chaque nouveau cycle)
   int cycleNumero;
@@ -668,9 +675,11 @@ class TontineData {
   ///   - aucun vote 'nouveau_cycle' déjà ouvert
   ///   - la tontine a au moins 2 membres et un ordre de passage défini
   bool get peutProposerNouveauCycle {
+    // Un cycle en attente (jamais lancé) ou en cours n'est PAS un cycle terminé
     if (!cycleTermine) return false;
-    // Ne pas proposer si ordre vide (tontine jamais lancée)
-    if (ordre.isEmpty) return false;
+    // Sécurité : le cycle doit avoir réellement démarré (historique ou ordre non vide)
+    // Si ordre vide + cycleTermine=true → donnée corrompue → bloquer
+    if (historique.isEmpty && ordre.isEmpty) return false;
     // Vérifier qu'il n'y a pas déjà un vote ouvert
     for (final v in votes) {
       if (v.type == 'nouveau_cycle' && !v.clos) return false;
@@ -892,8 +901,22 @@ class TontineData {
     }
 
     // ── cycleTermine ──────────────────────────────────────────────────────
-    final cycleTermine = json['cycleTermine'] as bool?
-        ?? (ordre.isNotEmpty && tourActuel >= ordre.length);
+    // Règle : cycleTermine = true UNIQUEMENT si Supabase le dit explicitement
+    // OU si le cycle a réellement démarré (ordre non vide) ET tous les tours sont faits.
+    // Une tontine nouvellement créée (ordre vide, cycleTermine absent) n'est PAS terminée.
+    // Elle est en attente de démarrage.
+    final cycleTermineBrut = json['cycleTermine'] as bool?;
+    final bool cycleTermine;
+    if (cycleTermineBrut != null) {
+      // Supabase l'a posé explicitement → source de vérité absolue
+      cycleTermine = cycleTermineBrut;
+    } else if (ordre.isEmpty) {
+      // Tontine jamais lancée (ordre non défini) → PAS terminée, en attente
+      cycleTermine = false;
+    } else {
+      // Calcul de sécurité : tous les tours effectués
+      cycleTermine = tourActuel >= ordre.length;
+    }
 
     // ── tirageVerrouille ──────────────────────────────────────────────────
     bool tirageVerrouille = false;

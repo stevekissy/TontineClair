@@ -232,10 +232,15 @@ class DashboardScreen extends StatelessWidget {
   }
 
   // ── Prochain bénéficiaire ─────────────────────────────────────────────────
-  static ({String? nom, int montant, bool cycleTermine, DateTime? echeance, String periode})
+  static ({String? nom, int montant, bool cycleTermine, bool cycleEnAttente, DateTime? echeance, String periode})
       _prochainBeneficiaire(TontineData data) {
-    if (data.cycleTermine || data.ordre.isEmpty) {
-      return (nom: null, montant: 0, cycleTermine: true, echeance: null, periode: data.periode);
+    // Cas 1 : tontine en attente de démarrage (ordre vide, jamais lancée)
+    if (data.cycleEnAttente) {
+      return (nom: null, montant: 0, cycleTermine: false, cycleEnAttente: true, echeance: null, periode: data.periode);
+    }
+    // Cas 2 : cycle réellement terminé (tous les membres ont été servis)
+    if (data.cycleTermine) {
+      return (nom: null, montant: 0, cycleTermine: true, cycleEnAttente: false, echeance: null, periode: data.periode);
     }
     // beneficiaire = membres[ ordre[tourActuel] ] (tourActuel = index 0-based)
     final beneficiaire = data.beneficiaire;
@@ -251,6 +256,7 @@ class DashboardScreen extends StatelessWidget {
       nom: beneficiaire?.nom,
       montant: montantRecu,
       cycleTermine: false,
+      cycleEnAttente: false,
       echeance: prochaineEch,
       periode: data.periode,
     );
@@ -504,7 +510,7 @@ class _CarteAlerte extends StatelessWidget {
 
 // ─── Carte Prochain bénéficiaire ──────────────────────────────────────────────
 class _CarteBeneficiaire extends StatelessWidget {
-  final ({String? nom, int montant, bool cycleTermine, DateTime? echeance, String periode}) info;
+  final ({String? nom, int montant, bool cycleTermine, bool cycleEnAttente, DateTime? echeance, String periode}) info;
   final String code;
   final bool estGest;
 
@@ -522,7 +528,31 @@ class _CarteBeneficiaire extends StatelessWidget {
         color: AppColors.encre,
         borderRadius: BorderRadius.circular(16),
       ),
-      child: info.cycleTermine
+      child: info.cycleEnAttente
+          // ── Cas A : tontine créée, cycle pas encore démarré ──────────────
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '⏳ En attente de démarrage',
+                  style: GoogleFonts.bricolageGrotesque(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'La tontine est prête. Le gestionnaire doit définir l\'ordre de passage pour lancer le premier tour.',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: Colors.white.withValues(alpha: 0.8),
+                  ),
+                ),
+              ],
+            )
+          : info.cycleTermine
+          // ── Cas B : cycle réellement terminé (tous servis) ───────────────
           ? Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

@@ -82,12 +82,17 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
 
                       const SizedBox(height: 20),
 
+                      // ── État 0 : Tontine en attente de démarrage ──
+                      // (ordre vide, jamais lancée — PAS un cycle terminé)
+                      if (data.cycleEnAttente)
+                        _EtatEnAttente(data: data, estGest: estGest)
+
                       // ── État 1 : Cycle en cours ──
-                      if (!data.cycleTermine)
+                      else if (data.cycleActif)
                         _EtatCycleEnCours(data: data)
 
-                      // ── État 2 : Cycle terminé, pas de vote ──
-                      else if (vote == null || data.peutProposerNouveauCycle)
+                      // ── État 2 : Cycle terminé, peut proposer ──
+                      else if (data.cycleTermine && (vote == null || data.peutProposerNouveauCycle))
                         _EtatPeutProposer(
                           data: data,
                           estGest: estGest,
@@ -423,6 +428,160 @@ class _EnTete extends StatelessWidget {
 }
 
 // ── État 1 : Cycle en cours ──────────────────────────────────────────────────
+// ─── État 0 : Tontine en attente de démarrage ────────────────────────────────
+// Affichée quand la tontine vient d'être créée mais le premier cycle
+// n'a pas encore démarré (ordre de passage non défini).
+class _EtatEnAttente extends StatelessWidget {
+  final TontineData data;
+  final bool estGest;
+  const _EtatEnAttente({required this.data, required this.estGest});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        CarteTC(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.encre.withValues(alpha: 0.08),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Center(child: Text('⏳', style: TextStyle(fontSize: 20))),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Tontine en attente de démarrage',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
+                            color: AppColors.encre,
+                          ),
+                        ),
+                        Text(
+                          'Cycle N°1 — ${data.membres.length} membre${data.membres.length > 1 ? 's' : ''}',
+                          style: TextStyle(fontSize: 12, color: AppColors.texteDoux),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Divider(height: 1),
+              const SizedBox(height: 16),
+              Text(
+                'La tontine a été créée avec succès. Pour lancer le premier cycle :',
+                style: TextStyle(fontSize: 14, color: AppColors.encre),
+              ),
+              const SizedBox(height: 12),
+              _EtapeInfo(
+                numero: '1',
+                texte: 'Aller dans l\'onglet "Tirage" pour définir l\'ordre de passage des membres.',
+              ),
+              const SizedBox(height: 8),
+              _EtapeInfo(
+                numero: '2',
+                texte: 'Configurer l\'échéance du premier tour dans "Cotisations".',
+              ),
+              const SizedBox(height: 8),
+              _EtapeInfo(
+                numero: '3',
+                texte: 'Le premier tour démarre automatiquement dès que l\'ordre est verrouillé.',
+              ),
+              if (!estGest) ...[
+                const SizedBox(height: 16),
+                _BandeauGestRequis(),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Infos de la tontine
+        CarteTC(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Paramètres de la tontine',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                  color: AppColors.encre,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _InfoLigneCycle(
+                label: 'Nom',
+                valeur: data.nom,
+              ),
+              _InfoLigneCycle(
+                label: 'Cotisation',
+                valeur: '${data.montant} FCFA / ${Formatters.periodicite(data.periode)}',
+              ),
+              _InfoLigneCycle(
+                label: 'Membres inscrits',
+                valeur: '${data.membres.length} membre${data.membres.length > 1 ? 's' : ''}',
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Étape numérotée (pour _EtatEnAttente) ───────────────────────────────────
+class _EtapeInfo extends StatelessWidget {
+  final String numero;
+  final String texte;
+  const _EtapeInfo({required this.numero, required this.texte});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            color: AppColors.encre,
+            shape: BoxShape.circle,
+          ),
+          child: Center(
+            child: Text(
+              numero,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            texte,
+            style: TextStyle(fontSize: 13, color: AppColors.texteDoux),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _EtatCycleEnCours extends StatelessWidget {
   final TontineData data;
   const _EtatCycleEnCours({required this.data});
