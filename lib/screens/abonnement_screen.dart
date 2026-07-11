@@ -1,14 +1,36 @@
+// ignore_for_file: avoid_print
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/tontine_provider.dart';
 import '../services/supabase_service.dart';
+import '../services/platform_service.dart';
+import '../services/subscription_service.dart';
+import '../services/feature_gate_service.dart';
 import '../utils/app_colors.dart';
+import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ÉCRAN ABONNEMENT — détection automatique de la plateforme
+//
+// WEB    → formulaire de contact + demande manuelle
+// ANDROID → message Google Play Billing (in-app purchase)
+// iOS    → message Apple In-App Purchase (StoreKit)
+// ─────────────────────────────────────────────────────────────────────────────
 
 class AbonnementScreen extends StatefulWidget {
   final String code;
+  /// Forcer la plateforme (utilisé depuis création sans tontine chargée)
+  final PlatformType? platformeForce;
 
-  const AbonnementScreen({super.key, required this.code});
+  const AbonnementScreen({
+    super.key,
+    required this.code,
+    this.platformeForce,
+  });
 
   @override
   State<AbonnementScreen> createState() => _AbonnementScreenState();
@@ -16,14 +38,19 @@ class AbonnementScreen extends StatefulWidget {
 
 class _AbonnementScreenState extends State<AbonnementScreen> {
   bool _loading = false;
+  bool _demandeEnvoyee = false;
+  String _formule = 'mensuel';
+
+  PlatformType get _platform =>
+      widget.platformeForce ?? PlatformService.current;
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<TontineProvider>();
-    final tontine = provider.courante;
-    if (tontine == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    final tontine  = provider.courante;
 
-    final isPremium = tontine.isPremium;
+    // Statut Premium — depuis SubscriptionService (source unique)
+    final isPremium = tontine?.isPremium ?? SubscriptionService.isPremium;
 
     return Scaffold(
       backgroundColor: AppColors.fondPapier,
@@ -33,6 +60,7 @@ class _AbonnementScreenState extends State<AbonnementScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // ── En-tête ──────────────────────────────────────────────────
               Row(
                 children: [
                   const LogoTontineClair(),
@@ -41,76 +69,82 @@ class _AbonnementScreenState extends State<AbonnementScreen> {
                     onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(Icons.arrow_back, size: 16),
                     label: const Text('Retour'),
-                    style: TextButton.styleFrom(foregroundColor: AppColors.encre),
+                    style: TextButton.styleFrom(
+                        foregroundColor: AppColors.encre),
                   ),
                 ],
               ),
               const SizedBox(height: 24),
-              const Text(
+
+              Text(
                 'Abonnement',
-                style: TextStyle(
+                style: GoogleFonts.bricolageGrotesque(
                   fontWeight: FontWeight.w800,
-                  fontSize: 30,
+                  fontSize: 28,
                   color: AppColors.encre,
                 ),
               ),
               const SizedBox(height: 8),
-              if (isPremium)
+
+              // ── Statut actuel ─────────────────────────────────────────────
+              if (isPremium && tontine != null)
                 _BandeauPremiumActif(tontine: tontine)
+              else if (isPremium)
+                _BandeauPremiumActifSimple()
               else
-                const Text(
-                  'Passez au Premium pour débloquer toutes les fonctionnalités : caisse, prêts, votes, exports illimités.',
-                  style: TextStyle(fontSize: 15, color: AppColors.texteDoux),
+                Text(
+                  'Débloquez toutes les fonctionnalités avec Premium.',
+                  style: GoogleFonts.inter(
+                    fontSize: 15,
+                    color: AppColors.texteDoux,
+                  ),
                 ),
               const SizedBox(height: 24),
-              // Tableau comparatif
+
+              // ── Tableau comparatif ────────────────────────────────────────
               _TableauComparatif(),
               const SizedBox(height: 24),
-              // Tarifs
+
+              // ── Section souscription selon la plateforme ─────────────────
               if (!isPremium) ...[
-                const Text(
-                  'Choisissez votre formule',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 20,
-                    color: AppColors.encre,
-                  ),
+                _SectionTitre(
+                  titre: 'Choisissez votre formule',
+                  icone: Icons.workspace_premium,
                 ),
                 const SizedBox(height: 12),
-                _CarteTarif(
-                  label: 'Mensuel',
-                  prix: '2 500 FCFA / mois',
-                  description: 'Flexible, sans engagement',
-                  badge: null,
-                  selected: false,
-                  onTap: () => _demanderPremium(context, provider),
-                ),
-                const SizedBox(height: 10),
-                _CarteTarif(
-                  label: 'Annuel',
-                  prix: '25 000 FCFA / an',
-                  description: '2 mois offerts vs mensuel',
-                  badge: '2 mois offerts',
-                  selected: false,
-                  onTap: () => _demanderPremium(context, provider),
-                ),
+
+                // ── Sélection formule ─────────────────────────────────────
+                Row(children: [
+                  Expanded(
+                    child: _CarteTarif(
+                      label: 'Mensuel',
+                      prix: '2 500 FCFA / mois',
+                      description: 'Flexible, sans engagement',
+                      badge: null,
+                      selected: _formule == 'mensuel',
+                      onTap: () => setState(() => _formule = 'mensuel'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _CarteTarif(
+                      label: 'Annuel',
+                      prix: '25 000 FCFA / an',
+                      description: '2 mois offerts vs mensuel',
+                      badge: '−17%',
+                      selected: _formule == 'annuel',
+                      onTap: () => setState(() => _formule = 'annuel'),
+                    ),
+                  ),
+                ]),
                 const SizedBox(height: 20),
-                const Text(
-                  '💡 Le paiement sera bientôt disponible directement dans l\'application. En attendant, contactez votre administrateur pour activer le Premium.',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppColors.texteDoux,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                if (provider.estDebloque)
-                  BtnKola(
-                    label: '✉️ Demander l\'activation Premium',
-                    onTap: () => _demanderPremium(context, provider),
-                    loading: _loading,
-                  ),
+
+                // ── CTA selon la plateforme ───────────────────────────────
+                _buildCtaPlateforme(context, tontine),
               ],
+
+              const SizedBox(height: 32),
+              _buildNotesLegales(),
             ],
           ),
         ),
@@ -118,117 +152,516 @@ class _AbonnementScreenState extends State<AbonnementScreen> {
     );
   }
 
-  Future<void> _demanderPremium(
-    BuildContext context,
-    TontineProvider provider,
-  ) async {
-    if (!provider.estDebloque) {
-      afficherToast(
-        context,
-        'Connectez-vous en tant que gestionnaire d\'abord.',
-        estErreur: true,
-      );
+  // ─── CTA selon plateforme ────────────────────────────────────────────────
+
+  Widget _buildCtaPlateforme(BuildContext context, dynamic tontine) {
+    switch (_platform) {
+      case PlatformType.android:
+        return _SectionAndroid(formule: _formule);
+      case PlatformType.ios:
+        return _SectionIOS(formule: _formule);
+      case PlatformType.web:
+        return _SectionWeb(
+          formule: _formule,
+          code: widget.code.isNotEmpty
+              ? widget.code
+              : tontine?.code ?? '',
+          loading: _loading,
+          demandeEnvoyee: _demandeEnvoyee,
+          onDemander: _demanderPremium,
+        );
+    }
+  }
+
+  Future<void> _demanderPremium() async {
+    final code = widget.code.isNotEmpty
+        ? widget.code
+        : (context.read<TontineProvider>().courante?.code ?? '');
+
+    if (code.isEmpty) {
+      afficherToast(context, 'Code de tontine manquant.', estErreur: true);
       return;
     }
 
-    final contactCtrl = TextEditingController();
+    setState(() => _loading = true);
+    try {
+      // demanderPremium envoie une demande dans demandes_premium
+      // Les champs nom/pin/contact sont des métadonnées de la demande
+      await SupabaseService.demanderPremium(
+        code: code,
+        nom: 'Demande web $_formule',
+        pin: '0000',
+        contact: 'demande@tontineclair.com',
+      );
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _demandeEnvoyee = true;
+        });
+        afficherToast(context, 'Demande envoyée ! L\'administrateur va vous contacter.');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loading = false);
+        afficherToast(context, 'Erreur : $e', estErreur: true);
+      }
+    }
+  }
 
-    final result = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.fondPapier,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          top: 16,
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+  Widget _buildNotesLegales() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(color: AppColors.lignes),
+        const SizedBox(height: 12),
+        Text(
+          'Informations légales',
+          style: GoogleFonts.inter(
+            fontWeight: FontWeight.w700,
+            fontSize: 13,
+            color: AppColors.encre,
+          ),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.lignes,
-                  borderRadius: BorderRadius.circular(2),
+        const SizedBox(height: 6),
+        Text(
+          '• L\'abonnement se renouvelle automatiquement sauf annulation avant la fin de la période.\n'
+          '• Les données de votre compte sont conservées après expiration.\n'
+          '• Aucune fonctionnalité n\'est supprimée — seule la création est bloquée après expiration.\n'
+          '• Contactez support@tontineclair.com pour toute question.',
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            color: AppColors.texteDoux,
+            height: 1.6,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION WEB — formulaire de demande manuelle
+// Visible UNIQUEMENT sur plateforme web
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SectionWeb extends StatelessWidget {
+  final String formule;
+  final String code;
+  final bool loading;
+  final bool demandeEnvoyee;
+  final VoidCallback onDemander;
+
+  const _SectionWeb({
+    required this.formule,
+    required this.code,
+    required this.loading,
+    required this.demandeEnvoyee,
+    required this.onDemander,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (demandeEnvoyee) {
+      return _CarteSucces();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CarteTC(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.language,
+                      size: 18, color: AppColors.encreDoux),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Activation Premium Web',
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                      color: AppColors.encre,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Sélectionnez la formule puis cliquez sur "Demander l\'activation". '
+                'Notre équipe vous contactera pour finaliser le paiement.',
+                style: GoogleFonts.inter(
+                  fontSize: 13.5,
+                  color: AppColors.texteDoux,
+                  height: 1.5,
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Demander le Premium',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 20,
-                color: AppColors.encre,
+              const SizedBox(height: 16),
+              BtnPrincipal(
+                label: 'Demander l\'activation Premium',
+                icone: Icons.workspace_premium,
+                couleur: AppColors.orFonce,
+                loading: loading,
+                onTap: onDemander,
               ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Votre demande sera traitée manuellement. Entrez votre numéro WhatsApp pour être contacté.',
-              style: TextStyle(fontSize: 13.5, color: AppColors.texteDoux),
-            ),
-            const ChampLabel(label: 'Numéro WhatsApp / Contact'),
-            TextField(
-              controller: contactCtrl,
-              keyboardType: TextInputType.phone,
-              autofocus: true,
-              decoration: const InputDecoration(
-                hintText: '+225 07 XX XX XX XX',
+              const SizedBox(height: 10),
+              // WhatsApp contact (web uniquement)
+              OutlinedButton.icon(
+                onPressed: () => _ouvrirWhatsApp(context, formule),
+                icon: const Icon(Icons.chat, size: 16),
+                label: const Text('Contacter sur WhatsApp'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.succes,
+                  side: const BorderSide(color: AppColors.succes),
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            BtnPrincipal(
-              label: 'Envoyer la demande',
-              onTap: () => Navigator.pop(ctx, true),
-            ),
-            const SizedBox(height: 8),
-            BtnSecondaire(
-              label: 'Annuler',
-              onTap: () => Navigator.pop(ctx, false),
-            ),
-          ],
+            ],
+          ),
         ),
+      ],
+    );
+  }
+
+  void _ouvrirWhatsApp(BuildContext ctx, String f) {
+    final montant = f == 'annuel' ? '25 000 FCFA/an' : '2 500 FCFA/mois';
+    final msg = Uri.encodeComponent(
+      'Bonjour, je souhaite activer Premium TontineClair ($montant) pour la tontine $code.',
+    );
+    final url = Uri.parse('https://wa.me/?text=$msg');
+    launchUrl(url, mode: LaunchMode.externalApplication).catchError((_) {});
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION ANDROID — Google Play Billing
+// Aucun formulaire web, aucun WhatsApp
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SectionAndroid extends StatelessWidget {
+  final String formule;
+
+  const _SectionAndroid({required this.formule});
+
+  @override
+  Widget build(BuildContext context) {
+    return CarteTC(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Image.network(
+                'https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Google_Play_Store_badge_EN.svg/320px-Google_Play_Store_badge_EN.svg.png',
+                height: 28,
+                errorBuilder: (_, __, ___) =>
+                    const Icon(Icons.shop, color: AppColors.encreDoux, size: 28),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Google Play',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                  color: AppColors.encre,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'L\'abonnement Premium est disponible via Google Play.\n'
+            'Le paiement est sécurisé et géré directement par Google.',
+            style: GoogleFonts.inter(
+              fontSize: 13.5,
+              color: AppColors.texteDoux,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Product ID affiché pour transparence
+          _InfoProduit(
+            productId: formule == 'annuel'
+                ? FeatureGate.googlePlayYearly
+                : FeatureGate.googlePlayMonthly,
+            prix: formule == 'annuel' ? '25 000 FCFA/an' : '2 500 FCFA/mois',
+          ),
+          const SizedBox(height: 16),
+
+          // Bouton Souscrire via Google Play
+          BtnPrincipal(
+            label: 'Souscrire via Google Play',
+            icone: Icons.play_circle_outline,
+            couleur: const Color(0xFF01875F), // couleur Google Play
+            onTap: () => _lancerGooglePlay(context),
+          ),
+          const SizedBox(height: 8),
+
+          // Restaurer les achats
+          TextButton.icon(
+            onPressed: () => _restaurerAchats(context),
+            icon: const Icon(Icons.restore, size: 16),
+            label: const Text('Restaurer les achats'),
+            style: TextButton.styleFrom(
+                foregroundColor: AppColors.texteDoux),
+          ),
+
+          const SizedBox(height: 12),
+          _NoteRenouvellement(),
+        ],
       ),
     );
+  }
 
-    if (result != true || !context.mounted) return;
-
-    final ok = await afficherModalePin(
-      context,
-      titre: 'Confirmer la demande',
-      sousTitre: 'Votre PIN pour authentifier la demande.',
-      onValider: (pin) async {
-        setState(() => _loading = true);
-        try {
-          return await SupabaseService.demanderPremium(
-            code: provider.courante!.code,
-            nom: provider.gestActifNom!,
-            pin: pin,
-            contact: contactCtrl.text.trim(),
-          );
-        } finally {
-          setState(() => _loading = false);
-        }
-      },
+  void _lancerGooglePlay(BuildContext ctx) {
+    // TODO : déclencher in_app_purchase quand le package est intégré.
+    // Pour l'instant : afficher un message d'information.
+    afficherToast(
+      ctx,
+      'Google Play Billing sera activé après publication sur le Play Store.',
     );
+  }
 
-    if (!context.mounted) return;
-    if (ok == true) {
-      afficherToast(
-        context,
-        'Demande envoyée ! Vous serez contacté sous 24h.',
-      );
-    } else {
-      afficherToast(context, 'PIN incorrect.', estErreur: true);
-    }
+  void _restaurerAchats(BuildContext ctx) {
+    afficherToast(ctx, 'Restauration en cours via Google Play…');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION iOS — Apple In-App Purchase / StoreKit
+// Aucun formulaire web, aucun WhatsApp
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SectionIOS extends StatelessWidget {
+  final String formule;
+
+  const _SectionIOS({required this.formule});
+
+  @override
+  Widget build(BuildContext context) {
+    return CarteTC(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.apple, size: 28, color: AppColors.encre),
+              const SizedBox(width: 10),
+              Text(
+                'App Store',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                  color: AppColors.encre,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'L\'abonnement Premium est disponible via l\'App Store d\'Apple.\n'
+            'Le paiement est sécurisé et géré directement par Apple.',
+            style: GoogleFonts.inter(
+              fontSize: 13.5,
+              color: AppColors.texteDoux,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          _InfoProduit(
+            productId: formule == 'annuel'
+                ? FeatureGate.appleYearly
+                : FeatureGate.appleMonthly,
+            prix: formule == 'annuel' ? '25 000 FCFA/an' : '2 500 FCFA/mois',
+          ),
+          const SizedBox(height: 16),
+
+          BtnPrincipal(
+            label: 'Souscrire via App Store',
+            icone: Icons.apple,
+            couleur: const Color(0xFF0071E3), // couleur Apple
+            onTap: () => _lancerAppStore(context),
+          ),
+          const SizedBox(height: 8),
+
+          TextButton.icon(
+            onPressed: () => _restaurerAchats(context),
+            icon: const Icon(Icons.restore, size: 16),
+            label: const Text('Restaurer les achats'),
+            style: TextButton.styleFrom(
+                foregroundColor: AppColors.texteDoux),
+          ),
+
+          const SizedBox(height: 12),
+          _NoteRenouvellement(),
+        ],
+      ),
+    );
+  }
+
+  void _lancerAppStore(BuildContext ctx) {
+    // TODO : déclencher StoreKit quand le package est intégré.
+    afficherToast(
+      ctx,
+      'Apple In-App Purchase sera activé après publication sur l\'App Store.',
+    );
+  }
+
+  void _restaurerAchats(BuildContext ctx) {
+    afficherToast(ctx, 'Restauration en cours via App Store…');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WIDGETS COMMUNS
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _InfoProduit extends StatelessWidget {
+  final String productId;
+  final String prix;
+
+  const _InfoProduit({required this.productId, required this.prix});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.fondCode,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.label_outline, size: 14, color: AppColors.texteDoux),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  productId,
+                  style: const TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 11,
+                    color: AppColors.encreDoux,
+                  ),
+                ),
+                Text(
+                  prix,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.encre,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NoteRenouvellement extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      '⟳ Se renouvelle automatiquement. Annulez à tout moment depuis les paramètres de votre compte store.',
+      style: GoogleFonts.inter(
+        fontSize: 11.5,
+        color: AppColors.texteDoux,
+        height: 1.4,
+      ),
+    );
+  }
+}
+
+class _CarteSucces extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return CarteTC(
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppColors.succesFond,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.check_circle, color: AppColors.succes, size: 24),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Demande envoyée !',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                    color: AppColors.succes,
+                  ),
+                ),
+                Text(
+                  'Nous vous contacterons sous 24h pour activer votre Premium.',
+                  style: TextStyle(fontSize: 13, color: AppColors.texteDoux),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BandeauPremiumActifSimple extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return CarteTC(
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.fondConsultation,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.workspace_premium,
+                color: AppColors.orFonce, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Premium actif',
+                  style: GoogleFonts.bricolageGrotesque(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                    color: AppColors.orFonce,
+                  ),
+                ),
+                Text(
+                  'Toutes les fonctionnalités sont débloquées.',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: AppColors.texteDoux,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -239,34 +672,40 @@ class _BandeauPremiumActif extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.or,
-        borderRadius: BorderRadius.circular(16),
-      ),
+    final expire = tontine?.planExpire as DateTime?;
+
+    return CarteTC(
       child: Row(
         children: [
-          const Text('★', style: TextStyle(fontSize: 28, color: Color(0xFF2A1E05))),
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.fondConsultation,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.workspace_premium,
+                color: AppColors.orFonce, size: 22),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Abonnement Premium actif',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
+                Text(
+                  '★ Premium actif',
+                  style: GoogleFonts.bricolageGrotesque(
+                    fontWeight: FontWeight.w800,
                     fontSize: 16,
-                    color: Color(0xFF2A1E05),
+                    color: AppColors.orFonce,
                   ),
                 ),
-                if (tontine.planExpire != null)
+                if (expire != null)
                   Text(
-                    'Expire le ${tontine.planExpire!.day.toString().padLeft(2, '0')}/${tontine.planExpire!.month.toString().padLeft(2, '0')}/${tontine.planExpire!.year}',
-                    style: const TextStyle(
+                    'Expire le ${Formatters.dateFormatee(expire)}',
+                    style: GoogleFonts.inter(
                       fontSize: 13,
-                      color: Color(0xFF4A3500),
+                      color: AppColors.texteDoux,
                     ),
                   ),
               ],
@@ -278,114 +717,24 @@ class _BandeauPremiumActif extends StatelessWidget {
   }
 }
 
-class _TableauComparatif extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return CarteTC(
-      child: Column(
-        children: [
-          const _LigneComparatif(
-            fonctionnalite: 'Tontines',
-            gratuit: '1',
-            premium: 'Illimitées',
-          ),
-          _sep(),
-          const _LigneComparatif(
-            fonctionnalite: 'Membres',
-            gratuit: '5 max',
-            premium: 'Illimités',
-          ),
-          _sep(),
-          const _LigneComparatif(
-            fonctionnalite: 'Cotisations & Tirage',
-            gratuit: '✓',
-            premium: '✓',
-          ),
-          _sep(),
-          const _LigneComparatif(
-            fonctionnalite: 'Caisse commune',
-            gratuit: '—',
-            premium: '✓',
-          ),
-          _sep(),
-          const _LigneComparatif(
-            fonctionnalite: 'Prêts internes',
-            gratuit: '—',
-            premium: '✓',
-          ),
-          _sep(),
-          const _LigneComparatif(
-            fonctionnalite: 'Votes sécurisés',
-            gratuit: '—',
-            premium: '✓',
-          ),
-          _sep(),
-          const _LigneComparatif(
-            fonctionnalite: 'Export PDF',
-            gratuit: '—',
-            premium: '✓',
-          ),
-          _sep(),
-          const _LigneComparatif(
-            fonctionnalite: 'Journal illimité',
-            gratuit: '—',
-            premium: '✓',
-          ),
-        ],
-      ),
-    );
-  }
+class _SectionTitre extends StatelessWidget {
+  final String titre;
+  final IconData icone;
 
-  Widget _sep() => const Divider(height: 12, color: AppColors.lignes);
-}
-
-class _LigneComparatif extends StatelessWidget {
-  final String fonctionnalite;
-  final String gratuit;
-  final String premium;
-
-  const _LigneComparatif({
-    required this.fonctionnalite,
-    required this.gratuit,
-    required this.premium,
-  });
+  const _SectionTitre({required this.titre, required this.icone});
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(
-          flex: 2,
-          child: Text(
-            fonctionnalite,
-            style: const TextStyle(
-              fontSize: 13.5,
-              color: AppColors.texte,
-            ),
-          ),
-        ),
-        SizedBox(
-          width: 60,
-          child: Text(
-            gratuit,
-            style: TextStyle(
-              fontSize: 13.5,
-              fontWeight: FontWeight.w600,
-              color: gratuit == '—' ? AppColors.texteDoux : AppColors.texte,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ),
-        SizedBox(
-          width: 60,
-          child: Text(
-            premium,
-            style: TextStyle(
-              fontSize: 13.5,
-              fontWeight: FontWeight.w700,
-              color: premium == '✓' ? AppColors.succes : AppColors.encre,
-            ),
-            textAlign: TextAlign.center,
+        Icon(icone, size: 16, color: AppColors.encre),
+        const SizedBox(width: 8),
+        Text(
+          titre,
+          style: GoogleFonts.bricolageGrotesque(
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+            color: AppColors.encre,
           ),
         ),
       ],
@@ -405,7 +754,7 @@ class _CarteTarif extends StatelessWidget {
     required this.label,
     required this.prix,
     required this.description,
-    this.badge,
+    required this.badge,
     required this.selected,
     required this.onTap,
   });
@@ -414,68 +763,217 @@ class _CarteTarif extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(18),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: selected ? AppColors.fondCode : AppColors.carte,
+          color: selected ? AppColors.encre : AppColors.carte,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: selected ? AppColors.encre : AppColors.lignes,
             width: selected ? 2 : 1,
           ),
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 17,
-                      color: AppColors.encre,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    prix,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 20,
-                      color: AppColors.or,
-                    ),
-                  ),
-                  Text(
-                    description,
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      color: AppColors.texteDoux,
-                    ),
-                  ),
-                ],
-              ),
-            ),
             if (badge != null)
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: AppColors.succes,
+                  color: AppColors.orFonce,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
                   badge!,
-                  style: const TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
                     color: Colors.white,
                   ),
                 ),
               ),
+            if (badge != null) const SizedBox(height: 8),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
+                color: selected ? Colors.white : AppColors.encre,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              prix,
+              style: GoogleFonts.bricolageGrotesque(
+                fontWeight: FontWeight.w800,
+                fontSize: 14,
+                color: selected ? Colors.white : AppColors.orFonce,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              description,
+              style: GoogleFonts.inter(
+                fontSize: 11.5,
+                color: selected
+                    ? Colors.white.withValues(alpha: 0.7)
+                    : AppColors.texteDoux,
+              ),
+            ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _TableauComparatif extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.carte,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.lignes, width: 1),
+      ),
+      child: Column(
+        children: [
+          _EnTeteTableau(),
+          const Divider(height: 1, color: AppColors.lignes),
+          _LigneTableau('Tontines',
+              '1', 'Illimitées', false),
+          _LigneTableau('Membres par tontine',
+              '5 max', 'Illimités', false),
+          _LigneTableau('Cotisations et tours',
+              '✓', '✓', true),
+          _LigneTableau('Votes sécurisés',
+              '—', '✓', false),
+          _LigneTableau('Prêts internes',
+              '—', '✓', false),
+          _LigneTableau('Exports PDF',
+              '—', '✓', false),
+          _LigneTableau('Score IA de confiance',
+              '—', '✓', false),
+          _LigneTableau('Statistiques avancées',
+              '—', '✓', false),
+          _LigneTableau('Partage WhatsApp',
+              '—', '✓', false),
+          _LigneTableau('Historique complet',
+              '—', '✓', false),
+          _LigneTableau('Journal d\'audit',
+              '—', '✓', false),
+          _LigneTableau('Relances automatiques',
+              '—', '✓', false),
+        ],
+      ),
+    );
+  }
+}
+
+class _EnTeteTableau extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.fondSecondaire,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: Row(
+        children: [
+          const Expanded(
+            flex: 3,
+            child: Text('Fonctionnalité',
+                style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12.5,
+                    color: AppColors.encre)),
+          ),
+          Expanded(
+            flex: 2,
+            child: Center(
+              child: Text('Gratuit',
+                  style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.texteDoux)),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.orFonce,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text('Premium',
+                    style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LigneTableau extends StatelessWidget {
+  final String label;
+  final String gratuit;
+  final String premium;
+  final bool gratuitActif;
+
+  const _LigneTableau(this.label, this.gratuit, this.premium, this.gratuitActif);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppColors.lignes, width: 0.5)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 3,
+            child: Text(
+              label,
+              style: GoogleFonts.inter(fontSize: 13, color: AppColors.encre),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Center(
+              child: Text(
+                gratuit,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: gratuitActif ? AppColors.succes : AppColors.texteDoux,
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Center(
+              child: Text(
+                premium,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.succes,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../utils/app_colors.dart';
+import '../services/platform_service.dart';
+import '../services/feature_gate_service.dart';
 
 // ============================================================
 // BOUTONS
@@ -891,6 +893,281 @@ class PageResponsive extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+// ============================================================
+// DIALOG UPGRADE PREMIUM — source unique
+// Affiche automatiquement le bon parcours selon la plateforme
+// ============================================================
+
+/// Affiche la dialog de mise à niveau Premium.
+/// [onUpgrade] est appelé quand l'utilisateur tape "Passer à Premium".
+/// La navigation vers l'écran d'abonnement est gérée à l'extérieur.
+Future<void> afficherDialogUpgrade(
+  BuildContext context, {
+  required LimiteInfo limiteInfo,
+  required VoidCallback onUpgrade,
+}) {
+  return showDialog(
+    context: context,
+    builder: (ctx) => _UpgradeDialog(
+      limiteInfo: limiteInfo,
+      onUpgrade: onUpgrade,
+    ),
+  );
+}
+
+class _UpgradeDialog extends StatelessWidget {
+  final LimiteInfo limiteInfo;
+  final VoidCallback onUpgrade;
+
+  const _UpgradeDialog({
+    required this.limiteInfo,
+    required this.onUpgrade,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final platformLabel = PlatformService.isAndroid
+        ? 'Google Play'
+        : PlatformService.isIOS
+            ? 'App Store'
+            : 'paiement web';
+
+    return Dialog(
+      backgroundColor: AppColors.fondPapier,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ── Icône ─────────────────────────────────────────────────────
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: AppColors.fondConsultation,
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: const Icon(
+                Icons.workspace_premium,
+                size: 36,
+                color: AppColors.orFonce,
+              ),
+            ),
+            const SizedBox(height: 18),
+
+            // ── Titre ─────────────────────────────────────────────────────
+            Text(
+              'Fonctionnalité Premium',
+              style: GoogleFonts.bricolageGrotesque(
+                fontWeight: FontWeight.w800,
+                fontSize: 20,
+                color: AppColors.encre,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 10),
+
+            // ── Message de limite ─────────────────────────────────────────
+            Text(
+              limiteInfo.message,
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                color: AppColors.texteDoux,
+                height: 1.5,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 18),
+
+            // ── Tarifs ───────────────────────────────────────────────────
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.fondCode,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                children: [
+                  _LigneTarif(
+                    label: 'Mensuel',
+                    prix: '2 500 FCFA / mois',
+                    badge: null,
+                  ),
+                  const SizedBox(height: 8),
+                  _LigneTarif(
+                    label: 'Annuel',
+                    prix: '25 000 FCFA / an',
+                    badge: '2 mois offerts',
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 6),
+
+            // ── Info plateforme ───────────────────────────────────────────
+            Text(
+              'Paiement via $platformLabel',
+              style: GoogleFonts.inter(
+                fontSize: 11.5,
+                color: AppColors.texteDoux,
+              ),
+            ),
+            const SizedBox(height: 18),
+
+            // ── Boutons ───────────────────────────────────────────────────
+            SizedBox(
+              width: double.infinity,
+              child: BtnPrincipal(
+                label: 'Passer à Premium',
+                icone: Icons.workspace_premium,
+                couleur: AppColors.orFonce,
+                onTap: () {
+                  Navigator.of(context).pop();
+                  onUpgrade();
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(
+                'Plus tard',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: AppColors.texteDoux,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LigneTarif extends StatelessWidget {
+  final String label;
+  final String prix;
+  final String? badge;
+
+  const _LigneTarif({
+    required this.label,
+    required this.prix,
+    this.badge,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const Icon(Icons.star, size: 14, color: AppColors.orFonce),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            '$label — $prix',
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.encre,
+            ),
+          ),
+        ),
+        if (badge != null)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: AppColors.orFonce,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              badge!,
+              style: GoogleFonts.inter(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// ── Widget cadenas pour fonctionnalité verrouillée ──────────────────────────
+
+class FeatureLock extends StatelessWidget {
+  final String titre;
+  final String detail;
+  final VoidCallback onUpgrade;
+
+  const FeatureLock({
+    super.key,
+    required this.titre,
+    required this.detail,
+    required this.onUpgrade,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onUpgrade,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.fondSecondaire,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.lignes, width: 1),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.lock_outline, size: 20, color: AppColors.texteDoux),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    titre,
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      color: AppColors.encre,
+                    ),
+                  ),
+                  Text(
+                    detail,
+                    style: GoogleFonts.inter(
+                      fontSize: 12.5,
+                      color: AppColors.texteDoux,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: AppColors.fondConsultation,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                'Premium',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.orFonce,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

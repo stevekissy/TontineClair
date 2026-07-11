@@ -1,7 +1,7 @@
 name: tontine
 description: TontineClair — Gestion de tontines communautaires pour la Côte d'Ivoire et l'Afrique de l'Ouest
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -42,6 +42,10 @@ dependencies:
 
   # Crypto (tirage certifié)
   crypto: ^3.0.3
+
+  # In-App Purchase (Google Play + Apple)
+  # Activé pour la structure — les achats réels nécessitent publication store
+  in_app_purchase: ^3.2.0
 
   # Icons
   cupertino_icons: ^1.0.8

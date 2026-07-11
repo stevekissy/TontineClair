@@ -2,8 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
+import '../services/subscription_service.dart';
+import '../services/feature_gate_service.dart';
+import '../services/platform_service.dart';
 import '../utils/app_colors.dart';
 import '../widgets/app_widgets.dart';
+import 'abonnement_screen.dart';
 import 'code_cree_screen.dart';
 
 class CreationScreen extends StatefulWidget {
@@ -74,22 +78,63 @@ class _CreationScreenState extends State<CreationScreen> {
     }
 
     final provider = context.read<TontineProvider>();
-    // Plan Premium : pour l'instant toujours false côté client
-    // (le plan réel est vérifié au chargement de chaque tontine via lire_plan)
-    const isPremium = false;
+    // Plan Premium : lu depuis SubscriptionService (source unique)
+    final isPremium = SubscriptionService.isPremium;
 
-    // Limite Freemium : 5 membres max par tontine
-    if (!isPremium && membres.length > 5) {
-      setState(() =>
-          _erreur = 'Formule gratuite : 5 membres max. Passez au Premium pour plus.');
+    // Limite Gratuit : 5 membres max par tontine
+    if (!SubscriptionService.peutAjouterMembre(membres.length - 1) &&
+        membres.length > FeatureGate.maxMembresGratuit) {
+      if (!mounted) return;
+      afficherDialogUpgrade(
+        context,
+        limiteInfo: LimiteInfo(
+          type: LimiteType.membres,
+          titre: 'Limite de membres atteinte',
+          message: FeatureGate.messageLimite(
+            limite: LimiteType.membres,
+            actuel: membres.length,
+            max: FeatureGate.maxMembresGratuit,
+          ),
+          actuel: membres.length,
+          max: FeatureGate.maxMembresGratuit,
+        ),
+        onUpgrade: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => AbonnementScreen(
+              code: '',
+              platformeForce: PlatformService.current,
+            ),
+          ),
+        ),
+      );
       return;
     }
 
-    // Limite Freemium : 1 tontine par appareil
+    // Limite Gratuit : 1 tontine
     if (!isPremium && provider.mesTontines.isNotEmpty) {
-      setState(() => _erreur =
-          'Formule gratuite : 1 tontine par appareil. '
-          'Passez au Premium pour en créer plusieurs.');
+      if (!mounted) return;
+      afficherDialogUpgrade(
+        context,
+        limiteInfo: LimiteInfo(
+          type: LimiteType.tontines,
+          titre: 'Limite de tontines atteinte',
+          message: FeatureGate.messageLimite(
+            limite: LimiteType.tontines,
+            actuel: provider.mesTontines.length,
+            max: FeatureGate.maxTontinesGratuit,
+          ),
+          actuel: provider.mesTontines.length,
+          max: FeatureGate.maxTontinesGratuit,
+        ),
+        onUpgrade: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => AbonnementScreen(
+              code: '',
+              platformeForce: PlatformService.current,
+            ),
+          ),
+        ),
+      );
       return;
     }
 
