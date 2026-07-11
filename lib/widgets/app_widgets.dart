@@ -11,6 +11,8 @@ class BtnPrincipal extends StatelessWidget {
   final VoidCallback? onTap;
   final bool loading;
   final IconData? icon;
+  final IconData? icone; // alias pour icon
+  final Color? couleur;  // couleur de fond personnalisée
 
   const BtnPrincipal({
     super.key,
@@ -18,19 +20,23 @@ class BtnPrincipal extends StatelessWidget {
     this.onTap,
     this.loading = false,
     this.icon,
+    this.icone,
+    this.couleur,
   });
 
   @override
   Widget build(BuildContext context) {
+    final bgColor = couleur ?? AppColors.encre;
+    final effectiveIcon = icon ?? icone;
     return SizedBox(
       width: double.infinity,
       height: 52,
       child: ElevatedButton(
         onPressed: loading ? null : onTap,
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.encre,
+          backgroundColor: bgColor,
           foregroundColor: Colors.white,
-          disabledBackgroundColor: AppColors.encre.withValues(alpha: 0.45),
+          disabledBackgroundColor: bgColor.withValues(alpha: 0.45),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
         child: loading
@@ -45,8 +51,8 @@ class BtnPrincipal extends StatelessWidget {
             : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (icon != null) ...[
-                    Icon(icon, size: 18),
+                  if (effectiveIcon != null) ...[
+                    Icon(effectiveIcon, size: 18),
                     const SizedBox(width: 8),
                   ],
                   Text(

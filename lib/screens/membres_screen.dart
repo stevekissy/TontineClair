@@ -15,25 +15,30 @@ import '../services/supabase_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
+import 'score_membre_screen.dart';
+import 'classement_screen.dart';
 
-// ─── Constantes couleurs score (issues du PDF) ────────────────────────────────
+// ─── Constantes couleurs score ────────────────────────────────────────────────
 const _scoreExcellent = Color(0xFF2E7D5B); // ≥80
-const _scoreBon = Color(0xFF35407A);        // ≥60
-const _scoreMoyen = Color(0xFFD99A2B);      // ≥40
-const _scoreRisque = Color(0xFFC4453C);     // <40
+const _scoreBon = Color(0xFF35407A);        // ≥65
+const _scoreMoyen = Color(0xFFD99A2B);      // ≥50
+const _scoreRisque = Color(0xFFE07A2F);     // ≥35
+const _scoreTresRisque = Color(0xFFC4453C); // <35
 
 Color _couleurScore(int score) {
   if (score >= 80) return _scoreExcellent;
-  if (score >= 60) return _scoreBon;
-  if (score >= 40) return _scoreMoyen;
-  return _scoreRisque;
+  if (score >= 65) return _scoreBon;
+  if (score >= 50) return _scoreMoyen;
+  if (score >= 35) return _scoreRisque;
+  return _scoreTresRisque;
 }
 
 String _labelScore(int score) {
-  if (score >= 80) return 'Excellent';
-  if (score >= 60) return 'Bon';
-  if (score >= 40) return 'Moyen';
-  return 'Risqué';
+  if (score >= 80) return 'Très fiable';
+  if (score >= 65) return 'Fiable';
+  if (score >= 50) return 'À surveiller';
+  if (score >= 35) return 'Risqué';
+  return 'Très risqué';
 }
 
 // ─── Formule scoreConfiance (fidèle au PDF et à index.html) ──────────────────
@@ -667,6 +672,27 @@ class _MembresScreenState extends State<MembresScreen> {
                 children: [
                   const LogoTontineClair(),
                   const Spacer(),
+                  if (estGest)
+                    TextButton.icon(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ClassementScreen(
+                            code: widget.code,
+                            estGestionnaire: true,
+                          ),
+                        ),
+                      ),
+                      icon: const Icon(Icons.leaderboard_rounded, size: 16),
+                      label: const Text('Classement'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.encreDoux,
+                        textStyle: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
                   TextButton.icon(
                     onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(Icons.arrow_back, size: 16),
@@ -765,6 +791,16 @@ class _MembresScreenState extends State<MembresScreen> {
                                             data,
                                           )
                                       : null,
+                                  onVoirScore: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => ScoreMembreScreen(
+                                        code: widget.code,
+                                        membre: m,
+                                        estGestionnaire: estGest,
+                                      ),
+                                    ),
+                                  ),
                                 );
                               }),
 
@@ -842,6 +878,7 @@ class _CarteMembre extends StatefulWidget {
   final String code;
   final VoidCallback? onAttribuerPin;
   final VoidCallback? onEnvoyerWhatsApp;
+  final VoidCallback? onVoirScore;
 
   const _CarteMembre({
     required this.membre,
@@ -855,6 +892,7 @@ class _CarteMembre extends StatefulWidget {
     required this.code,
     this.onAttribuerPin,
     this.onEnvoyerWhatsApp,
+    this.onVoirScore,
   });
 
   @override
@@ -1112,6 +1150,39 @@ class _CarteMembreState extends State<_CarteMembre> {
                     ),
                   ),
 
+                // Bouton Score IA (visible pour tous : membres + gestionnaires)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: widget.onVoirScore,
+                      icon: const Icon(
+                        Icons.auto_awesome_rounded,
+                        size: 15,
+                        color: AppColors.encreDoux,
+                      ),
+                      label: Text(
+                        'Voir le score de confiance IA',
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          color: AppColors.encreDoux,
+                        ),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.encreDoux,
+                        side: BorderSide(
+                            color: AppColors.encreDoux.withValues(alpha: 0.4)),
+                        padding: const EdgeInsets.symmetric(vertical: 9),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
                 // Section gestionnaire
                 if (widget.estGest) ...[
                   const SizedBox(height: 12),
@@ -1159,7 +1230,6 @@ class _CarteMembreState extends State<_CarteMembre> {
                           ),
                         ),
                         // Bug #5 fix : bouton WhatsApp visible dès qu'un PIN provisoire existe
-                        // (fallback wa.me/?text= géré dans _envoyerWhatsApp si pas de tel)
                         if (widget.pinProvisoire != null) ...[
                           const SizedBox(height: 8),
                           SizedBox(

@@ -606,18 +606,69 @@ class _VotesScreenState extends State<VotesScreen> {
     final oui = voix.where((v) => (v['choix'] as String? ?? '').toLowerCase() == 'oui').length;
     final non = voix.where((v) => (v['choix'] as String? ?? '').toLowerCase() == 'non').length;
     final abstention = voix.where((v) => (v['choix'] as String? ?? '').toLowerCase() == 'abstention').length;
-    final adopte = oui > non;
+    final totalMembres = data.membresActifs.length;
+    final participation = voix.length;
+
+    // ── Logique spéciale pour les votes de retrait ─────────────────────────
+    final estVoteRetrait = vote.type == 'retrait';
+
+    // Récupérer quorum et majorité depuis le vote (ou valeurs par défaut)
+    final quorumVote = estVoteRetrait
+        ? _extraireQuorum(vote)
+        : 0; // 0 = pas de quorum pour les votes normaux
+    final majoriteVote = estVoteRetrait
+        ? _extraireMajorite(vote)
+        : 50; // 50% = majorité simple
+
+    // Vérifier le quorum pour les votes de retrait
+    bool quorumAtteint = true;
+    if (estVoteRetrait && totalMembres > 0) {
+      final tauxParticipation = (participation / totalMembres * 100).round();
+      quorumAtteint = tauxParticipation >= quorumVote;
+    }
+
+    // Calculer le résultat selon la règle applicable
+    bool adopte;
+    if (estVoteRetrait && participation > 0) {
+      // Vote retrait : majorité en % des voix exprimées (hors abstention)
+      final exprimes = oui + non;
+      adopte = exprimes > 0
+          ? (oui / exprimes * 100) >= majoriteVote
+          : false;
+      // Si quorum non atteint → vote invalide (non adopté)
+      if (!quorumAtteint) adopte = false;
+    } else {
+      // Vote normal : majorité simple Oui > Non
+      adopte = oui > non;
+    }
+
+    // Résumé pour la modale de confirmation
+    final recapVote = <({String label, String valeur})>[
+      (label: 'Pour', valeur: '$oui voix'),
+      (label: 'Contre', valeur: '$non voix'),
+      (label: 'Abstention', valeur: '$abstention voix'),
+      if (estVoteRetrait) ...[
+        (label: 'Participation',
+            valeur:
+                '$participation / $totalMembres (${totalMembres > 0 ? (participation / totalMembres * 100).round() : 0}%)'),
+        (label: 'Quorum requis', valeur: '$quorumVote%'),
+        (label: 'Majorité requise', valeur: '$majoriteVote%'),
+        if (!quorumAtteint)
+          (label: '⚠️ Quorum', valeur: 'Non atteint → Proposition rejetée'),
+      ],
+      (
+        label: 'Résultat',
+        valeur: adopte ? '✅ ADOPTÉ' : '❌ REJETÉ'
+      ),
+    ];
 
     final ok = await afficherModalePin(
       context,
-      titre: 'Clore le vote',
-      sousTitre: 'Le résultat sera enregistré définitivement.',
-      recap: [
-        (label: 'Pour', valeur: '$oui voix'),
-        (label: 'Contre', valeur: '$non voix'),
-        (label: 'Abstention', valeur: '$abstention voix'),
-        (label: 'Résultat', valeur: adopte ? '✅ ADOPTÉ' : '❌ REJETÉ'),
-      ],
+      titre: estVoteRetrait ? 'Clore le vote de retrait' : 'Clore le vote',
+      sousTitre: estVoteRetrait
+          ? 'Le résultat sera définitif. Le membre sera mis à jour si adopté.'
+          : 'Le résultat sera enregistré définitivement.',
+      recap: recapVote,
       onValider: (pin) async {
         final now = DateTime.now().toIso8601String();
         final ref = Formatters.genererReference();
@@ -630,11 +681,24 @@ class _VotesScreenState extends State<VotesScreen> {
         final idx = votes.indexWhere((v) => v['id'] == vote.id);
         if (idx >= 0) {
           votes[idx]['clos'] = true;
+          votes[idx]['statut'] = 'clos';
           votes[idx]['dateCloture'] = now;
+          votes[idx]['closLe'] = now;
           votes[idx]['adopte'] = adopte;
+          if (estVoteRetrait) {
+            votes[idx]['decompte'] = {
+              'oui': oui,
+              'non': non,
+              'abstention': abstention,
+              'participation': participation,
+              'totalMembres': totalMembres,
+              'quorumAtteint': quorumAtteint,
+              'majorite': majoriteVote,
+            };
+          }
         }
 
-        // Si vote d'admission adopté → ajouter le membre automatiquement
+        // ── Vote d'admission adopté → ajouter le membre ──────────────────
         if (vote.type == 'admission' && adopte && vote.nouveauMembreNom != null) {
           final membres = List<Map<String, dynamic>>.from(
             (newData['membres'] as List<dynamic>).cast<Map<String, dynamic>>(),
@@ -648,12 +712,57 @@ class _VotesScreenState extends State<VotesScreen> {
           });
           newData['membres'] = membres;
 
-          // Ajouter aussi à l'ordre de passage
           final ordre = List<String>.from(
             (newData['ordre'] as List<dynamic>?)?.map((e) => e.toString()) ?? [],
           );
           ordre.add(newId);
           newData['ordre'] = ordre;
+        }
+
+        // ── Vote de retrait adopté → passer le membre en "Retiré" ─────────
+        if (estVoteRetrait && adopte) {
+          final membreConcerneId = _extraireMembreConcerne(vote);
+          if (membreConcerneId != null) {
+            final membres = List<Map<String, dynamic>>.from(
+              (newData['membres'] as List<dynamic>).cast<Map<String, dynamic>>(),
+            );
+            for (final m in membres) {
+              if (m['id'] == membreConcerneId) {
+                m['role'] = 'Retiré';
+                m['dateRetrait'] = now;
+                m['motifRetrait'] = _extraireMotif(vote);
+                m['voteRetraitId'] = vote.id;
+                break;
+              }
+            }
+            newData['membres'] = membres;
+          }
+
+          // Mettre à jour le statut dans propositions_retrait (v6)
+          try {
+            await SupabaseService.rpc('maj_statut_retrait', {
+              'p_code': provider.courante!.code,
+              'p_nom': provider.gestActifNom ?? '',
+              'p_pin': pin,
+              'p_vote_id': vote.id,
+              'p_statut': 'accepte',
+            });
+          } catch (_) {
+            // v6 non déployée — silencieux
+          }
+        }
+
+        // ── Vote de retrait refusé → mettre à jour le statut propositions ─
+        if (estVoteRetrait && !adopte) {
+          try {
+            await SupabaseService.rpc('maj_statut_retrait', {
+              'p_code': provider.courante!.code,
+              'p_nom': provider.gestActifNom ?? '',
+              'p_pin': pin,
+              'p_vote_id': vote.id,
+              'p_statut': 'refuse',
+            });
+          } catch (_) {}
         }
 
         newData['votes'] = votes;
@@ -663,8 +772,10 @@ class _VotesScreenState extends State<VotesScreen> {
                   ?.cast<Map<String, dynamic>>() ??
               [],
         );
+        final typeLabel = estVoteRetrait ? 'RETRAIT' : 'VOTE';
         journal.insert(0, {
-          'quoi': 'VOTE_CLOS_${adopte ? 'ADOPTE' : 'REJETE'}_${vote.id}',
+          'quoi': '${typeLabel}_CLOS_${adopte ? 'ADOPTE' : 'REJETE'}_${vote.id}'
+              ':oui=$oui:non=$non:abs=$abstention:participation=$participation/$totalMembres',
           'gestionnaire': provider.gestActifNom ?? '',
           'quand': now,
           'reference': ref,
@@ -676,12 +787,55 @@ class _VotesScreenState extends State<VotesScreen> {
     );
 
     if (ok == true && context.mounted) {
-      afficherToast(
-        context,
-        'Vote clos. ${adopte ? 'Proposition adoptée !' : 'Proposition rejetée.'}',
-      );
+      String message;
+      if (estVoteRetrait) {
+        if (adopte) {
+          message = '✅ Vote adopté — Le membre a été retiré de la tontine.';
+        } else if (!quorumAtteint) {
+          message = '⚠️ Vote invalide — Quorum non atteint ($quorumVote% requis).';
+        } else {
+          message = '❌ Vote rejeté — Le membre est maintenu. Un plan de suivi IA sera proposé.';
+        }
+      } else {
+        message = 'Vote clos. ${adopte ? 'Proposition adoptée !' : 'Proposition rejetée.'}';
+      }
+      afficherToast(context, message);
       await _chargerVoix();
     }
+  }
+
+  // ── Helpers : extraire les métadonnées d'un vote de retrait ───────────────
+  int _extraireQuorum(Vote vote) {
+    // Chercher dans la description ou les métadonnées du vote
+    final desc = vote.description ?? '';
+    final match = RegExp(r'Quorum requis\s*:\s*(\d+)%').firstMatch(desc);
+    if (match != null) return int.tryParse(match.group(1) ?? '') ?? 50;
+    return 50; // défaut 50%
+  }
+
+  int _extraireMajorite(Vote vote) {
+    final desc = vote.description ?? '';
+    final match = RegExp(r'Majorité requise\s*:\s*(\d+)%').firstMatch(desc);
+    if (match != null) return int.tryParse(match.group(1) ?? '') ?? 67;
+    return 67; // défaut 2/3
+  }
+
+  String? _extraireMembreConcerne(Vote vote) {
+    // Le membreConcerneId est stocké dans la description du vote
+    final desc = vote.description ?? '';
+    // Essayer d'abord via vote.voix (ancien format)
+    if (vote.voix.containsKey('membreConcerneId')) {
+      return vote.voix['membreConcerneId'] as String?;
+    }
+    // Sinon essayer d'extraire de la description
+    final match = RegExp(r'membreConcerneId\s*:\s*(\S+)').firstMatch(desc);
+    return match?.group(1);
+  }
+
+  String _extraireMotif(Vote vote) {
+    final desc = vote.description ?? '';
+    final match = RegExp(r'Motif\s*:\s*(.+?)(?:\n|Score|$)').firstMatch(desc);
+    return match?.group(1)?.trim() ?? 'Retrait par vote collectif';
   }
 }
 
@@ -721,24 +875,60 @@ class _CarteVote extends StatelessWidget {
     final abstention = voix.where((v) => (v['choix'] as String? ?? '').toLowerCase() == 'abstention').length;
 
     // Total des votants = membres actifs (membresActifs passé depuis le parent)
-    // Ne plus utiliser ordre.length qui peut diverger de membres[] réels
     final total = membres.isNotEmpty ? membres.length : ordre.length;
     final participation = voix.length;
+
+    final estRetrait = vote.type == 'retrait';
+    final couleurRetrait = const Color(0xFFC4453C);
+
+    // Quorum et majorité pour votes de retrait
+    final desc = vote.description ?? '';
+    final quorumMatch = RegExp(r'Quorum requis\s*:\s*(\d+)%').firstMatch(desc);
+    final majoriteMatch = RegExp(r'Majorité requise\s*:\s*(\d+)%').firstMatch(desc);
+    final quorumPct = int.tryParse(quorumMatch?.group(1) ?? '') ?? 50;
+    final majoritePct = int.tryParse(majoriteMatch?.group(1) ?? '') ?? 67;
 
     return CarteTC(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Badge spécial pour vote de retrait
+          if (estRetrait) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: couleurRetrait.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.gpp_bad_rounded,
+                      size: 12, color: couleurRetrait),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Vote de retrait · Sécurisé · PIN obligatoire',
+                    style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: couleurRetrait),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+
           // En-tête : question + badge statut
           Row(
             children: [
               Expanded(
                 child: Text(
                   vote.question,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 16,
-                    color: AppColors.encre,
+                    color: estRetrait ? couleurRetrait : AppColors.encre,
                   ),
                 ),
               ),
@@ -747,15 +937,19 @@ class _CarteVote extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: vote.clos ? AppColors.fondCode : AppColors.succesFond,
+                  color: vote.clos
+                      ? (vote.adopte == true && estRetrait
+                          ? couleurRetrait.withValues(alpha: 0.1)
+                          : AppColors.fondCode)
+                      : AppColors.succesFond,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
                   vote.clos
                       ? (vote.adopte == true
-                          ? 'Adopté ✓'
+                          ? (estRetrait ? 'Retiré ✗' : 'Adopté ✓')
                           : vote.adopte == false
-                              ? 'Rejeté ✗'
+                              ? (estRetrait ? 'Maintenu ✓' : 'Rejeté ✗')
                               : 'Clos')
                       : 'En cours',
                   style: TextStyle(
@@ -763,7 +957,7 @@ class _CarteVote extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                     color: vote.clos
                         ? (vote.adopte == true
-                            ? AppColors.succes
+                            ? (estRetrait ? couleurRetrait : AppColors.succes)
                             : AppColors.texteDoux)
                         : AppColors.succes,
                   ),
@@ -776,6 +970,32 @@ class _CarteVote extends StatelessWidget {
             '${_labelType(vote.type)} · par ${vote.createur} · ${Formatters.dateFormatee(DateTime.tryParse(vote.dateCreation))}',
             style: const TextStyle(fontSize: 12, color: AppColors.texteDoux),
           ),
+
+          // Règles du vote de retrait
+          if (estRetrait && !vote.clos) ...[
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: AppColors.fondCode,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.tune_rounded,
+                      size: 11, color: AppColors.texteDoux),
+                  const SizedBox(width: 5),
+                  Text(
+                    'Quorum : $quorumPct% · Majorité : $majoritePct% · '
+                    'Participation : $participation/$total '
+                    '(${total > 0 ? (participation / total * 100).round() : 0}%)',
+                    style: const TextStyle(
+                        fontSize: 10, color: AppColors.texteDoux),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
 
           // Résultats
@@ -948,6 +1168,8 @@ class _CarteVote extends StatelessWidget {
         return 'Admission';
       case 'retirage':
         return 'Retirage';
+      case 'retrait':
+        return '⚠️ Retrait membre';
       default:
         return 'Libre';
     }
