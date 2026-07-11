@@ -348,6 +348,69 @@ class SupabaseService {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // SCORE DE CONFIANCE IA
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Modifie manuellement le score d'un membre (admin uniquement).
+  ///
+  /// Cette RPC est atomique : elle écrit en une seule transaction
+  ///   • scoreOverride dans tontines.data.membres[] (pour persistance)
+  ///   • scores_historique (pour l'onglet Historique)
+  ///   • journal_audit (pour traçabilité admin)
+  ///
+  /// Retourne {ok: bool, ancien: int, nouveau: int, message: String}
+  static Future<Map<String, dynamic>> modifierScoreMembre({
+    required String code,
+    required String nom,
+    required String pin,
+    required String membreId,
+    required int nouveau,
+    required String motif,
+  }) async {
+    final result = await rpc('modifier_score_membre', {
+      'p_code':      code.toUpperCase(),
+      'p_nom':       nom,
+      'p_pin':       pin,
+      'p_membre_id': membreId,
+      'p_nouveau':   nouveau,
+      'p_motif':     motif,
+    });
+    if (result is Map<String, dynamic>) return result;
+    return {'ok': false, 'message': 'Réponse inattendue du serveur.'};
+  }
+
+  /// Lit le score effectif d'un membre (scoreOverride en priorité).
+  static Future<Map<String, dynamic>?> lireScoreMembre({
+    required String code,
+    required String membreId,
+  }) async {
+    try {
+      final result = await rpc('lire_score_membre', {
+        'p_code':      code.toUpperCase(),
+        'p_membre_id': membreId,
+      });
+      if (result is Map<String, dynamic>) return result;
+    } catch (_) {}
+    return null;
+  }
+
+  /// Supprime l'override et laisse ScoreService recalculer librement.
+  static Future<bool> reinitialiserScoreOverride({
+    required String code,
+    required String nom,
+    required String pin,
+    required String membreId,
+  }) async {
+    final result = await rpc('reinitialiser_score_override', {
+      'p_code':      code.toUpperCase(),
+      'p_nom':       nom,
+      'p_pin':       pin,
+      'p_membre_id': membreId,
+    });
+    return result == true;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // PREMIUM / ABONNEMENT
   // ═══════════════════════════════════════════════════════════════════════════
 

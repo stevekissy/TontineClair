@@ -75,6 +75,34 @@ class ScoreService {
     String membreId,
     List<Map<String, dynamic>> voixMembre,
   ) {
+    // ── SCORE OVERRIDE : si un admin a forcé le score manuellement, ──────────
+    // on l'utilise DIRECTEMENT sans recalculer depuis les stats.
+    // Cela garantit que la modification manuelle persiste sur toutes les
+    // interfaces (liste membres, fiche, classement, tableau de bord, IA).
+    final membreOverride = data.membres.where((m) => m.id == membreId).firstOrNull;
+    if (membreOverride != null && membreOverride.scoreOverride != null) {
+      final overrideScore = membreOverride.scoreOverride!.clamp(0, 100);
+      final niveau        = _niveauScore(overrideScore);
+      return ScoreDetail(
+        score: overrideScore,
+        niveau: niveau,
+        composantes: [
+          ComposanteScore(
+            label:  'Score modifié manuellement',
+            impact: overrideScore - _Coeff.base,
+            detail: 'Score forcé à $overrideScore/100 par '
+                    '${membreOverride.adminOverride ?? "admin"}'
+                    '${membreOverride.motifOverride != null ? " — ${membreOverride.motifOverride}" : ""}',
+            type: overrideScore >= _Coeff.base
+                ? TypeImpact.positif
+                : TypeImpact.negatif,
+          ),
+        ],
+        calculeLe: DateTime.now(),
+      );
+    }
+    // ── FIN SCORE OVERRIDE ────────────────────────────────────────────────────
+
     int score = _Coeff.base;
     final composantes = <ComposanteScore>[];
     final maintenant = DateTime.now();

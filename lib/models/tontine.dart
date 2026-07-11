@@ -34,6 +34,15 @@ class Membre {
   int score;
   String? pinVote;
 
+  // ── Score Override : score forcé manuellement par un admin ──────────────────
+  // Quand scoreOverride != null, ScoreService l'utilise DIRECTEMENT au lieu
+  // de recalculer depuis data.stats[]. Cela garantit que la modification
+  // manuelle persiste sur toutes les interfaces (liste, fiche, classement, IA).
+  int? scoreOverride;    // null = score calculé automatiquement
+  String? motifOverride; // raison de la modification manuelle
+  String? dateOverride;  // ISO 8601 de la modification
+  String? adminOverride; // nom du gestionnaire ayant modifié
+
   Membre({
     required this.id,
     required this.nom,
@@ -45,7 +54,18 @@ class Membre {
     this.referencePaiement,
     this.score = 50,
     this.pinVote,
+    this.scoreOverride,
+    this.motifOverride,
+    this.dateOverride,
+    this.adminOverride,
   });
+
+  /// Score effectif : scoreOverride s'il existe, sinon score calculé.
+  /// C'est cette valeur que ScoreService et toutes les interfaces doivent utiliser.
+  int get scoreEffectif => scoreOverride ?? score;
+
+  /// true si ce membre a un score forcé manuellement
+  bool get aScoreOverride => scoreOverride != null;
 
   factory Membre.fromJson(Map<String, dynamic> json) {
     return Membre(
@@ -60,6 +80,11 @@ class Membre {
       referencePaiement: json['referencePaiement'] as String?,
       score: (json['score'] as num?)?.toInt() ?? 50,
       pinVote: json['pinVote'] as String?,
+      // Champs override (écrits par modifier_score_membre RPC)
+      scoreOverride: (json['scoreOverride'] as num?)?.toInt(),
+      motifOverride: json['motifOverride'] as String?,
+      dateOverride:  json['dateOverride']  as String?,
+      adminOverride: json['adminOverride'] as String?,
     );
   }
 
@@ -74,6 +99,11 @@ class Membre {
         if (referencePaiement != null) 'referencePaiement': referencePaiement,
         'score': score,
         if (pinVote != null) 'pinVote': pinVote,
+        // Champs override : inclus seulement si présents
+        if (scoreOverride != null) 'scoreOverride': scoreOverride,
+        if (motifOverride != null) 'motifOverride': motifOverride,
+        if (dateOverride  != null) 'dateOverride':  dateOverride,
+        if (adminOverride != null) 'adminOverride': adminOverride,
       };
 }
 

@@ -105,10 +105,17 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
           .toList();
 
       // ── Calcul du score (SOURCE UNIQUE : ScoreService) ───────────────────
+      // IMPORTANT : lire le membre depuis le provider RECHARGÉ (pas widget.membre
+      // qui est immuable et peut contenir l'ancien scoreOverride).
+      // Après chargerTontine(), le JSONB Supabase est relu — scoreOverride y est
+      // présent et ScoreService l'utilisera directement.
       if (!mounted) return;
       final data   = context.read<TontineProvider>().courante!.data;
-      final detail = ScoreService.calculerScore(data, widget.membre.id, voixMembre);
-      final recs   = ScoreService.genererRecommandations(data, widget.membre, detail, voixMembre);
+      // Membre rechargé depuis Supabase (avec scoreOverride si modifié)
+      final membreFrais = data.membres.where((m) => m.id == widget.membre.id).firstOrNull
+                          ?? widget.membre;
+      final detail = ScoreService.calculerScore(data, membreFrais.id, voixMembre);
+      final recs   = ScoreService.genererRecommandations(data, membreFrais, detail, voixMembre);
 
       // ── Historique des scores (v6) ───────────────────────────────────────
       List<HistoriqueScore> historique = [];
@@ -380,6 +387,43 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                             ),
                           ],
                         ),
+                        // ── Badge "Score modifié manuellement" ─────────────
+                        Builder(builder: (bCtx) {
+                          final m = (data?.membres ?? <Membre>[])
+                              .where((x) => x.id == widget.membre.id)
+                              .firstOrNull;
+                          if (m == null || !m.aScoreOverride) {
+                            return const SizedBox.shrink();
+                          }
+                          return Container(
+                            margin: const EdgeInsets.only(top: 6),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFF3CD),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                  color: AppColors.orFonce.withValues(alpha: 0.4)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.edit_note_rounded,
+                                    size: 13, color: AppColors.orFonce),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    'Score modifié manuellement'
+                                    '${m.adminOverride != null ? " par ${m.adminOverride}" : ""}'
+                                    '${m.motifOverride != null ? " — ${m.motifOverride}" : ""}',
+                                    style: const TextStyle(
+                                        fontSize: 10.5,
+                                        color: AppColors.orFonce),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
                         const SizedBox(height: 10),
                         // Raisons principales (impact négatif)
                         const Text(
@@ -854,8 +898,9 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
 
   // ── Modifier manuellement le score (admin uniquement) ────────────────────
   void _afficherModalModifScore(BuildContext ctx, TontineData data) {
+    // Afficher le score effectif actuel (scoreOverride si présent, sinon calculé)
     final scoreCtrl = TextEditingController(
-        text: '${_scoreDetail?.score ?? widget.membre.score}');
+        text: '${_scoreDetail?.score ?? widget.membre.scoreEffectif}');
     final motifCtrl = TextEditingController();
     final pinCtrl = TextEditingController();
     bool loading = false;
@@ -981,78 +1026,46 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                     setSt(() => loading = true);
 
                     final provider = context.read<TontineProvider>();
-                    final gestNom = provider.gestActifNom ?? '';
-                    final ancienScore = _scoreDetail?.score ?? widget.membre.score;
+                    // provider.modifierScoreMembre() utilise _gestActifNom en interne
+                    final ancienScore = _scoreDetail?.score ?? widget.membre.scoreEffectif;
 
                     try {
-                      // Enregistrer dans l'historique v6
-                      await _enregistrerScoreV6(
-                        score: nouveauScore,
-                        scorePrecedent: ancienScore,
-                        evenement: 'admin',
-                        description:
-                            'Modification manuelle par $gestNom. Motif : ${motifCtrl.text.trim()}',
-                        gestionnaire: gestNom,
+                      // ── RPC atomique v13 via provider ───────────────────────
+                      // provider.modifierScoreMembre() :
+                      //   1. Appelle modifier_score_membre (RPC SQL atomique)
+                      //   2. Recharge la tontine depuis Supabase
+                      //   3. Appelle notifyListeners() → tous les écrans
+                      //      abonnés (classement, membres, dashboard) se
+                      //      rebuilderont avec le nouveau scoreOverride.
+                      final result = await provider.modifierScoreMembre(
+                        membreId: widget.membre.id,
+                        nouveau:  nouveauScore,
+                        motif:    motifCtrl.text.trim(),
+                        pin:      pinCtrl.text.trim(),
                       );
 
-                      // Mettre à jour le score dans data.membres
-                      final newData = data.toJson();
-                      final membres = (newData['membres'] as List<dynamic>?)
-                          ?.cast<Map<String, dynamic>>() ?? [];
-                      for (final m in membres) {
-                        if (m['id'] == widget.membre.id) {
-                          m['score'] = nouveauScore;
-                          break;
-                        }
+                      if (result['ok'] != true) {
+                        setSt(() {
+                          erreur  = result['message'] as String? ?? 'Erreur inconnue';
+                          loading = false;
+                        });
+                        return;
                       }
-                      newData['membres'] = membres;
 
-                      // Journal
-                      final journal = List<Map<String, dynamic>>.from(
-                        (newData['journal'] as List<dynamic>?)
-                                ?.cast<Map<String, dynamic>>() ??
-                            [],
-                      );
-                      final now = DateTime.now().toIso8601String();
-                      journal.insert(0, {
-                        'le': now,
-                        'par': gestNom,
-                        'quoi':
-                            'SCORE_MODIFIE:${widget.membre.id}:$ancienScore->$nouveauScore:${motifCtrl.text.trim()}',
-                      });
-                      newData['journal'] = journal;
-
-                      await SupabaseService.ecrireTontine(
-                        code: widget.code,
-                        nom: gestNom,
-                        pin: pinCtrl.text.trim(),
-                        data: newData,
-                      );
-
-                      await provider.chargerTontine(widget.code);
+                      // ── Rechargement local (historique + recommandations) ───
+                      // _charger() relit scores_historique et recalcule le score
+                      // via ScoreService, qui utilisera scoreOverride.
                       await _charger();
 
-                      // ── Mise à jour immédiate du score affiché ──────────────
-                      // _charger() recalcule _scoreDetail via ScoreService,
-                      // mais le widget.membre.score (passé en paramètre) reste
-                      // l'ancienne valeur. On force une mise à jour du state
-                      // APRÈS _charger() pour que l'UI soit synchrone.
+                      if (sCtx.mounted) Navigator.pop(sCtx);
                       if (mounted) {
-                        setState(() {
-                          // Le nouveau _scoreDetail a été calculé dans _charger()
-                          // avec le score fraîchement écrit dans Supabase.
-                          // On force le rebuild complet de l'écran.
-                        });
-                      }
-
-                      if (sCtx.mounted) {
-                        Navigator.pop(sCtx);
-                        afficherToast(ctx,
-                            '✅ Score modifié : $ancienScore → $nouveauScore');
+                        // Utiliser context du State (pas ctx du builder) pouréviter async-gap warning
+                        afficherToast(context,
+                          '✅ Score modifié : $ancienScore → $nouveauScore');
                       }
                     } catch (e) {
                       setSt(() {
-                        erreur = 'Erreur : $e';
+                        erreur  = 'Erreur : $e';
                         loading = false;
                       });
                     }

@@ -175,6 +175,42 @@ class TontineProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Score Override ─────────────────────────────────────────────────────────
+
+  /// Modifie manuellement le score d'un membre (RPC atomique v13).
+  ///
+  /// Après succès, recharge la tontine depuis Supabase et notifie tous les
+  /// widgets abonnés (classement, liste membres, tableau de bord).
+  /// Retourne {ok: bool, ancien: int, nouveau: int, message: String}
+  Future<Map<String, dynamic>> modifierScoreMembre({
+    required String membreId,
+    required int nouveau,
+    required String motif,
+    required String pin,
+  }) async {
+    if (_courante == null || _gestActifNom == null) {
+      return {'ok': false, 'message': 'Session gestionnaire non active.'};
+    }
+    try {
+      final result = await SupabaseService.modifierScoreMembre(
+        code:     _courante!.code,
+        nom:      _gestActifNom!,
+        pin:      pin,
+        membreId: membreId,
+        nouveau:  nouveau,
+        motif:    motif,
+      );
+      if (result['ok'] == true) {
+        // Recharger depuis Supabase → tous les context.watch<TontineProvider>()
+        // seront notifiés : classement_screen, membres_screen, dashboard_screen.
+        await chargerTontine(_courante!.code);
+      }
+      return result;
+    } catch (e) {
+      return {'ok': false, 'message': e.toString()};
+    }
+  }
+
   // ── Nouveau Cycle ──────────────────────────────────────────────────────────
 
   /// Propose un nouveau cycle en créant un vote de redémarrage.
