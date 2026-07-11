@@ -1,38 +1,15 @@
--- ═══════════════════════════════════════════════════════════════════════════════
--- TontineClair — Migration v15 : Nouveau Cycle par Vote (version autonome finale)
--- ═══════════════════════════════════════════════════════════════════════════════
---
--- CAUSE EXACTE DE L'ERREUR :
---   "la fonction proposer_nouveau_cycle est introuvable dans la base"
---   Les migrations v9 et v10 créaient cette fonction mais n'ont probablement
---   jamais été exécutées dans Supabase, ou ont échoué silencieusement car
---   la fonction helper verifier_gestionnaire était absente.
---
--- CE QUE FAIT CETTE MIGRATION :
---   1. Corrige les données corrompues (cycleTermine=true sur tontines jamais lancées)
---   2. Crée verifier_gestionnaire (helper utilisé par toutes les RPCs cycle)
---   3. Crée proposer_nouveau_cycle (MANQUANTE — cause du bouton cassé)
---   4. Crée lire_etat_cycle
---   5. Crée demarrer_nouveau_cycle
---   6. Crée clore_vote_redemarrage
---   7. Ajoute les GRANT necessaires
---
--- IDEMPOTENT : CREATE OR REPLACE FUNCTION — safe à relancer
--- PRÉREQUIS  : aucun (autonome)
--- À EXÉCUTER : Supabase › SQL Editor › New query › Run
--- ═══════════════════════════════════════════════════════════════════════════════
+-- Migration v15 : Nouveau Cycle par Vote (version autonome finale)
+-- IDEMPOTENT : CREATE OR REPLACE FUNCTION — safe a relancer
+-- A EXECUTER : Supabase SQL Editor > New query > Run
+-- DELIMITEURS : $func_XX$ au lieu de $$ pour eviter l'erreur 42601
 
 
--- ══════════════════════════════════════════════════════════════════════════════
--- SECTION 0 : Correction des données corrompues
--- Règle : une tontine avec ordre[] VIDE ne peut pas être "Cycle terminé".
--- Cela corrige le bug "Cycle terminé — 0 tour" visible dans l'UI.
--- ══════════════════════════════════════════════════════════════════════════════
+-- ============================================================
+-- SECTION 0 : Correction des donnees corrompues
+-- Une tontine avec ordre[] VIDE ne peut pas etre "Cycle termine".
+-- Corrige le bug "Cycle termine - 0 tour" visible dans l'UI.
+-- ============================================================
 
--- Réinitialiser cycleTermine=false pour toutes les tontines où :
---   • ordre[] est vide ou absent
---   • ET cycleTermine était true (corruption)
---   • ET historique[] est vide (jamais lancée)
 UPDATE tontines
 SET data = data || jsonb_build_object('cycleTermine', false)
 WHERE
@@ -40,24 +17,19 @@ WHERE
   AND COALESCE((data->>'cycleTermine')::boolean, false) = true
   AND jsonb_array_length(COALESCE(data->'historique', '[]'::jsonb)) = 0;
 
-DO $$
+DO $report0$
 DECLARE n int;
 BEGIN
   GET DIAGNOSTICS n = ROW_COUNT;
-  RAISE NOTICE '════════════════════════════════════════════════════';
-  RAISE NOTICE 'Migration v15 — TontineClair Nouveau Cycle';
-  RAISE NOTICE '════════════════════════════════════════════════════';
-  RAISE NOTICE 'SECTION 0 — Données corrompues corrigées : % tontine(s)', n;
-  RAISE NOTICE '  (cycleTermine réinitialisé à false pour tontines jamais lancées)';
-END $$;
+  RAISE NOTICE 'Migration v15 - SECTION 0 - Donnees corrompues corrigees : % tontine(s)', n;
+END;
+$report0$;
 
 
--- ══════════════════════════════════════════════════════════════════════════════
+-- ============================================================
 -- SECTION 1 : Helper verifier_gestionnaire
--- Vérifie qu'un gestionnaire existe dans la tontine avec le bon PIN.
--- Utilisé par toutes les RPCs du module Nouveau Cycle.
--- 3 stratégies pour couvrir les différentes structures JSONB possibles.
--- ══════════════════════════════════════════════════════════════════════════════
+-- 4 strategies PIN pour couvrir toutes les structures JSONB.
+-- ============================================================
 
 CREATE OR REPLACE FUNCTION verifier_gestionnaire(
   p_code text,
@@ -68,7 +40,7 @@ RETURNS boolean
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $func_vg$
 DECLARE
   v_code text := upper(trim(p_code));
   v_data jsonb;
@@ -76,13 +48,13 @@ BEGIN
   SELECT data INTO v_data FROM tontines WHERE code = v_code;
   IF v_data IS NULL THEN RETURN false; END IF;
 
-  -- Stratégie A : gestionnaires dans tontines.data (format principal)
+  -- Strategie A : data.gestionnaires (format principal Flutter)
   IF v_data->'gestionnaires' IS NOT NULL
      AND v_data->'gestionnaires' @> jsonb_build_array(
            jsonb_build_object('nom', p_nom, 'pin', p_pin))
   THEN RETURN true; END IF;
 
-  -- Stratégie B : colonne gestionnaires séparée
+  -- Strategie B : colonne gestionnaires separee (containment)
   IF EXISTS (
     SELECT 1 FROM tontines
     WHERE code = v_code
@@ -90,7 +62,7 @@ BEGIN
             jsonb_build_object('nom', p_nom, 'pin', p_pin))
   ) THEN RETURN true; END IF;
 
-  -- Stratégie C : comparaison champ par champ dans colonne gestionnaires
+  -- Strategie C : champ par champ dans colonne gestionnaires
   IF EXISTS (
     SELECT 1 FROM tontines t,
            jsonb_array_elements(COALESCE(t.gestionnaires, '[]'::jsonb)) g
@@ -99,7 +71,7 @@ BEGIN
       AND (g->>'pin') = p_pin
   ) THEN RETURN true; END IF;
 
-  -- Stratégie D : comparaison champ par champ dans data.gestionnaires
+  -- Strategie D : champ par champ dans data.gestionnaires
   IF EXISTS (
     SELECT 1 FROM tontines t,
            jsonb_array_elements(COALESCE(t.data->'gestionnaires', '[]'::jsonb)) g
@@ -110,34 +82,28 @@ BEGIN
 
   RETURN false;
 END;
-$$;
+$func_vg$;
 
 GRANT EXECUTE ON FUNCTION verifier_gestionnaire(text, text, text) TO anon, authenticated;
 
-DO $$ BEGIN
-  RAISE NOTICE 'SECTION 1 — verifier_gestionnaire : ✅ OK (4 stratégies PIN)';
-END $$;
+DO $report1$
+BEGIN
+  RAISE NOTICE 'Migration v15 - SECTION 1 - verifier_gestionnaire : OK (4 strategies PIN)';
+END;
+$report1$;
 
 
--- ══════════════════════════════════════════════════════════════════════════════
--- SECTION 2 : RPC proposer_nouveau_cycle  ← FONCTION MANQUANTE
+-- ============================================================
+-- SECTION 2 : RPC proposer_nouveau_cycle  <- FONCTION MANQUANTE
 --
--- Paramètres Flutter (supabase_service.dart ligne ~681) :
---   p_code     text  — code tontine (converti en majuscules)
---   p_nom      text  — nom du gestionnaire
---   p_pin      text  — PIN du gestionnaire
---   p_question text  — question du vote (optionnel, a une valeur par défaut)
+-- Parametres Flutter (supabase_service.dart) :
+--   p_code     text  -- code tontine (converti majuscules)
+--   p_nom      text  -- nom gestionnaire
+--   p_pin      text  -- PIN gestionnaire
+--   p_question text  -- question du vote (optionnel, valeur par defaut fournie)
 --
 -- Retourne : {ok: bool, vote_id?: text, erreur?: text}
---
--- Règles métier :
---   1. PIN gestionnaire valide
---   2. Tontine existante
---   3. cycleTermine = true (le cycle doit être réellement terminé)
---   4. Cycle a réellement démarré (ordre non vide OU historique non vide)
---   5. Aucun vote 'nouveau_cycle' déjà ouvert
---   6. Crée le vote et l'ajoute dans data['votes']
--- ══════════════════════════════════════════════════════════════════════════════
+-- ============================================================
 
 CREATE OR REPLACE FUNCTION proposer_nouveau_cycle(
   p_code      text,
@@ -149,7 +115,7 @@ RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $func_pnc$
 DECLARE
   v_code          text    := upper(trim(p_code));
   v_ok            boolean;
@@ -165,42 +131,41 @@ DECLARE
   v_cycle_num     int;
   i               int;
 BEGIN
-  -- ── 1. Vérifier le PIN gestionnaire ───────────────────────────────────────
+  -- 1. Verifier le PIN gestionnaire
   SELECT verifier_gestionnaire(v_code, p_nom, p_pin) INTO v_ok;
   IF NOT v_ok THEN
     RETURN jsonb_build_object(
       'ok',     false,
-      'erreur', 'PIN incorrect ou gestionnaire non autorisé.'
+      'erreur', 'PIN incorrect ou gestionnaire non autorise.'
     );
   END IF;
 
-  -- ── 2. Lire la tontine ────────────────────────────────────────────────────
+  -- 2. Lire la tontine
   SELECT data INTO v_data FROM tontines WHERE code = v_code;
   IF v_data IS NULL THEN
     RETURN jsonb_build_object('ok', false, 'erreur', 'Tontine introuvable.');
   END IF;
 
-  -- ── 3. Vérifier que le cycle est bien terminé ─────────────────────────────
+  -- 3. Verifier que le cycle est bien termine
   v_cycle_termine := COALESCE((v_data->>'cycleTermine')::boolean, false);
   IF NOT v_cycle_termine THEN
     RETURN jsonb_build_object(
       'ok',     false,
-      'erreur', 'Le cycle n''est pas encore terminé. Tous les membres doivent d''abord avoir reçu leur cagnotte.'
+      'erreur', 'Le cycle n''est pas encore termine. Tous les membres doivent d''abord avoir recu leur cagnotte.'
     );
   END IF;
 
-  -- ── 4. Vérifier que le cycle a réellement démarré ────────────────────────
-  --    (empêche de proposer sur une tontine jamais lancée avec cycleTermine=true corrompu)
+  -- 4. Verifier que le cycle a reellement demarre
   v_nb_tours      := jsonb_array_length(COALESCE(v_data->'ordre', '[]'::jsonb));
   v_nb_historique := jsonb_array_length(COALESCE(v_data->'historique', '[]'::jsonb));
   IF v_nb_tours = 0 AND v_nb_historique = 0 THEN
     RETURN jsonb_build_object(
       'ok',     false,
-      'erreur', 'Impossible de proposer un nouveau cycle : la tontine n''a jamais démarré. Lancez d''abord le premier cycle.'
+      'erreur', 'Impossible de proposer un nouveau cycle : la tontine n''a jamais demarre.'
     );
   END IF;
 
-  -- ── 5. Vérifier qu'aucun vote 'nouveau_cycle' ouvert n'existe ────────────
+  -- 5. Verifier qu'aucun vote nouveau_cycle ouvert n'existe
   v_votes := COALESCE(v_data->'votes', '[]'::jsonb);
   FOR i IN 0 .. jsonb_array_length(v_votes) - 1 LOOP
     v_vote := v_votes->i;
@@ -210,17 +175,17 @@ BEGIN
     THEN
       RETURN jsonb_build_object(
         'ok',      false,
-        'erreur',  'Un vote de redémarrage est déjà en cours.',
+        'erreur',  'Un vote de redemarrage est deja en cours.',
         'vote_id', v_vote->>'id'
       );
     END IF;
   END LOOP;
 
-  -- ── 6. Créer le vote ──────────────────────────────────────────────────────
+  -- 6. Creer le vote
   v_vote_id    := 'NC-' || to_char(now(), 'YYYYMMDDHH24MISS')
                   || '-' || substr(md5(random()::text), 1, 6);
-  v_now        := to_char(now() AT TIME ZONE 'UTC',
-                          'YYYY-MM-DD"T"HH24:MI:SS".000Z"');
+  v_now        := to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD') || 'T'
+                  || to_char(now() AT TIME ZONE 'UTC', 'HH24:MI:SS') || '.000Z';
   v_nb_membres := COALESCE(jsonb_array_length(v_data->'membres'), 0);
   v_cycle_num  := COALESCE((v_data->>'cycleNum')::int,
                            (v_data->>'cycleNumero')::int, 1);
@@ -238,7 +203,7 @@ BEGIN
     'clos',         false,
     'voix',         '{}'::jsonb,
     'decompte',     jsonb_build_object('oui', 0, 'non', 0, 'abstention', 0),
-    'description',  'Vote de redémarrage — Cycle ' || v_cycle_num,
+    'description',  'Vote de redemarrage - Cycle ' || v_cycle_num,
     'mode',         'securise',
     'quorum',       CEIL(v_nb_membres::float / 2)::int,
     'cycleRefConfig', jsonb_build_object(
@@ -248,7 +213,7 @@ BEGIN
     )
   );
 
-  -- ── 7. Insérer le vote dans data + entrée journal ──────────────────────
+  -- 7. Inserer le vote dans data + entree journal
   v_data := v_data || jsonb_build_object(
     'votes',   v_votes || jsonb_build_array(v_vote),
     'journal', jsonb_build_array(jsonb_build_object(
@@ -260,52 +225,53 @@ BEGIN
     )) || COALESCE(v_data->'journal', '[]'::jsonb)
   );
 
-  -- ── 8. Sauvegarder ───────────────────────────────────────────────────────
+  -- 8. Sauvegarder
   UPDATE tontines SET data = v_data WHERE code = v_code;
 
   IF NOT FOUND THEN
-    RETURN jsonb_build_object('ok', false, 'erreur', 'Échec de la sauvegarde.');
+    RETURN jsonb_build_object('ok', false, 'erreur', 'Echec de la sauvegarde.');
   END IF;
 
   RAISE NOTICE 'proposer_nouveau_cycle OK: code=% vote_id=%', v_code, v_vote_id;
 
   RETURN jsonb_build_object('ok', true, 'vote_id', v_vote_id);
 END;
-$$;
+$func_pnc$;
 
 GRANT EXECUTE ON FUNCTION proposer_nouveau_cycle(text, text, text, text) TO anon, authenticated;
 
-DO $$ BEGIN
-  RAISE NOTICE 'SECTION 2 — proposer_nouveau_cycle : ✅ OK';
+DO $report2$
+BEGIN
+  RAISE NOTICE 'Migration v15 - SECTION 2 - proposer_nouveau_cycle : OK';
   RAISE NOTICE '  Signature : (p_code text, p_nom text, p_pin text, p_question text DEFAULT ...)';
   RAISE NOTICE '  Retourne  : {ok: bool, vote_id?: text, erreur?: text}';
-END $$;
+END;
+$report2$;
 
 
--- ══════════════════════════════════════════════════════════════════════════════
+-- ============================================================
 -- SECTION 3 : RPC lire_etat_cycle
--- Retourne l'état complet du cycle + le vote de redémarrage s'il existe.
--- Appelée par : SupabaseService.lireEtatCycle(code)
--- ══════════════════════════════════════════════════════════════════════════════
+-- Retourne l'etat du cycle + vote de redemarrage s'il existe.
+-- ============================================================
 
 CREATE OR REPLACE FUNCTION lire_etat_cycle(p_code text)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $func_lec$
 DECLARE
-  v_code          text := upper(trim(p_code));
-  v_data          jsonb;
-  v_votes         jsonb;
-  v_vote          jsonb;
+  v_code             text := upper(trim(p_code));
+  v_data             jsonb;
+  v_votes            jsonb;
+  v_vote             jsonb;
   v_vote_redemarrage jsonb := NULL;
-  v_cycle_termine boolean;
-  v_nb_membres    int;
-  v_nb_tours      int;
-  v_tour_actuel   int;
-  v_cycle_num     int;
-  i               int;
+  v_cycle_termine    boolean;
+  v_nb_membres       int;
+  v_nb_tours         int;
+  v_tour_actuel      int;
+  v_cycle_num        int;
+  i                  int;
 BEGIN
   SELECT data INTO v_data FROM tontines WHERE code = v_code;
   IF v_data IS NULL THEN
@@ -319,7 +285,7 @@ BEGIN
   v_cycle_num     := COALESCE((v_data->>'cycleNum')::int,
                               (v_data->>'cycleNumero')::int, 1);
 
-  -- Trouver le vote de redémarrage le plus récent
+  -- Trouver le vote de redemarrage le plus recent
   v_votes := COALESCE(v_data->'votes', '[]'::jsonb);
   FOR i IN 0 .. jsonb_array_length(v_votes) - 1 LOOP
     v_vote := v_votes->i;
@@ -341,34 +307,31 @@ BEGIN
     'nbTours',         v_nb_tours,
     'peutProposer',    (
       v_cycle_termine
-      AND (v_nb_tours > 0 OR jsonb_array_length(COALESCE(v_data->'historique','[]'::jsonb)) > 0)
-      AND (v_vote_redemarrage IS NULL OR COALESCE((v_vote_redemarrage->>'clos')::boolean, false) = true)
+      AND (v_nb_tours > 0 OR
+           jsonb_array_length(COALESCE(v_data->'historique', '[]'::jsonb)) > 0)
+      AND (v_vote_redemarrage IS NULL OR
+           COALESCE((v_vote_redemarrage->>'clos')::boolean, false) = true)
     ),
     'voteRedemarrage', v_vote_redemarrage
   );
 END;
-$$;
+$func_lec$;
 
 GRANT EXECUTE ON FUNCTION lire_etat_cycle(text) TO anon, authenticated;
 
-DO $$ BEGIN
-  RAISE NOTICE 'SECTION 3 — lire_etat_cycle : ✅ OK';
-END $$;
+DO $report3$
+BEGIN
+  RAISE NOTICE 'Migration v15 - SECTION 3 - lire_etat_cycle : OK';
+END;
+$report3$;
 
 
--- ══════════════════════════════════════════════════════════════════════════════
+-- ============================================================
 -- SECTION 4 : RPC clore_vote_redemarrage
--- Clôture le vote et calcule le résultat (adopté / refusé).
--- Appelée par : SupabaseService.cloreVoteRedemarrage(...)
---
--- Paramètres Flutter :
---   p_code    text — code tontine
---   p_nom     text — nom gestionnaire
---   p_pin     text — PIN gestionnaire
---   p_vote_id text — ID du vote à clôturer
---
+-- Cloture le vote et calcule le resultat (adopte / refuse).
+-- Parametres : p_code text, p_nom text, p_pin text, p_vote_id text
 -- Retourne : {ok: bool, adopte?: bool, oui?: int, non?: int, abstention?: int, erreur?: text}
--- ══════════════════════════════════════════════════════════════════════════════
+-- ============================================================
 
 CREATE OR REPLACE FUNCTION clore_vote_redemarrage(
   p_code    text,
@@ -380,31 +343,31 @@ RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $func_cvr$
 DECLARE
-  v_code    text    := upper(trim(p_code));
-  v_ok      boolean;
-  v_data    jsonb;
-  v_votes   jsonb;
-  v_vote    jsonb;
-  v_idx     int := -1;
-  v_found   boolean := false;
-  v_now     text;
-  v_oui     int := 0;
-  v_non     int := 0;
-  v_abst    int := 0;
-  v_total   int;
-  v_quorum  int;
-  v_adopte  boolean;
-  v_voix    jsonb;
-  v_clef    text;
+  v_code     text    := upper(trim(p_code));
+  v_ok       boolean;
+  v_data     jsonb;
+  v_votes    jsonb;
+  v_vote     jsonb;
+  v_idx      int := -1;
+  v_found    boolean := false;
+  v_now      text;
+  v_oui      int := 0;
+  v_non      int := 0;
+  v_abst     int := 0;
+  v_total    int;
+  v_quorum   int;
+  v_adopte   boolean;
+  v_voix     jsonb;
+  v_clef     text;
   v_voix_val text;
-  i         int;
+  i          int;
 BEGIN
-  -- 1. Vérifier gestionnaire
+  -- 1. Verifier gestionnaire
   SELECT verifier_gestionnaire(v_code, p_nom, p_pin) INTO v_ok;
   IF NOT v_ok THEN
-    RETURN jsonb_build_object('ok', false, 'erreur', 'PIN incorrect ou gestionnaire non autorisé.');
+    RETURN jsonb_build_object('ok', false, 'erreur', 'PIN incorrect ou gestionnaire non autorise.');
   END IF;
 
   -- 2. Lire la tontine
@@ -414,7 +377,8 @@ BEGIN
   END IF;
 
   v_votes := COALESCE(v_data->'votes', '[]'::jsonb);
-  v_now   := to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS".000Z"');
+  v_now   := to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD') || 'T'
+             || to_char(now() AT TIME ZONE 'UTC', 'HH24:MI:SS') || '.000Z';
 
   -- 3. Trouver le vote
   FOR i IN 0 .. jsonb_array_length(v_votes) - 1 LOOP
@@ -431,33 +395,32 @@ BEGIN
   END IF;
 
   IF COALESCE((v_vote->>'clos')::boolean, false) THEN
-    RETURN jsonb_build_object('ok', false, 'erreur', 'Ce vote est déjà clôturé.');
+    RETURN jsonb_build_object('ok', false, 'erreur', 'Ce vote est deja cloture.');
   END IF;
 
   -- 4. Compter les voix
-  v_voix  := COALESCE(v_vote->'voix', '{}'::jsonb);
+  v_voix   := COALESCE(v_vote->'voix', '{}'::jsonb);
   v_quorum := COALESCE((v_vote->>'quorum')::int, 1);
 
   FOR v_clef IN SELECT jsonb_object_keys(v_voix) LOOP
     v_voix_val := v_voix->>v_clef;
-    IF v_voix_val = 'oui'        THEN v_oui  := v_oui  + 1;
-    ELSIF v_voix_val = 'non'     THEN v_non  := v_non  + 1;
+    IF v_voix_val = 'oui'           THEN v_oui  := v_oui  + 1;
+    ELSIF v_voix_val = 'non'        THEN v_non  := v_non  + 1;
     ELSIF v_voix_val = 'abstention' THEN v_abst := v_abst + 1;
     END IF;
   END LOOP;
 
   v_total  := v_oui + v_non + v_abst;
-  -- Adopté si : quorum atteint ET majorité absolue des votants pour "oui"
   v_adopte := (v_total >= v_quorum) AND (v_oui > (v_non + v_abst));
 
-  -- 5. Mettre à jour le vote
+  -- 5. Mettre a jour le vote
   v_vote := v_vote || jsonb_build_object(
-    'clos',       true,
-    'statut',     'clos',
-    'closLe',     v_now,
-    'adopte',     v_adopte,
-    'decompte',   jsonb_build_object('oui', v_oui, 'non', v_non, 'abstention', v_abst),
-    'closPar',    p_nom
+    'clos',     true,
+    'statut',   'clos',
+    'closLe',   v_now,
+    'adopte',   v_adopte,
+    'decompte', jsonb_build_object('oui', v_oui, 'non', v_non, 'abstention', v_abst),
+    'closPar',  p_nom
   );
 
   v_votes := jsonb_set(v_votes, ARRAY[v_idx::text], v_vote, false);
@@ -470,14 +433,13 @@ BEGIN
       'gestionnaire', p_nom,
       'quand',        v_now,
       'reference',    p_vote_id,
-      'resultat',     CASE WHEN v_adopte THEN 'ACCEPTÉ' ELSE 'REFUSÉ' END
+      'resultat',     CASE WHEN v_adopte THEN 'ACCEPTE' ELSE 'REFUSE' END
     )) || COALESCE(v_data->'journal', '[]'::jsonb)
   );
 
   UPDATE tontines SET data = v_data WHERE code = v_code;
 
-  RAISE NOTICE 'clore_vote_redemarrage OK: % vote=% adopte=%',
-    v_code, p_vote_id, v_adopte;
+  RAISE NOTICE 'clore_vote_redemarrage OK: % vote=% adopte=%', v_code, p_vote_id, v_adopte;
 
   RETURN jsonb_build_object(
     'ok',         true,
@@ -488,32 +450,33 @@ BEGIN
     'total',      v_total
   );
 END;
-$$;
+$func_cvr$;
 
 GRANT EXECUTE ON FUNCTION clore_vote_redemarrage(text, text, text, text) TO anon, authenticated;
 
-DO $$ BEGIN
-  RAISE NOTICE 'SECTION 4 — clore_vote_redemarrage : ✅ OK';
-END $$;
+DO $report4$
+BEGIN
+  RAISE NOTICE 'Migration v15 - SECTION 4 - clore_vote_redemarrage : OK';
+END;
+$report4$;
 
 
--- ══════════════════════════════════════════════════════════════════════════════
+-- ============================================================
 -- SECTION 5 : RPC demarrer_nouveau_cycle
--- Démarre le nouveau cycle après un vote favorable.
--- Appelée par : SupabaseService.demarrerNouveauCycle(...)
+-- Demarre le nouveau cycle apres un vote favorable.
 --
--- Paramètres Flutter (supabase_service.dart) :
---   p_code          text     — code tontine (obligatoire)
---   p_nom           text     — nom gestionnaire (obligatoire)
---   p_pin           text     — PIN gestionnaire (obligatoire)
---   p_vote_id       text     — ID du vote accepté (obligatoire)
---   p_montant       integer  — nouveau montant (optionnel, NULL = conserver)
---   p_periodicite   text     — nouvelle périodicité (optionnel, NULL = conserver)
---   p_echeance      text     — 1ère échéance ISO 8601 (optionnel, NULL = calculer auto)
---   p_methode_ordre text     — méthode d'ordre (optionnel, NULL = conserver)
+-- Parametres Flutter :
+--   p_code          text     -- code tontine (obligatoire)
+--   p_nom           text     -- nom gestionnaire (obligatoire)
+--   p_pin           text     -- PIN gestionnaire (obligatoire)
+--   p_vote_id       text     -- ID du vote accepte (obligatoire)
+--   p_montant       integer  -- nouveau montant (NULL = conserver)
+--   p_periodicite   text     -- nouvelle periodicite (NULL = conserver)
+--   p_echeance      text     -- 1ere echeance ISO 8601 (NULL = calculer auto)
+--   p_methode_ordre text     -- methode d'ordre (NULL = conserver)
 --
 -- Retourne : {ok: bool, cycleNum?: int, message?: text, erreur?: text}
--- ══════════════════════════════════════════════════════════════════════════════
+-- ============================================================
 
 CREATE OR REPLACE FUNCTION demarrer_nouveau_cycle(
   p_code          text,
@@ -529,7 +492,7 @@ RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $func_dnc$
 DECLARE
   v_code          text := upper(trim(p_code));
   v_ok            boolean;
@@ -549,10 +512,10 @@ DECLARE
   v_methode_ordre text;
   i               int;
 BEGIN
-  -- 1. Vérifier gestionnaire
+  -- 1. Verifier gestionnaire
   SELECT verifier_gestionnaire(v_code, p_nom, p_pin) INTO v_ok;
   IF NOT v_ok THEN
-    RETURN jsonb_build_object('ok', false, 'erreur', 'PIN incorrect ou gestionnaire non autorisé.');
+    RETURN jsonb_build_object('ok', false, 'erreur', 'PIN incorrect ou gestionnaire non autorise.');
   END IF;
 
   -- 2. Lire la tontine
@@ -561,13 +524,13 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'erreur', 'Tontine introuvable.');
   END IF;
 
-  -- 3. Vérifier que le cycle est terminé
+  -- 3. Verifier que le cycle est termine
   v_cycle_termine := COALESCE((v_data->>'cycleTermine')::boolean, false);
   IF NOT v_cycle_termine THEN
-    RETURN jsonb_build_object('ok', false, 'erreur', 'Le cycle actuel n''est pas encore terminé.');
+    RETURN jsonb_build_object('ok', false, 'erreur', 'Le cycle actuel n''est pas encore termine.');
   END IF;
 
-  -- 4. Vérifier que le vote existe, est clos et adopté
+  -- 4. Verifier que le vote existe, est clos et adopte
   v_votes := COALESCE(v_data->'votes', '[]'::jsonb);
   FOR i IN 0 .. jsonb_array_length(v_votes) - 1 LOOP
     v_vote := v_votes->i;
@@ -581,24 +544,25 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'erreur', 'Vote introuvable : ' || p_vote_id);
   END IF;
   IF NOT COALESCE((v_vote->>'clos')::boolean, false) THEN
-    RETURN jsonb_build_object('ok', false, 'erreur', 'Le vote n''est pas encore clôturé.');
+    RETURN jsonb_build_object('ok', false, 'erreur', 'Le vote n''est pas encore cloture.');
   END IF;
   IF NOT COALESCE((v_vote->>'adopte')::boolean, false) THEN
-    RETURN jsonb_build_object('ok', false, 'erreur', 'Le vote n''a pas été accepté.');
+    RETURN jsonb_build_object('ok', false, 'erreur', 'Le vote n''a pas ete accepte.');
   END IF;
 
-  v_now           := to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS".000Z"');
+  v_now           := to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD') || 'T'
+                     || to_char(now() AT TIME ZONE 'UTC', 'HH24:MI:SS') || '.000Z';
   v_cycle_num     := COALESCE((v_data->>'cycleNum')::int,
                               (v_data->>'cycleNumero')::int, 1);
   v_new_cycle_num := v_cycle_num + 1;
 
-  -- 5. Paramètres du nouveau cycle (NULL → conserver anciens)
+  -- 5. Parametres du nouveau cycle (NULL = conserver anciens)
   v_montant       := COALESCE(p_montant,       (v_data->>'montant')::int, 5000);
   v_periodicite   := COALESCE(p_periodicite,   v_data->>'periodicite',
                               v_data->>'periode', 'mensuel');
   v_methode_ordre := COALESCE(p_methode_ordre, v_data->>'methodeOrdre', 'rotation');
 
-  -- 6. Archiver le cycle terminé
+  -- 6. Archiver le cycle termine
   v_archives := COALESCE(v_data->'cyclesArchives', '[]'::jsonb);
   v_old_cycle := jsonb_build_object(
     'cycleNum',  v_cycle_num,
@@ -611,8 +575,7 @@ BEGIN
   );
   v_archives := v_archives || jsonb_build_array(v_old_cycle);
 
-  -- 7. Réinitialiser les membres pour le nouveau cycle
-  --    (remettre paye=false, effacer datePaiement, etc.)
+  -- 7. Reinitialiser les membres (paye=false, effacer datePaiement)
   v_membres := COALESCE(v_data->'membres', '[]'::jsonb);
   FOR i IN 0 .. jsonb_array_length(v_membres) - 1 LOOP
     v_membres := jsonb_set(
@@ -629,7 +592,7 @@ BEGIN
     'cycleNumero',    v_new_cycle_num,
     'cycleTermine',   false,
     'tourActuel',     0,
-    'ordre',          '[]'::jsonb,          -- ordre réinitialisé (nouveau tirage requis)
+    'ordre',          '[]'::jsonb,
     'paiements',      '{}'::jsonb,
     'historique',     '[]'::jsonb,
     'membres',        v_membres,
@@ -638,7 +601,7 @@ BEGIN
     'periode',        v_periodicite,
     'methodeOrdre',   v_methode_ordre,
     'cyclesArchives', v_archives,
-    'votes',          '[]'::jsonb,          -- votes réinitialisés
+    'votes',          '[]'::jsonb,
     'journal',        jsonb_build_array(jsonb_build_object(
       'quoi',         'NOUVEAU_CYCLE_DEMARRE',
       'gestionnaire', p_nom,
@@ -648,7 +611,7 @@ BEGIN
     )) || COALESCE(v_data->'journal', '[]'::jsonb)
   );
 
-  -- Ajouter la 1ère échéance si fournie
+  -- Ajouter la 1ere echeance si fournie
   IF p_echeance IS NOT NULL THEN
     v_data := v_data || jsonb_build_object('echeance', p_echeance);
   END IF;
@@ -657,103 +620,64 @@ BEGIN
   UPDATE tontines SET data = v_data WHERE code = v_code;
 
   IF NOT FOUND THEN
-    RETURN jsonb_build_object('ok', false, 'erreur', 'Échec de la sauvegarde.');
+    RETURN jsonb_build_object('ok', false, 'erreur', 'Echec de la sauvegarde.');
   END IF;
 
-  RAISE NOTICE 'demarrer_nouveau_cycle OK: % cycle %→%',
-    v_code, v_cycle_num, v_new_cycle_num;
+  RAISE NOTICE 'demarrer_nouveau_cycle OK: % cycle %->%', v_code, v_cycle_num, v_new_cycle_num;
 
   RETURN jsonb_build_object(
     'ok',       true,
     'cycleNum', v_new_cycle_num,
-    'message',  'Cycle ' || v_new_cycle_num || ' démarré avec succès.'
+    'message',  'Cycle ' || v_new_cycle_num || ' demarre avec succes.'
   );
 END;
-$$;
+$func_dnc$;
 
 GRANT EXECUTE ON FUNCTION demarrer_nouveau_cycle(text,text,text,text,integer,text,text,text)
   TO anon, authenticated;
 
-DO $$ BEGIN
-  RAISE NOTICE 'SECTION 5 — demarrer_nouveau_cycle : ✅ OK';
-END $$;
-
-
--- ══════════════════════════════════════════════════════════════════════════════
--- SECTION 6 : RLS Policies
--- Les tontines sont accessibles via RPC SECURITY DEFINER → pas de RLS direct.
--- On s'assure juste que les fonctions ont les bons droits d'accès.
--- ══════════════════════════════════════════════════════════════════════════════
-
--- Assurer que anon peut lire les tontines via les RPCs (si RLS activé)
-DO $$
+DO $report5$
 BEGIN
-  -- Vérifier si RLS est activé sur tontines
-  IF EXISTS (
-    SELECT 1 FROM pg_tables
-    WHERE schemaname = 'public' AND tablename = 'tontines' AND rowsecurity = true
-  ) THEN
-    RAISE NOTICE 'SECTION 6 — RLS activé sur tontines';
-    RAISE NOTICE '  Les RPCs utilisent SECURITY DEFINER → RLS contourné correctement.';
-  ELSE
-    RAISE NOTICE 'SECTION 6 — RLS désactivé sur tontines (pas de policy nécessaire).';
-  END IF;
-END $$;
+  RAISE NOTICE 'Migration v15 - SECTION 5 - demarrer_nouveau_cycle : OK';
+END;
+$report5$;
 
 
--- ══════════════════════════════════════════════════════════════════════════════
--- SECTION 7 : Vérification post-migration complète
--- ══════════════════════════════════════════════════════════════════════════════
+-- ============================================================
+-- SECTION 6 : Verification post-migration
+-- ============================================================
 
-DO $$
+DO $verify15$
 DECLARE
-  v_vg   boolean;
-  v_pnc  boolean;
-  v_lec  boolean;
-  v_dnc  boolean;
-  v_cvr  boolean;
+  v_vg  boolean;
+  v_pnc boolean;
+  v_lec boolean;
+  v_dnc boolean;
+  v_cvr boolean;
   v_corrupted int;
 BEGIN
-  SELECT EXISTS(SELECT 1 FROM pg_proc WHERE proname = 'verifier_gestionnaire')
-    INTO v_vg;
-  SELECT EXISTS(SELECT 1 FROM pg_proc WHERE proname = 'proposer_nouveau_cycle')
-    INTO v_pnc;
-  SELECT EXISTS(SELECT 1 FROM pg_proc WHERE proname = 'lire_etat_cycle')
-    INTO v_lec;
-  SELECT EXISTS(SELECT 1 FROM pg_proc WHERE proname = 'demarrer_nouveau_cycle')
-    INTO v_dnc;
-  SELECT EXISTS(SELECT 1 FROM pg_proc WHERE proname = 'clore_vote_redemarrage')
-    INTO v_cvr;
+  SELECT EXISTS(SELECT 1 FROM pg_proc WHERE proname = 'verifier_gestionnaire')    INTO v_vg;
+  SELECT EXISTS(SELECT 1 FROM pg_proc WHERE proname = 'proposer_nouveau_cycle')   INTO v_pnc;
+  SELECT EXISTS(SELECT 1 FROM pg_proc WHERE proname = 'lire_etat_cycle')          INTO v_lec;
+  SELECT EXISTS(SELECT 1 FROM pg_proc WHERE proname = 'demarrer_nouveau_cycle')   INTO v_dnc;
+  SELECT EXISTS(SELECT 1 FROM pg_proc WHERE proname = 'clore_vote_redemarrage')   INTO v_cvr;
 
-  -- Vérifier s'il reste des données corrompues
   SELECT COUNT(*) INTO v_corrupted
   FROM tontines
-  WHERE
-    jsonb_array_length(COALESCE(data->'ordre', '[]'::jsonb)) = 0
+  WHERE jsonb_array_length(COALESCE(data->'ordre', '[]'::jsonb)) = 0
     AND COALESCE((data->>'cycleTermine')::boolean, false) = true
     AND jsonb_array_length(COALESCE(data->'historique', '[]'::jsonb)) = 0;
 
-  RAISE NOTICE '════════════════════════════════════════════════════';
-  RAISE NOTICE 'Migration v15 — Résultat final';
-  RAISE NOTICE '════════════════════════════════════════════════════';
-  RAISE NOTICE 'Helper verifier_gestionnaire    : %', CASE WHEN v_vg  THEN '✅ OK' ELSE '❌ MANQUANT' END;
-  RAISE NOTICE 'RPC proposer_nouveau_cycle      : %', CASE WHEN v_pnc THEN '✅ OK' ELSE '❌ MANQUANT' END;
-  RAISE NOTICE 'RPC lire_etat_cycle             : %', CASE WHEN v_lec THEN '✅ OK' ELSE '❌ MANQUANT' END;
-  RAISE NOTICE 'RPC demarrer_nouveau_cycle      : %', CASE WHEN v_dnc THEN '✅ OK' ELSE '❌ MANQUANT' END;
-  RAISE NOTICE 'RPC clore_vote_redemarrage      : %', CASE WHEN v_cvr THEN '✅ OK' ELSE '❌ MANQUANT' END;
-  RAISE NOTICE '────────────────────────────────────────────────────';
-  RAISE NOTICE 'Données corrompues restantes    : %', v_corrupted;
-  IF v_corrupted > 0 THEN
-    RAISE NOTICE '  ⚠️  % tontine(s) encore corrompues — vérifier manuellement.', v_corrupted;
-  ELSE
-    RAISE NOTICE '  ✅ Aucune donnée corrompue.';
-  END IF;
-  RAISE NOTICE '════════════════════════════════════════════════════';
-  RAISE NOTICE 'TEST SQL POST-MIGRATION (copier-coller dans SQL Editor) :';
-  RAISE NOTICE '';
-  RAISE NOTICE 'SELECT routine_name FROM information_schema.routines';
-  RAISE NOTICE 'WHERE routine_name = ''proposer_nouveau_cycle'';';
-  RAISE NOTICE '';
-  RAISE NOTICE 'RÉSULTAT ATTENDU : 1 ligne avec "proposer_nouveau_cycle"';
-  RAISE NOTICE '════════════════════════════════════════════════════';
-END $$;
+  RAISE NOTICE '================================================';
+  RAISE NOTICE 'Migration v15 - Resultat final';
+  RAISE NOTICE '================================================';
+  RAISE NOTICE 'verifier_gestionnaire    : %', CASE WHEN v_vg  THEN 'OK' ELSE 'MANQUANT' END;
+  RAISE NOTICE 'proposer_nouveau_cycle   : %', CASE WHEN v_pnc THEN 'OK' ELSE 'MANQUANT' END;
+  RAISE NOTICE 'lire_etat_cycle          : %', CASE WHEN v_lec THEN 'OK' ELSE 'MANQUANT' END;
+  RAISE NOTICE 'demarrer_nouveau_cycle   : %', CASE WHEN v_dnc THEN 'OK' ELSE 'MANQUANT' END;
+  RAISE NOTICE 'clore_vote_redemarrage   : %', CASE WHEN v_cvr THEN 'OK' ELSE 'MANQUANT' END;
+  RAISE NOTICE '------------------------------------------------';
+  RAISE NOTICE 'Donnees corrompues restantes : %', v_corrupted;
+  RAISE NOTICE '================================================';
+END;
+$verify15$;
