@@ -96,30 +96,99 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Future<void> _refuserDemande(String code) async {
-    final cle = _cleCtrl.text.trim();
-    final confirmer = await showDialog<bool>(
+    final cle       = _cleCtrl.text.trim();
+    final motifCtrl = TextEditingController();
+    String? motifErreur;
+
+    // ── Dialog avec champ motif ──────────────────────────────────────────────
+    final motif = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.fondPapier,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Refuser la demande', style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.alerte)),
-        content: Text('Refuser la demande Premium pour $code ?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.alerte),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Refuser', style: TextStyle(color: Colors.white)),
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (sCtx, setSt) => AlertDialog(
+          backgroundColor: AppColors.fondPapier,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            'Refuser la demande',
+            style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.alerte),
           ),
-        ],
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Code tontine : $code',
+                style: const TextStyle(fontSize: 13, color: AppColors.texteDoux),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Motif du refus',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5, color: AppColors.encre),
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: motifCtrl,
+                maxLines: 2,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: InputDecoration(
+                  hintText: 'Ex : Coordonnées invalides, doublon...',
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: AppColors.lignes),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: AppColors.lignes),
+                  ),
+                  errorText: motifErreur,
+                ),
+                onChanged: (_) {
+                  if (motifErreur != null) setSt(() => motifErreur = null);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, null),
+              child: const Text('Annuler'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.alerte),
+              onPressed: () {
+                final t = motifCtrl.text.trim();
+                if (t.length < 3) {
+                  setSt(() => motifErreur = 'Veuillez indiquer un motif.');
+                  return;
+                }
+                Navigator.pop(ctx, t);
+              },
+              child: const Text('Confirmer le refus', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
       ),
     );
-    if (confirmer != true || !mounted) return;
-    // Appel RPC de refus (fallback silencieux si RPC absente)
-    await SupabaseService.adminRefuserDemande(cle: cle, code: code);
-    if (mounted) {
-      afficherToast(context, 'Demande refusée pour $code.');
-      await _recharger();
+
+    if (motif == null || !mounted) return;
+
+    // ── Appel RPC avec motif ─────────────────────────────────────────────────
+    try {
+      await SupabaseService.adminRefuserDemande(
+        cle: cle,
+        code: code,
+        motif: motif,
+      );
+      if (mounted) {
+        afficherToast(context, 'Demande refusée pour $code.');
+        await _recharger();
+      }
+    } catch (e) {
+      if (mounted) {
+        afficherToast(context, 'Erreur lors du refus : $e', estErreur: true);
+      }
     }
   }
 
@@ -348,24 +417,34 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Widget _CarteDemande(Map<String, dynamic> d, {required bool enAttente}) {
-    final statut  = d['statut'] as String? ?? '';
-    final code    = d['code'] as String? ?? '';
-    final nom     = d['gestionnaire'] as String? ?? d['nom'] as String? ?? '—';
-    final contact = d['contact'] as String? ?? '—';
-    final formule = d['formule'] as String? ?? 'mensuel';
-    final nbMembres = d['nb_membres'] as int? ?? 0;
-    final nomTontine = d['nom_tontine'] as String? ?? code;
-    final quand   = DateTime.tryParse(d['quand'] as String? ?? '');
+    final statut      = d['statut'] as String? ?? '';
+    final code        = d['code'] as String? ?? '';
+    // Nom du demandeur : v12 retourne 'gestionnaire' + 'nom' (double clé pour compat)
+    final nom         = d['gestionnaire'] as String? ?? d['nom'] as String? ?? '—';
+    final contact     = d['contact'] as String? ?? '—';
+    // Formule : v12 retourne 'formule' (alias de 'plan')
+    final formule     = d['formule'] as String? ?? d['plan'] as String? ?? 'mensuel';
+    final nbMembres   = d['nb_membres'] as int? ?? 0;
+    final nomTontine  = d['nom_tontine'] as String? ?? code;
+    final quand       = DateTime.tryParse(d['quand'] as String? ?? '');
+    final motifRefus  = d['motif_refus'] as String?;
 
     // Couleur selon statut
     Color statutCouleur;
     Color statutFond;
     String statutLabel;
-    if (statut == 'activée' || statut == 'active' || statut == 'activee') {
+    // Normalisation du statut : accepte les valeurs v12 ('approuvee', 'refusee',
+    // 'en_attente') + anciennes valeurs ('activée', 'refusée', 'active', 'refuse')
+    final statutNorm = statut
+        .toLowerCase()
+        .replaceAll('é', 'e')
+        .replaceAll('è', 'e')
+        .replaceAll(' ', '_');
+    if (statutNorm == 'approuvee' || statutNorm == 'activee' || statutNorm == 'active') {
       statutCouleur = AppColors.succes;
       statutFond    = AppColors.succesFond;
-      statutLabel   = '✓ Activée';
-    } else if (statut == 'refusée' || statut == 'refusee' || statut == 'refuse') {
+      statutLabel   = '✓ Approuvée';
+    } else if (statutNorm == 'refusee' || statutNorm == 'refuse') {
       statutCouleur = AppColors.alerte;
       statutFond    = AppColors.alerteFond;
       statutLabel   = '✗ Refusée';
@@ -442,6 +521,13 @@ class _AdminScreenState extends State<AdminScreen> {
             label: 'Date',
             valeur: Formatters.dateFormatee(quand),
           ),
+          // ── Motif de refus (affiché si présent) ─────────────────────
+          if (motifRefus != null && motifRefus.isNotEmpty)
+            _InfoLigneDemande(
+              icone: Icons.cancel_outlined,
+              label: 'Motif refus',
+              valeur: motifRefus,
+            ),
 
           // ── Boutons d'action (seulement si en attente) ───────────────
           if (enAttente) ...[

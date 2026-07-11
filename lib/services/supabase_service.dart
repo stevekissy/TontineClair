@@ -360,57 +360,73 @@ class SupabaseService {
     return {'plan': 'free', 'expire': null};
   }
 
+  /// Envoie une demande d'activation Premium (Web uniquement).
+  ///
+  /// [code]    : code de la tontine
+  /// [nom]     : nom complet du demandeur
+  /// [contact] : WhatsApp ou email
+  /// [formule] : 'mensuel' (2 500 FCFA) | 'annuel' (25 000 FCFA)
+  /// [pin]     : ignoré — conservé pour compatibilité signature existante
+  ///
+  /// Anti-doublon géré côté SQL : si une demande 'en_attente' existe déjà
+  /// pour ce code, la fonction retourne true sans insérer de doublon.
   static Future<bool> demanderPremium({
     required String code,
     required String nom,
-    required String pin,
     required String contact,
     String formule = 'mensuel',
+    String pin     = '0000',   // ignoré côté SQL, garde compat signature
   }) async {
     final result = await rpc('demander_premium', {
-      'p_code':    code.toUpperCase(),
-      'p_nom':     nom,
-      'p_pin':     pin,
-      'p_contact': contact,
-      'p_formule': formule,
+      'p_code':      code.toUpperCase(),
+      'p_nom':       nom,
+      'p_contact':   contact,
+      'p_formule':   formule,
+      'p_pin':       pin,
+      'p_plateforme': 'web',
     });
     return result == true;
   }
 
-  /// Lire les demandes Premium en attente — liste complète pour l'admin
+  /// Lire les demandes Premium en attente — liste complète pour l'admin.
+  ///
+  /// Retourne une liste de maps avec les champs :
+  ///   id, code, statut, gestionnaire, nom, contact, formule, montant,
+  ///   plateforme, motif_refus, traite_par, traite_le, quand,
+  ///   nom_tontine, nb_membres
   static Future<List<Map<String, dynamic>>> adminListerDemandesPremium(String cle) async {
     final result = await rpc('admin_lister_demandes', {'p_cle': cle});
     if (result == null) return [];
+    // admin_lister_demandes retourne jsonb (= objet/liste directement)
     if (result is List) return result.cast<Map<String, dynamic>>();
     return [];
   }
 
-  /// Refuser une demande Premium
+  /// Refuser une demande Premium avec motif obligatoire (v12).
+  ///
+  /// [cle]   : clé admin
+  /// [code]  : code tontine
+  /// [motif] : raison du refus (ex: 'Coordonnées invalides')
   static Future<bool> adminRefuserDemande({
     required String cle,
     required String code,
+    String motif = '',
   }) async {
-    try {
-      final result = await rpc('admin_refuser_demande', {
-        'p_cle':  cle,
-        'p_code': code.toUpperCase(),
-      });
-      return result == true;
-    } catch (_) {
-      // Fallback : marquer comme refusée via lister_tontines
-      return false;
-    }
+    final result = await rpc('admin_refuser_demande', {
+      'p_cle':   cle,
+      'p_code':  code.toUpperCase(),
+      'p_motif': motif,
+    });
+    return result == true;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // ADMIN
   // ═══════════════════════════════════════════════════════════════════════════
 
+  /// Alias de [adminListerDemandesPremium] — conservé pour compatibilité.
   static Future<List<Map<String, dynamic>>> adminListerDemandes(String cle) async {
-    final result = await rpc('admin_lister_demandes', {'p_cle': cle});
-    if (result == null) return [];
-    if (result is List) return result.cast<Map<String, dynamic>>();
-    return [];
+    return adminListerDemandesPremium(cle);
   }
 
   static Future<List<Map<String, dynamic>>> adminListerTontines(String cle) async {
@@ -420,6 +436,11 @@ class SupabaseService {
     return [];
   }
 
+  /// Active le Premium pour une tontine et met à jour premium_requests (v12).
+  ///
+  /// Met à jour :
+  ///   • tontines.plan = 'premium' + tontines.plan_expire
+  ///   • premium_requests.status = 'approuvee'
   static Future<bool> adminActiverPremium({
     required String cle,
     required String code,
