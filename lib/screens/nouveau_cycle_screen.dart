@@ -244,11 +244,18 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
       );
       if (!mounted) return;
       if (res == 'OK') {
-        setState(() => _succes = '✅ Vote enregistré : ${_labelChoix(choix)}');
+        // Libellé sans emoji pour éviter la double icône ("✅ Vote enregistré : ✅ Oui")
+        final label = choix.toLowerCase() == 'oui'
+            ? 'Oui'
+            : choix.toLowerCase() == 'non'
+                ? 'Non'
+                : 'Abstention';
+        setState(() {
+          _erreur = null; // Effacer toute erreur précédente
+          _succes = '✅ Vote enregistré : $label';
+        });
         await provider.chargerTontine(widget.code);
         // ── Injecter les voix fraîches depuis Supabase ──────────────────────
-        // lire_tontine ne retourne pas forcément le champ voix{} à jour
-        // On récupère les voix individuelles et on les injecte dans le modèle
         if (mounted) {
           try {
             final voixBrutes = await SupabaseService.lireVoix(widget.code);
@@ -269,12 +276,18 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
                   v.voix = nouvellesVoix;
                 }
               }
-              if (mounted) setState(() {}); // Forcer rebuild avec voix à jour
+              if (mounted) setState(() {});
             }
-          } catch (_) {
-            // Échec silencieux — chargerTontine a déjà rechargé, au moins en partie
-          }
+          } catch (_) {}
         }
+      } else if (res == 'DEJA_VOTE') {
+        // Pas une erreur technique — le membre avait déjà voté côté serveur
+        setState(() {
+          _erreur = null;
+          _succes = '⚠️ Ce membre a déjà voté.';
+        });
+        // Recharger quand même pour mettre les compteurs à jour
+        await provider.chargerTontine(widget.code);
       } else {
         setState(() => _erreur = 'Erreur : $res');
       }
