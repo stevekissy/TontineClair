@@ -788,7 +788,7 @@ class TontineData {
     // Calculer depuis voix{}
     int oui = 0, non = 0, abs = 0;
     for (final choix in v.voix.values) {
-      switch (choix.toString()) {
+      switch (choix.toString().toLowerCase()) {
         case 'oui':        oui++; break;
         case 'non':        non++; break;
         case 'abstention': abs++; break;
