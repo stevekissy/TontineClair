@@ -246,6 +246,35 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
       if (res == 'OK') {
         setState(() => _succes = '✅ Vote enregistré : ${_labelChoix(choix)}');
         await provider.chargerTontine(widget.code);
+        // ── Injecter les voix fraîches depuis Supabase ──────────────────────
+        // lire_tontine ne retourne pas forcément le champ voix{} à jour
+        // On récupère les voix individuelles et on les injecte dans le modèle
+        if (mounted) {
+          try {
+            final voixBrutes = await SupabaseService.lireVoix(widget.code);
+            final tontineActuelle = provider.courante;
+            if (tontineActuelle != null) {
+              for (final v in tontineActuelle.data.votes) {
+                final voixDuVote = voixBrutes
+                    .where((vb) =>
+                        (vb['vote_id'] as String? ?? vb['voteId'] as String? ?? '') == v.id)
+                    .toList();
+                if (voixDuVote.isNotEmpty) {
+                  final nouvellesVoix = <String, dynamic>{};
+                  for (final vb in voixDuVote) {
+                    final memId = vb['membre_id'] as String? ?? vb['membreId'] as String? ?? '';
+                    final choixVoix = vb['choix'] as String? ?? '';
+                    if (memId.isNotEmpty) nouvellesVoix[memId] = choixVoix;
+                  }
+                  v.voix = nouvellesVoix;
+                }
+              }
+              if (mounted) setState(() {}); // Forcer rebuild avec voix à jour
+            }
+          } catch (_) {
+            // Échec silencieux — chargerTontine a déjà rechargé, au moins en partie
+          }
+        }
       } else {
         setState(() => _erreur = 'Erreur : $res');
       }

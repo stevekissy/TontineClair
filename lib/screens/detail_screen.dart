@@ -599,27 +599,7 @@ class _BandeauEcheanceState extends State<_BandeauEcheance> {
                     ),
                   ),
                 ),
-                // ── Icône édition cliquable uniquement pour le gestionnaire ──
-                if (widget.estGest) ...[
-                  const SizedBox(width: 6),
-                  GestureDetector(
-                    onTap: _choisirEtSauvegarder,
-                    child: _enSauvegarde
-                        ? SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: couleurBandeau,
-                            ),
-                          )
-                        : Icon(
-                            Icons.edit_calendar_outlined,
-                            size: 14,
-                            color: couleurBandeau.withValues(alpha: 0.7),
-                          ),
-                  ),
-                ],
+
               ],
             ),
           ),
