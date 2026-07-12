@@ -258,15 +258,32 @@ class SupabaseService {
   }
 
   /// Vérifie si un code d'invitation est valide (côté serveur).
+  ///
+  /// IMPORTANT : comportement PESSIMISTE.
+  /// Si la RPC check_invitation_code (v17) n'existe pas encore (404/PGRST202),
+  /// on retourne ok:true (la barrière 2 = lireTontine prendra le relais).
+  /// Si la RPC existe mais retourne une erreur HTTP, on retourne ok:false.
+  ///
+  /// Codes d'erreur possibles : TONTINE_DELETED, INVITATION_INACTIVE,
+  ///   CODE_INTROUVABLE, TONTINE_SUSPENDED.
+  ///
   /// Retourne {ok: bool, erreur?: String, message?: String, nom?: String}
   static Future<Map<String, dynamic>> verifierCodeInvitation(String code) async {
     try {
       final result = await rpc('check_invitation_code', {'p_code': code.toUpperCase()});
       if (result is Map<String, dynamic>) return result;
-      return {'ok': false, 'erreur': 'CODE_INTROUVABLE', 'message': 'Code introuvable.'};
-    } catch (_) {
-      // Fallback : la RPC n'existe pas encore (avant migration v16)
+      // Réponse null ou inattendue : laisser passer à lireTontine (barrière 2)
       return {'ok': true};
+    } on Exception catch (e) {
+      final msg = e.toString();
+      // RPC introuvable (migration v16/v17 non exécutée) → laisser lireTontine décider
+      if (msg.contains('PGRST202') ||
+          msg.contains('introuvable') ||
+          msg.contains('Could not find')) {
+        return {'ok': true}; // Fallback : lireTontine prend le relais
+      }
+      // Autre erreur réseau/serveur → propager
+      rethrow;
     }
   }
 
@@ -555,6 +572,61 @@ class SupabaseService {
     if (result == null) return [];
     if (result is List) return result.cast<Map<String, dynamic>>();
     return [];
+  }
+
+  /// Compteurs unifiés pour l'Admin (v17).
+  /// Retourne {total, actives, premium, gratuites, inactives, expirees,
+  ///           suspendues, supprimees, demandes_en_attente}
+  /// Fallback : calcul local depuis adminListerTontines si RPC absente.
+  static Future<Map<String, dynamic>> adminTontineCounts(String cle) async {
+    try {
+      final result = await rpc('admin_tontine_counts', {'p_cle': cle});
+      if (result is Map<String, dynamic>) return result;
+    } on Exception catch (e) {
+      final msg = e.toString();
+      // RPC absente (migration v17 non exécutée) → calcul local
+      if (msg.contains('PGRST202') ||
+          msg.contains('introuvable') ||
+          msg.contains('Could not find')) {
+        // Calcul de secours depuis adminListerTontines
+        final tontines = await adminListerTontines(cle);
+        int actives   = 0, premium = 0, gratuites = 0;
+        int inactives = 0, suspendues = 0, supprimees = 0, expirees = 0;
+        final now = DateTime.now();
+        for (final t in tontines) {
+          final st = (t['status'] as String? ?? 'active');
+          if (st == 'deleted')   { supprimees++; continue; }
+          if (st == 'suspended') { suspendues++; continue; }
+          if (st == 'inactive')  { inactives++;  continue; }
+          // Active
+          actives++;
+          final isPremium = (t['plan'] as String? ?? '') == 'premium';
+          final expireStr = t['expire'] as String?;
+          final expire    = expireStr != null ? DateTime.tryParse(expireStr) : null;
+          if (isPremium && expire != null && expire.isBefore(now)) {
+            expirees++; premium--; actives--;
+          } else if (isPremium) {
+            premium++;
+          } else {
+            gratuites++;
+          }
+        }
+        final nonSupp = tontines.length - supprimees;
+        return {
+          'total':              nonSupp,
+          'actives':            actives,
+          'premium':            premium,
+          'gratuites':          gratuites,
+          'inactives':          inactives,
+          'suspendues':         suspendues,
+          'expirees':           expirees,
+          'supprimees':         supprimees,
+          'demandes_en_attente': 0,
+        };
+      }
+      rethrow;
+    }
+    return {};
   }
 
   /// Active le Premium pour une tontine et met à jour premium_requests (v12).

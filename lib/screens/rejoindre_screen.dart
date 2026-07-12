@@ -52,21 +52,30 @@ class _RejoindreScreenState extends State<RejoindreScreen> {
           MaterialPageRoute(builder: (_) => DetailScreen(code: code)),
         );
       } else {
-        // rejoindre() a retourné false → voir l'erreur dans le provider
+        // rejoindre() a retourné false → lire l'erreur normalisée du provider
         final errProvider = provider.erreur ?? '';
         if (!mounted) return;
         setState(() {
-          if (errProvider.contains('TONTINE_DELETED') || errProvider.contains('supprimée') || errProvider.contains('supprimee')) {
-            _erreur     = 'Cette tontine a été supprimée. Son code d\'invitation n\'est plus valide.';
+          if (errProvider == 'TONTINE_DELETED' ||
+              errProvider.contains('TONTINE_DELETED') ||
+              errProvider.contains('supprimée') ||
+              errProvider.contains('supprimee')) {
+            // Tontine supprimée — message professionnel distinct
+            _erreur     = 'Cette tontine a été supprimée par son gestionnaire.\n'
+                          'Son code d\'invitation n\'est plus valide.';
+            _typeErreur = _TypeErreur.supprimee;
+          } else if (errProvider == 'CODE_INTROUVABLE' ||
+                     errProvider.contains('CODE_INTROUVABLE')) {
+            _erreur     = 'Code invalide ou expiré. Vérifiez le code puis réessayez.';
             _typeErreur = _TypeErreur.introuvable;
-          } else if (errProvider.contains('CODE_INTROUVABLE')) {
-            _erreur     = 'Code "$code" introuvable dans votre base Supabase.';
-            _typeErreur = _TypeErreur.mauvaiseBase;
-          } else if (errProvider.contains('PGRST202') || errProvider.contains('introuvable')) {
+          } else if (errProvider.contains('PGRST202') ||
+                     errProvider.toLowerCase().contains('introuvable')) {
             _erreur     = 'Base non initialisée.';
             _typeErreur = _TypeErreur.sqlManquant;
           } else {
-            _erreur     = errProvider.isNotEmpty ? errProvider : 'Tontine introuvable. Vérifiez le code.';
+            _erreur     = errProvider.isNotEmpty
+                ? errProvider
+                : 'Code invalide ou expiré. Vérifiez le code puis réessayez.';
             _typeErreur = _TypeErreur.introuvable;
           }
         });
@@ -80,9 +89,13 @@ class _RejoindreScreenState extends State<RejoindreScreen> {
             msg.contains('scripts')) {
           _erreur     = 'Base de données non initialisée.';
           _typeErreur = _TypeErreur.sqlManquant;
+        } else if (msg.contains('TONTINE_DELETED')) {
+          _erreur     = 'Cette tontine a été supprimée par son gestionnaire.\n'
+                        'Son code d\'invitation n\'est plus valide.';
+          _typeErreur = _TypeErreur.supprimee;
         } else if (msg.contains('CODE_INTROUVABLE')) {
-          _erreur     = 'Code "$code" introuvable dans votre base Supabase.';
-          _typeErreur = _TypeErreur.mauvaiseBase;
+          _erreur     = 'Code invalide ou expiré. Vérifiez le code puis réessayez.';
+          _typeErreur = _TypeErreur.introuvable;
         } else if (msg.contains('réseau') || msg.contains('SocketException')) {
           _erreur     = 'Erreur réseau. Vérifiez l\'URL Supabase.';
           _typeErreur = _TypeErreur.autre;
@@ -252,16 +265,29 @@ class _RejoindreScreenState extends State<RejoindreScreen> {
           ),
         );
 
-      // ── Introuvable simple ─────────────────────────────────────────────────
+      // ── Tontine supprimée ──────────────────────────────────────────────────
+      case _TypeErreur.supprimee:
+        return _CarteInfo(
+          icone: Icons.delete_forever_rounded,
+          couleur: AppColors.alerte,
+          titre: 'Tontine supprimée',
+          corps: 'Cette tontine a été supprimée définitivement par son gestionnaire.\n\n'
+              '• Son code d\'invitation n\'est plus valide.\n'
+              '• Aucune adhésion ni opération n\'est possible.\n'
+              '• Si vous pensez qu\'il s\'agit d\'une erreur, contactez '
+              'votre gestionnaire ou l\'administrateur.',
+        );
+
+      // ── Introuvable / code invalide ────────────────────────────────────────
       case _TypeErreur.introuvable:
         return _CarteInfo(
           icone: Icons.search_off_rounded,
           couleur: AppColors.alerte,
-          titre: 'Code introuvable',
-          corps: 'Aucune tontine ne correspond au code '
+          titre: 'Code invalide ou expiré',
+          corps: 'Aucune tontine active ne correspond au code '
               '"${_ctrl.text.trim().toUpperCase()}".\n\n'
               '• Vérifiez que le code est exact (majuscules, pas de zéro/O).\n'
-              '• Demandez à votre gestionnaire de confirmer le code.',
+              '• Demandez à votre gestionnaire de vous communiquer le code actuel.',
         );
 
       // ── Clé invalide ───────────────────────────────────────────────────────
@@ -294,7 +320,7 @@ class _RejoindreScreenState extends State<RejoindreScreen> {
 }
 
 // ─── Types d'erreur ────────────────────────────────────────────────────────
-enum _TypeErreur { format, introuvable, sqlManquant, mauvaiseBase, cle, autre }
+enum _TypeErreur { format, introuvable, supprimee, sqlManquant, mauvaiseBase, cle, autre }
 
 // ─── Carte guide SQL ────────────────────────────────────────────────────────
 class _CarteErreurSQL extends StatefulWidget {

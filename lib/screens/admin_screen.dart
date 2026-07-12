@@ -19,8 +19,10 @@ class _AdminScreenState extends State<AdminScreen> {
   String? _erreur;
   List<Map<String, dynamic>> _demandes = [];
   List<Map<String, dynamic>> _tontines = [];
+  // Compteurs unifiés calculés depuis adminTontineCounts
+  Map<String, dynamic> _counts = {};
   int _onglet = 0;
-  // Filtre statut tontines : null = toutes, 'active', 'deleted', 'suspended', 'inactive'
+  // Filtre tontines : null=toutes, 'active','deleted','suspended','inactive','premium','gratuit','expire'
   String? _filtreStatut;
   String get _cle => _cleCtrl.text.trim();
 
@@ -39,23 +41,19 @@ class _AdminScreenState extends State<AdminScreen> {
     });
 
     try {
-      final demandes = await SupabaseService.adminListerDemandes(cle);
-      final tontines = await SupabaseService.adminListerTontines(cle);
+      // Charger en parallèle : demandes + tontines + compteurs
+      final results = await Future.wait([
+        SupabaseService.adminListerDemandes(cle),
+        SupabaseService.adminListerTontines(cle),
+      ]);
+      final counts = await SupabaseService.adminTontineCounts(cle);
 
-      if (demandes.isEmpty && tontines.isEmpty) {
-        // Peut-être clé incorrecte ou aucune donnée
-        setState(() {
-          _connecte = true;
-          _demandes = demandes;
-          _tontines = tontines;
-        });
-      } else {
-        setState(() {
-          _connecte = true;
-          _demandes = demandes;
-          _tontines = tontines;
-        });
-      }
+      setState(() {
+        _connecte = true;
+        _demandes = results[0] as List<Map<String, dynamic>>;
+        _tontines = results[1] as List<Map<String, dynamic>>;
+        _counts   = counts;
+      });
     } catch (e) {
       setState(() => _erreur = 'Clé incorrecte ou erreur réseau.');
     } finally {
@@ -208,11 +206,15 @@ class _AdminScreenState extends State<AdminScreen> {
 
   Future<void> _recharger() async {
     final cle = _cleCtrl.text.trim();
-    final demandes = await SupabaseService.adminListerDemandes(cle);
-    final tontines = await SupabaseService.adminListerTontines(cle);
+    final results = await Future.wait([
+      SupabaseService.adminListerDemandes(cle),
+      SupabaseService.adminListerTontines(cle),
+    ]);
+    final counts = await SupabaseService.adminTontineCounts(cle);
     setState(() {
-      _demandes = demandes;
-      _tontines = tontines;
+      _demandes = results[0] as List<Map<String, dynamic>>;
+      _tontines = results[1] as List<Map<String, dynamic>>;
+      _counts   = counts;
     });
   }
 
@@ -307,7 +309,11 @@ class _AdminScreenState extends State<AdminScreen> {
                 ),
                 const SizedBox(width: 10),
                 _OngletBtn(
-                  label: 'Tontines (${_tontines.length})',
+                  // Compteur = tontines NON supprimées (actives + suspendues + inactives)
+                  // Si counts chargés on utilise 'total', sinon on calcule localement
+                  label: 'Tontines (${_counts.isNotEmpty
+                      ? (_counts['total'] ?? _tontines.where((t) => (t['status'] as String? ?? 'active') != 'deleted').length)
+                      : _tontines.where((t) => (t['status'] as String? ?? 'active') != 'deleted').length})',
                   selected: _onglet == 1,
                   onTap: () => setState(() => _onglet = 1),
                 ),
@@ -601,32 +607,91 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Widget _ListeTontines() {
-    // Filtrer selon le statut sélectionné
-    final tontinesFiltrees = _filtreStatut == null
-        ? _tontines
-        : _tontines.where((t) {
-            final s = (t['status'] as String? ?? 'active');
-            return s == _filtreStatut;
-          }).toList();
+    final now = DateTime.now();
 
-    // Comptes par statut
-    final nbActives    = _tontines.where((t) => (t['status'] as String? ?? 'active') == 'active').length;
-    final nbSupprimees = _tontines.where((t) => (t['status'] as String? ?? '') == 'deleted').length;
-    final nbSuspendues = _tontines.where((t) => (t['status'] as String? ?? '') == 'suspended').length;
-    final nbInactives  = _tontines.where((t) => (t['status'] as String? ?? '') == 'inactive').length;
+    // ── Classement de chaque tontine dans une catégorie ───────────────────────
+    // Catégories exclusives dans l'ordre de priorité :
+    //   deleted > suspended > inactive > expire (premium expiré) > premium > gratuit (active)
+    String _categorie(Map<String, dynamic> t) {
+      final st = (t['status'] as String? ?? 'active');
+      if (st == 'deleted')   return 'deleted';
+      if (st == 'suspended') return 'suspended';
+      if (st == 'inactive')  return 'inactive';
+      final isPremium  = (t['plan'] as String? ?? '') == 'premium';
+      final expireStr  = t['plan_expire'] as String? ?? t['expire'] as String?;
+      final expire     = expireStr != null ? DateTime.tryParse(expireStr) : null;
+      if (isPremium && expire != null && expire.isBefore(now)) return 'expire';
+      if (isPremium) return 'premium';
+      return 'gratuit';
+    }
+
+    // ── Comptes par catégorie ────────────────────────────────────────────────
+    // Priorité : utiliser _counts (RPC v17) si disponibles, sinon calcul local
+    final int nbTotal      = _counts.isNotEmpty
+        ? ((_counts['total'] ?? 0) as num).toInt()
+        : _tontines.where((t) => _categorie(t) != 'deleted').length;
+    final int nbActives    = _counts.isNotEmpty
+        ? ((_counts['actives'] ?? 0) as num).toInt()
+        : _tontines.where((t) => _categorie(t) == 'gratuit' || _categorie(t) == 'premium').length;
+    final int nbPremium    = _counts.isNotEmpty
+        ? ((_counts['premium'] ?? 0) as num).toInt()
+        : _tontines.where((t) => _categorie(t) == 'premium').length;
+    final int nbGratuites  = _counts.isNotEmpty
+        ? ((_counts['gratuites'] ?? 0) as num).toInt()
+        : _tontines.where((t) => _categorie(t) == 'gratuit').length;
+    final int nbExpirees   = _counts.isNotEmpty
+        ? ((_counts['expirees'] ?? 0) as num).toInt()
+        : _tontines.where((t) => _categorie(t) == 'expire').length;
+    final int nbSuspendues = _counts.isNotEmpty
+        ? ((_counts['suspendues'] ?? 0) as num).toInt()
+        : _tontines.where((t) => _categorie(t) == 'suspended').length;
+    final int nbInactives  = _counts.isNotEmpty
+        ? ((_counts['inactives'] ?? 0) as num).toInt()
+        : _tontines.where((t) => _categorie(t) == 'inactive').length;
+    final int nbSupprimees = _counts.isNotEmpty
+        ? ((_counts['supprimees'] ?? 0) as num).toInt()
+        : _tontines.where((t) => _categorie(t) == 'deleted').length;
+
+    // ── Filtrage de la liste affichée ────────────────────────────────────────
+    final tontinesFiltrees = _filtreStatut == null
+        ? _tontines // Toutes (y compris supprimées pour la vue admin)
+        : _tontines.where((t) {
+            if (_filtreStatut == 'premium')  return _categorie(t) == 'premium';
+            if (_filtreStatut == 'gratuit')  return _categorie(t) == 'gratuit';
+            if (_filtreStatut == 'expire')   return _categorie(t) == 'expire';
+            return (t['status'] as String? ?? 'active') == _filtreStatut;
+          }).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ── Filtres statut ──────────────────────────────────────
+        // ── Résumé statistiques ─────────────────────────────────────────────
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Row(
+            children: [
+              _StatBadge(label: 'Actives', valeur: nbActives, couleur: AppColors.succes),
+              const SizedBox(width: 8),
+              _StatBadge(label: 'Premium', valeur: nbPremium, couleur: AppColors.or),
+              const SizedBox(width: 8),
+              _StatBadge(label: 'Gratuites', valeur: nbGratuites, couleur: AppColors.encreDoux),
+              if (nbSupprimees > 0) ...[
+                const SizedBox(width: 8),
+                _StatBadge(label: 'Supprimées', valeur: nbSupprimees, couleur: AppColors.alerte),
+              ],
+            ],
+          ),
+        ),
+
+        // ── Filtres ──────────────────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
                 _FiltreChip(
-                  label: 'Toutes (${_tontines.length})',
+                  label: 'Toutes ($nbTotal)',
                   selected: _filtreStatut == null,
                   onTap: () => setState(() => _filtreStatut = null),
                   couleur: AppColors.encre,
@@ -638,19 +703,33 @@ class _AdminScreenState extends State<AdminScreen> {
                   onTap: () => setState(() => _filtreStatut = 'active'),
                   couleur: AppColors.succes,
                 ),
-                if (nbSupprimees > 0) ...[
+                const SizedBox(width: 8),
+                _FiltreChip(
+                  label: 'Gratuites ($nbGratuites)',
+                  selected: _filtreStatut == 'gratuit',
+                  onTap: () => setState(() => _filtreStatut = 'gratuit'),
+                  couleur: AppColors.encreDoux,
+                ),
+                const SizedBox(width: 8),
+                _FiltreChip(
+                  label: 'Premium ($nbPremium)',
+                  selected: _filtreStatut == 'premium',
+                  onTap: () => setState(() => _filtreStatut = 'premium'),
+                  couleur: AppColors.or,
+                ),
+                if (nbExpirees > 0) ...[
                   const SizedBox(width: 8),
                   _FiltreChip(
-                    label: 'Supprimées ($nbSupprimees)',
-                    selected: _filtreStatut == 'deleted',
-                    onTap: () => setState(() => _filtreStatut = 'deleted'),
-                    couleur: AppColors.alerte,
+                    label: 'Expirées ($nbExpirees)',
+                    selected: _filtreStatut == 'expire',
+                    onTap: () => setState(() => _filtreStatut = 'expire'),
+                    couleur: AppColors.orFonce,
                   ),
                 ],
                 if (nbSuspendues > 0) ...[
                   const SizedBox(width: 8),
                   _FiltreChip(
-                    label: 'Suspendues ($nbSuspendues)',
+                    label: 'Désactivées ($nbSuspendues)',
                     selected: _filtreStatut == 'suspended',
                     onTap: () => setState(() => _filtreStatut = 'suspended'),
                     couleur: AppColors.orFonce,
@@ -665,6 +744,14 @@ class _AdminScreenState extends State<AdminScreen> {
                     couleur: AppColors.texteDoux,
                   ),
                 ],
+                // Supprimées : toujours visible pour accès rapide Admin
+                const SizedBox(width: 8),
+                _FiltreChip(
+                  label: 'Supprimées ($nbSupprimees)',
+                  selected: _filtreStatut == 'deleted',
+                  onTap: () => setState(() => _filtreStatut = 'deleted'),
+                  couleur: AppColors.alerte,
+                ),
               ],
             ),
           ),
@@ -672,9 +759,27 @@ class _AdminScreenState extends State<AdminScreen> {
 
         // ── Liste ────────────────────────────────────────────────
         if (tontinesFiltrees.isEmpty)
-          const Expanded(
+          Expanded(
             child: Center(
-              child: Text('Aucune tontine.', style: TextStyle(color: AppColors.texteDoux)),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    _filtreStatut == 'deleted'
+                        ? Icons.delete_outline_rounded
+                        : Icons.search_off_rounded,
+                    size: 44,
+                    color: AppColors.texteDoux.withValues(alpha: 0.4),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    _filtreStatut == 'deleted'
+                        ? 'Aucune tontine supprimée.'
+                        : 'Aucune tontine dans cette catégorie.',
+                    style: const TextStyle(color: AppColors.texteDoux, fontSize: 15),
+                  ),
+                ],
+              ),
             ),
           )
         else
@@ -683,12 +788,33 @@ class _AdminScreenState extends State<AdminScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               itemCount: tontinesFiltrees.length,
               itemBuilder: (_, i) {
-                final t = tontinesFiltrees[i];
-                final isPremium  = t['plan'] == 'premium';
-                final status     = (t['status'] as String? ?? 'active');
+                final t           = tontinesFiltrees[i];
+                final code        = t['code'] as String? ?? '';
+                final status      = (t['status'] as String? ?? 'active');
                 final isSupprimee = status == 'deleted';
-                final cree       = DateTime.tryParse(t['cree'] as String? ?? '');
-                final deletedAt  = t['deleted_at'] != null
+                final isPremium   = (t['plan'] as String? ?? '') == 'premium';
+                final expireStr   = t['plan_expire'] as String? ?? t['expire'] as String?;
+                final expire      = expireStr != null ? DateTime.tryParse(expireStr) : null;
+                final isExpire    = isPremium && expire != null && expire.isBefore(now);
+
+                // Nom : utiliser 'nom' en priorité, fallback 'code'
+                final nomBrut   = t['nom'] as String?;
+                final nomAffich = (nomBrut == null || nomBrut.trim().isEmpty)
+                    ? 'Tontine sans nom'
+                    : nomBrut.trim();
+
+                // Gestionnaire / propriétaire
+                final gest = t['president'] as String?
+                    ?? t['gestionnaire'] as String?
+                    ?? t['created_by'] as String?
+                    ?? t['owner'] as String?;
+
+                // Membres
+                final nbMembres = t['membres'] as int? ?? t['nb_membres'] as int? ?? 0;
+
+                // Dates
+                final cree      = DateTime.tryParse(t['cree'] as String? ?? '');
+                final deletedAt = t['deleted_at'] != null
                     ? DateTime.tryParse(t['deleted_at'] as String)
                     : null;
 
@@ -703,118 +829,138 @@ class _AdminScreenState extends State<AdminScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                // ── Nom tontine ────────────────────────────
                                 Text(
-                                  '${t['nom']} · Code ${t['code']}',
+                                  nomAffich,
                                   style: TextStyle(
                                     fontWeight: FontWeight.w700,
                                     fontSize: 15,
-                                    color: isSupprimee
-                                        ? AppColors.texteDoux
-                                        : AppColors.encre,
-                                    decoration: isSupprimee
-                                        ? TextDecoration.lineThrough
-                                        : null,
+                                    color: isSupprimee ? AppColors.texteDoux : AppColors.encre,
+                                    decoration: isSupprimee ? TextDecoration.lineThrough : null,
                                   ),
                                 ),
                                 const SizedBox(height: 2),
+                                // ── Code ───────────────────────────────────
                                 Text(
-                                  '${t['membres']} membres · Créé ${Formatters.dateFormatee(cree)}',
+                                  'Code : $code',
                                   style: const TextStyle(
-                                      fontSize: 12, color: AppColors.texteDoux),
+                                    fontSize: 12,
+                                    fontFamily: 'monospace',
+                                    color: AppColors.encreDoux,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
-                              ],
-                            ),
-                          ),
-                          // Badge statut
-                          if (isSupprimee)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: AppColors.alerteFond,
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: const Text(
-                                'Supprimée',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.alerte,
+                                const SizedBox(height: 2),
+                                // ── Membres + date création ────────────────
+                                Text(
+                                  '$nbMembres membre${nbMembres > 1 ? 's' : ''}'
+                                  '${cree != null ? ' · Créé ${Formatters.dateFormatee(cree)}' : ''}',
+                                  style: const TextStyle(fontSize: 12, color: AppColors.texteDoux),
                                 ),
-                              ),
-                            )
-                          else
-                            Column(
-                              children: [
-                                BadgePlan(isPremium: isPremium),
-                                const SizedBox(height: 6),
-                                if (!isPremium)
-                                  GestureDetector(
-                                    onTap: () => _activer(t['code'] as String),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.encre,
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: const Text(
-                                        'Activer',
-                                        style: TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700),
-                                      ),
-                                    ),
-                                  )
-                                else
-                                  GestureDetector(
-                                    onTap: () => _desactiver(t['code'] as String),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.alerte.withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: const Text(
-                                        'Désactiver',
-                                        style: TextStyle(fontSize: 11, color: AppColors.alerte, fontWeight: FontWeight.w700),
-                                      ),
+                                // ── Gestionnaire ───────────────────────────
+                                if (gest != null && gest.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Text(
+                                      'Gestionnaire : $gest',
+                                      style: const TextStyle(fontSize: 12, color: AppColors.texteDoux),
                                     ),
                                   ),
                               ],
                             ),
+                          ),
+                          const SizedBox(width: 8),
+                          // ── Badge statut + actions ─────────────────────
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              if (isSupprimee)
+                                _BadgeStatut(label: 'Supprimée', couleur: AppColors.alerte)
+                              else if (isExpire)
+                                _BadgeStatut(label: 'Expirée', couleur: AppColors.orFonce)
+                              else
+                                BadgePlan(isPremium: isPremium),
+                              if (!isSupprimee) ...[
+                                const SizedBox(height: 6),
+                                if (!isPremium)
+                                  _BtnAction(
+                                    label: 'Activer',
+                                    couleur: AppColors.encre,
+                                    onTap: () => _activer(code),
+                                  )
+                                else
+                                  _BtnAction(
+                                    label: 'Désactiver',
+                                    couleur: AppColors.alerte,
+                                    onTap: () => _desactiver(code),
+                                  ),
+                              ],
+                            ],
+                          ),
                         ],
                       ),
+
+                      // ── Détails expiration ──────────────────────────────
+                      if (isExpire && expire != null) ...[
+                        const SizedBox(height: 6),
+                        _InfoLigneAdmin(
+                          icone: Icons.timer_off_rounded,
+                          label: 'Expiré le',
+                          valeur: Formatters.dateFormatee(expire),
+                        ),
+                      ],
 
                       // ── Détails suppression ─────────────────────────────
                       if (isSupprimee) ...[
                         const SizedBox(height: 10),
                         const Divider(height: 1, color: AppColors.lignes),
                         const SizedBox(height: 8),
+                        _InfoLigneAdmin(
+                          icone: Icons.person_outline_rounded,
+                          label: 'Gestionnaire',
+                          valeur: gest ?? '—',
+                        ),
+                        _InfoLigneAdmin(
+                          icone: Icons.group_outlined,
+                          label: 'Membres avant suppression',
+                          valeur: '$nbMembres',
+                        ),
+                        _InfoLigneAdmin(
+                          icone: Icons.workspace_premium_rounded,
+                          label: 'Formule',
+                          valeur: isPremium ? 'Premium' : 'Gratuit',
+                        ),
+                        if (cree != null)
+                          _InfoLigneAdmin(
+                            icone: Icons.event_outlined,
+                            label: 'Créée le',
+                            valeur: Formatters.dateFormatee(cree),
+                          ),
                         if (t['deleted_by'] != null)
                           _InfoLigneAdmin(
-                            icone: Icons.person_outline_rounded,
+                            icone: Icons.person_remove_outlined,
                             label: 'Supprimé par',
                             valeur: t['deleted_by'] as String,
                           ),
                         if (deletedAt != null)
                           _InfoLigneAdmin(
-                            icone: Icons.calendar_today_outlined,
+                            icone: Icons.delete_outline_rounded,
                             label: 'Date de suppression',
                             valeur: Formatters.dateFormatee(deletedAt),
                           ),
-                        if (t['deletion_reason'] != null && (t['deletion_reason'] as String).isNotEmpty)
+                        if (t['deletion_reason'] != null &&
+                            (t['deletion_reason'] as String).isNotEmpty)
                           _InfoLigneAdmin(
                             icone: Icons.notes_rounded,
                             label: 'Motif',
                             valeur: t['deletion_reason'] as String,
                           ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 10),
                         // Bouton restaurer
                         SizedBox(
                           width: double.infinity,
                           child: OutlinedButton.icon(
-                            onPressed: () => _restaurerTontine(
-                              context,
-                              t['code'] as String,
-                              t['nom'] as String? ?? t['code'] as String,
-                            ),
+                            onPressed: () => _restaurerTontine(context, code, nomAffich),
                             icon: const Icon(Icons.restore_rounded, size: 16),
                             label: const Text(
                               'Restaurer la tontine',
@@ -824,7 +970,8 @@ class _AdminScreenState extends State<AdminScreen> {
                               foregroundColor: AppColors.succes,
                               side: BorderSide(color: AppColors.succes.withValues(alpha: 0.5)),
                               padding: const EdgeInsets.symmetric(vertical: 9),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8)),
                             ),
                           ),
                         ),
@@ -1041,6 +1188,115 @@ class _InfoLigneAdmin extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Badge statistique compact ─────────────────────────────────────────────────
+class _StatBadge extends StatelessWidget {
+  final String label;
+  final int valeur;
+  final Color couleur;
+
+  const _StatBadge({
+    required this.label,
+    required this.valeur,
+    required this.couleur,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: couleur.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: couleur.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        children: [
+          Text(
+            '$valeur',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: couleur,
+            ),
+          ),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: couleur,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Badge statut tontine ──────────────────────────────────────────────────────
+class _BadgeStatut extends StatelessWidget {
+  final String label;
+  final Color couleur;
+
+  const _BadgeStatut({required this.label, required this.couleur});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: couleur.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: couleur.withValues(alpha: 0.3)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: couleur,
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Bouton action compact (Activer / Désactiver) ──────────────────────────────
+class _BtnAction extends StatelessWidget {
+  final String label;
+  final Color couleur;
+  final VoidCallback onTap;
+
+  const _BtnAction({
+    required this.label,
+    required this.couleur,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: couleur.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: couleur.withValues(alpha: 0.3)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: couleur,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
     );
   }

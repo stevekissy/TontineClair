@@ -153,33 +153,76 @@ class TontineProvider extends ChangeNotifier {
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // rejoindre : entrée UNIQUE pour adhérer à une tontine par code.
+  //
+  // ARCHITECTURE DÉFENSE EN PROFONDEUR — 3 barrières successives :
+  //
+  //   1. verifierCodeInvitation (RPC check_invitation_code v17)
+  //      → retourne TONTINE_DELETED, INVITATION_INACTIVE, CODE_INTROUVABLE
+  //      → fallback pessimiste si RPC absente (passe à la barrière 2)
+  //
+  //   2. lireTontine (RPC lire_tontine v16)
+  //      → détecte __deleted__ sentinel : lance Exception('TONTINE_DELETED')
+  //      → si status != 'active' dans la réponse : bloque aussi
+  //
+  //   3. Vérification post-chargement : si t.estSupprimee → abort
+  //
+  // JAMAIS de StorageService.ajouterTontine si la tontine est supprimée.
+  // JAMAIS de navigation vers DetailScreen si la tontine est supprimée.
+  // ─────────────────────────────────────────────────────────────────────────
   Future<bool> rejoindre(String code) async {
     _erreur = null;
     try {
-      // Vérifier côté serveur que le code est valide (v16+)
+      // ── BARRIÈRE 1 : check_invitation_code (v17) ───────────────────────────
+      // Note : fallback PESSIMISTE — si RPC absente, on continue vers barrière 2
+      // (on ne retourne plus ok:true en fallback)
       final check = await SupabaseService.verifierCodeInvitation(code);
+
       if (check['ok'] == false) {
         final erreur = check['erreur'] as String? ?? '';
         if (erreur == 'TONTINE_DELETED') {
-          _erreur = 'Cette tontine a été supprimée. Son code d\'invitation n\'est plus valide.';
+          _erreur = 'TONTINE_DELETED';
         } else if (erreur == 'INVITATION_INACTIVE') {
           _erreur = 'Le code d\'invitation de cette tontine n\'est plus actif.';
+        } else if (erreur == 'CODE_INTROUVABLE') {
+          _erreur = 'CODE_INTROUVABLE';
         } else {
-          _erreur = check['message'] as String? ?? 'Code invalide.';
+          _erreur = check['message'] as String? ?? 'CODE_INTROUVABLE';
         }
         notifyListeners();
         return false;
       }
+
+      // ── BARRIÈRE 2 : lire_tontine (v16) ────────────────────────────────────
+      // lireTontine lance Exception('TONTINE_DELETED') si __deleted__ == true
       final t = await SupabaseService.lireTontine(code);
+
+      // ── BARRIÈRE 3 : vérification post-désérialisation ──────────────────────
+      // Si le status n'est pas 'active', refuser même si les barrières 1&2 ont
+      // laissé passer (ex: migration partielle côté Supabase)
+      if (t.estSupprimee) {
+        _erreur = 'TONTINE_DELETED';
+        notifyListeners();
+        return false;
+      }
+      if (!t.estActive) {
+        _erreur = 'Cette tontine n\'est pas active (statut: ${t.status}).';
+        notifyListeners();
+        return false;
+      }
+
+      // ── Succès : enregistrer localement ────────────────────────────────────
       await StorageService.ajouterTontine(
           TontineLocale(code: t.code, nom: t.data.nom));
       _mesTontines = await StorageService.getListe();
       notifyListeners();
       return true;
+
     } catch (e) {
       final msg = e.toString().replaceFirst('Exception: ', '');
       if (msg == 'TONTINE_DELETED') {
-        _erreur = 'Cette tontine a été supprimée. Son code d\'invitation n\'est plus valide.';
+        _erreur = 'TONTINE_DELETED';
       } else {
         _erreur = msg;
       }
