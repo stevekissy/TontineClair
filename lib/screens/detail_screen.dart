@@ -579,37 +579,32 @@ class _BandeauEcheanceState extends State<_BandeauEcheance> {
 
     return Row(
       children: [
-        // ── Texte échéance (cliquable pour édition, gestionnaire uniquement) ──
+        // ── Bandeau échéance (non cliquable — lecture seule) ──────────────────
         Expanded(
-          child: GestureDetector(
-            onTap: widget.estGest ? _choisirEtSauvegarder : null,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: isRetard ? AppColors.alerteFond : AppColors.succesFond,
-                borderRadius: BorderRadius.circular(8),
-                border: widget.estGest
-                    ? Border.all(
-                        color: couleurBandeau.withValues(alpha: 0.4),
-                        width: 1,
-                      )
-                    : null,
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '📅 $periodeL · ${Formatters.dateFormatee(prochaineDate)} · $delai',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                        color: couleurBandeau,
-                      ),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: isRetard ? AppColors.alerteFond : AppColors.succesFond,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '📅 $periodeL · ${Formatters.dateFormatee(prochaineDate)} · $delai',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: couleurBandeau,
                     ),
                   ),
-                  if (widget.estGest) ...[
-                    const SizedBox(width: 6),
-                    _enSauvegarde
+                ),
+                // ── Icône édition cliquable uniquement pour le gestionnaire ──
+                if (widget.estGest) ...[
+                  const SizedBox(width: 6),
+                  GestureDetector(
+                    onTap: _choisirEtSauvegarder,
+                    child: _enSauvegarde
                         ? SizedBox(
                             width: 14,
                             height: 14,
@@ -623,13 +618,13 @@ class _BandeauEcheanceState extends State<_BandeauEcheance> {
                             size: 14,
                             color: couleurBandeau.withValues(alpha: 0.7),
                           ),
-                  ],
+                  ),
                 ],
-              ),
+              ],
             ),
           ),
         ),
-        // ── Bouton calendrier vert (visible par tous) ─────────────────────────
+        // ── Bouton calendrier visuel (visible par tous, ouvre le dialogue) ────
         const SizedBox(width: 8),
         GestureDetector(
           onTap: () => _afficherCalendrier(prochaineDate),
@@ -1667,10 +1662,15 @@ class _BarreDetail extends StatelessWidget {
     final ref = Formatters.genererReference();
 
     // Calculer payesIds (IDs des membres ayant payé) pour l'historique
-    final payesIds = data.ordre
-        .where((id) => data.paiements.containsKey(id))
-        .toList();
-    final nbPayesClot = payesIds.length;
+    // SOURCE DE VÉRITÉ : membres[].paye (déjà réconcilié depuis paiements{} + fallback)
+    // Fallback sur paiements.keys si membres[].paye tous à false (cas rare)
+    final membresPayes = data.membres.where((m) => m.paye).toList();
+    final payesIds = membresPayes.isNotEmpty
+        ? membresPayes.map((m) => m.id).toList()
+        : data.paiements.keys.toList();
+    final nbPayesClot = payesIds.isNotEmpty
+        ? payesIds.length
+        : data.membres.length; // ultime fallback : tous membres si données incohérentes
 
     final ok = await afficherModalePin(
       context,
