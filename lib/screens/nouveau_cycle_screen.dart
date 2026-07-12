@@ -290,8 +290,6 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
       recap: [
         (label: 'Montant', valeur: Formatters.montant(cfg.montant, devise: provider.courante?.data.devise ?? 'XOF')),
         (label: 'Périodicité', valeur: EcheanceService.labelPeriode(cfg.periodicite)),
-        if (cfg.echeance != null)
-          (label: '1ère échéance', valeur: Formatters.dateFormatee(cfg.echeance)),
         (label: 'Ordre', valeur: Formatters.methodeOrdre(cfg.methodeOrdre)),
       ],
     );
@@ -303,7 +301,6 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
       pin: pin,
       montant: cfg.montant,
       periodicite: cfg.periodicite,
-      echeance: cfg.echeance?.toIso8601String(),
       methodeOrdre: cfg.methodeOrdre,
     );
     if (!mounted) return;
@@ -476,11 +473,6 @@ class _EtatEnAttente extends StatelessWidget {
               const SizedBox(height: 8),
               _EtapeInfo(
                 numero: '2',
-                texte: 'Configurer l\'échéance du premier tour dans "Cotisations".',
-              ),
-              const SizedBox(height: 8),
-              _EtapeInfo(
-                numero: '3',
                 texte: 'Le premier tour démarre automatiquement dès que l\'ordre est verrouillé.',
               ),
               if (!estGest) ...[
@@ -1060,13 +1052,11 @@ class _EtatVoteOuvert extends StatelessWidget {
 class _ConfigNouveauCycle {
   int montant;
   String periodicite;
-  DateTime? echeance;
   String methodeOrdre;
 
   _ConfigNouveauCycle({
     required this.montant,
     required this.periodicite,
-    this.echeance,
     required this.methodeOrdre,
   });
 }
@@ -1109,52 +1099,6 @@ class _EtatVoteAccepteState extends State<_EtatVoteAccepte> {
   void dispose() {
     _montantCtrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _choisirDate() async {
-    final now = DateTime.now();
-    final DateTime? picked;
-    if (kIsWeb) {
-      picked = await showDatePicker(
-        context: context,
-        initialDate: now.add(const Duration(days: 1)),
-        firstDate: now,
-        lastDate: now.add(const Duration(days: 365 * 5)),
-        builder: (ctx, child) => Theme(
-          data: Theme.of(ctx).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: AppColors.encre,
-              onPrimary: Colors.white,
-              surface: Colors.white,
-              onSurface: AppColors.encre,
-            ),
-          ),
-          child: child!,
-        ),
-      );
-    } else {
-      picked = await showDatePicker(
-        context: context,
-        initialDate: now.add(const Duration(days: 1)),
-        firstDate: now,
-        lastDate: now.add(const Duration(days: 365 * 5)),
-        locale: const Locale('fr', 'FR'),
-        builder: (ctx, child) => Theme(
-          data: Theme.of(ctx).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: AppColors.encre,
-              onPrimary: Colors.white,
-              surface: Colors.white,
-              onSurface: AppColors.encre,
-            ),
-          ),
-          child: child!,
-        ),
-      );
-    }
-    if (picked != null && mounted) {
-      setState(() => _config.echeance = picked);
-    }
   }
 
   @override
@@ -1225,64 +1169,6 @@ class _EtatVoteAccepteState extends State<_EtatVoteAccepte> {
                     DropdownMenuItem(value: e.key, child: Text(e.value)),
                   ).toList(),
                   onChanged: (v) => setState(() => _config.periodicite = v!),
-                ),
-                const SizedBox(height: 12),
-                const ChampLabel(label: 'Première échéance (facultatif)'),
-                if (_config.echeance == null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Text(
-                      'Auto : ${Formatters.dateFormatee(EcheanceService.prochaineEcheance(periode: _config.periodicite))}',
-                      style: const TextStyle(fontSize: 12, color: AppColors.texteDoux, fontStyle: FontStyle.italic),
-                    ),
-                  ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: _choisirDate,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            border: Border.all(color: _config.echeance != null ? AppColors.encre : AppColors.lignes, width: _config.echeance != null ? 2 : 1.5),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            children: [
-                              Text(
-                                _config.echeance == null
-                                    ? 'Choisir une date...'
-                                    : Formatters.dateFormatee(_config.echeance),
-                                style: TextStyle(
-                                  fontSize: 15.5,
-                                  color: _config.echeance == null ? AppColors.texteDoux : AppColors.encre,
-                                  fontWeight: _config.echeance != null ? FontWeight.w600 : FontWeight.normal,
-                                ),
-                              ),
-                              const Spacer(),
-                              const Icon(Icons.calendar_today, size: 18, color: AppColors.texteDoux),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (_config.echeance != null) ...[
-                      const SizedBox(width: 8),
-                      GestureDetector(
-                        onTap: () => setState(() => _config.echeance = null),
-                        child: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: AppColors.fondSecondaire,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: AppColors.lignes),
-                          ),
-                          child: const Icon(Icons.clear, size: 18, color: AppColors.texteDoux),
-                        ),
-                      ),
-                    ],
-                  ],
                 ),
                 const SizedBox(height: 12),
                 const ChampLabel(label: "Méthode d'ordre"),

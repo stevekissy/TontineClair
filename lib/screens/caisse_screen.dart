@@ -366,8 +366,8 @@ class CaisseScreen extends StatelessWidget {
         );
         journal.insert(0, {
           'quoi': type == 'penalite'
-              ? 'PENALITE_${nomMembre}_${montant}FCFA'
-              : '${type.toUpperCase()}_CAISSE_${montant}FCFA',
+              ? 'PÉNALITÉ \u2014 $nomMembre \u2014 ${Formatters.montant(montant, devise: data.devise)}'
+              : '${type == 'apport' ? 'APPORT' : 'DÉPENSE'} CAISSE \u2014 ${Formatters.montant(montant, devise: data.devise)}${descFinale.isNotEmpty ? ' \u2014 $descFinale' : ''}',
           'gestionnaire': provider.gestActifNom ?? '',
           'quand': now,
           'reference': ref,

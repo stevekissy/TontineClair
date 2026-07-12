@@ -1402,7 +1402,33 @@ class _BarreDetail extends StatelessWidget {
         });
         newData['historique'] = historique;
 
-        // 5. Journal
+        // 5. Déduire le décaissement de la caisse ──────────────────────────
+        final caisseMapRaw = newData['caisse'];
+        final List<Map<String, dynamic>> caisseMvts;
+        if (caisseMapRaw is Map<String, dynamic>) {
+          final raw = caisseMapRaw['mouvements'];
+          caisseMvts = List<Map<String, dynamic>>.from(
+            (raw as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
+          );
+        } else if (caisseMapRaw is List) {
+          caisseMvts = List<Map<String, dynamic>>.from(
+            caisseMapRaw.cast<Map<String, dynamic>>(),
+          );
+        } else {
+          caisseMvts = [];
+        }
+        caisseMvts.insert(0, {
+          'id': '${ref}D',
+          'type': 'decaissement',
+          'montant': -total,
+          'description': 'Décaissement Tour $numerTourAffiche — $benefNom',
+          'gestionnaire': provider.gestActifNom ?? '',
+          'date': DateTime.now().toIso8601String(),
+          'reference': ref,
+        });
+        newData['caisse'] = {'mouvements': caisseMvts};
+
+        // 6. Journal
         final journal = List<Map<String, dynamic>>.from(
           (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
         );

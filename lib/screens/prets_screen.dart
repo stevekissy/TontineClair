@@ -339,7 +339,7 @@ class _PretsScreenState extends State<PretsScreen> {
           (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
         );
         journal.insert(0, {
-          'quoi': 'PRET_${emprunteur.nom}_${montant}FCFA_${taux}%_${durees}M',
+          'quoi': 'NOUVEAU PRÊTT — ${emprunteur.nom} — ${Formatters.montant(montant, devise: data.devise)} — ${taux}% — ${durees} mois',
           'gestionnaire': provider.gestActifNom ?? '',
           'quand': dateDebut,
           'reference': ref,
@@ -612,7 +612,7 @@ class _CartePret extends StatelessWidget {
           (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
         );
         journal.insert(0, {
-          'quoi': 'ANNUL_REMBOURSEMENT_${pret.emprunteurNom}_${remb.montant}FCFA',
+          'quoi': 'ANNULATION REMBOURSEMENT — ${pret.emprunteurNom} — ${Formatters.montant(remb.montant, devise: data.devise)} — Réf: ${remb.reference}',
           'gestionnaire': provider.gestActifNom ?? '',
           'quand': now,
           'reference': ref,
@@ -811,8 +811,8 @@ class _CartePret extends StatelessWidget {
         );
         journal.insert(0, {
           'quoi': estSoldeMaintenant
-              ? 'REMBOURSEMENT_SOLDE_${pret.emprunteurNom}_${montant}FCFA'
-              : 'REMBOURSEMENT_${pret.emprunteurNom}_${montant}FCFA',
+              ? 'REMBOURSEMENT SOLDE — ${pret.emprunteurNom} — ${Formatters.montant(montant, devise: data.devise)} — Prêt entièrement soldé'
+              : 'REMBOURSEMENT — ${pret.emprunteurNom} — ${Formatters.montant(montant, devise: data.devise)} — Reste : ${Formatters.montant(resteApres, devise: data.devise)}',
           'gestionnaire': provider.gestActifNom ?? '',
           'quand': now,
           'reference': ref,

@@ -685,12 +685,15 @@ class _CarteBeneficiaire extends StatelessWidget {
                             color: Colors.white.withValues(alpha: 0.65),
                           ),
                         ),
-                        Text(
-                          Formatters.montant(info.montant, devise: devise),
-                          style: GoogleFonts.bricolageGrotesque(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 15,
-                            color: AppColors.or,
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            Formatters.montant(info.montant, devise: devise),
+                            style: GoogleFonts.bricolageGrotesque(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                              color: AppColors.or,
+                            ),
                           ),
                         ),
                       ],
@@ -811,14 +814,18 @@ class _CarteIndicateur extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          Text(
-            valeur,
-            style: GoogleFonts.bricolageGrotesque(
-              fontWeight: FontWeight.w800,
-              fontSize: 17,
-              color: couleur,
+          // Montant exact sans abréviation — taille adaptative si trop long
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              valeur,
+              style: GoogleFonts.bricolageGrotesque(
+                fontWeight: FontWeight.w800,
+                fontSize: 17,
+                color: couleur,
+              ),
             ),
-            overflow: TextOverflow.ellipsis,
           ),
           Text(
             sousTitre,

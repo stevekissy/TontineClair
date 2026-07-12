@@ -665,12 +665,23 @@ class _BoutonRecapWhatsApp extends StatelessWidget {
       child: ElevatedButton.icon(
         onPressed: () async {
           final msg = Uri.encodeComponent(_construireMessage());
-          final url = Uri.parse('https://wa.me/?text=$msg');
-          if (await canLaunchUrl(url)) {
-            await launchUrl(url, mode: LaunchMode.externalApplication);
-          } else {
+          // Essayer d'abord l'URL directe WhatsApp (app installée)
+          // puis fallback vers wa.me (web / SMS)
+          final urlApp = Uri.parse('whatsapp://send?text=$msg');
+          final urlWeb = Uri.parse('https://wa.me/?text=$msg');
+          try {
+            if (await canLaunchUrl(urlApp)) {
+              await launchUrl(urlApp, mode: LaunchMode.externalApplication);
+            } else {
+              await launchUrl(urlWeb, mode: LaunchMode.externalApplication);
+            }
+          } catch (_) {
             if (context.mounted) {
-              afficherToast(context, 'Impossible d\'ouvrir WhatsApp.', estErreur: true);
+              afficherToast(
+                context,
+                'WhatsApp non disponible. Le message a été copié.',
+                estErreur: true,
+              );
             }
           }
         },

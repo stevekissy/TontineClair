@@ -120,6 +120,9 @@ class TontineProvider extends ChangeNotifier {
       // Calcul automatique de l'échéance selon la périodicité
       final echeanceAuto = EcheanceService.prochaineEcheance(periode: periode).toIso8601String();
       final code = _genererCode();
+      final now = DateTime.now().toIso8601String();
+      final gestNom = gestionnaires.isNotEmpty ? gestionnaires.first.nom : 'Inconnu';
+
       final data = TontineData(
         nom: nom,
         montant: montant,
@@ -136,6 +139,16 @@ class TontineProvider extends ChangeNotifier {
                   nom: e.value,
                 ))
             .toList(),
+        // Journal initial : enregistrer la création immédiatement
+        journal: [
+          JournalEntry(
+            quoi: 'CRÉATION TONTINE «$nom» — ${membres.length} membre(s) — '
+                '$montant ($devise) / $periode',
+            gestionnaire: gestNom,
+            quand: now,
+            reference: code,
+          ),
+        ],
       );
 
       await SupabaseService.creerTontine(
@@ -276,6 +289,37 @@ class TontineProvider extends ChangeNotifier {
         motif:    motif,
       );
       if (result['ok'] == true) {
+        // ── Écrire dans le journal JSONB de la tontine (visible aux membres) ──
+        // Le RPC modifier_score_membre écrit dans journal_audit (table dédiée),
+        // mais pas dans data.journal. On complète ici.
+        try {
+          final ancienScore = result['ancien'] as int? ?? 0;
+          final data = _courante!.data;
+          final newData = data.toJson();
+          final journal = List<Map<String, dynamic>>.from(
+            (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
+          );
+          // Trouver le nom du membre
+          final membreNom = data.membres
+              .where((m) => m.id == membreId)
+              .map((m) => m.nom)
+              .firstOrNull ?? membreId;
+          journal.insert(0, {
+            'quoi': 'SCORE MODIFIÉ — $membreNom : $ancienScore → $nouveau/100 — Motif : $motif',
+            'gestionnaire': _gestActifNom!,
+            'quand': DateTime.now().toIso8601String(),
+          });
+          newData['journal'] = journal;
+          await SupabaseService.ecrireTontine(
+            code: _courante!.code,
+            nom: _gestActifNom!,
+            pin: pin,
+            data: newData,
+          );
+        } catch (_) {
+          // Échec silencieux : le score a bien été modifié, seul le journal JSONB a échoué
+        }
+
         // Recharger depuis Supabase → tous les context.watch<TontineProvider>()
         // seront notifiés : classement_screen, membres_screen, dashboard_screen.
         await chargerTontine(_courante!.code);
