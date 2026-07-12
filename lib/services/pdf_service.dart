@@ -468,9 +468,9 @@ class PdfService {
     final theme = pw.ThemeData.withFont(base: regular, bold: bold);
 
     // Décompte — Bug #1 fix : utiliser membre_id (clé snake_case de Supabase)
-    final oui = voixDetaillees.where((v) => v['choix'] == 'oui').length;
-    final non = voixDetaillees.where((v) => v['choix'] == 'non').length;
-    final abstention = voixDetaillees.where((v) => v['choix'] == 'abstention').length;
+    final oui = voixDetaillees.where((v) => (v['choix'] as String? ?? '').toLowerCase() == 'oui').length;
+    final non = voixDetaillees.where((v) => (v['choix'] as String? ?? '').toLowerCase() == 'non').length;
+    final abstention = voixDetaillees.where((v) => (v['choix'] as String? ?? '').toLowerCase() == 'abstention').length;
     final adopte = vote.adopte;
     final totalVotants = voixDetaillees.length;
     final totalMembres = data.membres.length;
@@ -566,11 +566,13 @@ class PdfService {
                         .firstOrNull
                     ?? '—';
                 final choix = v['choix'] as String? ?? '—';
-                final choixLabel = choix == 'oui'
+                final choixLabel = choix.toLowerCase() == 'oui'
                     ? 'Oui'
-                    : choix == 'non'
+                    : choix.toLowerCase() == 'non'
                         ? 'Non'
-                        : 'Abst.';
+                        : choix.toLowerCase() == 'abstention'
+                            ? 'Abstention'
+                            : 'Abst.';
 
                 // Timestamp du vote — Bug fix : gérer les deux formats
                 DateTime? ts;
