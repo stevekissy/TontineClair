@@ -8,7 +8,7 @@ class FeatureGate {
   FeatureGate._();
 
   // ─── Limites Gratuit ──────────────────────────────────────────────────────
-  static const int maxTontinesGratuit      = 1;
+  static const int maxTontinesGratuit      = 3;
   static const int maxMembresGratuit       = 5;
 
   // ─── Limites Premium (illimitées en pratique) ─────────────────────────────
@@ -82,8 +82,8 @@ class FeatureGate {
   }) {
     switch (limite) {
       case LimiteType.tontines:
-        return 'Votre formule gratuite autorise une seule tontine. '
-            'Passez à Premium pour créer et gérer plusieurs tontines.';
+        return 'Votre formule gratuite autorise jusqu\'à $max tontines. '
+            'Passez à Premium pour créer et gérer des tontines illimitées.';
       case LimiteType.membres:
         return 'La formule gratuite est limitée à $max membres. '
             'Passez à Premium pour ajouter davantage de membres.';

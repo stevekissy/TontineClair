@@ -568,9 +568,27 @@ class SupabaseService {
   }
 
   static Future<List<Map<String, dynamic>>> adminListerTontines(String cle) async {
-    final result = await rpc('admin_lister_tontines', {'p_cle': cle});
-    if (result == null) return [];
-    if (result is List) return result.cast<Map<String, dynamic>>();
+    // Essayer d'abord admin_lister_tontines (RPC v1)
+    try {
+      final result = await rpc('admin_lister_tontines', {'p_cle': cle});
+      if (result is List && result.isNotEmpty) {
+        return result.cast<Map<String, dynamic>>();
+      }
+    } catch (_) {
+      // RPC absente ou erreur → fallback sur admin_dashboard_tontines
+    }
+    // Fallback : admin_dashboard_tontines (RPC v2, plus récente)
+    try {
+      final result = await rpc('admin_dashboard_tontines', {
+        'p_cle':    cle,
+        'p_filtre': 'toutes',
+        'p_limit':  500,
+        'p_offset': 0,
+      });
+      if (result is List) return result.cast<Map<String, dynamic>>();
+    } catch (_) {
+      // Aucune RPC disponible
+    }
     return [];
   }
 
@@ -579,54 +597,66 @@ class SupabaseService {
   ///           suspendues, supprimees, demandes_en_attente}
   /// Fallback : calcul local depuis adminListerTontines si RPC absente.
   static Future<Map<String, dynamic>> adminTontineCounts(String cle) async {
+    // Calcul local depuis la liste des tontines (robuste, pas de dépendance RPC)
+    Map<String, dynamic> calculerLocalement(List<Map<String, dynamic>> tontines) {
+      int actives = 0, premium = 0, gratuites = 0;
+      int inactives = 0, suspendues = 0, supprimees = 0, expirees = 0;
+      final now = DateTime.now();
+      for (final t in tontines) {
+        final st = (t['status'] as String? ?? 'active');
+        if (st == 'deleted')   { supprimees++; continue; }
+        if (st == 'suspended') { suspendues++; continue; }
+        if (st == 'inactive')  { inactives++;  continue; }
+        actives++;
+        final isPrem = (t['plan'] as String? ?? '') == 'premium';
+        final expStr = t['plan_expire'] as String? ?? t['expire'] as String?;
+        final exp    = expStr != null ? DateTime.tryParse(expStr) : null;
+        if (isPrem && exp != null && exp.isBefore(now)) {
+          expirees++; premium--; actives--;
+        } else if (isPrem) {
+          premium++;
+        } else {
+          gratuites++;
+        }
+      }
+      final nonSupp = tontines.length - supprimees;
+      return {
+        'total':               nonSupp,
+        'actives':             actives,
+        'premium':             premium,
+        'gratuites':           gratuites,
+        'inactives':           inactives,
+        'suspendues':          suspendues,
+        'expirees':            expirees,
+        'supprimees':          supprimees,
+        'demandes_en_attente': 0,
+      };
+    }
+
     try {
       final result = await rpc('admin_tontine_counts', {'p_cle': cle});
-      if (result is Map<String, dynamic>) return result;
+      // RPC peut retourner Map directement ou List<Map> selon version Supabase
+      if (result is Map<String, dynamic> && result.isNotEmpty) return result;
+      if (result is List && result.isNotEmpty && result.first is Map<String, dynamic>) {
+        return result.first as Map<String, dynamic>;
+      }
+      // RPC OK mais résultat vide ou format inattendu → fallback local
+      final tontines = await adminListerTontines(cle);
+      return calculerLocalement(tontines);
     } on Exception catch (e) {
       final msg = e.toString();
-      // RPC absente (migration v17 non exécutée) → calcul local
+      // RPC absente → calcul local systématique
       if (msg.contains('PGRST202') ||
+          msg.contains('Could not find') ||
           msg.contains('introuvable') ||
-          msg.contains('Could not find')) {
-        // Calcul de secours depuis adminListerTontines
+          msg.contains('function') ||
+          msg.contains('does not exist')) {
         final tontines = await adminListerTontines(cle);
-        int actives   = 0, premium = 0, gratuites = 0;
-        int inactives = 0, suspendues = 0, supprimees = 0, expirees = 0;
-        final now = DateTime.now();
-        for (final t in tontines) {
-          final st = (t['status'] as String? ?? 'active');
-          if (st == 'deleted')   { supprimees++; continue; }
-          if (st == 'suspended') { suspendues++; continue; }
-          if (st == 'inactive')  { inactives++;  continue; }
-          // Active
-          actives++;
-          final isPremium = (t['plan'] as String? ?? '') == 'premium';
-          final expireStr = t['expire'] as String?;
-          final expire    = expireStr != null ? DateTime.tryParse(expireStr) : null;
-          if (isPremium && expire != null && expire.isBefore(now)) {
-            expirees++; premium--; actives--;
-          } else if (isPremium) {
-            premium++;
-          } else {
-            gratuites++;
-          }
-        }
-        final nonSupp = tontines.length - supprimees;
-        return {
-          'total':              nonSupp,
-          'actives':            actives,
-          'premium':            premium,
-          'gratuites':          gratuites,
-          'inactives':          inactives,
-          'suspendues':         suspendues,
-          'expirees':           expirees,
-          'supprimees':         supprimees,
-          'demandes_en_attente': 0,
-        };
+        return calculerLocalement(tontines);
       }
-      rethrow;
+      // Autre erreur : retourner vide plutôt que crasher
+      return {};
     }
-    return {};
   }
 
   /// Active le Premium pour une tontine et met à jour premium_requests (v12).
