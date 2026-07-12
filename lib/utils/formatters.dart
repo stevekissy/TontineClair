@@ -1,4 +1,5 @@
 import 'package:intl/intl.dart';
+import '../services/devise_service.dart';
 
 class Formatters {
   static final NumberFormat fcfa = NumberFormat.decimalPattern('fr_FR');
@@ -6,8 +7,18 @@ class Formatters {
   static final DateFormat dateTimeFormat = DateFormat('dd/MM/yyyy HH:mm', 'fr_FR');
   static final DateFormat dateLongFormat = DateFormat('d MMMM yyyy', 'fr_FR');
 
+  /// Formate un montant avec la devise FCFA (rétrocompatibilité)
   static String montantFCFA(num montant) {
     return '${fcfa.format(montant)} FCFA';
+  }
+
+  /// Formate un montant avec la devise de la tontine
+  /// Si codeDevise est null ou vide → retombe sur FCFA
+  static String montant(num montant, {String? codeDevise}) {
+    if (codeDevise == null || codeDevise.isEmpty || codeDevise == 'XOF') {
+      return montantFCFA(montant);
+    }
+    return DeviseService.formaterMontant(montant, codeDevise);
   }
 
   static String dateFormatee(DateTime? date) {

@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/tontine.dart';
@@ -8,6 +7,7 @@ import '../services/feature_gate_service.dart';
 import '../services/platform_service.dart';
 import '../services/storage_service.dart';
 import '../services/echeance_service.dart';
+import '../services/devise_service.dart';
 import '../utils/app_colors.dart';
 import '../widgets/app_widgets.dart';
 import 'abonnement_screen.dart';
@@ -25,7 +25,7 @@ class _CreationScreenState extends State<CreationScreen> {
   final _montantCtrl = TextEditingController();
   String _periode = 'mensuel';
   String _methode = 'tirage';
-  DateTime? _echeance;
+  String _devise = 'XOF'; // devise par défaut : FCFA
 
   List<TextEditingController> _membresCtrl = [
     TextEditingController(),
@@ -183,7 +183,7 @@ class _CreationScreenState extends State<CreationScreen> {
       montant: int.parse(montantStr),
       periode: _periode,
       methodeOrdre: _methode,
-      echeance: _echeance?.toIso8601String(),
+      devise: _devise,
       membres: membres,
       gestionnaires: gestionnaires,
     );
@@ -203,7 +203,7 @@ class _CreationScreenState extends State<CreationScreen> {
     }
   }
 
-  /// Libellé de l'échéance calculée automatiquement (si aucune date choisie)
+  /// Libellé de l'échéance calculée automatiquement selon la périodicité
   String _labelEcheanceAuto() {
     final auto = EcheanceService.prochaineEcheance(periode: _periode);
     final d = auto.day.toString().padLeft(2, '0');
@@ -261,55 +261,19 @@ class _CreationScreenState extends State<CreationScreen> {
     });
   }
 
-  Future<void> _choisirDate() async {
-    final now = DateTime.now();
-    // Sur Web, showDatePicker peut ignorer la locale 'fr_FR' sur certains
-    // navigateurs — on omet le paramètre locale pour éviter un crash
-    // et on s'assure que le context est encore monté.
-    if (!mounted) return;
-    final DateTime? picked;
-    if (kIsWeb) {
-      // Sur Web : utilise le date picker sans locale forcée (évite crash WebAssembly)
-      picked = await showDatePicker(
-        context: context,
-        initialDate: now.add(const Duration(days: 1)),
-        firstDate: now,
-        lastDate: now.add(const Duration(days: 365 * 5)),
-        builder: (ctx, child) => Theme(
-          data: Theme.of(ctx).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: AppColors.encre,
-              onPrimary: Colors.white,
-              surface: Colors.white,
-              onSurface: AppColors.encre,
-            ),
-          ),
-          child: child!,
-        ),
-      );
-    } else {
-      // Mobile : avec locale française
-      picked = await showDatePicker(
-        context: context,
-        initialDate: now.add(const Duration(days: 1)),
-        firstDate: now,
-        lastDate: now.add(const Duration(days: 365 * 5)),
-        locale: const Locale('fr', 'FR'),
-        builder: (ctx, child) => Theme(
-          data: Theme.of(ctx).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: AppColors.encre,
-              onPrimary: Colors.white,
-              surface: Colors.white,
-              onSurface: AppColors.encre,
-            ),
-          ),
-          child: child!,
-        ),
-      );
-    }
-    if (picked != null && mounted) {
-      setState(() => _echeance = picked);
+  /// Ouvre le sélecteur de devise avec recherche
+  Future<void> _choisirDevise() async {
+    final deviseChoisie = await showModalBottomSheet<Devise>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.fondPapier,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _SelectorDevise(codeActuel: _devise),
+    );
+    if (deviseChoisie != null && mounted) {
+      setState(() => _devise = deviseChoisie.code);
     }
   }
 
@@ -374,13 +338,50 @@ class _CreationScreenState extends State<CreationScreen> {
                             counterText: '',
                           ),
                         ),
-                        const ChampLabel(
-                            label: 'Cotisation par membre (FCFA)'),
+                        // ── Devise + Montant côte à côte ──────────────────
+                        const ChampLabel(label: 'Devise'),
+                        GestureDetector(
+                          onTap: _choisirDevise,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 13),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              border: Border.all(
+                                  color: AppColors.lignes, width: 1.5),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              children: [
+                                Text(
+                                  () {
+                                    final d = DeviseService.parCode(_devise);
+                                    return '${d.drapeau}  ${d.symbole} — ${d.nom}';
+                                  }(),
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    color: AppColors.encre,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const Spacer(),
+                                const Icon(Icons.keyboard_arrow_down_rounded,
+                                    size: 20, color: AppColors.texteDoux),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const ChampLabel(label: 'Cotisation par membre'),
                         TextField(
                           controller: _montantCtrl,
                           keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             hintText: 'Ex : 10 000',
+                            suffixText: DeviseService.parCode(_devise).symbole,
+                            suffixStyle: const TextStyle(
+                              color: AppColors.texteDoux,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                         const ChampLabel(label: 'Périodicité'),
@@ -389,89 +390,36 @@ class _CreationScreenState extends State<CreationScreen> {
                           items: EcheanceService.periodiciteOptions,
                           onChanged: (v) => setState(() => _periode = v!),
                         ),
-                        // Aide contextuelle selon la périodicité
-                        if (_periode == 'journalier')
-                          const ChampAide(
-                            texte: 'Cotisation quotidienne : chaque membre verse sa part chaque jour. L\'échéance sera calculée automatiquement si vous n\'en définissez pas.',
-                          ),
-                        const ChampLabel(
-                            label: 'Prochaine échéance (facultatif)'),
-                        // Afficher la date calculée automatiquement si aucune n'est choisie
-                        if (_echeance == null)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
-                            child: Text(
-                              'Auto : ${_labelEcheanceAuto()}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: AppColors.texteDoux,
-                                fontStyle: FontStyle.italic,
-                              ),
+                        // Aide : échéance calculée automatiquement
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 9),
+                            decoration: BoxDecoration(
+                              color: AppColors.succesFond,
+                              borderRadius: BorderRadius.circular(10),
                             ),
-                          ),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: GestureDetector(
-                                onTap: _choisirDate,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 14, vertical: 13),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    border: Border.all(
-                                        color: _echeance != null
-                                            ? AppColors.encre
-                                            : AppColors.lignes,
-                                        width: _echeance != null ? 2 : 1.5),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Text(
-                                        _echeance == null
-                                            ? 'Choisir une date...'
-                                            : '${_echeance!.day.toString().padLeft(2, '0')}/${_echeance!.month.toString().padLeft(2, '0')}/${_echeance!.year}',
-                                        style: TextStyle(
-                                          fontSize: 15.5,
-                                          color: _echeance == null
-                                              ? AppColors.texteDoux
-                                              : AppColors.encre,
-                                          fontWeight: _echeance != null
-                                              ? FontWeight.w600
-                                              : FontWeight.normal,
-                                        ),
-                                      ),
-                                      const Spacer(),
-                                      const Icon(Icons.calendar_today,
-                                          size: 18, color: AppColors.texteDoux),
-                                    ],
+                            child: Row(
+                              children: [
+                                const Icon(Icons.auto_awesome_rounded,
+                                    size: 14, color: AppColors.succes),
+                                const SizedBox(width: 7),
+                                Expanded(
+                                  child: Text(
+                                    'Prochaine échéance calculée automatiquement : ${_labelEcheanceAuto()}',
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      color: AppColors.succes,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ),
-                              ),
+                              ],
                             ),
-                            // Bouton effacer la date
-                            if (_echeance != null) ...[  
-                              const SizedBox(width: 8),
-                              GestureDetector(
-                                onTap: () => setState(() => _echeance = null),
-                                child: Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.fondSecondaire,
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: AppColors.lignes),
-                                  ),
-                                  child: const Icon(
-                                    Icons.clear,
-                                    size: 18,
-                                    color: AppColors.texteDoux,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
+                          ),
                         ),
+                        const SizedBox(height: 4),
                         const ChampLabel(label: "Méthode d'ordre de passage"),
                         _SelectChamp(
                           value: _methode,
@@ -804,6 +752,167 @@ class _SelectChamp extends StatelessWidget {
       style: const TextStyle(
         fontSize: 15.5,
         color: AppColors.texte,
+      ),
+    );
+  }
+}
+
+// ─── Sélecteur de devise avec recherche ───────────────────────────────────────
+
+class _SelectorDevise extends StatefulWidget {
+  final String codeActuel;
+  const _SelectorDevise({required this.codeActuel});
+
+  @override
+  State<_SelectorDevise> createState() => _SelectorDeviseState();
+}
+
+class _SelectorDeviseState extends State<_SelectorDevise> {
+  final _searchCtrl = TextEditingController();
+  List<Devise> _filtrees = DeviseService.listeTrier;
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  void _filtrer(String query) {
+    final q = query.toLowerCase();
+    setState(() {
+      _filtrees = DeviseService.listeTrier
+          .where((d) =>
+              d.code.toLowerCase().contains(q) ||
+              d.symbole.toLowerCase().contains(q) ||
+              d.nom.toLowerCase().contains(q))
+          .toList();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * 0.80,
+      child: Column(
+        children: [
+          // ── Barre poignée ──
+          const SizedBox(height: 10),
+          Container(
+            width: 40, height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.lignes,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 14),
+          // ── Titre ──
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Icon(Icons.language_rounded, size: 20, color: AppColors.encre),
+                SizedBox(width: 8),
+                Text(
+                  'Choisir la devise',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 18,
+                    color: AppColors.encre,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          // ── Recherche ──
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: TextField(
+              controller: _searchCtrl,
+              onChanged: _filtrer,
+              decoration: InputDecoration(
+                hintText: 'Rechercher une devise…',
+                prefixIcon: const Icon(Icons.search, size: 20),
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.lignes),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.lignes),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 10),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          // ── Liste ──
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              itemCount: _filtrees.length,
+              itemBuilder: (ctx, i) {
+                final d = _filtrees[i];
+                final estSelec = d.code == widget.codeActuel;
+                // Séparateur après les devises prioritaires
+                final estPrioritaire =
+                    DeviseService.codesPrioritaires.contains(d.code);
+                final prochainEstPrioritaire = i + 1 < _filtrees.length &&
+                    DeviseService.codesPrioritaires
+                        .contains(_filtrees[i + 1].code);
+                final afficherSeparateur =
+                    estPrioritaire && !prochainEstPrioritaire;
+
+                return Column(
+                  children: [
+                    ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 2),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                      tileColor: estSelec
+                          ? AppColors.encre.withValues(alpha: 0.07)
+                          : null,
+                      leading: Text(
+                        d.drapeau,
+                        style: const TextStyle(fontSize: 22),
+                      ),
+                      title: Text(
+                        '${d.symbole}  —  ${d.nom}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: estSelec
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          color: AppColors.encre,
+                        ),
+                      ),
+                      subtitle: Text(
+                        d.code,
+                        style: const TextStyle(
+                            fontSize: 11.5, color: AppColors.texteDoux),
+                      ),
+                      trailing: estSelec
+                          ? const Icon(Icons.check_circle_rounded,
+                              color: AppColors.succes, size: 20)
+                          : null,
+                      onTap: () => Navigator.pop(ctx, d),
+                    ),
+                    if (afficherSeparateur) ...[
+                      const SizedBox(height: 4),
+                      const Divider(height: 1, color: AppColors.lignes),
+                      const SizedBox(height: 4),
+                    ],
+                  ],
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
       ),
     );
   }

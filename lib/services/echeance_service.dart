@@ -31,6 +31,8 @@ class EcheanceService {
         return 60;
       case 'trimestriel':
         return 90;
+      case 'annuel':
+        return 365;
       default:
         return 30; // fallback mensuel
     }
@@ -80,8 +82,8 @@ class EcheanceService {
 
     // Pour les périodicités en mois, on utilise addMonths pour rester cohérent
     // avec les fins de mois (28/29/30/31 jours)
-    if (periode == 'mensuel' || periode == 'bimensuel' || periode == 'trimestriel') {
-      final nbMois = periode == 'mensuel' ? 1 : periode == 'bimensuel' ? 2 : 3;
+    if (periode == 'mensuel' || periode == 'bimensuel' || periode == 'trimestriel' || periode == 'annuel') {
+      final nbMois = periode == 'mensuel' ? 1 : periode == 'bimensuel' ? 2 : periode == 'trimestriel' ? 3 : 12;
       while (!next.isAfter(maintenant)) {
         next = _addMois(next, nbMois);
       }
@@ -200,6 +202,7 @@ class EcheanceService {
       case 'mensuel':    return 'Mensuelle';
       case 'bimensuel':  return 'Bimensuelle';
       case 'trimestriel':return 'Trimestrielle';
+      case 'annuel':     return 'Annuelle';
       default:           return periode;
     }
   }
@@ -212,15 +215,17 @@ class EcheanceService {
       case 'mensuel':    return 'Chaque mois';
       case 'bimensuel':  return 'Tous les 2 mois';
       case 'trimestriel':return 'Tous les 3 mois';
+      case 'annuel':     return 'Chaque année';
       default:           return periode;
     }
   }
 
   /// Liste des périodicités disponibles pour le sélecteur.
   static const Map<String, String> periodiciteOptions = {
-    'journalier': 'Journalière (chaque jour)',
-    'hebdo':      'Hebdomadaire (chaque semaine)',
-    'mensuel':    'Mensuelle (chaque mois)',
-    'trimestriel':'Trimestrielle (tous les 3 mois)',
+    'journalier': 'Journalière — chaque jour',
+    'hebdo':      'Hebdomadaire — chaque semaine',
+    'mensuel':    'Mensuelle — chaque mois',
+    'trimestriel':'Trimestrielle — tous les 3 mois',
+    'annuel':     'Annuelle — chaque année',
   };
 }

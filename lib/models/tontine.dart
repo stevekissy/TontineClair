@@ -505,6 +505,9 @@ class TontineData {
   final String methodeOrdre;
   String? echeance;
 
+  /// Code ISO de la devise (ex: 'XOF', 'EUR', 'USD'). Défaut: 'XOF'
+  final String devise;
+
   /// INDEX 0-based dans ordre[] — jamais afficher directement.
   /// Numéro humain = tourActuel + 1
   int tourActuel;
@@ -541,6 +544,7 @@ class TontineData {
     required this.periode,
     required this.methodeOrdre,
     this.echeance,
+    this.devise = 'XOF',
     this.tourActuel = 0,
     this.cycleTermine = false,
     this.cycleNumero = 1,
@@ -587,12 +591,20 @@ class TontineData {
         final annee = depuis.month == 12 ? depuis.year + 1 : depuis.year;
         final maxJour = DateTime(annee, mois + 1, 0).day;
         return DateTime(annee, mois, depuis.day.clamp(1, maxJour));
+      case 'bimensuel':
+        var m2 = depuis.month + 2;
+        var a2 = depuis.year;
+        while (m2 > 12) { m2 -= 12; a2++; }
+        final maxJ2 = DateTime(a2, m2 + 1, 0).day;
+        return DateTime(a2, m2, depuis.day.clamp(1, maxJ2));
       case 'trimestriel':
         var m = depuis.month + 3;
         var a = depuis.year;
         while (m > 12) { m -= 12; a++; }
         final maxJ = DateTime(a, m + 1, 0).day;
         return DateTime(a, m, depuis.day.clamp(1, maxJ));
+      case 'annuel':
+        return DateTime(depuis.year + 1, depuis.month, depuis.day);
       default:
         return depuis.add(const Duration(days: 30));
     }
@@ -604,7 +616,9 @@ class TontineData {
       case 'journalier':   return 1;
       case 'hebdo':        return 7;
       case 'mensuel':      return 30;
+      case 'bimensuel':    return 60;
       case 'trimestriel':  return 90;
+      case 'annuel':       return 365;
       default:             return 30;
     }
   }
@@ -1048,6 +1062,7 @@ class TontineData {
     // On stocke la valeur brute de Supabase sans modification ici.
     // La normalisation (recalcul si passée) est faite dans EcheanceService.
     final echeanceRaw = json['echeance'] as String?;
+    final deviseRaw = json['devise'] as String? ?? 'XOF';
 
     return TontineData(
       nom: json['nom'] as String? ?? '',
@@ -1055,6 +1070,7 @@ class TontineData {
       periode: periode,
       methodeOrdre: json['methodeOrdre'] as String? ?? 'rotation',
       echeance: echeanceRaw,
+      devise: deviseRaw,
       tourActuel: tourActuel,
       cycleTermine: cycleTermine,
       cycleNumero: cycleNumero,
@@ -1079,6 +1095,7 @@ class TontineData {
         'periodicite': periode,
         'periode': periode,
         'methodeOrdre': methodeOrdre,
+        'devise': devise,
         'cycleNum': cycleNumero,
         if (echeance != null) 'echeance': echeance,
         // Supabase attend 'tourActuel' (index 0-based)

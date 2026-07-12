@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import '../models/tontine.dart';
 import '../services/supabase_service.dart';
 import '../services/storage_service.dart';
+import '../services/echeance_service.dart';
 
 class TontineProvider extends ChangeNotifier {
   List<TontineLocale> _mesTontines = [];
@@ -111,18 +112,21 @@ class TontineProvider extends ChangeNotifier {
     required int montant,
     required String periode,
     required String methodeOrdre,
-    String? echeance,
+    String devise = 'XOF',
     required List<String> membres,
     required List<Gestionnaire> gestionnaires,
   }) async {
     try {
+      // Calcul automatique de l'échéance selon la périodicité
+      final echeanceAuto = EcheanceService.prochaineEcheance(periode: periode).toIso8601String();
       final code = _genererCode();
       final data = TontineData(
         nom: nom,
         montant: montant,
         periode: periode,
         methodeOrdre: methodeOrdre,
-        echeance: echeance,
+        echeance: echeanceAuto,
+        devise: devise,
         gestionnaires: gestionnaires,
         membres: membres
             .asMap()
