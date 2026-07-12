@@ -298,9 +298,14 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
         ],
         onValider: (pin) async {
           final newData = data.toJson();
+          final now = DateTime.now().toIso8601String();
+
+          // ── 1. Marquer le membre comme non-payé ───────────────────────────
           final membres = List<Map<String, dynamic>>.from(
             (newData['membres'] as List<dynamic>).cast<Map<String, dynamic>>(),
           );
+          final refAnnule = membres
+              .firstWhere((m) => m['id'] == membre.id, orElse: () => {})['referencePaiement'] as String? ?? '?';
           final idx = membres.indexWhere((m) => m['id'] == membre.id);
           if (idx >= 0) {
             membres[idx]['paye'] = false;
@@ -309,12 +314,46 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
             membres[idx].remove('referencePaiement');
           }
           newData['membres'] = membres;
+
+          // ── 2. Contre-passer la caisse (sortie du montant) ────────────────
+          final caisseMap = newData['caisse'];
+          final caisse = List<Map<String, dynamic>>.from(
+            caisseMap is Map<String, dynamic>
+                ? ((caisseMap['mouvements'] as List<dynamic>?)
+                        ?.cast<Map<String, dynamic>>() ?? [])
+                : caisseMap is List
+                    ? (caisseMap as List<dynamic>).cast<Map<String, dynamic>>()
+                    : [],
+          );
+          caisse.add({
+            'id': 'ANNUL_${refAnnule}_C',
+            'type': 'depense',
+            'montant': -data.montant,
+            'description': 'Annulation cotisation ${membre.nom} — Tour ${data.numerTour}',
+            'gestionnaire': provider.gestActifNom ?? '',
+            'date': now,
+            'reference': 'ANNUL_$refAnnule',
+          });
+          newData['caisse'] = {'mouvements': caisse};
+
+          // ── 3. Inscrire dans le journal public ────────────────────────────
+          final journal = List<Map<String, dynamic>>.from(
+            (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
+          );
+          journal.insert(0, {
+            'quoi': 'ANNULATION_PAIEMENT — ${membre.nom} — Tour ${data.numerTour} — Réf: $refAnnule',
+            'gestionnaire': provider.gestActifNom ?? '',
+            'quand': now,
+            'reference': 'ANNUL_$refAnnule',
+          });
+          newData['journal'] = journal;
+
           return provider.ecrire(newData, pin);
         },
       );
 
       if (ok == true && context.mounted) {
-        afficherToast(context, 'Paiement annulé.');
+        afficherToast(context, 'Paiement annulé et journal mis à jour.');
       }
     }
   }
