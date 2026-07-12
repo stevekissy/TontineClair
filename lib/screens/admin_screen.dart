@@ -626,29 +626,35 @@ class _AdminScreenState extends State<AdminScreen> {
     }
 
     // ── Comptes par catégorie ────────────────────────────────────────────────
-    // Priorité : utiliser _counts (RPC v17) si disponibles, sinon calcul local
-    final int nbTotal      = _counts.isNotEmpty
-        ? ((_counts['total'] ?? 0) as num).toInt()
+    // Toujours calculer depuis _tontines (source de vérité locale, cohérente
+    // avec la liste affichée). _counts RPC est utilisé uniquement si _tontines
+    // est vide ET que _counts retourne un total > 0.
+    final bool rpcFiable = _tontines.isEmpty &&
+        _counts.isNotEmpty &&
+        ((_counts['total'] as num?)?.toInt() ?? 0) > 0;
+
+    final int nbTotal      = rpcFiable
+        ? ((_counts['total']      ?? 0) as num).toInt()
         : _tontines.where((t) => _categorie(t) != 'deleted').length;
-    final int nbActives    = _counts.isNotEmpty
-        ? ((_counts['actives'] ?? 0) as num).toInt()
+    final int nbActives    = rpcFiable
+        ? ((_counts['actives']    ?? 0) as num).toInt()
         : _tontines.where((t) => _categorie(t) == 'gratuit' || _categorie(t) == 'premium').length;
-    final int nbPremium    = _counts.isNotEmpty
-        ? ((_counts['premium'] ?? 0) as num).toInt()
+    final int nbPremium    = rpcFiable
+        ? ((_counts['premium']    ?? 0) as num).toInt()
         : _tontines.where((t) => _categorie(t) == 'premium').length;
-    final int nbGratuites  = _counts.isNotEmpty
-        ? ((_counts['gratuites'] ?? 0) as num).toInt()
+    final int nbGratuites  = rpcFiable
+        ? ((_counts['gratuites']  ?? 0) as num).toInt()
         : _tontines.where((t) => _categorie(t) == 'gratuit').length;
-    final int nbExpirees   = _counts.isNotEmpty
-        ? ((_counts['expirees'] ?? 0) as num).toInt()
+    final int nbExpirees   = rpcFiable
+        ? ((_counts['expirees']   ?? 0) as num).toInt()
         : _tontines.where((t) => _categorie(t) == 'expire').length;
-    final int nbSuspendues = _counts.isNotEmpty
+    final int nbSuspendues = rpcFiable
         ? ((_counts['suspendues'] ?? 0) as num).toInt()
         : _tontines.where((t) => _categorie(t) == 'suspended').length;
-    final int nbInactives  = _counts.isNotEmpty
-        ? ((_counts['inactives'] ?? 0) as num).toInt()
+    final int nbInactives  = rpcFiable
+        ? ((_counts['inactives']  ?? 0) as num).toInt()
         : _tontines.where((t) => _categorie(t) == 'inactive').length;
-    final int nbSupprimees = _counts.isNotEmpty
+    final int nbSupprimees = rpcFiable
         ? ((_counts['supprimees'] ?? 0) as num).toInt()
         : _tontines.where((t) => _categorie(t) == 'deleted').length;
 

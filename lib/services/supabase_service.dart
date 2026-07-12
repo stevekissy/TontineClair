@@ -636,16 +636,23 @@ class SupabaseService {
     try {
       final result = await rpc('admin_tontine_counts', {'p_cle': cle});
       // RPC peut retourner Map directement ou List<Map> selon version Supabase
-      if (result is Map<String, dynamic> && result.isNotEmpty) return result;
-      if (result is List && result.isNotEmpty && result.first is Map<String, dynamic>) {
-        return result.first as Map<String, dynamic>;
+      Map<String, dynamic>? fromRpc;
+      if (result is Map<String, dynamic> && result.isNotEmpty) {
+        fromRpc = result;
+      } else if (result is List && result.isNotEmpty && result.first is Map<String, dynamic>) {
+        fromRpc = result.first as Map<String, dynamic>;
       }
-      // RPC OK mais résultat vide ou format inattendu → fallback local
+      // Valider que la RPC retourne un total cohérent (> 0)
+      // Si total == 0 la RPC est probablement non déployée ou mal configurée
+      if (fromRpc != null) {
+        final total = (fromRpc['total'] as num?)?.toInt() ?? 0;
+        if (total > 0) return fromRpc;
+      }
+      // Fallback systématique : calcul local depuis la liste des tontines
       final tontines = await adminListerTontines(cle);
       return calculerLocalement(tontines);
     } on Exception catch (e) {
       final msg = e.toString();
-      // RPC absente → calcul local systématique
       if (msg.contains('PGRST202') ||
           msg.contains('Could not find') ||
           msg.contains('introuvable') ||
@@ -654,7 +661,6 @@ class SupabaseService {
         final tontines = await adminListerTontines(cle);
         return calculerLocalement(tontines);
       }
-      // Autre erreur : retourner vide plutôt que crasher
       return {};
     }
   }
