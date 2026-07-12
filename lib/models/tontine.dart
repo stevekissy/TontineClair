@@ -111,7 +111,7 @@ class Membre {
 // Format réel : {id, le (timestamp ms), par, type, motif, montant, membreId?}
 class MouvementCaisse {
   final String id;
-  final String type;      // 'depot','pret','remboursement','penalite','correction','depense'
+  final String type;      // 'depot','pret','remboursement','penalite','correction','depense','decaissement'
   final int montant;      // peut être négatif pour pret/depense/correction
   final String description; // = motif dans le JSON
   final String gestionnaire; // = par dans le JSON
@@ -849,6 +849,7 @@ class TontineData {
         case 'penalite':
           total += m.montant.abs();
         case 'depense':
+        case 'decaissement':
         case 'pret':
         case 'retrait':
         case 'correction':
