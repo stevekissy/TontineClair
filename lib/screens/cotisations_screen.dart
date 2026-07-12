@@ -120,7 +120,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
                           ? 'Cycle terminé ✔ · ${membres.length} membres servis'
                           : data.cycleEnAttente
                               ? 'En attente de démarrage · ${membres.length} membres'
-                              : 'Tour ${data.numerTour} sur ${data.nbTours} · ${Formatters.montantFCFA(data.montant)} par membre · ${data.nbPayes}/${membres.length} payés',
+                              : 'Tour ${data.numerTour} sur ${data.nbTours} · ${Formatters.montant(data.montant, devise: data.devise)} par membre · ${data.nbPayes}/${membres.length} payés',
                       style: const TextStyle(fontSize: 14, color: AppColors.texteDoux),
                     ),
                     // Bandeau échéance : affiché toujours (calcul auto si non définie)
@@ -213,7 +213,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
         sousTitre: 'Vérifie les détails avant de confirmer avec ton PIN.',
         recap: [
           (label: 'Membre', valeur: membre.nom),
-          (label: 'Montant', valeur: Formatters.montantFCFA(data.montant)),
+          (label: 'Montant', valeur: Formatters.montant(data.montant, devise: data.devise)),
           (label: 'Méthode', valeur: Formatters.methodePaiement(methode)),
           (label: 'Tour', valeur: 'N° ${data.numerTour}'),
         ],
@@ -294,7 +294,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
         sousTitre: 'Cette action supprime le paiement enregistré.',
         recap: [
           (label: 'Membre', valeur: membre.nom),
-          (label: 'Montant', valeur: Formatters.montantFCFA(data.montant)),
+          (label: 'Montant', valeur: Formatters.montant(data.montant, devise: data.devise)),
         ],
         onValider: (pin) async {
           final newData = data.toJson();
@@ -339,7 +339,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
           style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.encre),
         ),
         content: Text(
-          'Paiement de ${membre.nom} enregistré (${Formatters.montantFCFA(data.montant)}).\n\nComment souhaitez-vous partager le reçu ?',
+          'Paiement de ${membre.nom} enregistré (${Formatters.montant(data.montant, devise: data.devise)}).\n\nComment souhaitez-vous partager le reçu ?',
           style: const TextStyle(color: AppColors.texte),
         ),
         actions: [
@@ -396,7 +396,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
       '✅ Reçu de cotisation — TontineClair\n'
       'Tontine : ${data.nom}\n'
       'Membre : ${membre.nom}\n'
-      'Montant : ${Formatters.montantFCFA(data.montant)}\n'
+      'Montant : ${Formatters.montant(data.montant, devise: data.devise)}\n'
       'Tour : ${data.numerTour}\n'
       'Date : ${Formatters.dateHeure(DateTime.tryParse(dateStr))}\n'
       'Méthode : ${Formatters.methodePaiement(methode)}\n'
@@ -474,7 +474,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
       '✅ Reçu de cotisation — TontineClair\n'
       'Tontine : ${data.nom}\n'
       'Membre : ${membre.nom}\n'
-      'Montant : ${Formatters.montantFCFA(data.montant)}\n'
+      'Montant : ${Formatters.montant(data.montant, devise: data.devise)}\n'
       'Tour : ${data.numerTour}\n'
       'Date : ${Formatters.dateHeure(membre.datePaiement != null ? DateTime.tryParse(membre.datePaiement!) : null)}\n'
       'Méthode : ${Formatters.methodePaiement(membre.methodePaiement ?? '')}\n'
@@ -518,7 +518,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
     final msg = Uri.encodeComponent(
       '⏰ Rappel de cotisation — TontineClair\n'
       'Bonjour ${membre.nom},\n'
-      'Ta cotisation de ${Formatters.montantFCFA(data.montant)} pour la tontine "${data.nom}" (tour ${data.numerTour}) est en attente.\n'
+      'Ta cotisation de ${Formatters.montant(data.montant, devise: data.devise)} pour la tontine "${data.nom}" (tour ${data.numerTour}) est en attente.\n'
       '${data.echeance != null ? 'Échéance : ${Formatters.dateFormatee(DateTime.tryParse(data.echeance!))}\n' : ''}'
       'Code tontine : ${tontine.code}',
     );
@@ -541,7 +541,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
       '⏰ Rappel de cotisation — TontineClair\n'
       'Tontine : ${data.nom} (tour ${data.numerTour})\n'
       'Cotisation en attente : $retardataires\n'
-      'Montant : ${Formatters.montantFCFA(data.montant)}\n'
+      'Montant : ${Formatters.montant(data.montant, devise: data.devise)}\n'
       '${data.echeance != null ? 'Échéance : ${Formatters.dateFormatee(DateTime.tryParse(data.echeance!))}\n' : ''}',
     );
     launchUrl(
@@ -579,7 +579,7 @@ class _BoutonRecapWhatsApp extends StatelessWidget {
         } else if (dateRaw is String && dateRaw.isNotEmpty) {
           dateD = DateTime.tryParse(dateRaw);
         }
-        buf.writeln('• Tour $tour → $benef — ${Formatters.montantFCFA(montant)}'
+        buf.writeln('• Tour $tour → $benef — ${Formatters.montant(montant, devise: data.devise)}'
             '${dateD != null ? ' (${Formatters.dateFormatee(dateD)})' : ''}');
       }
       return buf.toString().trim();
@@ -593,13 +593,13 @@ class _BoutonRecapWhatsApp extends StatelessWidget {
 
     final buf = StringBuffer();
     buf.writeln('🏦 TONTINE — ${data.nom}');
-    buf.writeln('Tour ${data.numerTour}/${data.nbTours} · ${Formatters.montantFCFA(data.montant)} par membre');
+    buf.writeln('Tour ${data.numerTour}/${data.nbTours} · ${Formatters.montant(data.montant, devise: data.devise)} par membre');
     if (data.echeance != null) {
       final echD = DateTime.tryParse(data.echeance!);
       if (echD != null) buf.writeln('📅 Échéance : ${Formatters.dateFormatee(echD)}');
     }
     if (beneficiaire != null) {
-      buf.writeln('🏆 Bénéficiaire du tour : ${beneficiaire.nom} — reçoit ${Formatters.montantFCFA(montantTotal)}');
+      buf.writeln('🏆 Bénéficiaire du tour : ${beneficiaire.nom} — reçoit ${Formatters.montant(montantTotal, devise: data.devise)}');
     } else {
       buf.writeln('🏆 Bénéficiaire du tour : Bénéficiaire non encore désigné');
     }
@@ -612,7 +612,7 @@ class _BoutonRecapWhatsApp extends StatelessWidget {
       for (final m in nonPayes) buf.writeln('  · ${m.nom}');
     }
     buf.writeln('');
-    buf.writeln('💰 Cagnotte : ${Formatters.montantFCFA(montantTotal)} / ${Formatters.montantFCFA(totalAttendu)}');
+    buf.writeln('💰 Cagnotte : ${Formatters.montant(montantTotal, devise: data.devise)} / ${Formatters.montant(totalAttendu, devise: data.devise)}');
     buf.writeln('');
     buf.writeln('Suivi en direct sur TontineClair — code ${tontine.code}');
     return buf.toString().trim();

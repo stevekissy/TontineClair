@@ -160,7 +160,7 @@ class DashboardScreen extends StatelessWidget {
                 .firstOrNull ?? p.emprunteurId;
         alertes.add(_Alerte(
           emoji: '🔴',
-          message: 'Prêt en retard : $nom doit ${Formatters.montantFCFA(p.resteADu)} de retard sur son échéancier.',
+          message: 'Prêt en retard : $nom doit ${Formatters.montant(p.resteADu, devise: data.devise)} de retard sur son échéancier.',
           couleur: AppColors.alerte,
           fond: AppColors.alerteFond,
         ));
@@ -191,7 +191,7 @@ class DashboardScreen extends StatelessWidget {
           final delai = diff == 0 ? "aujourd'hui" : "dans $diff j.";
           alertes.add(_Alerte(
             emoji: '📅',
-            message: 'Échéance de prêt proche : $nom — ${Formatters.montantFCFA(montantEch)} attendu $delai.',
+            message: 'Échéance de prêt proche : $nom — ${Formatters.montant(montantEch, devise: data.devise)} attendu $delai.',
             couleur: AppColors.or,
             fond: AppColors.fondConsultation,
           ));
@@ -354,6 +354,7 @@ class DashboardScreen extends StatelessWidget {
                       info: benefInfo,
                       code: code,
                       estGest: estGest,
+                      devise: data.devise,
                     ),
                     const SizedBox(height: 16),
 
@@ -378,14 +379,14 @@ class DashboardScreen extends StatelessWidget {
                         _CarteIndicateur(
                           titre: 'Total cotisé',
                           sousTitre: 'depuis le début',
-                          valeur: Formatters.montantFCFA(totalCotise),
+                          valeur: Formatters.montant(totalCotise, devise: data.devise),
                           couleur: AppColors.succes,
                           icone: Icons.savings_outlined,
                         ),
                         _CarteIndicateur(
                           titre: 'Attendu',
                           sousTitre: 'cycle complet',
-                          valeur: Formatters.montantFCFA(attenduCycle),
+                          valeur: Formatters.montant(attenduCycle, devise: data.devise),
                           couleur: AppColors.encreDoux,
                           icone: Icons.account_balance_outlined,
                         ),
@@ -406,21 +407,21 @@ class DashboardScreen extends StatelessWidget {
                         _CarteIndicateur(
                           titre: 'Caisse',
                           sousTitre: 'disponible',
-                          valeur: Formatters.montantFCFA(caisse),
+                          valeur: Formatters.montant(caisse, devise: data.devise),
                           couleur: caisse >= 0 ? AppColors.succes : AppColors.alerte,
                           icone: Icons.account_balance_wallet_outlined,
                         ),
                         _CarteIndicateur(
                           titre: 'Pénalités',
                           sousTitre: 'collectées',
-                          valeur: Formatters.montantFCFA(penalites),
+                          valeur: Formatters.montant(penalites, devise: data.devise),
                           couleur: AppColors.or,
                           icone: Icons.gavel_outlined,
                         ),
                         _CarteIndicateur(
                           titre: 'Prêts en cours',
                           sousTitre: pretsInfo.nombre > 0
-                              ? '${Formatters.montantFCFA(pretsInfo.totalDu)} restant dû'
+                              ? '${Formatters.montant(pretsInfo.totalDu, devise: data.devise)} restant dû'
                               : 'aucun prêt actif',
                           valeur: '${pretsInfo.nombre}',
                           couleur: pretsInfo.nombre > 0 ? AppColors.or : AppColors.succes,
@@ -517,11 +518,13 @@ class _CarteBeneficiaire extends StatelessWidget {
   final ({String? nom, int montant, bool cycleTermine, bool cycleEnAttente, DateTime? echeance, String periode, int numerTour, int nbTours}) info;
   final String code;
   final bool estGest;
+  final String devise;
 
   const _CarteBeneficiaire({
     required this.info,
     required this.code,
     required this.estGest,
+    this.devise = 'XOF',
   });
 
   @override
@@ -683,7 +686,7 @@ class _CarteBeneficiaire extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          Formatters.montantFCFA(info.montant),
+                          Formatters.montant(info.montant, devise: devise),
                           style: GoogleFonts.bricolageGrotesque(
                             fontWeight: FontWeight.w700,
                             fontSize: 15,
@@ -897,7 +900,7 @@ class _BoutonPartagerRecap extends StatelessWidget {
         DateTime? dateD;
         if (dateRaw is int) dateD = DateTime.fromMillisecondsSinceEpoch(dateRaw);
         else if (dateRaw is String) dateD = DateTime.tryParse(dateRaw);
-        buf.writeln('• Tour $tour → $benef — ${Formatters.montantFCFA(montant)}'
+        buf.writeln('• Tour $tour → $benef — ${Formatters.montant(montant, devise: data.devise)}'
             '${dateD != null ? ' (${Formatters.dateFormatee(dateD)})' : ''}');
       }
       return buf.toString().trim();
@@ -913,14 +916,14 @@ class _BoutonPartagerRecap extends StatelessWidget {
 
     final buf = StringBuffer();
     buf.writeln('🏦 TONTINE — ${data.nom}');
-    buf.writeln('Tour ${data.numerTour}/$n · ${Formatters.montantFCFA(data.montant)} par membre');
+    buf.writeln('Tour ${data.numerTour}/$n · ${Formatters.montant(data.montant, devise: data.devise)} par membre');
     if (data.echeance != null) {
       final echD = DateTime.tryParse(data.echeance!);
       if (echD != null) buf.writeln('📅 Échéance : ${Formatters.dateFormatee(echD)}');
     }
     buf.writeln(
       beneficiaire != null
-          ? '🏆 Bénéficiaire du tour : ${beneficiaire.nom} — reçoit ${Formatters.montantFCFA(totalAttendu)}'
+          ? '🏆 Bénéficiaire du tour : ${beneficiaire.nom} — reçoit ${Formatters.montant(totalAttendu, devise: data.devise)}'
           : '🏆 Bénéficiaire du tour : Bénéficiaire non encore désigné',
     );
     buf.writeln('');
@@ -936,7 +939,7 @@ class _BoutonPartagerRecap extends StatelessWidget {
       }
     }
     buf.writeln('');
-    buf.writeln('💰 Cagnotte : ${Formatters.montantFCFA(montantTotal)} / ${Formatters.montantFCFA(totalAttendu)}');
+    buf.writeln('💰 Cagnotte : ${Formatters.montant(montantTotal, devise: data.devise)} / ${Formatters.montant(totalAttendu, devise: data.devise)}');
     buf.writeln('');
     buf.writeln('Suivi en direct sur TontineClair — code ${tontine.code}');
 

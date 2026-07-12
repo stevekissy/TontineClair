@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
+import '../services/devise_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
@@ -82,7 +83,7 @@ class _PretsScreenState extends State<PretsScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Solde caisse : ${Formatters.montantFCFA(data.soldeCaisse)}',
+                    'Solde caisse : ${Formatters.montant(data.soldeCaisse, devise: data.devise)}',
                     style: const TextStyle(
                       fontSize: 14,
                       color: AppColors.texteDoux,
@@ -200,7 +201,7 @@ class _PretsScreenState extends State<PretsScreen> {
                       .toList(),
                   onChanged: (v) => setS(() => emprunteurId = v),
                 ),
-                const ChampLabel(label: 'Montant (FCFA)'),
+                ChampLabel(label: 'Montant (${DeviseService.parCode(data.devise).symbole})'),
                 TextField(
                   controller: montantCtrl,
                   keyboardType: TextInputType.number,
@@ -249,7 +250,7 @@ class _PretsScreenState extends State<PretsScreen> {
 
     if (montant > data.soldeCaisse) {
       afficherToast(context,
-          'Solde insuffisant — caisse : ${Formatters.montantFCFA(data.soldeCaisse)}',
+          'Solde insuffisant — caisse : ${Formatters.montant(data.soldeCaisse, devise: data.devise)}',
           estErreur: true);
       return;
     }
@@ -266,10 +267,10 @@ class _PretsScreenState extends State<PretsScreen> {
       sousTitre: 'Vérifie les détails avant de confirmer avec ton PIN.',
       recap: [
         (label: 'Emprunteur', valeur: nomEmprunteur),
-        (label: 'Montant prêté', valeur: Formatters.montantFCFA(montant)),
+        (label: 'Montant prêté', valeur: Formatters.montant(montant, devise: data.devise)),
         (label: 'Taux', valeur: '$taux %'),
         (label: 'Durée', valeur: '$durees mois'),
-        (label: 'Total dû', valeur: Formatters.montantFCFA(totalDuOctroyer)),
+        (label: 'Total dû', valeur: Formatters.montant(totalDuOctroyer, devise: data.devise)),
       ],
       onValider: (pin) async {
         final ref = Formatters.genererReference();
@@ -412,18 +413,18 @@ class _CartePret extends StatelessWidget {
             children: [
               _StatPret(
                 label: 'Emprunté',
-                valeur: Formatters.montantFCFA(pret.montant),
+                valeur: Formatters.montant(pret.montant, devise: data.devise),
               ),
               const SizedBox(width: 16),
               _StatPret(
                 label: 'Remboursé',
-                valeur: Formatters.montantFCFA(pret.totalRembourse),
+                valeur: Formatters.montant(pret.totalRembourse, devise: data.devise),
                 couleur: AppColors.succes,
               ),
               const SizedBox(width: 16),
               _StatPret(
                 label: 'Restant',
-                valeur: Formatters.montantFCFA(pret.resteADu),
+                valeur: Formatters.montant(pret.resteADu, devise: data.devise),
                 couleur: pret.resteADu > 0 ? AppColors.alerte : AppColors.succes,
               ),
             ],
@@ -457,7 +458,7 @@ class _CartePret extends StatelessWidget {
                   Expanded(
                     child: Text(
                       '${Formatters.dateFormatee(DateTime.tryParse(r.date))} — '
-                      '${Formatters.montantFCFA(r.montant)}',
+                      '${Formatters.montant(r.montant, devise: data.devise)}',
                       style: const TextStyle(fontSize: 12, color: AppColors.texte),
                     ),
                   ),
@@ -533,7 +534,7 @@ class _CartePret extends StatelessWidget {
       sousTitre: 'Cette action est irréversible et contre-passe la caisse.',
       recap: [
         (label: 'Emprunteur', valeur: pret.emprunteurNom),
-        (label: 'Montant annulé', valeur: Formatters.montantFCFA(remb.montant)),
+        (label: 'Montant annulé', valeur: Formatters.montant(remb.montant, devise: data.devise)),
         (label: 'Date initiale', valeur: Formatters.dateFormatee(DateTime.tryParse(remb.date))),
         (label: 'Réf.', valeur: remb.reference),
       ],
@@ -659,10 +660,10 @@ class _CartePret extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                'Reste à rembourser : ${Formatters.montantFCFA(pret.resteADu)}',
+                'Reste à rembourser : ${Formatters.montant(pret.resteADu, devise: data.devise)}',
                 style: const TextStyle(color: AppColors.texteDoux),
               ),
-              const ChampLabel(label: 'Montant remboursé (FCFA)'),
+              ChampLabel(label: 'Montant remboursé (${DeviseService.parCode(data.devise).symbole})'),
               TextField(
                 controller: montantCtrl,
                 keyboardType: TextInputType.number,
@@ -719,9 +720,9 @@ class _CartePret extends StatelessWidget {
       sousTitre: 'Vérifie les détails avant de confirmer avec ton PIN.',
       recap: [
         (label: 'Emprunteur', valeur: pret.emprunteurNom),
-        (label: 'Montant remboursé', valeur: Formatters.montantFCFA(montant)),
+        (label: 'Montant remboursé', valeur: Formatters.montant(montant, devise: data.devise)),
         (label: 'Méthode', valeur: Formatters.methodePaiement(methode)),
-        (label: 'Reste après', valeur: Formatters.montantFCFA(resteApres)),
+        (label: 'Reste après', valeur: Formatters.montant(resteApres, devise: data.devise)),
         if (resteApres == 0) (label: 'Statut', valeur: '✅ Soldé'),
       ],
       onValider: (pin) async {
@@ -839,11 +840,11 @@ class _CartePret extends StatelessWidget {
       final texteRecu = Uri.encodeComponent(
         '🧾 *Reçu de remboursement — ${data.nom}*\n\n'
         '👤 Emprunteur : ${pret.emprunteurNom}\n'
-        '💰 Montant remboursé : ${Formatters.montantFCFA(montant)}\n'
+        '💰 Montant remboursé : ${Formatters.montant(montant, devise: data.devise)}\n'
         '📋 Méthode : ${Formatters.methodePaiement(methode)}\n'
         '🔖 Réf. : $refRemboursement\n'
         '📅 Date : ${Formatters.dateHeure(DateTime.now())}\n'
-        '${pretSolde ? '✅ Prêt entièrement soldé !\n' : '💳 Reste à rembourser : ${Formatters.montantFCFA(resteApres)}\n'}'
+        '${pretSolde ? '✅ Prêt entièrement soldé !\n' : '💳 Reste à rembourser : ${Formatters.montant(resteApres, devise: data.devise)}\n'}'
         '\n_TontineClair_',
       );
 

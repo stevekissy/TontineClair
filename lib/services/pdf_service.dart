@@ -114,7 +114,7 @@ class PdfService {
         ),
         pw.SizedBox(height: 3),
         pw.Text(
-          'Code : $code  ·  ${data.membres.length} membres  ·  ${Formatters.montantFCFA(data.montant)}/pers.  ·  ${Formatters.periodicite(data.periode)}',
+          'Code : $code  ·  ${data.membres.length} membres  ·  ${Formatters.montant(data.montant, devise: data.devise)}/pers.  ·  ${Formatters.periodicite(data.periode)}',
           style: pw.TextStyle(font: regular, fontSize: 10, color: _texteDoux),
         ),
         pw.Divider(color: _or, thickness: 1.5),
@@ -166,7 +166,7 @@ class PdfService {
                 style: pw.TextStyle(font: bold, fontSize: 12, color: PdfColors.white),
               ),
               pw.Text(
-                Formatters.montantFCFA(data.soldeCaisse),
+                Formatters.montant(data.soldeCaisse, devise: data.devise),
                 style: pw.TextStyle(font: bold, fontSize: 16, color: _or),
               ),
             ],
@@ -197,7 +197,7 @@ class PdfService {
                 Formatters.dateHeure(DateTime.tryParse(m.date)),
                 m.description.isNotEmpty ? m.description : m.type,
                 m.gestionnaire,
-                (montantPositif ? '+' : '') + Formatters.montantFCFA(m.montant),
+                (montantPositif ? '+' : '') + Formatters.montant(m.montant, devise: data.devise),
               ];
             }).toList(),
             cellAlignments: {
@@ -328,7 +328,7 @@ class PdfService {
               'Tour $numTour',
               benef,
               '${(h['nbPayes'] as num?)?.toInt() ?? '?'}/$nbTours',
-              Formatters.montantFCFA(recu > 0 ? recu : total),
+              Formatters.montant(recu > 0 ? recu : total, devise: data.devise),
               dateD != null ? Formatters.dateFormatee(dateD) : '—',
             ];
           }).toList(),
@@ -378,11 +378,11 @@ class PdfService {
                     mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
                       pw.Text(
-                        '$membreNom — ${Formatters.montantFCFA(p.montant)} à ${p.taux}% sur ${p.dureesMois} mois',
+                        '$membreNom — ${Formatters.montant(p.montant, devise: data.devise)} à ${p.taux}% sur ${p.dureesMois} mois',
                         style: pw.TextStyle(font: bold, fontSize: 9),
                       ),
                       pw.Text(
-                        'Statut : ${p.statutCalcule}  |  Restant : ${Formatters.montantFCFA(p.resteADu)}',
+                        'Statut : ${p.statutCalcule}  |  Restant : ${Formatters.montant(p.resteADu, devise: data.devise)}',
                         style: pw.TextStyle(font: regular, fontSize: 9, color: _texteDoux),
                       ),
                     ],
@@ -400,7 +400,7 @@ class PdfService {
                       Formatters.dateFormatee(DateTime.tryParse(r.date)),
                       r.methode,
                       r.reference,
-                      Formatters.montantFCFA(r.montant),
+                      Formatters.montant(r.montant, devise: data.devise),
                     ]).toList(),
                   ),
                 ],
@@ -717,7 +717,7 @@ class PdfService {
                       pw.Text('Montant',
                           style: pw.TextStyle(font: regular, fontSize: 10, color: PdfColors.white)),
                       pw.Text(
-                        Formatters.montantFCFA(data.montant),
+                        Formatters.montant(data.montant, devise: data.devise),
                         style: pw.TextStyle(font: bold, fontSize: 18, color: _or),
                       ),
                     ],

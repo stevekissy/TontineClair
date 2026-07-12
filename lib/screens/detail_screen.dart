@@ -271,7 +271,7 @@ class _DetailScreenState extends State<DetailScreen> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          '· ${Formatters.montantFCFA(data.montant)}/pers.',
+                          '· ${Formatters.montant(data.montant, devise: data.devise)}/pers.',
                           style: const TextStyle(
                             fontSize: 13.5,
                             color: AppColors.texteDoux,
@@ -1160,13 +1160,13 @@ class _InfosTontine extends StatelessWidget {
           const Divider(height: 16, color: AppColors.lignes),
           _InfoLigne(
             label: 'Collecté ce tour',
-            valeur: Formatters.montantFCFA(totalCollecte),
+            valeur: Formatters.montant(totalCollecte, devise: data.devise),
             couleurValeur: AppColors.succes,
           ),
           const Divider(height: 16, color: AppColors.lignes),
           _InfoLigne(
             label: 'Cagnotte totale',
-            valeur: Formatters.montantFCFA(totalAttendu),
+            valeur: Formatters.montant(totalAttendu, devise: data.devise),
             couleurValeur: AppColors.encre,
           ),
         ],
@@ -1351,7 +1351,7 @@ class _BarreDetail extends StatelessWidget {
       sousTitre: 'Cette action est définitive et déclenche le versement.',
       recap: [
         (label: 'Bénéficiaire', valeur: benefNom),
-        (label: 'Montant versé', valeur: Formatters.montantFCFA(data.montant * data.membres.length)),
+        (label: 'Montant versé', valeur: Formatters.montant(data.montant * data.membres.length, devise: data.devise)),
         (label: 'Cotisants payés', valeur: '$nbPayesClot / ${data.membres.length}'),
         (label: 'Tour', valeur: 'N° $numerTourAffiche → N° ${numerTourAffiche + 1}'),
       ],
@@ -1407,7 +1407,7 @@ class _BarreDetail extends StatelessWidget {
           (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
         );
         journal.insert(0, {
-          'quoi': 'Tour $numerTourAffiche clôturé — décaissement de ${Formatters.montantFCFA(total)} remis à $benefNom',
+          'quoi': 'Tour $numerTourAffiche clôturé — décaissement de ${Formatters.montant(total, devise: data.devise)} remis à $benefNom',
           'par': provider.gestActifNom ?? '',
           'le': DateTime.now().millisecondsSinceEpoch,
           'reference': ref,

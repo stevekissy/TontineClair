@@ -13,12 +13,12 @@ class Formatters {
   }
 
   /// Formate un montant avec la devise de la tontine
-  /// Si codeDevise est null ou vide → retombe sur FCFA
-  static String montant(num montant, {String? codeDevise}) {
-    if (codeDevise == null || codeDevise.isEmpty || codeDevise == 'XOF') {
+  /// Si devise est null ou vide → retombe sur FCFA
+  static String montant(num montant, {String? devise}) {
+    if (devise == null || devise.isEmpty || devise == 'XOF') {
       return montantFCFA(montant);
     }
-    return DeviseService.formaterMontant(montant, codeDevise);
+    return DeviseService.formaterMontant(montant, devise);
   }
 
   static String dateFormatee(DateTime? date) {

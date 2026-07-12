@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import '../models/tontine.dart';
 import '../utils/app_colors.dart';
+import '../utils/formatters.dart';
 
 class RoueRotation extends StatelessWidget {
   final TontineData data;
@@ -55,6 +56,7 @@ class RoueRotation extends StatelessWidget {
               tourActuel: data.tourActuel,
               cycleTermine: cycleTermine,
               montantTotal: montant,
+              devise: data.devise,
             ),
           ),
           const SizedBox(height: 12),
@@ -95,6 +97,7 @@ class _RoueCanvas extends StatelessWidget {
   final int tourActuel; // index 0-based
   final bool cycleTermine;
   final int montantTotal;
+  final String devise;
 
   const _RoueCanvas({
     required this.membres,
@@ -102,6 +105,7 @@ class _RoueCanvas extends StatelessWidget {
     required this.tourActuel,
     required this.cycleTermine,
     required this.montantTotal,
+    required this.devise,
   });
 
   @override
@@ -115,6 +119,7 @@ class _RoueCanvas extends StatelessWidget {
         tourActuel: tourActuel,
         cycleTermine: cycleTermine,
         montantTotal: montantTotal,
+        devise: devise,
       ),
       child: Container(),
     );
@@ -127,6 +132,7 @@ class _RouePainter extends CustomPainter {
   final int tourActuel;          // index 0-based dans ordre[]
   final bool cycleTermine;
   final int montantTotal;        // montant × nb membres — affiché au centre
+  final String devise;           // code devise ISO pour le formatage
 
   _RouePainter({
     required this.membres,
@@ -134,6 +140,7 @@ class _RouePainter extends CustomPainter {
     required this.tourActuel,
     required this.cycleTermine,
     required this.montantTotal,
+    required this.devise,
   });
 
   @override
@@ -234,8 +241,8 @@ class _RouePainter extends CustomPainter {
 
     // ── Centre de la roue : montant total (spec §4 — jamais tronqué) ─────────
     if (!cycleTermine && montantTotal > 0) {
-      // Formater le montant sans troncature : ex. "150 000 FCFA"
-      final montantStr = _formatMontant(montantTotal);
+      // Formater le montant avec la devise de la tontine
+      final montantStr = Formatters.montant(montantTotal, devise: devise);
       // Deux lignes : libellé + montant
       final labelPainter = TextPainter(
         text: const TextSpan(
@@ -293,18 +300,7 @@ class _RouePainter extends CustomPainter {
     }
   }
 
-  /// Formate un montant entier en "150 000 FCFA" sans troncature.
-  String _formatMontant(int montant) {
-    final s = montant.toString();
-    final buffer = StringBuffer();
-    int count = 0;
-    for (int i = s.length - 1; i >= 0; i--) {
-      if (count > 0 && count % 3 == 0) buffer.write('\u202F'); // espace fine
-      buffer.write(s[i]);
-      count++;
-    }
-    return '${buffer.toString().split('').reversed.join()} FCFA';
-  }
+  // _formatMontant supprimé — remplacé par Formatters.montant() pour respect de la devise
 
   String _initiales(String nom) {
     final parts = nom.trim().split(RegExp(r'\s+'));
@@ -318,7 +314,8 @@ class _RouePainter extends CustomPainter {
       oldDelegate.tourActuel != tourActuel ||
       oldDelegate.cycleTermine != cycleTermine ||
       oldDelegate.ordre.length != ordre.length ||
-      oldDelegate.montantTotal != montantTotal;
+      oldDelegate.montantTotal != montantTotal ||
+      oldDelegate.devise != devise;
 }
 
 class _StatsCotisations extends StatelessWidget {

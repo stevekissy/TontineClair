@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
+import '../services/devise_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
@@ -73,7 +74,7 @@ class CaisseScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          Formatters.montantFCFA(data.soldeCaisse),
+                          Formatters.montant(data.soldeCaisse, devise: data.devise),
                           style: const TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: 34,
@@ -140,7 +141,7 @@ class CaisseScreen extends StatelessWidget {
                     )
                   else
                     ...data.caisse.reversed.map(
-                      (m) => _LigneMouvement(mouvement: m),
+                      (m) => _LigneMouvement(mouvement: m, devise: data.devise),
                     ),
                 ],
               ),
@@ -226,7 +227,7 @@ class CaisseScreen extends StatelessWidget {
                     onChanged: (v) => setS(() => membrePenaliteId = v),
                   ),
                 ],
-                const ChampLabel(label: 'Montant (FCFA)'),
+                ChampLabel(label: 'Montant (${DeviseService.parCode(data.devise).symbole})'),
                 TextField(
                   controller: montantCtrl,
                   keyboardType: TextInputType.number,
@@ -286,7 +287,7 @@ class CaisseScreen extends StatelessWidget {
     // Vérification solde pour les dépenses
     if (type == 'depense' && montant > data.soldeCaisse) {
       afficherToast(context,
-          'Solde insuffisant (${Formatters.montantFCFA(data.soldeCaisse)} disponibles)',
+          'Solde insuffisant (${Formatters.montant(data.soldeCaisse, devise: data.devise)} disponibles)',
           estErreur: true);
       return;
     }
@@ -310,9 +311,9 @@ class CaisseScreen extends StatelessWidget {
       sousTitre: 'Vérifie les détails avant de confirmer avec ton PIN.',
       recap: [
         (label: 'Type', valeur: libelleType),
-        (label: 'Montant', valeur: Formatters.montantFCFA(montant)),
+        (label: 'Montant', valeur: Formatters.montant(montant, devise: data.devise)),
         if (descFinale.isNotEmpty) (label: 'Description', valeur: descFinale),
-        (label: 'Solde actuel', valeur: Formatters.montantFCFA(data.soldeCaisse)),
+        (label: 'Solde actuel', valeur: Formatters.montant(data.soldeCaisse, devise: data.devise)),
       ],
       onValider: (pin) async {
         final ref = Formatters.genererReference();
@@ -430,8 +431,9 @@ class _BtnAction extends StatelessWidget {
 
 class _LigneMouvement extends StatelessWidget {
   final MouvementCaisse mouvement;
+  final String devise;
 
-  const _LigneMouvement({required this.mouvement});
+  const _LigneMouvement({required this.mouvement, this.devise = 'XOF'});
 
   bool get _isEntree =>
       mouvement.type == 'apport' ||
@@ -490,7 +492,7 @@ class _LigneMouvement extends StatelessWidget {
             ),
           ),
           Text(
-            '${_isEntree ? '+' : '-'}${Formatters.montantFCFA(mouvement.montant)}',
+            '${_isEntree ? '+' : '-'}${Formatters.montant(mouvement.montant, devise: devise)}',
             style: TextStyle(
               fontWeight: FontWeight.w700,
               fontSize: 15,

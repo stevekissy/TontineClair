@@ -15,6 +15,7 @@ import 'package:provider/provider.dart';
 import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
 import '../services/supabase_service.dart';
+import '../services/devise_service.dart';
 import '../services/echeance_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
@@ -287,7 +288,7 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
       titre: 'Démarrer le cycle ${(provider.courante?.data.cycleNumero ?? 1) + 1}',
       sousTitre: 'Confirme la configuration avec ton PIN.',
       recap: [
-        (label: 'Montant', valeur: Formatters.montantFCFA(cfg.montant)),
+        (label: 'Montant', valeur: Formatters.montant(cfg.montant, devise: provider.courante?.data.devise ?? 'XOF')),
         (label: 'Périodicité', valeur: EcheanceService.labelPeriode(cfg.periodicite)),
         if (cfg.echeance != null)
           (label: '1ère échéance', valeur: Formatters.dateFormatee(cfg.echeance)),
@@ -510,7 +511,7 @@ class _EtatEnAttente extends StatelessWidget {
               ),
               _InfoLigneCycle(
                 label: 'Cotisation',
-                valeur: '${data.montant} FCFA / ${Formatters.periodicite(data.periode)}',
+                valeur: '${Formatters.montant(data.montant, devise: data.devise)} / ${Formatters.periodicite(data.periode)}',
               ),
               _InfoLigneCycle(
                 label: 'Membres inscrits',
@@ -741,7 +742,7 @@ class _EtatPeutProposer extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        Formatters.montantFCFA(montant),
+                        Formatters.montant(montant, devise: data.devise),
                         style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -1205,7 +1206,7 @@ class _EtatVoteAccepteState extends State<_EtatVoteAccepte> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const ChampLabel(label: 'Montant de cotisation (FCFA)'),
+                ChampLabel(label: 'Montant de cotisation (${DeviseService.parCode(widget.data.devise).symbole})'),
                 TextField(
                   controller: _montantCtrl,
                   keyboardType: TextInputType.number,
