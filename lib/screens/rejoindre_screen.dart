@@ -56,14 +56,17 @@ class _RejoindreScreenState extends State<RejoindreScreen> {
         final errProvider = provider.erreur ?? '';
         if (!mounted) return;
         setState(() {
-          if (errProvider.contains('CODE_INTROUVABLE')) {
+          if (errProvider.contains('TONTINE_DELETED') || errProvider.contains('supprimée') || errProvider.contains('supprimee')) {
+            _erreur     = 'Cette tontine a été supprimée. Son code d\'invitation n\'est plus valide.';
+            _typeErreur = _TypeErreur.introuvable;
+          } else if (errProvider.contains('CODE_INTROUVABLE')) {
             _erreur     = 'Code "$code" introuvable dans votre base Supabase.';
             _typeErreur = _TypeErreur.mauvaiseBase;
           } else if (errProvider.contains('PGRST202') || errProvider.contains('introuvable')) {
             _erreur     = 'Base non initialisée.';
             _typeErreur = _TypeErreur.sqlManquant;
           } else {
-            _erreur     = 'Tontine introuvable. Vérifiez le code.';
+            _erreur     = errProvider.isNotEmpty ? errProvider : 'Tontine introuvable. Vérifiez le code.';
             _typeErreur = _TypeErreur.introuvable;
           }
         });

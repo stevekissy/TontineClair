@@ -20,6 +20,8 @@ class _AdminScreenState extends State<AdminScreen> {
   List<Map<String, dynamic>> _demandes = [];
   List<Map<String, dynamic>> _tontines = [];
   int _onglet = 0;
+  // Filtre statut tontines : null = toutes, 'active', 'deleted', 'suspended', 'inactive'
+  String? _filtreStatut;
   String get _cle => _cleCtrl.text.trim();
 
   @override
@@ -599,97 +601,335 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Widget _ListeTontines() {
-    if (_tontines.isEmpty) {
-      return const Center(
-        child: Text(
-          'Aucune tontine.',
-          style: TextStyle(color: AppColors.texteDoux),
-        ),
-      );
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      itemCount: _tontines.length,
-      itemBuilder: (_, i) {
-        final t = _tontines[i];
-        final isPremium = t['plan'] == 'premium';
-        final cree = DateTime.tryParse(t['cree'] as String? ?? '');
+    // Filtrer selon le statut sélectionné
+    final tontinesFiltrees = _filtreStatut == null
+        ? _tontines
+        : _tontines.where((t) {
+            final s = (t['status'] as String? ?? 'active');
+            return s == _filtreStatut;
+          }).toList();
 
-        return CarteTC(
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${t['nom']} · Code ${t['code']}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                        color: AppColors.encre,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${t['membres']} membres · Créé ${Formatters.dateFormatee(cree)}',
-                      style: const TextStyle(
-                          fontSize: 12, color: AppColors.texteDoux),
-                    ),
-                  ],
+    // Comptes par statut
+    final nbActives    = _tontines.where((t) => (t['status'] as String? ?? 'active') == 'active').length;
+    final nbSupprimees = _tontines.where((t) => (t['status'] as String? ?? '') == 'deleted').length;
+    final nbSuspendues = _tontines.where((t) => (t['status'] as String? ?? '') == 'suspended').length;
+    final nbInactives  = _tontines.where((t) => (t['status'] as String? ?? '') == 'inactive').length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Filtres statut ──────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _FiltreChip(
+                  label: 'Toutes (${_tontines.length})',
+                  selected: _filtreStatut == null,
+                  onTap: () => setState(() => _filtreStatut = null),
+                  couleur: AppColors.encre,
                 ),
-              ),
-              Column(
-                children: [
-                  BadgePlan(isPremium: isPremium),
-                  const SizedBox(height: 6),
-                  if (!isPremium)
-                    GestureDetector(
-                      onTap: () => _activer(t['code'] as String),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: AppColors.encre,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Text(
-                          'Activer',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    )
-                  else
-                    GestureDetector(
-                      onTap: () => _desactiver(t['code'] as String),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: AppColors.alerte.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Text(
-                          'Désactiver',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: AppColors.alerte,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ),
+                const SizedBox(width: 8),
+                _FiltreChip(
+                  label: 'Actives ($nbActives)',
+                  selected: _filtreStatut == 'active',
+                  onTap: () => setState(() => _filtreStatut = 'active'),
+                  couleur: AppColors.succes,
+                ),
+                if (nbSupprimees > 0) ...[
+                  const SizedBox(width: 8),
+                  _FiltreChip(
+                    label: 'Supprimées ($nbSupprimees)',
+                    selected: _filtreStatut == 'deleted',
+                    onTap: () => setState(() => _filtreStatut = 'deleted'),
+                    couleur: AppColors.alerte,
+                  ),
                 ],
+                if (nbSuspendues > 0) ...[
+                  const SizedBox(width: 8),
+                  _FiltreChip(
+                    label: 'Suspendues ($nbSuspendues)',
+                    selected: _filtreStatut == 'suspended',
+                    onTap: () => setState(() => _filtreStatut = 'suspended'),
+                    couleur: AppColors.orFonce,
+                  ),
+                ],
+                if (nbInactives > 0) ...[
+                  const SizedBox(width: 8),
+                  _FiltreChip(
+                    label: 'Inactives ($nbInactives)',
+                    selected: _filtreStatut == 'inactive',
+                    onTap: () => setState(() => _filtreStatut = 'inactive'),
+                    couleur: AppColors.texteDoux,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+
+        // ── Liste ────────────────────────────────────────────────
+        if (tontinesFiltrees.isEmpty)
+          const Expanded(
+            child: Center(
+              child: Text('Aucune tontine.', style: TextStyle(color: AppColors.texteDoux)),
+            ),
+          )
+        else
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              itemCount: tontinesFiltrees.length,
+              itemBuilder: (_, i) {
+                final t = tontinesFiltrees[i];
+                final isPremium  = t['plan'] == 'premium';
+                final status     = (t['status'] as String? ?? 'active');
+                final isSupprimee = status == 'deleted';
+                final cree       = DateTime.tryParse(t['cree'] as String? ?? '');
+                final deletedAt  = t['deleted_at'] != null
+                    ? DateTime.tryParse(t['deleted_at'] as String)
+                    : null;
+
+                return CarteTC(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${t['nom']} · Code ${t['code']}',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                    color: isSupprimee
+                                        ? AppColors.texteDoux
+                                        : AppColors.encre,
+                                    decoration: isSupprimee
+                                        ? TextDecoration.lineThrough
+                                        : null,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${t['membres']} membres · Créé ${Formatters.dateFormatee(cree)}',
+                                  style: const TextStyle(
+                                      fontSize: 12, color: AppColors.texteDoux),
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Badge statut
+                          if (isSupprimee)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppColors.alerteFond,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: const Text(
+                                'Supprimée',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.alerte,
+                                ),
+                              ),
+                            )
+                          else
+                            Column(
+                              children: [
+                                BadgePlan(isPremium: isPremium),
+                                const SizedBox(height: 6),
+                                if (!isPremium)
+                                  GestureDetector(
+                                    onTap: () => _activer(t['code'] as String),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.encre,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Text(
+                                        'Activer',
+                                        style: TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700),
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  GestureDetector(
+                                    onTap: () => _desactiver(t['code'] as String),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.alerte.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Text(
+                                        'Désactiver',
+                                        style: TextStyle(fontSize: 11, color: AppColors.alerte, fontWeight: FontWeight.w700),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                        ],
+                      ),
+
+                      // ── Détails suppression ─────────────────────────────
+                      if (isSupprimee) ...[
+                        const SizedBox(height: 10),
+                        const Divider(height: 1, color: AppColors.lignes),
+                        const SizedBox(height: 8),
+                        if (t['deleted_by'] != null)
+                          _InfoLigneAdmin(
+                            icone: Icons.person_outline_rounded,
+                            label: 'Supprimé par',
+                            valeur: t['deleted_by'] as String,
+                          ),
+                        if (deletedAt != null)
+                          _InfoLigneAdmin(
+                            icone: Icons.calendar_today_outlined,
+                            label: 'Date de suppression',
+                            valeur: Formatters.dateFormatee(deletedAt),
+                          ),
+                        if (t['deletion_reason'] != null && (t['deletion_reason'] as String).isNotEmpty)
+                          _InfoLigneAdmin(
+                            icone: Icons.notes_rounded,
+                            label: 'Motif',
+                            valeur: t['deletion_reason'] as String,
+                          ),
+                        const SizedBox(height: 8),
+                        // Bouton restaurer
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () => _restaurerTontine(
+                              context,
+                              t['code'] as String,
+                              t['nom'] as String? ?? t['code'] as String,
+                            ),
+                            icon: const Icon(Icons.restore_rounded, size: 16),
+                            label: const Text(
+                              'Restaurer la tontine',
+                              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.succes,
+                              side: BorderSide(color: AppColors.succes.withValues(alpha: 0.5)),
+                              padding: const EdgeInsets.symmetric(vertical: 9),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// Dialogue de restauration d'une tontine supprimée (Super Admin)
+  Future<void> _restaurerTontine(BuildContext context, String code, String nom) async {
+    final motifCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Restaurer la tontine',
+            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Restaurer « $nom » ?',
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'La tontine redeviendra active. Un nouveau code d\'invitation '
+              'sera généré. L\'ancien code reste définitivement invalide.',
+              style: TextStyle(fontSize: 13, color: AppColors.texteDoux, height: 1.5),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: motifCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Motif de restauration *',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
-            ],
+              maxLines: 2,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.succes),
+            child: const Text('Restaurer', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true || !mounted) return;
+    if (motifCtrl.text.trim().length < 5) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Le motif est obligatoire (minimum 5 caractères).')),
+      );
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      final result = await SupabaseService.restaurerTontine(
+        cle:   _cle,
+        code:  code,
+        motif: motifCtrl.text.trim(),
+      );
+      if (!mounted) return;
+      if (result['ok'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message'] as String? ?? 'Tontine restaurée avec succès.'),
+            backgroundColor: AppColors.succes,
           ),
         );
-      },
-    );
+        // Recharger la liste
+        final tontines = await SupabaseService.adminListerTontines(_cle);
+        if (mounted) setState(() { _tontines = tontines; _loading = false; });
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['erreur'] as String? ?? 'Erreur lors de la restauration.'),
+            backgroundColor: AppColors.alerte,
+          ),
+        );
+        setState(() => _loading = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e'), backgroundColor: AppColors.alerte),
+        );
+        setState(() => _loading = false);
+      }
+    }
   }
 }
 
@@ -722,6 +962,85 @@ class _OngletBtn extends StatelessWidget {
             color: selected ? Colors.white : AppColors.encre,
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─── Filtre chip statut ────────────────────────────────────────────────────────
+class _FiltreChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final Color couleur;
+
+  const _FiltreChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    required this.couleur,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? couleur : couleur.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: couleur.withValues(alpha: 0.4)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: selected ? Colors.white : couleur,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Ligne info admin ──────────────────────────────────────────────────────────
+class _InfoLigneAdmin extends StatelessWidget {
+  final IconData icone;
+  final String label;
+  final String valeur;
+
+  const _InfoLigneAdmin({
+    required this.icone,
+    required this.label,
+    required this.valeur,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icone, size: 14, color: AppColors.texteDoux),
+          const SizedBox(width: 6),
+          Text(
+            '$label : ',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.texteDoux,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              valeur,
+              style: const TextStyle(fontSize: 12, color: AppColors.texte),
+            ),
+          ),
+        ],
       ),
     );
   }

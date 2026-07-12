@@ -39,7 +39,16 @@ class TontineProvider extends ChangeNotifier {
         _gestActifNom = gest['nom'];
       }
     } catch (e) {
-      _erreur = e.toString().replaceFirst('Exception: ', '');
+      final msg = e.toString().replaceFirst('Exception: ', '');
+      if (msg == 'TONTINE_DELETED') {
+        // Retirer silencieusement de la liste locale — elle a été supprimée
+        await StorageService.retirerTontine(code);
+        await StorageService.effacerGestActif(code);
+        _mesTontines = await StorageService.getListe();
+        _erreur = 'TONTINE_DELETED';
+      } else {
+        _erreur = msg;
+      }
     } finally {
       _enChargement = false;
       notifyListeners();
@@ -147,6 +156,20 @@ class TontineProvider extends ChangeNotifier {
   Future<bool> rejoindre(String code) async {
     _erreur = null;
     try {
+      // Vérifier côté serveur que le code est valide (v16+)
+      final check = await SupabaseService.verifierCodeInvitation(code);
+      if (check['ok'] == false) {
+        final erreur = check['erreur'] as String? ?? '';
+        if (erreur == 'TONTINE_DELETED') {
+          _erreur = 'Cette tontine a été supprimée. Son code d\'invitation n\'est plus valide.';
+        } else if (erreur == 'INVITATION_INACTIVE') {
+          _erreur = 'Le code d\'invitation de cette tontine n\'est plus actif.';
+        } else {
+          _erreur = check['message'] as String? ?? 'Code invalide.';
+        }
+        notifyListeners();
+        return false;
+      }
       final t = await SupabaseService.lireTontine(code);
       await StorageService.ajouterTontine(
           TontineLocale(code: t.code, nom: t.data.nom));
@@ -154,7 +177,12 @@ class TontineProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _erreur = e.toString().replaceFirst('Exception: ', '');
+      final msg = e.toString().replaceFirst('Exception: ', '');
+      if (msg == 'TONTINE_DELETED') {
+        _erreur = 'Cette tontine a été supprimée. Son code d\'invitation n\'est plus valide.';
+      } else {
+        _erreur = msg;
+      }
       notifyListeners();
       return false;
     }
@@ -287,6 +315,58 @@ class TontineProvider extends ChangeNotifier {
         await chargerTontine(_courante!.code);
       }
       return result;
+    } catch (e) {
+      return {'ok': false, 'erreur': e.toString()};
+    }
+  }
+
+  // ── Soft Delete ────────────────────────────────────────────────────────────
+
+  /// Supprime logiquement la tontine courante (soft delete).
+  /// Retourne {ok: bool, message?: String, erreur?: String}
+  Future<Map<String, dynamic>> supprimerTontine({
+    required String pin,
+    required String raison,
+    required String nomConfirmation,
+  }) async {
+    if (_courante == null || _gestActifNom == null) {
+      return {'ok': false, 'erreur': 'Session gestionnaire non active.'};
+    }
+    try {
+      final result = await SupabaseService.supprimerTontine(
+        code:             _courante!.code,
+        nom:              _gestActifNom!,
+        pin:              pin,
+        raison:           raison,
+        nomConfirmation:  nomConfirmation,
+      );
+      if (result['ok'] == true) {
+        final code = _courante!.code;
+        // Retirer de la liste locale + session gestionnaire
+        await StorageService.retirerTontine(code);
+        await StorageService.retirerTontineCree(code);
+        await StorageService.effacerGestActif(code);
+        _courante = null;
+        _gestActifNom = null;
+        _mesTontines = await StorageService.getListe();
+        notifyListeners();
+      }
+      return result;
+    } catch (e) {
+      return {'ok': false, 'erreur': e.toString()};
+    }
+  }
+
+  /// Restaure une tontine supprimée (Super Admin uniquement).
+  Future<Map<String, dynamic>> restaurerTontine({
+    required String cle,
+    required String code,
+    required String motif,
+  }) async {
+    try {
+      return await SupabaseService.restaurerTontine(
+        cle: cle, code: code, motif: motif,
+      );
     } catch (e) {
       return {'ok': false, 'erreur': e.toString()};
     }

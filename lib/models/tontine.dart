@@ -1107,11 +1107,19 @@ class Tontine {
   String plan;
   DateTime? planExpire;
 
+  // ── Soft Delete ──────────────────────────────────────────────────────────────
+  /// Statut Supabase : 'active' | 'inactive' | 'suspended' | 'deleted'
+  String status;
+  /// true = code d'invitation valide, false = invalide (supprimée ou désactivée)
+  bool invitationCodeActive;
+
   Tontine({
     required this.code,
     required this.data,
     this.plan = 'free',
     this.planExpire,
+    this.status = 'active',
+    this.invitationCodeActive = true,
   });
 
   bool get isPremium {
@@ -1119,6 +1127,12 @@ class Tontine {
     if (planExpire == null) return true;
     return planExpire!.isAfter(DateTime.now());
   }
+
+  /// true si la tontine a été supprimée (soft delete)
+  bool get estSupprimee => status == 'deleted';
+
+  /// true si la tontine est accessible normalement
+  bool get estActive => status == 'active';
 }
 
 // ─── TontineLocale (liste mémorisée sur l'appareil) ──────────────────────────

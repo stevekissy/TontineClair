@@ -193,6 +193,19 @@ class SupabaseService {
       throw Exception('CODE_INTROUVABLE');
     }
 
+    // ── Soft delete : tontine supprimée ──────────────────────────────────────
+    // La RPC lire_tontine (v16) retourne {__deleted__: true} si status=deleted
+    if (rawData['__deleted__'] == true) {
+      throw Exception('TONTINE_DELETED');
+    }
+
+    // Extraire les métadonnées soft-delete injectées par la RPC
+    final status = rawData['__status__'] as String? ?? 'active';
+    final invitationActive = rawData['__invitation_code_active__'] as bool? ?? true;
+    // Nettoyer avant désérialisation TontineData
+    rawData.remove('__status__');
+    rawData.remove('__invitation_code_active__');
+
     final tData = TontineData.fromJson(rawData);
 
     // Lire le plan d'abonnement (v5+) — optionnel
@@ -214,7 +227,63 @@ class SupabaseService {
       data: tData,
       plan: plan,
       planExpire: planExpire,
+      status: status,
+      invitationCodeActive: invitationActive,
     );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SOFT DELETE — Suppression logique d'une tontine
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Supprime logiquement une tontine (soft delete).
+  /// Requiert PIN gestionnaire + motif + confirmation du nom exact.
+  /// Retourne {ok: bool, message?: String, erreur?: String}
+  static Future<Map<String, dynamic>> supprimerTontine({
+    required String code,
+    required String nom,
+    required String pin,
+    required String raison,
+    required String nomConfirmation,
+  }) async {
+    final result = await rpc('delete_tontine', {
+      'p_code':             code.toUpperCase(),
+      'p_nom':              nom,
+      'p_pin':              pin,
+      'p_raison':           raison,
+      'p_nom_confirmation': nomConfirmation,
+    });
+    if (result is Map<String, dynamic>) return result;
+    return {'ok': false, 'erreur': 'Réponse inattendue du serveur.'};
+  }
+
+  /// Vérifie si un code d'invitation est valide (côté serveur).
+  /// Retourne {ok: bool, erreur?: String, message?: String, nom?: String}
+  static Future<Map<String, dynamic>> verifierCodeInvitation(String code) async {
+    try {
+      final result = await rpc('check_invitation_code', {'p_code': code.toUpperCase()});
+      if (result is Map<String, dynamic>) return result;
+      return {'ok': false, 'erreur': 'CODE_INTROUVABLE', 'message': 'Code introuvable.'};
+    } catch (_) {
+      // Fallback : la RPC n'existe pas encore (avant migration v16)
+      return {'ok': true};
+    }
+  }
+
+  /// Restaure une tontine supprimée (Super Admin uniquement).
+  /// Retourne {ok: bool, message?: String, erreur?: String}
+  static Future<Map<String, dynamic>> restaurerTontine({
+    required String cle,
+    required String code,
+    required String motif,
+  }) async {
+    final result = await rpc('restore_deleted_tontine', {
+      'p_cle':   cle,
+      'p_code':  code.toUpperCase(),
+      'p_motif': motif,
+    });
+    if (result is Map<String, dynamic>) return result;
+    return {'ok': false, 'erreur': 'Réponse inattendue du serveur.'};
   }
 
   static Future<String> creerTontine({
@@ -261,18 +330,7 @@ class SupabaseService {
     return result == true;
   }
 
-  static Future<bool> supprimerTontine({
-    required String code,
-    required String nom,
-    required String pin,
-  }) async {
-    final result = await rpc('supprimer_tontine', {
-      'p_code': code.toUpperCase(),
-      'p_nom': nom,
-      'p_pin': pin,
-    });
-    return result == true;
-  }
+  // supprimerTontine (soft delete) est défini plus haut — ancienne version supprimée
 
   // ═══════════════════════════════════════════════════════════════════════════
   // VOTES

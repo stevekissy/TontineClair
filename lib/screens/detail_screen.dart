@@ -21,6 +21,7 @@ import 'cotisations_screen.dart';
 import 'membres_screen.dart';
 import 'dashboard_screen.dart';
 import 'nouveau_cycle_screen.dart';
+import 'supprimer_tontine_screen.dart';
 
 class DetailScreen extends StatefulWidget {
   final String code;
@@ -77,6 +78,80 @@ class _DetailScreenState extends State<DetailScreen> {
     }
 
     if (provider.erreur != null) {
+      // ── Tontine supprimée : message spécifique + redirection accueil ──
+      if (provider.erreur == 'TONTINE_DELETED') {
+        return Scaffold(
+          backgroundColor: AppColors.fondPapier,
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      color: AppColors.alerte.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.delete_outline_rounded,
+                      size: 36,
+                      color: AppColors.alerte,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Tontine supprimée',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.encre,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Cette tontine a été supprimée par son gestionnaire '
+                    'et n\'est plus accessible.',
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      color: AppColors.texte,
+                      height: 1.6,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 28),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () => Navigator.of(context)
+                          .popUntil((route) => route.isFirst),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.encre,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text(
+                        'Retour à mes tontines',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+
+      // ── Autre erreur ──
       return Scaffold(
         backgroundColor: AppColors.fondPapier,
         body: Center(
@@ -698,6 +773,12 @@ class _ActionsRapides extends StatelessWidget {
               ),
           ],
         ),
+
+        // ── Zone dangereuse (gestionnaire uniquement) ─────────────────
+        if (estGest) ...[
+          const SizedBox(height: 28),
+          _ZoneDangereuse(code: code, nomTontine: data.nom),
+        ],
       ],
     );
   }
@@ -756,6 +837,109 @@ class _ActionBtn extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ─── Zone Dangereuse ──────────────────────────────────────────────────────────
+class _ZoneDangereuse extends StatelessWidget {
+  final String code;
+  final String nomTontine;
+
+  const _ZoneDangereuse({required this.code, required this.nomTontine});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // En-tête section
+        Row(
+          children: [
+            Expanded(child: Divider(color: AppColors.alerte.withValues(alpha: 0.35))),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Text(
+                'Zone dangereuse',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.alerte.withValues(alpha: 0.8),
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+            Expanded(child: Divider(color: AppColors.alerte.withValues(alpha: 0.35))),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // Carte suppression
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.alerte.withValues(alpha: 0.04),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: AppColors.alerte.withValues(alpha: 0.3),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Supprimer la tontine',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.encre,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Rend la tontine inaccessible à tous les membres. '
+                'Le code d\'invitation est immédiatement invalidé. '
+                'L\'historique reste conservé.',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: AppColors.texteDoux,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => SupprimerTontineScreen(
+                        code: code,
+                        nomTontine: nomTontine,
+                      ),
+                    ),
+                  ),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 17),
+                  label: const Text(
+                    'Supprimer la tontine',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.alerte,
+                    side: BorderSide(color: AppColors.alerte.withValues(alpha: 0.6)),
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+      ],
     );
   }
 }
