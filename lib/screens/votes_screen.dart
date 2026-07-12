@@ -408,7 +408,7 @@ class _VotesScreenState extends State<VotesScreen> {
 
     String? membreId = restants.first.id;
     final pinCtrl = TextEditingController();
-    String choix = 'Oui';
+    String choix = 'oui';  // ← minuscules : valeurs attendues par la RPC SQL
 
     final result = await showModalBottomSheet<bool>(
       context: context,
@@ -485,7 +485,7 @@ class _VotesScreenState extends State<VotesScreen> {
                 ),
                 const ChampLabel(label: 'Ton vote'),
                 Row(
-                  children: ['Oui', 'Non', 'Abstention'].map((c) {
+                  children: ['oui', 'non', 'abstention'].map((c) {
                     final sel = choix == c;
                     return Expanded(
                       child: GestureDetector(
@@ -495,9 +495,9 @@ class _VotesScreenState extends State<VotesScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           decoration: BoxDecoration(
                             color: sel
-                                ? (c == 'Oui'
+                                ? (c == 'oui'
                                     ? AppColors.succes
-                                    : c == 'Non'
+                                    : c == 'non'
                                         ? AppColors.alerte
                                         : AppColors.encreDoux)
                                 : AppColors.fondCode,
@@ -505,9 +505,9 @@ class _VotesScreenState extends State<VotesScreen> {
                           ),
                           child: Center(
                             child: Text(
-                              c == 'Oui'
+                              c == 'oui'
                                   ? '✓ Oui'
-                                  : c == 'Non'
+                                  : c == 'non'
                                       ? '✗ Non'
                                       : '○ Abs.',
                               style: TextStyle(
