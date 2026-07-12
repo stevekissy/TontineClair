@@ -313,6 +313,20 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
 
     if (result['ok'] == true) {
       final adopte = result['adopte'] as bool? ?? false;
+      // ── Injecter adopte/clos directement dans le vote local ──────────────
+      // Garantit l'affichage correct même si lire_tontine ne retourne pas
+      // le champ adopte:bool dans le JSON votes[].
+      final tontineActuelle = provider.courante;
+      if (tontineActuelle != null) {
+        for (final v in tontineActuelle.data.votes) {
+          if (v.id == vote.id) {
+            v.clos   = true;
+            v.statut = 'clos';
+            v.adopte = adopte;
+            break;
+          }
+        }
+      }
       setState(() => _succes = adopte
           ? '✅ Vote ACCEPTÉ — Vous pouvez maintenant démarrer le nouveau cycle.'
           : '❌ Vote REFUSÉ — Le cycle ne sera pas redémarré.');

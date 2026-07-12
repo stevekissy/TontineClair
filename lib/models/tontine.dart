@@ -397,6 +397,17 @@ class Vote {
     final nouveauMembreNomResolu = json['nouveauMembreNom'] as String?
         ?? candidatRaw?['nom'] as String?;
 
+    // adopte : bool direct OU déduit depuis resultat (string 'adopte'/'refuse')
+    bool? adopte = json['adopte'] as bool?;
+    if (adopte == null) {
+      final res = (json['resultat'] as String? ?? '').toLowerCase();
+      if (res == 'adopte' || res == 'adoptée' || res == 'accepte' || res == 'accepté') {
+        adopte = true;
+      } else if (res == 'refuse' || res == 'refusé' || res == 'rejeté') {
+        adopte = false;
+      }
+    }
+
     return Vote(
       id: json['id'] as String? ?? '',
       type: json['type'] as String? ?? 'libre',
@@ -404,7 +415,7 @@ class Vote {
       createur: json['creePar'] as String? ?? json['createur'] as String? ?? '',
       dateCreation: dateCreation,
       clos: statut == 'clos' || closBool,
-      adopte: json['adopte'] as bool?,
+      adopte: adopte,
       statut: statut,
       dateCloture: dateCloture,
       nouveauMembreNom: nouveauMembreNomResolu,
