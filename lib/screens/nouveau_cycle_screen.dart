@@ -364,7 +364,11 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
 
     if (result['ok'] == true) {
       final cycleNum = result['cycleNum'] as int? ?? 2;
-      setState(() => _succes = '🎉 Cycle $cycleNum démarré ! Tour 1 en cours.');
+      // Retourner à l'écran précédent — le cycle est démarré
+      if (mounted) {
+        afficherToast(context, '🎉 Cycle $cycleNum démarré ! Tour 1 en cours.');
+        Navigator.of(context).pop();
+      }
     } else {
       setState(() => _erreur = result['erreur'] as String? ?? 'Erreur inconnue.');
     }

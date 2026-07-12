@@ -1038,33 +1038,16 @@ class TontineData {
     //   → On cherche historique[tour == tourActuel] car tourActuel (index 0-based)
     //     coïncide avec le numéro humain du dernier tour clôturé quand Supabase
     //     stocke tourActuel APRÈS incrément.
+    // Source unique : paiements{} — clés = IDs des membres ayant payé ce tour.
+    // Après clôture, paiements{} est vidé → tous les membres ont paye=false
+    // pour le nouveau tour. On n'utilise JAMAIS l'historique ici : cela
+    // contaminerait le nouveau tour avec les payeurs du tour précédent.
     final idsPayesTourCourant = <String>{};
-
-    // Source 1 : paiements{} — source principale (tour en cours, non clôturé)
     idsPayesTourCourant.addAll(paiements.keys);
 
-    // Source 2 : fallback historique (tour clôturé → paiements{} vidé)
-    // Le tour le plus récent dans historique est historique[0] (unshift).
-    // Son champ 'tour' est le numéro humain (1-based) du tour clôturé.
-    // Après clôture du tour N (humain), tourActuel passe à N (index 0-based)
-    // car tourActuel++ depuis l'index N-1.
-    // Donc historique[0].tour == tourActuel (0-based index == numéro humain
-    // du tour clôturé, par coïncidence pour les petits N).
-    // On cherche le tour le plus récent (historique[0]) sans se fier au numéro.
-    if (idsPayesTourCourant.isEmpty && historique.isNotEmpty) {
-      // Le plus récent tour clôturé est historique[0] (insertion en tête)
-      final dernierTour = historique[0];
-      final payesIds = dernierTour['payesIds'] as List<dynamic>?;
-      if (payesIds != null) {
-        idsPayesTourCourant.addAll(payesIds.map((e) => e.toString()));
-      }
-    }
-
-    // Appliquer aux membres
+    // Appliquer aux membres : paye=true ssi son ID est dans paiements{}
     for (final m in membres) {
-      if (idsPayesTourCourant.isNotEmpty) {
-        m.paye = idsPayesTourCourant.contains(m.id);
-      }
+      m.paye = idsPayesTourCourant.contains(m.id);
     }
     // ── Fin réconciliation ──────────────────────────────────────────────────
 

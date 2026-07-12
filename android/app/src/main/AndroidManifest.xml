@@ -40,11 +40,19 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
-        <!-- Pour WhatsApp share -->
+        <!-- Pour ouvrir liens https -->
         <intent>
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="https"/>
         </intent>
+        <!-- Pour WhatsApp natif (whatsapp://) — requis Android 11+ -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="whatsapp"/>
+        </intent>
+        <!-- Pour partage WhatsApp via ACTION_SEND -->
+        <package android:name="com.whatsapp"/>
+        <package android:name="com.whatsapp.w4b"/>
     </queries>
 </manifest>
 
