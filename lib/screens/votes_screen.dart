@@ -408,7 +408,7 @@ class _VotesScreenState extends State<VotesScreen> {
 
     String? membreId = restants.first.id;
     final pinCtrl = TextEditingController();
-    String choix = 'oui';  // ← minuscules : valeurs attendues par la RPC SQL
+    String choix = 'Oui';  // ← majuscule initiale : valeur attendue par la RPC SQL en production
 
     final result = await showModalBottomSheet<bool>(
       context: context,
@@ -485,19 +485,19 @@ class _VotesScreenState extends State<VotesScreen> {
                 ),
                 const ChampLabel(label: 'Ton vote'),
                 Row(
-                  children: ['oui', 'non', 'abstention'].map((c) {
+                  children: ['Oui', 'Non', 'Abstention'].map((c) {
                     final sel = choix == c;
                     return Expanded(
                       child: GestureDetector(
-                        onTap: () => setS(() => choix = c),
+                        onTap: () => setS(() => choix = c), // c = 'Oui'/'Non'/'Abstention'
                         child: Container(
                           margin: const EdgeInsets.only(right: 6),
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           decoration: BoxDecoration(
                             color: sel
-                                ? (c == 'oui'
+                                ? (c == 'Oui'
                                     ? AppColors.succes
-                                    : c == 'non'
+                                    : c == 'Non'
                                         ? AppColors.alerte
                                         : AppColors.encreDoux)
                                 : AppColors.fondCode,
@@ -505,9 +505,9 @@ class _VotesScreenState extends State<VotesScreen> {
                           ),
                           child: Center(
                             child: Text(
-                              c == 'oui'
+                              c == 'Oui'
                                   ? '✓ Oui'
-                                  : c == 'non'
+                                  : c == 'Non'
                                       ? '✗ Non'
                                       : '○ Abs.',
                               style: TextStyle(

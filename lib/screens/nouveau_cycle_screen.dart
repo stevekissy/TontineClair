@@ -347,17 +347,17 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
         content: const Text('Souhaitez-vous recommencer un nouveau cycle de tontine ?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, 'oui'),
+            onPressed: () => Navigator.pop(ctx, 'Oui'),
             style: TextButton.styleFrom(foregroundColor: AppColors.succes),
             child: const Text('✅ Oui'),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(ctx, 'non'),
+            onPressed: () => Navigator.pop(ctx, 'Non'),
             style: TextButton.styleFrom(foregroundColor: AppColors.alerte),
             child: const Text('❌ Non'),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(ctx, 'abstention'),
+            onPressed: () => Navigator.pop(ctx, 'Abstention'),
             style: TextButton.styleFrom(foregroundColor: AppColors.texteDoux),
             child: const Text('🤷 Abstention'),
           ),
@@ -371,7 +371,7 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
   }
 
   String _labelChoix(String choix) {
-    switch (choix) {
+    switch (choix.toLowerCase()) {
       case 'oui':        return '✅ Oui';
       case 'non':        return '❌ Non';
       case 'abstention': return '🤷 Abstention';
@@ -1029,7 +1029,7 @@ class _EtatVoteOuvert extends StatelessWidget {
   }
 
   Color _couleurChoix(String choix) {
-    switch (choix) {
+    switch (choix.toLowerCase()) {
       case 'oui':        return AppColors.succes;
       case 'non':        return AppColors.alerte;
       case 'abstention': return AppColors.texteDoux;
@@ -1038,7 +1038,7 @@ class _EtatVoteOuvert extends StatelessWidget {
   }
 
   String _labelChoixCourt(String choix) {
-    switch (choix) {
+    switch (choix.toLowerCase()) {
       case 'oui':        return '✅ Oui';
       case 'non':        return '❌ Non';
       case 'abstention': return '🤷 Abs.';
