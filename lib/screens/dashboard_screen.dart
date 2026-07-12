@@ -959,12 +959,22 @@ class _BoutonPartagerRecap extends StatelessWidget {
       label: 'Partager le récap sur WhatsApp',
       onTap: () async {
         final msg = Uri.encodeComponent(_construireMessage());
-        final url = Uri.parse('https://wa.me/?text=$msg');
-        if (await canLaunchUrl(url)) {
-          await launchUrl(url, mode: LaunchMode.externalApplication);
-        } else {
+        // Double fallback : app native → wa.me (web)
+        final urlApp = Uri.parse('whatsapp://send?text=$msg');
+        final urlWeb = Uri.parse('https://wa.me/?text=$msg');
+        try {
+          if (await canLaunchUrl(urlApp)) {
+            await launchUrl(urlApp, mode: LaunchMode.externalApplication);
+          } else {
+            await launchUrl(urlWeb, mode: LaunchMode.externalApplication);
+          }
+        } catch (_) {
           if (context.mounted) {
-            afficherToast(context, 'Impossible d\'ouvrir WhatsApp.', estErreur: true);
+            afficherToast(
+              context,
+              'WhatsApp non disponible.',
+              estErreur: true,
+            );
           }
         }
       },

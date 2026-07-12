@@ -330,6 +330,10 @@ class _StatsCotisations extends StatelessWidget {
     final total = membres.length;
     final nonPayes = total - payes;
 
+    // Montant collecté formaté avec la devise de la tontine
+    final montantCollecte = payes * data.montant;
+    final collecteStr = Formatters.montant(montantCollecte, devise: data.devise);
+
     return Row(
       children: [
         Expanded(
@@ -351,9 +355,9 @@ class _StatsCotisations extends StatelessWidget {
         Expanded(
           child: _StatPuce(
             label: 'Collecté',
-            valeur:
-                '${(payes * data.montant / 1000).toStringAsFixed(payes * data.montant % 1000 == 0 ? 0 : 1)}k',
+            valeur: collecteStr,
             couleur: AppColors.or,
+            petitTexte: true,  // FittedBox pour montants longs
           ),
         ),
       ],
@@ -365,31 +369,49 @@ class _StatPuce extends StatelessWidget {
   final String label;
   final String valeur;
   final Color couleur;
+  /// Si true, le texte de la valeur est affiché dans un FittedBox
+  /// pour s'adapter aux montants longs (ex: "15 000 XOF").
+  final bool petitTexte;
 
   const _StatPuce({
     required this.label,
     required this.valeur,
     required this.couleur,
+    this.petitTexte = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
         children: [
-          Text(
-            valeur,
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 20,
-              color: couleur,
-            ),
-          ),
+          petitTexte
+              ? FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    valeur,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 20,
+                      color: couleur,
+                    ),
+                    maxLines: 1,
+                  ),
+                )
+              : Text(
+                  valeur,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 20,
+                    color: couleur,
+                  ),
+                ),
+          const SizedBox(height: 2),
           Text(
             label,
             style: const TextStyle(

@@ -755,36 +755,28 @@ class _BarreActions extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          // Bouton Admin : fond légèrement coloré + texte contrasté + icône
+          // Bouton Admin discret : lien textuel sans fond ni bordure
           GestureDetector(
             onTap: onAdmin,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 16),
-              decoration: BoxDecoration(
-                color: AppColors.encre.withValues(alpha: 0.07),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: AppColors.encre.withValues(alpha: 0.18),
-                  width: 1,
-                ),
-              ),
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
-                    Icons.admin_panel_settings_outlined,
-                    size: 16,
-                    color: AppColors.encre.withValues(alpha: 0.75),
+                    Icons.lock_outline,
+                    size: 12,
+                    color: AppColors.encre.withValues(alpha: 0.30),
                   ),
-                  const SizedBox(width: 7),
+                  const SizedBox(width: 5),
                   Text(
                     'Espace administrateur',
                     style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.encre.withValues(alpha: 0.80),
-                      letterSpacing: 0.1,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w400,
+                      color: AppColors.encre.withValues(alpha: 0.35),
+                      letterSpacing: 0.2,
                     ),
                   ),
                 ],

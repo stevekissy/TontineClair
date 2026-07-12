@@ -454,6 +454,14 @@ class _BandeauEcheance extends StatefulWidget {
 class _BandeauEcheanceState extends State<_BandeauEcheance> {
   bool _enSauvegarde = false;
 
+  // ── Dialogue calendrier avec jours restants en orange ────────────────────────
+  void _afficherCalendrier(DateTime echeance) {
+    showDialog(
+      context: context,
+      builder: (ctx) => _DialogCalendrier(echeance: echeance),
+    );
+  }
+
   Future<void> _choisirEtSauvegarder() async {
     final now = DateTime.now();
     if (!mounted) return;
@@ -567,51 +575,328 @@ class _BandeauEcheanceState extends State<_BandeauEcheance> {
     final delai    = EcheanceService.texteDelai(prochaineDate, periode: widget.periode);
     final periodeL = EcheanceService.labelPeriode(widget.periode);
 
-    return GestureDetector(
-      onTap: widget.estGest ? _choisirEtSauvegarder : null,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: isRetard ? AppColors.alerteFond : AppColors.succesFond,
-          borderRadius: BorderRadius.circular(8),
-          border: widget.estGest
-              ? Border.all(
-                  color: (isRetard ? AppColors.alerte : AppColors.succes)
-                      .withValues(alpha: 0.4),
-                  width: 1,
-                )
-              : null,
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                '📅 $periodeL · ${Formatters.dateFormatee(prochaineDate)} · $delai',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                  color: isRetard ? AppColors.alerte : AppColors.succes,
-                ),
+    final couleurBandeau = isRetard ? AppColors.alerte : AppColors.succes;
+
+    return Row(
+      children: [
+        // ── Texte échéance (cliquable pour édition, gestionnaire uniquement) ──
+        Expanded(
+          child: GestureDetector(
+            onTap: widget.estGest ? _choisirEtSauvegarder : null,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: isRetard ? AppColors.alerteFond : AppColors.succesFond,
+                borderRadius: BorderRadius.circular(8),
+                border: widget.estGest
+                    ? Border.all(
+                        color: couleurBandeau.withValues(alpha: 0.4),
+                        width: 1,
+                      )
+                    : null,
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '📅 $periodeL · ${Formatters.dateFormatee(prochaineDate)} · $delai',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: couleurBandeau,
+                      ),
+                    ),
+                  ),
+                  if (widget.estGest) ...[
+                    const SizedBox(width: 6),
+                    _enSauvegarde
+                        ? SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: couleurBandeau,
+                            ),
+                          )
+                        : Icon(
+                            Icons.edit_calendar_outlined,
+                            size: 14,
+                            color: couleurBandeau.withValues(alpha: 0.7),
+                          ),
+                  ],
+                ],
               ),
             ),
-            if (widget.estGest) ...[  
-              const SizedBox(width: 6),
-              _enSauvegarde
-                  ? SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: isRetard ? AppColors.alerte : AppColors.succes,
-                      ),
-                    )
-                  : Icon(
-                      Icons.edit_calendar_outlined,
-                      size: 14,
-                      color: (isRetard ? AppColors.alerte : AppColors.succes)
-                          .withValues(alpha: 0.7),
+          ),
+        ),
+        // ── Bouton calendrier vert (visible par tous) ─────────────────────────
+        const SizedBox(width: 8),
+        GestureDetector(
+          onTap: () => _afficherCalendrier(prochaineDate),
+          child: Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: AppColors.succes.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: AppColors.succes.withValues(alpha: 0.35),
+                width: 1,
+              ),
+            ),
+            child: Icon(
+              Icons.calendar_month_outlined,
+              size: 18,
+              color: AppColors.succes,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Dialogue Calendrier échéance ─────────────────────────────────────────────
+/// Affiche un calendrier mensuel avec les jours restants jusqu'à [echeance]
+/// marqués en orange. Le mois affiché est celui de la date cible.
+class _DialogCalendrier extends StatefulWidget {
+  final DateTime echeance;
+  const _DialogCalendrier({required this.echeance});
+
+  @override
+  State<_DialogCalendrier> createState() => _DialogCalendrierState();
+}
+
+class _DialogCalendrierState extends State<_DialogCalendrier> {
+  late DateTime _moisAffiche;
+
+  @override
+  void initState() {
+    super.initState();
+    // Ouvrir directement sur le mois de l'échéance
+    _moisAffiche = DateTime(widget.echeance.year, widget.echeance.month);
+  }
+
+  void _moisPrecedent() {
+    setState(() {
+      _moisAffiche = DateTime(_moisAffiche.year, _moisAffiche.month - 1);
+    });
+  }
+
+  void _moisSuivant() {
+    setState(() {
+      _moisAffiche = DateTime(_moisAffiche.year, _moisAffiche.month + 1);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final today = DateTime.now();
+    final todayNorm = DateTime(today.year, today.month, today.day);
+    final echeanceNorm = DateTime(
+      widget.echeance.year,
+      widget.echeance.month,
+      widget.echeance.day,
+    );
+
+    // Jours dans le mois affiché
+    final premierJour = DateTime(_moisAffiche.year, _moisAffiche.month, 1);
+    final dernierJour = DateTime(_moisAffiche.year, _moisAffiche.month + 1, 0);
+    // Décalage : lundi = 0
+    final decalage = (premierJour.weekday - 1) % 7;
+
+    // Nom du mois en français
+    const moisNoms = [
+      '', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+      'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre',
+    ];
+    final titreEntete = '${moisNoms[_moisAffiche.month]} ${_moisAffiche.year}';
+
+    // Calcul jours restants (depuis aujourd'hui jusqu'à l'échéance incluse)
+    final joursRestants = echeanceNorm.difference(todayNorm).inDays;
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ── En-tête avec navigation mois ──────────────────────────────────
+            Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.chevron_left),
+                  onPressed: _moisPrecedent,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+                Expanded(
+                  child: Text(
+                    titreEntete,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                      color: AppColors.encre,
                     ),
-            ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.chevron_right),
+                  onPressed: _moisSuivant,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // ── Jours restants ────────────────────────────────────────────────
+            if (joursRestants >= 0)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF3E0),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  joursRestants == 0
+                      ? "Échéance aujourd'hui !"
+                      : '$joursRestants jour${joursRestants > 1 ? 's' : ''} restant${joursRestants > 1 ? 's' : ''}',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFFE65100),
+                  ),
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.alerteFond,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  'Échéance dépassée (${(-joursRestants)} j)',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.alerte,
+                  ),
+                ),
+              ),
+            const SizedBox(height: 12),
+            // ── Noms des jours ────────────────────────────────────────────────
+            Row(
+              children: ['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((j) {
+                return Expanded(
+                  child: Center(
+                    child: Text(
+                      j,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.texteDoux,
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 6),
+            // ── Grille des jours ──────────────────────────────────────────────
+            Builder(builder: (ctx) {
+              final cells = <Widget>[];
+              // Cases vides avant le 1er
+              for (var i = 0; i < decalage; i++) {
+                cells.add(const SizedBox());
+              }
+              // Jours du mois
+              for (var d = 1; d <= dernierJour.day; d++) {
+                final date = DateTime(_moisAffiche.year, _moisAffiche.month, d);
+                final estAujourdhui = date == todayNorm;
+                final estEcheance = date == echeanceNorm;
+                // Jours restants en orange = entre demain et écheance incluse
+                final estRestant = date.isAfter(todayNorm) &&
+                    !date.isAfter(echeanceNorm) &&
+                    !estEcheance;
+                final estPasse = date.isBefore(todayNorm);
+
+                Color? fondCellule;
+                Color texteCouleur;
+                FontWeight poids = FontWeight.w400;
+                if (estEcheance) {
+                  fondCellule = const Color(0xFFE65100);
+                  texteCouleur = Colors.white;
+                  poids = FontWeight.w700;
+                } else if (estAujourdhui) {
+                  fondCellule = AppColors.encre;
+                  texteCouleur = Colors.white;
+                  poids = FontWeight.w700;
+                } else if (estRestant) {
+                  fondCellule = const Color(0xFFFFF3E0);
+                  texteCouleur = const Color(0xFFE65100);
+                  poids = FontWeight.w600;
+                } else if (estPasse) {
+                  fondCellule = null;
+                  texteCouleur = AppColors.encre.withValues(alpha: 0.30);
+                } else {
+                  fondCellule = null;
+                  texteCouleur = AppColors.encre;
+                }
+
+                cells.add(
+                  Container(
+                    margin: const EdgeInsets.all(2),
+                    decoration: fondCellule != null
+                        ? BoxDecoration(
+                            color: fondCellule,
+                            shape: BoxShape.circle,
+                          )
+                        : null,
+                    child: Center(
+                      child: Text(
+                        '$d',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: poids,
+                          color: texteCouleur,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }
+
+              return GridView.count(
+                crossAxisCount: 7,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                childAspectRatio: 1,
+                children: cells,
+              );
+            }),
+            const SizedBox(height: 12),
+            // ── Légende ───────────────────────────────────────────────────────
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _LegendePuce(couleur: AppColors.encre, label: "Aujourd'hui"),
+                const SizedBox(width: 12),
+                _LegendePuce(
+                    couleur: const Color(0xFFFFF3E0),
+                    label: 'Jours restants',
+                    texte: const Color(0xFFE65100)),
+                const SizedBox(width: 12),
+                _LegendePuce(
+                    couleur: const Color(0xFFE65100), label: 'Échéance'),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Fermer'),
+            ),
           ],
         ),
       ),
@@ -619,6 +904,48 @@ class _BandeauEcheanceState extends State<_BandeauEcheance> {
   }
 }
 
+class _LegendePuce extends StatelessWidget {
+  final Color couleur;
+  final String label;
+  final Color? texte;
+
+  const _LegendePuce({
+    required this.couleur,
+    required this.label,
+    this.texte,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: couleur,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: AppColors.encre.withValues(alpha: 0.2),
+              width: 0.5,
+            ),
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: texte ?? Colors.white,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Actions rapides ──────────────────────────────────────────────────────────
 class _ActionsRapides extends StatelessWidget {
   final TontineData data;
   final bool estGest;
