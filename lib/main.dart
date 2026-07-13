@@ -6,6 +6,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'services/storage_service.dart';
 import 'services/tontine_provider.dart';
 import 'services/notification_service.dart';
+import 'services/rappel_service.dart';
 import 'utils/app_theme.dart';
 import 'utils/app_colors.dart';
 import 'screens/accueil_screen.dart';
@@ -22,6 +23,10 @@ void main() async {
   // Initialiser Firebase + notifications push
   await Firebase.initializeApp();
   await NotificationService.initialiser();
+
+  // Vérifier les échéances de toutes les tontines au démarrage
+  // (unawaited — ne bloque pas le démarrage de l'app)
+  RappelService.verifierToutesAuDemarrage();
 
   // Style de la barre système
   SystemChrome.setSystemUIOverlayStyle(

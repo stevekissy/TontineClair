@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'supabase_service.dart';
+import 'rappel_service.dart';
 
 // ─── Handler background (top-level, hors classe) ───────────────────────────
 @pragma('vm:entry-point')
@@ -72,7 +73,10 @@ class NotificationService {
       _traiterDonnees(initial.data);
     }
 
-    // 8. Sauvegarder le token FCM
+    // 8. Initialiser le canal des rappels d'échéances
+    await RappelService.initialiserCanal();
+
+    // 9. Sauvegarder le token FCM
     await _sauvegarderToken();
     messaging.onTokenRefresh.listen(_enregistrerToken);
 
