@@ -4,6 +4,7 @@ import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import 'admin_dashboard_screen.dart';
+import '../utils/app_localizations.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -69,14 +70,14 @@ class _AdminScreenState extends State<AdminScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.fondPapier,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Activer Premium', style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.encre)),
+        title: Text('Activer Premium', style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.encre)),
         content: Text('Activer Premium pour la tontine $code pendant $mois mois ?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(context.tr('annuler'))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.succes),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Activer', style: TextStyle(color: Colors.white)),
+            child: Text(context.tr('activer_premium'), style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -108,8 +109,8 @@ class _AdminScreenState extends State<AdminScreen> {
         builder: (sCtx, setSt) => AlertDialog(
           backgroundColor: AppColors.fondPapier,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text(
-            'Refuser la demande',
+          title: Text(
+            context.tr('refuser_demande'),
             style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.alerte),
           ),
           content: Column(
@@ -118,11 +119,11 @@ class _AdminScreenState extends State<AdminScreen> {
             children: [
               Text(
                 'Code tontine : $code',
-                style: const TextStyle(fontSize: 13, color: AppColors.texteDoux),
+                style: TextStyle(fontSize: 13, color: AppColors.texteDoux),
               ),
-              const SizedBox(height: 14),
-              const Text(
-                'Motif du refus',
+              SizedBox(height: 14),
+              Text(
+                context.tr('motif_refus'),
                 style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5, color: AppColors.encre),
               ),
               const SizedBox(height: 6),
@@ -140,7 +141,7 @@ class _AdminScreenState extends State<AdminScreen> {
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: AppColors.lignes),
+                    borderSide: BorderSide(color: AppColors.lignes),
                   ),
                   errorText: motifErreur,
                 ),
@@ -153,7 +154,7 @@ class _AdminScreenState extends State<AdminScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, null),
-              child: const Text('Annuler'),
+              child: Text(context.tr('annuler')),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.alerte),
@@ -165,7 +166,7 @@ class _AdminScreenState extends State<AdminScreen> {
                 }
                 Navigator.pop(ctx, t);
               },
-              child: const Text('Confirmer le refus', style: TextStyle(color: Colors.white)),
+              child: Text(context.tr('confirmer_refus'), style: TextStyle(color: Colors.white)),
             ),
           ],
         ),
@@ -226,15 +227,15 @@ class _AdminScreenState extends State<AdminScreen> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+              padding: EdgeInsets.fromLTRB(16, 18, 16, 0),
               child: Row(
                 children: [
-                  const LogoTontineClair(),
-                  const Spacer(),
+                  LogoTontineClair(),
+                  Spacer(),
                   TextButton.icon(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.arrow_back, size: 16),
-                    label: const Text('Retour'),
+                    icon: Icon(Icons.arrow_back, size: 16),
+                    label: Text(context.tr('retour')),
                     style: TextButton.styleFrom(foregroundColor: AppColors.encre),
                   ),
                 ],
@@ -251,36 +252,36 @@ class _AdminScreenState extends State<AdminScreen> {
 
   Widget _VueConnexion() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Espace administrateur',
+          Text(
+            context.tr('espace_admin'),
             style: TextStyle(
               fontWeight: FontWeight.w800,
               fontSize: 28,
               color: AppColors.encre,
             ),
           ),
-          const SizedBox(height: 20),
+          SizedBox(height: 20),
           CarteTC(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const ChampLabel(label: 'Clé administrateur'),
+                ChampLabel(label: context.tr('cle_admin')),
                 TextField(
                   controller: _cleCtrl,
                   obscureText: true,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     hintText: 'Clé secrète',
                   ),
                   onSubmitted: (_) => _connecter(),
                 ),
                 ChampErreur(texte: _erreur),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 BtnPrincipal(
-                  label: 'Accéder',
+                  label: context.tr('acceder_btn'),
                   onTap: _connecter,
                   loading: _loading,
                 ),
@@ -297,13 +298,13 @@ class _AdminScreenState extends State<AdminScreen> {
       children: [
         // Onglets
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
                 _OngletBtn(
-                  label: 'Demandes (${_demandes.length})',
+                  label: "${context.tr('demandes')} (\${_demandes.length})",
                   selected: _onglet == 0,
                   onTap: () => setState(() => _onglet = 0),
                 ),
@@ -355,9 +356,9 @@ class _AdminScreenState extends State<AdminScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(Icons.inbox_outlined, size: 48, color: AppColors.texteDoux.withValues(alpha: 0.5)),
-            const SizedBox(height: 12),
-            const Text(
-              'Aucune demande.',
+            SizedBox(height: 12),
+            Text(
+              context.tr('aucune_demande'),
               style: TextStyle(color: AppColors.texteDoux, fontSize: 15),
             ),
           ],
@@ -370,19 +371,19 @@ class _AdminScreenState extends State<AdminScreen> {
       children: [
         if (enAttente.isNotEmpty) ...[
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
+            padding: EdgeInsets.symmetric(vertical: 8),
             child: Row(
               children: [
                 Container(
                   width: 8, height: 8,
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     color: AppColors.alerte,
                     shape: BoxShape.circle,
                   ),
                 ),
-                const SizedBox(width: 8),
+                SizedBox(width: 8),
                 Text(
-                  'En attente (${enAttente.length})',
+                  "${context.tr('en_attente')} (\${enAttente.length})",
                   style: const TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 13,

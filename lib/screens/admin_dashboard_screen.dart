@@ -6,6 +6,7 @@ import '../services/supabase_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
+import '../utils/app_localizations.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MODÈLES LOCAUX — Dashboard Admin
@@ -311,14 +312,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             CircularProgressIndicator(color: AppColors.encre, strokeWidth: 2),
             SizedBox(height: 16),
             Text(
-              'Chargement du dashboard…',
+              context.tr('chargement_dashboard'),
               style: TextStyle(color: AppColors.texteDoux, fontSize: 14),
             ),
           ],
@@ -333,18 +334,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.cloud_off, size: 48, color: AppColors.alerte),
-              const SizedBox(height: 16),
+              Icon(Icons.cloud_off, size: 48, color: AppColors.alerte),
+              SizedBox(height: 16),
               Text(
                 _erreur!,
-                style: const TextStyle(color: AppColors.alerte, fontSize: 13),
+                style: TextStyle(color: AppColors.alerte, fontSize: 13),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 20),
+              SizedBox(height: 20),
               SizedBox(
                 width: 180,
                 child: BtnPrincipal(
-                  label: 'Réessayer',
+                  label: context.tr('reessayer'),
                   onTap: _recharger,
                   icone: Icons.refresh,
                 ),
@@ -451,14 +452,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
   Widget _buildVueEnsemble() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _SectionTitre(titre: 'Vue d\'ensemble', icone: Icons.dashboard_outlined),
-          const SizedBox(height: 4),
+          SizedBox(height: 4),
           Text(
-            'Données en temps réel depuis Supabase',
+            context.tr('donnees_temps_reel'),
             style: GoogleFonts.inter(
                 fontSize: 12.5, color: AppColors.texteDoux),
           ),
@@ -670,40 +671,40 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         .fold<int>(0, (sum, a) => sum + _StatsGlobales._int(a['montant']));
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _SectionTitre(
-              titre: 'Suivi des abonnements',
+              titre: context.tr('suivi_abonnements'),
               icone: Icons.receipt_long_outlined),
-          const SizedBox(height: 14),
+          SizedBox(height: 14),
 
           // ── Cartes résumé ─────────────────────────────────────────────
           Row(children: [
             Expanded(
               child: _MiniKPI(
-                label: 'Actifs',
+                label: context.tr('actif'),
                 valeur: '$actifs',
                 icone: Icons.check_circle_outline,
                 couleur: AppColors.succes,
                 fond: AppColors.succesFond,
               ),
             ),
-            const SizedBox(width: 10),
+            SizedBox(width: 10),
             Expanded(
               child: _MiniKPI(
-                label: 'Expirés',
+                label: context.tr('expire'),
                 valeur: '$expires',
                 icone: Icons.cancel_outlined,
                 couleur: AppColors.alerte,
                 fond: AppColors.alerteFond,
               ),
             ),
-            const SizedBox(width: 10),
+            SizedBox(width: 10),
             Expanded(
               child: _MiniKPI(
-                label: 'En attente',
+                label: context.tr('en_attente'),
                 valeur: '$attente',
                 icone: Icons.hourglass_empty,
                 couleur: AppColors.or,
@@ -733,20 +734,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
               ),
             ),
           ]),
-          const SizedBox(height: 10),
+          SizedBox(height: 10),
           CarteTC(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.all(16),
             child: Row(
               children: [
-                const Icon(Icons.account_balance_outlined,
+                Icon(Icons.account_balance_outlined,
                     color: AppColors.succes, size: 22),
-                const SizedBox(width: 12),
+                SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Montant total actif',
+                        context.tr('montant_total_actif'),
                         style: GoogleFonts.inter(
                             fontSize: 12, color: AppColors.texteDoux),
                       ),
@@ -765,7 +766,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      'Estimé ce mois',
+                      context.tr('estime_ce_mois'),
                       style: GoogleFonts.inter(
                           fontSize: 11, color: AppColors.texteDoux),
                     ),
@@ -801,12 +802,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   .toList(),
             ),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
 
           // ── Liste abonnements ─────────────────────────────────────────
           ...abosFiltres.map((a) => _CarteAbonnement(abonnement: a)),
           if (abosFiltres.isEmpty)
-            const _EtatVideSection(
+            _EtatVideSection(
                 texte: 'Aucun abonnement — déployez supabase-admin.sql'),
         ],
       ),
@@ -815,9 +816,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
   String _labelFiltreAbo(String f) {
     switch (f) {
-      case 'actif':      return 'Actifs';
-      case 'expire':     return 'Expirés';
-      case 'en_attente': return 'En attente';
+      case 'actif':      return context.tr('actif');
+      case 'expire':     return context.tr('expire');
+      case 'en_attente': return context.tr('en_attente_statut');
       default:           return 'Tous';
     }
   }

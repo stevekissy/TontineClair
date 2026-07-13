@@ -15,6 +15,7 @@ import 'detail_screen.dart';
 import 'admin_screen.dart';
 import 'config_screen.dart';
 import 'langue_screen.dart';
+import '../utils/app_localizations.dart';
 
 class AccueilScreen extends StatelessWidget {
   const AccueilScreen({super.key});
@@ -38,7 +39,7 @@ class AccueilScreen extends StatelessWidget {
                     onLongPress: () => _afficherMenuDev(context),
                     child: const LogoTontineClair(),
                   ),
-                  const Spacer(),
+                  Spacer(),
                   // ── Bouton langue ──────────────────────────────────────
                   _BoutonLangue(),
                 ],
@@ -47,12 +48,12 @@ class AccueilScreen extends StatelessWidget {
             // ── Contenu ───────────────────────────────────────────────────
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 130),
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 130),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Mes tontines',
+                    Text(
+                      context.tr('mes_tontines'),
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 30,
@@ -60,9 +61,9 @@ class AccueilScreen extends StatelessWidget {
                         letterSpacing: -0.5,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Chaque cotisation est en ligne. Tout le monde voit la même chose, en direct.',
+                    SizedBox(height: 4),
+                    Text(
+                      context.tr('slogan_accueil'),
                       style: TextStyle(fontSize: 15, color: AppColors.texteDoux),
                     ),
                     const SizedBox(height: 16),
@@ -122,40 +123,40 @@ class AccueilScreen extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.fondPapier,
-      shape: const RoundedRectangleBorder(
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => Padding(
-        padding: const EdgeInsets.all(20),
+        padding: EdgeInsets.all(20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Outils développeur',
+            Text(
+              context.tr('outils_dev'),
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 fontSize: 16,
                 color: AppColors.encre,
               ),
             ),
-            const SizedBox(height: 4),
-            const Text(
-              'Accès réservé — ne pas partager',
+            SizedBox(height: 4),
+            Text(
+              context.tr('acces_reserve'),
               style: TextStyle(fontSize: 12, color: AppColors.texteDoux),
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: 16),
             ListTile(
-              leading: const Icon(Icons.wifi_find_rounded, color: AppColors.encre),
-              title: const Text('Tester la connexion Supabase'),
+              leading: Icon(Icons.wifi_find_rounded, color: AppColors.encre),
+              title: Text(context.tr('tester_connexion')),
               onTap: () {
                 Navigator.pop(context);
                 _afficherDiagnostic(context);
               },
             ),
             ListTile(
-              leading: const Icon(Icons.settings_rounded, color: AppColors.encre),
-              title: const Text('Reconfigurer les credentials'),
+              leading: Icon(Icons.settings_rounded, color: AppColors.encre),
+              title: Text(context.tr('reconfigurer')),
               onTap: () {
                 Navigator.pop(context);
                 _reconfigurer(context);
@@ -180,19 +181,19 @@ class AccueilScreen extends StatelessWidget {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.fondPapier,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text(
-          'Retirer de la liste ?',
+        title: Text(
+          context.tr('retirer_tontine_titre'),
           style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.encre),
         ),
         content: Text(
           'Voulez-vous retirer "$nom" de votre liste locale ?\n'
           'La tontine reste accessible avec son code.',
-          style: const TextStyle(color: AppColors.texte),
+          style: TextStyle(color: AppColors.texte),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Annuler',
+            child: Text(context.tr('annuler'),
                 style: TextStyle(color: AppColors.encreDoux)),
           ),
           TextButton(
@@ -200,8 +201,8 @@ class AccueilScreen extends StatelessWidget {
               Navigator.of(ctx).pop();
               provider.retirer(code);
             },
-            child: const Text('Retirer',
-                style: TextStyle(color: AppColors.alerte,
+            child: Text(context.tr('retirer'),
+                style: const TextStyle(color: AppColors.alerte,
                     fontWeight: FontWeight.w700)),
           ),
         ],
@@ -495,19 +496,19 @@ class _ModaleDiagnosticState extends State<_ModaleDiagnostic> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(_testErreur!,
-                      style: const TextStyle(color: AppColors.alerte, fontSize: 13)),
+                      style: TextStyle(color: AppColors.alerte, fontSize: 13)),
                 ),
             ],
           ],
 
-          const SizedBox(height: 20),
+          SizedBox(height: 20),
           Row(
             children: [
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: _lancer,
-                  icon: const Icon(Icons.refresh_rounded, size: 16),
-                  label: const Text('Retester'),
+                  icon: Icon(Icons.refresh_rounded, size: 16),
+                  label: Text(context.tr('retester')),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.encre,
                     side: const BorderSide(color: AppColors.lignes),
@@ -516,7 +517,7 @@ class _ModaleDiagnosticState extends State<_ModaleDiagnostic> {
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
+              SizedBox(width: 10),
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: () {
@@ -529,8 +530,8 @@ class _ModaleDiagnosticState extends State<_ModaleDiagnostic> {
                       ),
                     );
                   },
-                  icon: const Icon(Icons.settings_rounded, size: 16),
-                  label: const Text('Reconfigurer'),
+                  icon: Icon(Icons.settings_rounded, size: 16),
+                  label: Text(context.tr('reconfigurer')),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.encre,
                     foregroundColor: Colors.white,
@@ -644,19 +645,19 @@ class _CarteTontine extends StatelessWidget {
                 children: [
                   Text(
                     nom,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 16,
                       color: AppColors.encre,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 5),
+                  SizedBox(height: 5),
                   Row(
                     children: [
-                      const Text(
-                        'Code : ',
-                        style: TextStyle(fontSize: 13, color: AppColors.texteDoux),
+                      Text(
+                        context.tr('code_label'),
+                        style: const TextStyle(fontSize: 13, color: AppColors.texteDoux),
                       ),
                       CodePuce(code: code),
                     ],
@@ -666,22 +667,22 @@ class _CarteTontine extends StatelessWidget {
             ),
             // Menu contextuel
             PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert_rounded, color: AppColors.texteDoux),
+              icon: Icon(Icons.more_vert_rounded, color: AppColors.texteDoux),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               color: Colors.white,
               onSelected: (val) {
                 if (val == 'retirer') onRetirer();
               },
               itemBuilder: (_) => [
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'retirer',
                   child: Row(
                     children: [
                       Icon(Icons.remove_circle_outline_rounded,
                           color: AppColors.alerte, size: 18),
                       SizedBox(width: 10),
-                      Text('Retirer de ma liste',
-                          style: TextStyle(color: AppColors.alerte, fontSize: 14)),
+                      Text(context.tr('retirer_liste'),
+                          style: const TextStyle(color: AppColors.alerte, fontSize: 14)),
                     ],
                   ),
                 ),
@@ -699,13 +700,12 @@ class _CarteTontine extends StatelessWidget {
 class _EtatVideAccueil extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return const Padding(
+    return Padding(
       padding: EdgeInsets.only(top: 40),
       child: EtatVide(
         emoji: 'T',
-        titre: 'La tontine sans dispute',
-        sousTitre:
-            'Crée une tontine et partage son code, ou rejoins celle de ton groupe pour tout suivre en direct.',
+        titre: context.tr('tontine_sans_dispute'),
+        sousTitre: context.tr('tontine_description'),
       ),
     );
   }
@@ -790,7 +790,7 @@ class _BarreActions extends StatelessWidget {
           ],
         ),
       ),
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+      padding: EdgeInsets.fromLTRB(16, 14, 16, 24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -798,7 +798,7 @@ class _BarreActions extends StatelessWidget {
             children: [
               Expanded(
                 child: BtnSecondaire(
-                  label: 'Rejoindre',
+                  label: context.tr('rejoindre'),
                   onTap: onRejoindre,
                 ),
               ),

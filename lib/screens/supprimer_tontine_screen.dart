@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/tontine_provider.dart';
 import '../utils/app_colors.dart';
 import '../widgets/app_widgets.dart';
+import '../utils/app_localizations.dart';
 
 /// Écran de suppression logique (soft delete) d'une tontine.
 /// Accessible depuis detail_screen → Zone Dangereuse.
@@ -76,13 +77,13 @@ class _SupprimerTontineScreenState extends State<SupprimerTontineScreen> {
         backgroundColor: AppColors.fondPapier,
         elevation: 0,
         leading: _etape == 2
-            ? const SizedBox.shrink()
+            ? SizedBox.shrink()
             : IconButton(
-                icon: const Icon(Icons.arrow_back_rounded, color: AppColors.encre),
+                icon: Icon(Icons.arrow_back_rounded, color: AppColors.encre),
                 onPressed: () => Navigator.of(context).pop(),
               ),
-        title: const Text(
-          'Supprimer la tontine',
+        title: Text(
+          context.tr('supprimer_tontine'),
           style: TextStyle(
             color: AppColors.encre,
             fontWeight: FontWeight.w700,

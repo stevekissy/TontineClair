@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/tontine_provider.dart';
 import '../utils/app_colors.dart';
 import '../widgets/app_widgets.dart';
+import '../utils/app_localizations.dart';
 
 class VerrouScreen extends StatefulWidget {
   const VerrouScreen({super.key});
@@ -73,18 +74,18 @@ class _VerrouScreenState extends State<VerrouScreen> {
       backgroundColor: AppColors.fondPapier,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: EdgeInsets.symmetric(horizontal: 16),
           child: Column(
             children: [
-              const SizedBox(height: 18),
+              SizedBox(height: 18),
               Row(
                 children: [
-                  const LogoTontineClair(),
-                  const Spacer(),
+                  LogoTontineClair(),
+                  Spacer(),
                   TextButton.icon(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.arrow_back, size: 16),
-                    label: const Text('Retour'),
+                    icon: Icon(Icons.arrow_back, size: 16),
+                    label: Text(context.tr('retour')),
                     style: TextButton.styleFrom(
                       foregroundColor: AppColors.encre,
                       textStyle: const TextStyle(
@@ -112,21 +113,21 @@ class _VerrouScreenState extends State<VerrouScreen> {
                         color: AppColors.encre,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    SizedBox(height: 4),
                     Text(
                       '${tontine.data.nom} — identifie-toi pour modifier.',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13.5,
                         color: AppColors.texteDoux,
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 20),
+                    SizedBox(height: 20),
                     // Choix gestionnaire
                     if (gests.length > 1) ...[
-                      const Align(
+                      Align(
                         alignment: Alignment.centerLeft,
-                        child: ChampLabel(label: 'Qui es-tu ?'),
+                        child: ChampLabel(label: context.tr('qui_etes_vous')),
                       ),
                       const SizedBox(height: 8),
                       Wrap(
@@ -216,7 +217,7 @@ class _VerrouScreenState extends State<VerrouScreen> {
                               color: AppColors.encre, width: 1.5),
                         ),
                       ),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 0.4,
@@ -225,9 +226,9 @@ class _VerrouScreenState extends State<VerrouScreen> {
                       onSubmitted: (_) => _debloqur(),
                     ),
                     ChampErreur(texte: _erreur),
-                    const SizedBox(height: 16),
+                    SizedBox(height: 16),
                     BtnPrincipal(
-                      label: 'Accéder',
+                      label: context.tr('acceder'),
                       onTap: _debloqur,
                       loading: _loading,
                     ),

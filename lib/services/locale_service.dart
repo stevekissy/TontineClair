@@ -1,7 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // LocaleService — Gestion de la langue de l'application
 //
-// 8 langues disponibles — change uniquement les textes de l'UI.
+// 5 langues prioritaires : FR, EN, ES, PT, AR
+// Architecture extensible : ajouter une langue = ajouter dans la liste + dans _translations
+// Change uniquement les textes de l'UI.
 // Les données (tontines, montants, devises) ne sont jamais affectées.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -40,16 +42,17 @@ class AppLangue {
 class LocaleService extends ChangeNotifier {
   static const String _prefKey = 'app_langue_code';
 
-  // ── Langues disponibles ──────────────────────────────────────────────────
+  // ── Langues disponibles (5 prioritaires — extensible) ────────────────────
   static const List<AppLangue> langues = [
     AppLangue(code: 'fr', region: 'FR', nom: 'Français',  nomFr: 'Français',  drapeau: '🇫🇷'),
     AppLangue(code: 'en', region: 'US', nom: 'English',   nomFr: 'Anglais',   drapeau: '🇬🇧'),
-    AppLangue(code: 'ar', region: 'SA', nom: 'العربية',   nomFr: 'Arabe',     drapeau: '🇸🇦'),
-    AppLangue(code: 'pt', region: 'BR', nom: 'Português', nomFr: 'Portugais', drapeau: '🇧🇷'),
     AppLangue(code: 'es', region: 'ES', nom: 'Español',   nomFr: 'Espagnol',  drapeau: '🇪🇸'),
-    AppLangue(code: 'sw', region: 'KE', nom: 'Kiswahili', nomFr: 'Swahili',   drapeau: '🇰🇪'),
-    AppLangue(code: 'ha', region: 'NG', nom: 'Hausa',     nomFr: 'Haoussa',   drapeau: '🇳🇬'),
-    AppLangue(code: 'am', region: 'ET', nom: 'አማርኛ',      nomFr: 'Amharique', drapeau: '🇪🇹'),
+    AppLangue(code: 'pt', region: 'BR', nom: 'Português', nomFr: 'Portugais', drapeau: '🇧🇷'),
+    AppLangue(code: 'ar', region: 'SA', nom: 'العربية',   nomFr: 'Arabe',     drapeau: '🇸🇦'),
+    // Pour ajouter une langue : décommenter + ajouter bloc dans app_localizations.dart
+    // AppLangue(code: 'sw', region: 'KE', nom: 'Kiswahili', nomFr: 'Swahili',   drapeau: '🇰🇪'),
+    // AppLangue(code: 'ha', region: 'NG', nom: 'Hausa',     nomFr: 'Haoussa',   drapeau: '🇳🇬'),
+    // AppLangue(code: 'am', region: 'ET', nom: 'አማርኛ',      nomFr: 'Amharique', drapeau: '🇪🇹'),
   ];
 
   // ── État courant ─────────────────────────────────────────────────────────

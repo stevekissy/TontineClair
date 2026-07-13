@@ -9,6 +9,7 @@ import '../services/supabase_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
+import '../utils/app_localizations.dart';
 
 class TirageScreen extends StatefulWidget {
   final String code;
@@ -39,15 +40,15 @@ class _TirageScreenState extends State<TirageScreen> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+              padding: EdgeInsets.fromLTRB(16, 18, 16, 0),
               child: Row(
                 children: [
-                  const LogoTontineClair(),
-                  const Spacer(),
+                  LogoTontineClair(),
+                  Spacer(),
                   TextButton.icon(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.arrow_back, size: 16),
-                    label: const Text('Retour'),
+                    icon: Icon(Icons.arrow_back, size: 16),
+                    label: Text(context.tr('retour')),
                     style: TextButton.styleFrom(
                       foregroundColor: AppColors.encre,
                     ),
@@ -57,10 +58,10 @@ class _TirageScreenState extends State<TirageScreen> {
             ),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.all(16),
                 children: [
-                  const Text(
-                    'Tirage au sort certifié',
+                  Text(
+                    context.tr('tirage_certifie'),
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
                       fontSize: 28,
@@ -90,14 +91,14 @@ class _TirageScreenState extends State<TirageScreen> {
                     CarteTC(
                       child: Column(
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.shuffle,
                             size: 48,
                             color: AppColors.encre,
                           ),
-                          const SizedBox(height: 12),
-                          const Text(
-                            'Tirage au sort',
+                          SizedBox(height: 12),
+                          Text(
+                            context.tr('tirage'),
                             style: TextStyle(
                               fontWeight: FontWeight.w700,
                               fontSize: 20,
@@ -121,7 +122,7 @@ class _TirageScreenState extends State<TirageScreen> {
                               onTap: () => _lancerTirage(membres),
                             )
                           else
-                            const Text(
+                            Text(
                               'Seul un gestionnaire peut lancer le tirage.',
                               style: TextStyle(
                                 fontSize: 13,
@@ -131,10 +132,10 @@ class _TirageScreenState extends State<TirageScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    SizedBox(height: 12),
                     // Ordre actuel
-                    const Text(
-                      'Ordre actuel',
+                    Text(
+                      context.tr('ordre_actuel'),
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 18,
@@ -178,7 +179,7 @@ class _TirageScreenState extends State<TirageScreen> {
   ) async {
     final ok = await afficherModalePin(
       context,
-      titre: 'Verrouiller le tirage',
+      titre: context.tr('verrouiller_tirage'),
       sousTitre: 'Cette action est définitive. Confirme ton identité.',
       onValider: (pin) async {
         final ref = Formatters.genererReference();
@@ -262,14 +263,14 @@ class _BandeauVerrouille extends StatelessWidget {
           ),
           child: Row(
             children: [
-              const Text('🔒', style: TextStyle(fontSize: 24)),
-              const SizedBox(width: 12),
+              Text('🔒', style: TextStyle(fontSize: 24)),
+              SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Tirage verrouillé',
+                    Text(
+                      context.tr('tirage_verrouille'),
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 16,
@@ -293,21 +294,21 @@ class _BandeauVerrouille extends StatelessWidget {
         // ── Carte bénéficiaire actuel ────────────────────────────────────
         if (!data.cycleTermine && !data.cycleEnAttente && beneficiaireId != null) ...[
           Container(
-            padding: const EdgeInsets.all(14),
+            padding: EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: AppColors.encre,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
               children: [
-                const Text('🏆', style: TextStyle(fontSize: 20)),
-                const SizedBox(width: 10),
+                Text('🏆', style: TextStyle(fontSize: 20)),
+                SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Bénéficiaire du tour actuel',
+                      Text(
+                        context.tr('beneficiaire_tour'),
                         style: TextStyle(
                           fontSize: 11,
                           color: Colors.white70,
@@ -363,13 +364,13 @@ class _BandeauVerrouille extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
         ],
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              'Ordre de passage',
+            Text(
+              context.tr('ordre_passage'),
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 fontSize: 18,
@@ -561,8 +562,8 @@ class _LigneOrdre extends StatelessWidget {
                   ),
                 ),
                 if (estServi)
-                  const Text(
-                    'Déjà servi ce cycle',
+                  Text(
+                    context.tr('deja_servi'),
                     style: TextStyle(
                       fontSize: 11,
                       color: AppColors.succes,

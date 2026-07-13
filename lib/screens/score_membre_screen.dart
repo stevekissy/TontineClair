@@ -13,6 +13,7 @@ import '../services/tontine_provider.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
+import '../utils/app_localizations.dart';
 
 // ─── Couleurs du score ────────────────────────────────────────────────────────
 Color _couleurScore(int score) {

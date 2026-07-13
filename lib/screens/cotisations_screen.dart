@@ -12,6 +12,7 @@ import '../services/supabase_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
+import '../utils/app_localizations.dart';
 
 // ── Bug #6 fix : StatefulWidget pour rechargement depuis Supabase à l'ouverture ──
 class CotisationsScreen extends StatefulWidget {
@@ -49,7 +50,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
     final tontine = provider.courante;
 
     if (tontine == null || _chargement) {
-      return const Scaffold(
+      return Scaffold(
         body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -57,7 +58,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
               CircularProgressIndicator(color: AppColors.encre),
               SizedBox(height: 12),
               Text(
-                'Chargement des cotisations…',
+                context.tr('chargement_cotisations'),
                 style: TextStyle(color: AppColors.texteDoux),
               ),
             ],
@@ -83,15 +84,15 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+              padding: EdgeInsets.fromLTRB(16, 18, 16, 0),
               child: Row(
                 children: [
-                  const LogoTontineClair(),
-                  const Spacer(),
+                  LogoTontineClair(),
+                  Spacer(),
                   TextButton.icon(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.arrow_back, size: 16),
-                    label: const Text('Retour'),
+                    icon: Icon(Icons.arrow_back, size: 16),
+                    label: Text(context.tr('retour')),
                     style: TextButton.styleFrom(
                       foregroundColor: AppColors.encre,
                       textStyle: const TextStyle(
@@ -107,10 +108,10 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
               child: RefreshIndicator(
                 onRefresh: _recharger,
                 child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                  padding: EdgeInsets.fromLTRB(16, 16, 16, 20),
                   children: [
-                    const Text(
-                      'Cotisations',
+                    Text(
+                      context.tr('cotisations'),
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 28,
@@ -127,20 +128,20 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
                       style: const TextStyle(fontSize: 14, color: AppColors.texteDoux),
                     ),
                     // Bandeau échéance : affiché toujours (calcul auto si non définie)
-                    const SizedBox(height: 8),
+                    SizedBox(height: 8),
                     _BandeauEcheance(
                       echeance: data.echeance,
                       periode: data.periode,
                     ),
-                    const SizedBox(height: 16),
+                    SizedBox(height: 16),
 
                     // Bug #6 fix : afficher un message si liste vide
                     if (membresOrdre.isEmpty)
-                      const Center(
+                      Center(
                         child: Padding(
                           padding: EdgeInsets.all(24),
                           child: Text(
-                            'Aucun membre à afficher.\nTirez vers le bas pour recharger.',
+                            context.tr('aucun_membre'),
                             textAlign: TextAlign.center,
                             style: TextStyle(color: AppColors.texteDoux),
                           ),
@@ -173,13 +174,13 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
                               : null,
                         ),
                       ),
-                    const SizedBox(height: 16),
+                    SizedBox(height: 16),
                     // Partage récap WhatsApp (accessible à tous)
                     _BoutonRecapWhatsApp(tontine: tontine),
                     if (estGest) ...[
-                      const SizedBox(height: 10),
+                      SizedBox(height: 10),
                       BtnWhatsApp(
-                        label: 'Relancer tous les retardataires',
+                        label: context.tr('relancer_retardataires'),
                         onTap: () => _relancerTous(context, tontine),
                       ),
                     ],
@@ -212,13 +213,13 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
 
       final ok = await afficherModalePin(
         context,
-        titre: 'Confirmer le paiement',
-        sousTitre: 'Vérifie les détails avant de confirmer avec ton PIN.',
+        titre: context.tr('confirmer_paiement'),
+        sousTitre: context.tr('confirmer_pin'),
         recap: [
-          (label: 'Membre', valeur: membre.nom),
-          (label: 'Montant', valeur: Formatters.montant(data.montant, devise: data.devise)),
-          (label: 'Méthode', valeur: Formatters.methodePaiement(methode)),
-          (label: 'Tour', valeur: 'N° ${data.numerTour}'),
+          (label: context.tr('membre'), valeur: membre.nom),
+          (label: context.tr('montant'), valeur: Formatters.montant(data.montant, devise: data.devise)),
+          (label: context.tr('methode_paiement'), valeur: Formatters.methodePaiement(methode)),
+          (label: context.tr('tour'), valeur: 'N° ${data.numerTour}'),
         ],
         onValider: (pin) async {
           final newData = data.toJson();
@@ -313,8 +314,8 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
       // Annuler le paiement
       final ok = await afficherModalePin(
         context,
-        titre: 'Annuler le paiement',
-        sousTitre: 'Cette action supprime le paiement enregistré.',
+        titre: context.tr('annuler_paiement'),
+        sousTitre: context.tr('annuler_paiement'),
         recap: [
           (label: 'Membre', valeur: membre.nom),
           (label: 'Montant', valeur: Formatters.montant(data.montant, devise: data.devise)),
@@ -403,18 +404,18 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.fondPapier,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text(
+        title: Text(
           '📲 Envoyer le reçu ?',
           style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.encre),
         ),
         content: Text(
           'Paiement de ${membre.nom} enregistré (${Formatters.montant(data.montant, devise: data.devise)}).\n\nComment souhaitez-vous partager le reçu ?',
-          style: const TextStyle(color: AppColors.texte),
+          style: TextStyle(color: AppColors.texte),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Ignorer'),
+            child: Text(context.tr('ignorer')),
           ),
           TextButton(
             onPressed: () async {
@@ -520,7 +521,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
           children: [
             // Poignée
             Container(
-              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              margin: EdgeInsets.only(top: 12, bottom: 8),
               width: 40,
               height: 4,
               decoration: BoxDecoration(
@@ -529,12 +530,12 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+              padding: EdgeInsets.symmetric(horizontal: 20, vertical: 4),
               child: Row(
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'Méthode de paiement',
+                      context.tr('methode_paiement'),
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 18,

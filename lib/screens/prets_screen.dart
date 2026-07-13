@@ -8,6 +8,7 @@ import '../services/supabase_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
+import '../utils/app_localizations.dart';
 
 // ── Bug #3 fix : StatefulWidget pour permettre le rechargement des membres ──
 class PretsScreen extends StatefulWidget {
@@ -56,15 +57,15 @@ class _PretsScreenState extends State<PretsScreen> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+              padding: EdgeInsets.fromLTRB(16, 18, 16, 0),
               child: Row(
                 children: [
-                  const LogoTontineClair(),
-                  const Spacer(),
+                  LogoTontineClair(),
+                  Spacer(),
                   TextButton.icon(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.arrow_back, size: 16),
-                    label: const Text('Retour'),
+                    icon: Icon(Icons.arrow_back, size: 16),
+                    label: Text(context.tr('retour')),
                     style: TextButton.styleFrom(foregroundColor: AppColors.encre),
                   ),
                 ],
@@ -72,10 +73,10 @@ class _PretsScreenState extends State<PretsScreen> {
             ),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.all(16),
                 children: [
-                  const Text(
-                    'Prêts internes',
+                  Text(
+                    context.tr('prets_internes'),
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
                       fontSize: 28,
@@ -90,20 +91,20 @@ class _PretsScreenState extends State<PretsScreen> {
                       color: AppColors.texteDoux,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
                   if (estGest)
                     BtnKola(
                       label: '+ Nouveau prêt',
                       icon: Icons.add,
                       onTap: () => _nouveauPret(context, provider, data),
                     ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
                   if (data.prets.isEmpty)
-                    const Center(
+                    Center(
                       child: Padding(
                         padding: EdgeInsets.all(24),
                         child: Text(
-                          'Aucun prêt enregistré.',
+                          context.tr('aucun_pret'),
                           style: TextStyle(color: AppColors.texteDoux),
                         ),
                       ),
@@ -180,16 +181,16 @@ class _PretsScreenState extends State<PretsScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Nouveau prêt',
+                SizedBox(height: 16),
+                Text(
+                  context.tr('nouveau_pret'),
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 20,
                     color: AppColors.encre,
                   ),
                 ),
-                const ChampLabel(label: 'Emprunteur'),
+                ChampLabel(label: context.tr('emprunteur')),
                 DropdownButtonFormField<String>(
                   value: emprunteurId,
                   decoration: const InputDecoration(),
@@ -206,24 +207,24 @@ class _PretsScreenState extends State<PretsScreen> {
                 TextField(
                   controller: montantCtrl,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(hintText: '50 000'),
+                  decoration: InputDecoration(hintText: '50 000'),
                   autofocus: true,
                 ),
-                const ChampLabel(label: 'Taux d\'intérêt (%)'),
+                ChampLabel(label: context.tr('taux_interet')),
                 TextField(
                   controller: tauxCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(hintText: '5'),
+                  keyboardType: TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(hintText: '5'),
                 ),
-                const ChampLabel(label: 'Durée (mois)'),
+                ChampLabel(label: context.tr('duree_mois')),
                 TextField(
                   controller: dureesCtrl,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(hintText: '3'),
+                  decoration: InputDecoration(hintText: '3'),
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 BtnPrincipal(
-                  label: 'Créer le prêt',
+                  label: context.tr('creer_pret'),
                   onTap: () => Navigator.pop(ctx, true),
                 ),
                 const SizedBox(height: 8),
@@ -264,14 +265,14 @@ class _PretsScreenState extends State<PretsScreen> {
 
     final ok = await afficherModalePin(
       context,
-      titre: 'Confirmer le prêt',
+      titre: context.tr('confirmer_pret'),
       sousTitre: 'Vérifie les détails avant de confirmer avec ton PIN.',
       recap: [
-        (label: 'Emprunteur', valeur: nomEmprunteur),
-        (label: 'Montant prêté', valeur: Formatters.montant(montant, devise: data.devise)),
-        (label: 'Taux', valeur: '$taux %'),
-        (label: 'Durée', valeur: '$durees mois'),
-        (label: 'Total dû', valeur: Formatters.montant(totalDuOctroyer, devise: data.devise)),
+        (label: context.tr('emprunteur'), valeur: nomEmprunteur),
+        (label: context.tr('montant_prete'), valeur: Formatters.montant(montant, devise: data.devise)),
+        (label: context.tr('taux'), valeur: '$taux %'),
+        (label: context.tr('duree'), valeur: '$durees mois'),
+        (label: context.tr('total_du'), valeur: Formatters.montant(totalDuOctroyer, devise: data.devise)),
       ],
       onValider: (pin) async {
         final ref = Formatters.genererReference();

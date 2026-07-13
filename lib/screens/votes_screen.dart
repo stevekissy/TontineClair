@@ -8,6 +8,7 @@ import '../services/supabase_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
+import '../utils/app_localizations.dart';
 
 class VotesScreen extends StatefulWidget {
   final String code;
@@ -79,15 +80,15 @@ class _VotesScreenState extends State<VotesScreen> {
           children: [
             // ── En-tête ────────────────────────────────────────────────────
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+              padding: EdgeInsets.fromLTRB(16, 18, 16, 0),
               child: Row(
                 children: [
-                  const LogoTontineClair(),
-                  const Spacer(),
+                  LogoTontineClair(),
+                  Spacer(),
                   TextButton.icon(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.arrow_back, size: 16),
-                    label: const Text('Retour'),
+                    icon: Icon(Icons.arrow_back, size: 16),
+                    label: Text(context.tr('retour')),
                     style: TextButton.styleFrom(foregroundColor: AppColors.encre),
                   ),
                 ],
@@ -96,14 +97,14 @@ class _VotesScreenState extends State<VotesScreen> {
             // ── Contenu ────────────────────────────────────────────────────
             Expanded(
               child: _chargementVoix
-                  ? const Center(
+                  ? Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           CircularProgressIndicator(
                               color: AppColors.encre, strokeWidth: 2.5),
                           SizedBox(height: 12),
-                          Text('Chargement des votes…',
+                          Text(context.tr('chargement_votes'),
                               style: TextStyle(color: AppColors.texteDoux)),
                         ],
                       ),
@@ -115,29 +116,29 @@ class _VotesScreenState extends State<VotesScreen> {
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.wifi_off,
+                                Icon(Icons.wifi_off,
                                     size: 40, color: AppColors.alerte),
-                                const SizedBox(height: 12),
+                                SizedBox(height: 12),
                                 Text(
                                   _erreurVoix!,
                                   textAlign: TextAlign.center,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                       color: AppColors.alerte),
                                 ),
-                                const SizedBox(height: 16),
+                                SizedBox(height: 16),
                                 TextButton(
                                   onPressed: _chargerVoix,
-                                  child: const Text('Réessayer'),
+                                  child: Text(context.tr('reessayer')),
                                 ),
                               ],
                             ),
                           ),
                         )
                       : ListView(
-                      padding: const EdgeInsets.all(16),
+                      padding: EdgeInsets.all(16),
                       children: [
-                        const Text(
-                          'Votes sécurisés',
+                        Text(
+                          context.tr('votes'),
                           style: TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: 28,
@@ -150,20 +151,20 @@ class _VotesScreenState extends State<VotesScreen> {
                           style: TextStyle(
                               fontSize: 13.5, color: AppColors.texteDoux),
                         ),
-                        const SizedBox(height: 16),
+                        SizedBox(height: 16),
                         if (estGest)
                           BtnKola(
                             label: '+ Créer un vote',
                             icon: Icons.add,
                             onTap: () => _creerVote(context, provider, data),
                           ),
-                        const SizedBox(height: 16),
+                        SizedBox(height: 16),
                         if (votes.isEmpty)
-                          const Center(
+                          Center(
                             child: Padding(
                               padding: EdgeInsets.all(24),
                               child: Text(
-                                'Aucun vote en cours.',
+                                context.tr('aucun_vote'),
                                 style: TextStyle(color: AppColors.texteDoux),
                               ),
                             ),
@@ -246,21 +247,21 @@ class _VotesScreenState extends State<VotesScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Nouveau vote',
+                SizedBox(height: 16),
+                Text(
+                  context.tr('nouveau_vote'),
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 20,
                     color: AppColors.encre,
                   ),
                 ),
-                const ChampLabel(label: 'Type de vote'),
+                ChampLabel(label: context.tr('type_vote')),
                 DropdownButtonFormField<String>(
                   value: type,
-                  decoration: const InputDecoration(),
-                  items: const [
-                    DropdownMenuItem(value: 'libre', child: Text('Vote libre')),
+                  decoration: InputDecoration(),
+                  items: [
+                    DropdownMenuItem(value: 'libre', child: Text(context.tr('vote_libre'))),
                     DropdownMenuItem(
                         value: 'admission',
                         child: Text("Admission d'un nouveau membre")),
@@ -270,30 +271,30 @@ class _VotesScreenState extends State<VotesScreen> {
                   ],
                   onChanged: (v) => setS(() => type = v!),
                 ),
-                const ChampLabel(label: 'Question / Objet du vote'),
+                ChampLabel(label: context.tr('question_vote')),
                 TextField(
                   controller: questionCtrl,
                   maxLength: 150,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     hintText: 'Ex : Accepter Koua comme nouveau membre ?',
                   ),
                 ),
                 if (type == 'admission') ...[
-                  const ChampLabel(label: 'Nom du nouveau membre'),
+                  ChampLabel(label: context.tr('nouveau_membre')),
                   TextField(
                     controller: nouveauNomCtrl,
                     maxLength: 30,
-                    decoration: const InputDecoration(hintText: 'Ex : Koua M.'),
+                    decoration: InputDecoration(hintText: 'Ex : Koua M.'),
                   ),
                 ],
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 BtnPrincipal(
-                  label: 'Ouvrir le vote',
+                  label: context.tr('ouvrir_vote'),
                   onTap: () => Navigator.pop(ctx, true),
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: 8),
                 BtnSecondaire(
-                  label: 'Annuler',
+                  label: context.tr('annuler'),
                   onTap: () => Navigator.pop(ctx, false),
                 ),
                 const SizedBox(height: 8),
@@ -316,12 +317,12 @@ class _VotesScreenState extends State<VotesScreen> {
 
     final ok = await afficherModalePin(
       context,
-      titre: 'Créer le vote',
+      titre: context.tr('creer_vote'),
       sousTitre: 'Vérifie les détails avant de confirmer avec ton PIN.',
       recap: [
-        (label: 'Question', valeur: question),
-        (label: 'Type', valeur: typeVoteStr),
-        (label: 'Tontine', valeur: data.nom),
+        (label: context.tr('question_vote'), valeur: question),
+        (label: context.tr('type_vote'), valeur: typeVoteStr),
+        (label: context.tr('nom_tontine'), valeur: data.nom),
       ],
       onValider: (pin) async {
         final ref = Formatters.genererReference();
@@ -459,25 +460,25 @@ class _VotesScreenState extends State<VotesScreen> {
                 const SizedBox(height: 4),
                 Text(
                   vote.question,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     color: AppColors.texteDoux,
                   ),
                 ),
-                const SizedBox(height: 4),
+                SizedBox(height: 4),
                 Text(
                   '${restants.length} membre(s) n\'ont pas encore voté',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     color: AppColors.succes,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const ChampLabel(label: 'Qui es-tu ?'),
+                ChampLabel(label: context.tr('qui_etes_vous')),
                 // CORRECTION : DropdownButtonFormField avec valeur initiale non-nulle
                 DropdownButtonFormField<String>(
                   value: membreId,
-                  decoration: const InputDecoration(),
+                  decoration: InputDecoration(),
                   isExpanded: true,
                   items: restants
                       .map((m) => DropdownMenuItem(
@@ -490,7 +491,7 @@ class _VotesScreenState extends State<VotesScreen> {
                       .toList(),
                   onChanged: (v) => setS(() => membreId = v),
                 ),
-                const ChampLabel(label: 'Ton vote'),
+                ChampLabel(label: context.tr('ton_vote')),
                 Row(
                   children: ['Oui', 'Non', 'Abstention'].map((c) {
                     final sel = choix == c;
@@ -529,26 +530,26 @@ class _VotesScreenState extends State<VotesScreen> {
                     );
                   }).toList(),
                 ),
-                const ChampLabel(label: 'Ton PIN de vote'),
+                ChampLabel(label: context.tr('ton_pin_vote')),
                 TextField(
                   controller: pinCtrl,
                   keyboardType: TextInputType.number,
                   obscureText: true,
                   maxLength: 6,
                   textAlign: TextAlign.center,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     hintText: '••••',
                     counterText: '',
                   ),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.4,
                   ),
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 BtnPrincipal(
-                  label: 'Voter',
+                  label: context.tr('voter'),
                   onTap: () => Navigator.pop(ctx, true),
                 ),
                 const SizedBox(height: 8),

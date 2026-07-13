@@ -5,6 +5,7 @@ import '../services/tontine_provider.dart';
 import '../utils/app_colors.dart';
 import '../widgets/app_widgets.dart';
 import 'detail_screen.dart';
+import '../utils/app_localizations.dart';
 
 class RejoindreScreen extends StatefulWidget {
   const RejoindreScreen({super.key});
@@ -150,19 +151,19 @@ class _RejoindreScreenState extends State<RejoindreScreen> {
                   letterSpacing: -0.5,
                 ),
               ),
-              const SizedBox(height: 6),
-              const Text(
+              SizedBox(height: 6),
+              Text(
                 'Entre le code à 6 caractères transmis par ton gestionnaire.',
                 style: TextStyle(fontSize: 15, color: AppColors.texteDoux),
               ),
-              const SizedBox(height: 20),
+              SizedBox(height: 20),
 
               // Champ code
               CarteTC(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const ChampLabel(label: 'Code de la tontine'),
+                    ChampLabel(label: context.tr('code_rejoindre')),
                     TextField(
                       controller: _ctrl,
                       maxLength: 6,
@@ -212,9 +213,9 @@ class _RejoindreScreenState extends State<RejoindreScreen> {
               // Zone d'erreur contextuelle
               if (_erreur != null) _construireErreur(),
 
-              const SizedBox(height: 16),
+              SizedBox(height: 16),
               BtnPrincipal(
-                label: 'Ouvrir la tontine',
+                label: context.tr('ouvrir_tontine'),
                 onTap: _rejoindre,
                 loading: _loading,
                 icon: Icons.search_rounded,

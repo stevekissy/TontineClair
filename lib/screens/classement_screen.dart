@@ -11,6 +11,7 @@ import '../services/supabase_service.dart';
 import '../services/tontine_provider.dart';
 import '../utils/app_colors.dart';
 import 'score_membre_screen.dart';
+import '../utils/app_localizations.dart';
 
 Color _couleurScore(int score) {
   if (score >= 80) return const Color(0xFF2E7D5B);
@@ -206,13 +207,13 @@ class _ClassementScreenState extends State<ClassementScreen> {
               ),
               const SizedBox(width: 8),
               _ChipFiltre(
-                label: 'Score',
+                label: context.tr('score'),
                 actif: _tri == 'score',
                 onTap: () => setState(() => _tri = 'score'),
               ),
               const SizedBox(width: 6),
               _ChipFiltre(
-                label: 'Nom',
+                label: context.tr('nom'),
                 actif: _tri == 'nom',
                 onTap: () => setState(() => _tri = 'nom'),
               ),

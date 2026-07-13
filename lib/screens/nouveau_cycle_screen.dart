@@ -20,6 +20,7 @@ import '../services/echeance_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
+import '../utils/app_localizations.dart';
 
 class NouveauCycleScreen extends StatefulWidget {
   final String code;
@@ -178,7 +179,7 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
 
   Future<void> _proposerCycle(TontineProvider provider, TontineData data) async {
     final pin = await _demanderPin(
-      titre: 'Proposer un nouveau cycle',
+      titre: context.tr('proposer_nouveau_cycle'),
       sousTitre: 'Confirme avec ton PIN pour ouvrir le vote.',
       recap: [
         (label: 'Tontine', valeur: data.nom),
@@ -212,7 +213,7 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
 
     // Vérifier s'il a déjà voté
     if (data.aMemberVoteRedemarrage(membreId)) {
-      if (mounted) afficherToast(context, 'Vous avez déjà voté.', estErreur: true);
+      if (mounted) afficherToast(context, context.tr('deja_vote'), estErreur: true);
       return;
     }
 
@@ -230,14 +231,14 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text('Confirmer ton vote : ${_labelChoix(choix)}'),
-            const SizedBox(height: 12),
+            SizedBox(height: 12),
             TextField(
               controller: pinCtrl,
               obscureText: true,
               keyboardType: TextInputType.number,
               maxLength: 6,
-              decoration: const InputDecoration(
-                hintText: 'Ton PIN membre',
+              decoration: InputDecoration(
+                hintText: context.tr('pin_membre'),
                 counterText: '',
               ),
               autofocus: true,
@@ -245,7 +246,7 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(context.tr('annuler'))),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text('Voter ${_labelChoix(choix)}', style: const TextStyle(fontWeight: FontWeight.w700)),
@@ -303,7 +304,7 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
 
   Future<void> _cloreVote(TontineProvider provider, Vote vote) async {
     final pin = await _demanderPin(
-      titre: 'Clôturer le vote',
+      titre: context.tr('cloture_vote'),
       sousTitre: 'Le résultat sera calculé immédiatement.',
       recap: [(label: 'Vote', valeur: vote.question)],
     );

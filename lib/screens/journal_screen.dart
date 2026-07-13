@@ -4,6 +4,7 @@ import '../services/tontine_provider.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
+import '../utils/app_localizations.dart';
 
 class JournalScreen extends StatelessWidget {
   final String code;
@@ -32,7 +33,7 @@ class JournalScreen extends StatelessWidget {
                   TextButton.icon(
                     onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(Icons.arrow_back, size: 16),
-                    label: const Text('Retour'),
+                    label: Text(context.tr('retour')),
                     style: TextButton.styleFrom(foregroundColor: AppColors.encre),
                   ),
                 ],

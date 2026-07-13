@@ -12,6 +12,7 @@ import '../utils/app_colors.dart';
 import '../widgets/app_widgets.dart';
 import 'abonnement_screen.dart';
 import 'code_cree_screen.dart';
+import '../utils/app_localizations.dart';
 
 class CreationScreen extends StatefulWidget {
   const CreationScreen({super.key});
@@ -319,17 +320,17 @@ class _CreationScreenState extends State<CreationScreen> {
                       letterSpacing: -0.02,
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  const Text(
+                  SizedBox(height: 6),
+                  Text(
                     'Elle sera créée en ligne : tu recevras un code à partager aux membres.',
                     style: TextStyle(fontSize: 15, color: AppColors.texteDoux),
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
                   CarteTC(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const ChampLabel(label: 'Nom de la tontine'),
+                        ChampLabel(label: context.tr('nom_tontine')),
                         TextField(
                           controller: _nomCtrl,
                           maxLength: 50,
@@ -565,9 +566,9 @@ class _CreationScreenState extends State<CreationScreen> {
                     ],
                   ),
                 ),
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+                padding: EdgeInsets.fromLTRB(16, 14, 16, 18),
                 child: BtnPrincipal(
-                  label: 'Créer la tontine',
+                  label: context.tr('creer_la_tontine'),
                   onTap: _creer,
                   loading: _loading,
                 ),

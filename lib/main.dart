@@ -62,14 +62,22 @@ class TontineClaireApp extends StatelessWidget {
       // AppLocalizationsWrapper écoute LocaleService et rebuilde uniquement
       // les widgets qui utilisent context.tr() — sans toucher MaterialApp.locale
       // ce qui évite tout rechargement des données (tontines, etc.)
+      // Directionality RTL activé uniquement pour l'arabe — les autres langues restent LTR.
       child: Consumer<LocaleService>(
         builder: (_, ls, __) => AppLocalizationsWrapper(
           localeService: ls,
-          child: MaterialApp(
-            title: 'TontineClair',
-            debugShowCheckedModeBanner: false,
-            theme: AppTheme.theme,
-            home: const AppShell(),
+          child: Directionality(
+            textDirection: ls.langue.code == 'ar'
+                ? TextDirection.rtl
+                : TextDirection.ltr,
+            child: MaterialApp(
+              title: 'TontineClair',
+              debugShowCheckedModeBanner: false,
+              theme: AppTheme.theme,
+              home: const AppShell(),
+              // CRITIQUE : pas de locale: ici — évite la réinitialisation des tontines
+              // Le RTL est géré par Directionality ci-dessus
+            ),
           ),
         ),
       ),

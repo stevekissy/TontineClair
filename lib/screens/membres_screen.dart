@@ -18,6 +18,7 @@ import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import 'score_membre_screen.dart';
 import 'classement_screen.dart';
+import '../utils/app_localizations.dart';
 
 // ─── Constantes couleurs score ────────────────────────────────────────────────
 const _scoreExcellent = Color(0xFF2E7D5B); // ≥80
@@ -34,12 +35,12 @@ Color _couleurScore(int score) {
   return _scoreTresRisque;
 }
 
-String _labelScore(int score) {
-  if (score >= 80) return 'Très fiable';
-  if (score >= 65) return 'Fiable';
-  if (score >= 50) return 'À surveiller';
-  if (score >= 35) return 'Risqué';
-  return 'Très risqué';
+String _labelScore(int score, BuildContext context) {
+  if (score >= 80) return context.tr('tres_fiable');
+  if (score >= 65) return context.tr('fiable');
+  if (score >= 50) return context.tr('a_surveiller');
+  if (score >= 35) return context.tr('risque');
+  return context.tr('tres_risque');
 }
 
 // ─── Score via ScoreService (SOURCE UNIQUE de calcul) ────────────────────────
@@ -189,7 +190,7 @@ class _MembresScreenState extends State<MembresScreen> {
                     color: AppColors.texteDoux,
                   ),
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 TextField(
                   controller: pinCtrl,
                   keyboardType: TextInputType.number,
@@ -198,7 +199,7 @@ class _MembresScreenState extends State<MembresScreen> {
                   textAlign: TextAlign.center,
                   autofocus: true,
                   decoration: InputDecoration(
-                    hintText: 'PIN gestionnaire',
+                    hintText: context.tr('pin_gestionnaire'),
                     counterText: '',
                     filled: true,
                     fillColor: Colors.white,
@@ -226,7 +227,7 @@ class _MembresScreenState extends State<MembresScreen> {
                 ),
                 if (erreur != null)
                   Padding(
-                    padding: const EdgeInsets.only(top: 8),
+                    padding: EdgeInsets.only(top: 8),
                     child: Text(
                       erreur!,
                       style: GoogleFonts.inter(
@@ -236,15 +237,15 @@ class _MembresScreenState extends State<MembresScreen> {
                       ),
                     ),
                   ),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 BtnPrincipal(
                   label: _membresAvecPin.contains(membre.id)
-                      ? 'Réinitialiser le PIN'
-                      : 'Générer et attribuer le PIN',
+                      ? context.tr('reinitialiser_pin')
+                      : context.tr('generer_pin'),
                   loading: loading,
                   onTap: () async {
                     if (pinCtrl.text.length < 4) {
-                      setSt(() => erreur = 'PIN trop court.');
+                      setSt(() => erreur = context.tr('pin_trop_court'));
                       return;
                     }
                     setSt(() {
@@ -275,9 +276,9 @@ class _MembresScreenState extends State<MembresScreen> {
                     }
                   },
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: 8),
                 BtnSecondaire(
-                  label: 'Annuler',
+                  label: context.tr('annuler'),
                   onTap: () => Navigator.of(sCtx).pop(),
                 ),
               ],
@@ -318,11 +319,11 @@ class _MembresScreenState extends State<MembresScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
-              const Text('✅', style: TextStyle(fontSize: 36)),
-              const SizedBox(height: 12),
+              SizedBox(height: 20),
+              Text('✅', style: TextStyle(fontSize: 36)),
+              SizedBox(height: 12),
               Text(
-                'PIN attribué à ${membre.nom}',
+                "${context.tr('pin_attribue')} — ${membre.nom}",
                 style: GoogleFonts.bricolageGrotesque(
                   fontWeight: FontWeight.w700,
                   fontSize: 20,
@@ -330,10 +331,10 @@ class _MembresScreenState extends State<MembresScreen> {
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: 16),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(20),
+                padding: EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   color: AppColors.fondCode,
                   borderRadius: BorderRadius.circular(14),
@@ -342,13 +343,13 @@ class _MembresScreenState extends State<MembresScreen> {
                 child: Column(
                   children: [
                     Text(
-                      'PIN provisoire',
+                      context.tr('pin_provisoire'),
                       style: GoogleFonts.inter(
                         fontSize: 12.5,
                         color: AppColors.texteDoux,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    SizedBox(height: 6),
                     Text(
                       pin,
                       style: GoogleFonts.bricolageGrotesque(
@@ -358,9 +359,9 @@ class _MembresScreenState extends State<MembresScreen> {
                         letterSpacing: 8,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    SizedBox(height: 4),
                     Text(
-                      'Communiquer ce PIN à ${membre.nom} pour qu\'il le change.',
+                      context.tr('communication_pin'),
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         color: AppColors.texteDoux,
@@ -370,18 +371,18 @@ class _MembresScreenState extends State<MembresScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: 16),
               // Bug #5 fix : bouton WhatsApp toujours visible (fallback wa.me/?text= si pas de tel)
               BtnWhatsApp(
-                label: 'Envoyer le PIN par WhatsApp',
+                label: context.tr('envoyer_pin_whatsapp'),
                 onTap: () {
                   Navigator.of(sheetCtx).pop();
                   _envoyerWhatsApp(ctx, membre, pin, data);
                 },
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
               BtnSecondaire(
-                label: 'Fermer',
+                label: context.tr('fermer'),
                 onTap: () => Navigator.of(sheetCtx).pop(),
               ),
             ],
@@ -430,7 +431,7 @@ class _MembresScreenState extends State<MembresScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 20),
+                SizedBox(height: 20),
                 Text(
                   '🔑 Changer mon PIN de vote',
                   style: GoogleFonts.bricolageGrotesque(
@@ -439,9 +440,9 @@ class _MembresScreenState extends State<MembresScreen> {
                     color: AppColors.encre,
                   ),
                 ),
-                const SizedBox(height: 4),
+                SizedBox(height: 4),
                 Text(
-                  'Entre ton ancien PIN (provisoire) et choisis un nouveau PIN secret que toi seul connaîtra.',
+                  context.tr('ancien_pin'),
                   style: GoogleFonts.inter(
                     fontSize: 13.5,
                     color: AppColors.texteDoux,
@@ -503,9 +504,9 @@ class _MembresScreenState extends State<MembresScreen> {
                   ),
                 ),
 
-                const SizedBox(height: 14),
+                SizedBox(height: 14),
                 _ChampPin(
-                  label: 'Ancien PIN (provisoire)',
+                  label: context.tr('ancien_pin'),
                   ctrl: ancienCtrl,
                   placeholder: 'PIN reçu par le gestionnaire',
                 ),
@@ -855,7 +856,7 @@ class _CarteMembreState extends State<_CarteMembre> {
     final m = widget.membre;
     final score = widget.score;
     final couleur = _couleurScore(score);
-    final label = _labelScore(score);
+    final label = _labelScore(score, context);
 
     // Stats depuis data.stats
     final statsRaw = widget.data.stats[m.id];

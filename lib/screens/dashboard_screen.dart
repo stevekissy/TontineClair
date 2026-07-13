@@ -16,6 +16,7 @@ import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import 'nouveau_cycle_screen.dart';
+import '../utils/app_localizations.dart';
 
 // ─── Constante seuil score faible ────────────────────────────────────────────
 const int _seuilScoreFaible = 40;
@@ -305,7 +306,7 @@ class DashboardScreen extends StatelessWidget {
                   TextButton.icon(
                     onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(Icons.arrow_back, size: 16),
-                    label: const Text('Retour'),
+                    label: Text(context.tr('retour')),
                     style: TextButton.styleFrom(
                       foregroundColor: AppColors.encre,
                       textStyle: const TextStyle(
@@ -327,7 +328,7 @@ class DashboardScreen extends StatelessWidget {
                   children: [
                     // Titre
                     Text(
-                      'Tableau de bord',
+                      context.tr('tableau_de_bord'),
                       style: GoogleFonts.bricolageGrotesque(
                         fontWeight: FontWeight.w800,
                         fontSize: 26,
@@ -360,7 +361,7 @@ class DashboardScreen extends StatelessWidget {
 
                     // ── Grille 8 indicateurs (2 colonnes) ────────────────
                     Text(
-                      'Indicateurs',
+                      context.tr('indicateurs'),
                       style: GoogleFonts.inter(
                         fontWeight: FontWeight.w700,
                         fontSize: 15,
@@ -377,49 +378,49 @@ class DashboardScreen extends StatelessWidget {
                       mainAxisSpacing: 10,
                       children: [
                         _CarteIndicateur(
-                          titre: 'Total cotisé',
+                          titre: context.tr('total_cotise'),
                           sousTitre: 'depuis le début',
                           valeur: Formatters.montant(totalCotise, devise: data.devise),
                           couleur: AppColors.succes,
                           icone: Icons.savings_outlined,
                         ),
                         _CarteIndicateur(
-                          titre: 'Attendu',
+                          titre: context.tr('attendu'),
                           sousTitre: 'cycle complet',
                           valeur: Formatters.montant(attenduCycle, devise: data.devise),
                           couleur: AppColors.encreDoux,
                           icone: Icons.account_balance_outlined,
                         ),
                         _CarteIndicateur(
-                          titre: 'Membres à jour',
+                          titre: context.tr('membres_a_jour'),
                           sousTitre: 'ce tour',
                           valeur: '$aJour / ${membres.length}',
                           couleur: AppColors.succes,
                           icone: Icons.check_circle_outline,
                         ),
                         _CarteIndicateur(
-                          titre: 'En attente',
+                          titre: context.tr('en_attente'),
                           sousTitre: 'non payés',
                           valeur: '$enAttente',
                           couleur: enAttente > 0 ? AppColors.alerte : AppColors.succes,
                           icone: enAttente > 0 ? Icons.warning_amber_outlined : Icons.check_circle_outline,
                         ),
                         _CarteIndicateur(
-                          titre: 'Caisse',
+                          titre: context.tr('caisse'),
                           sousTitre: 'disponible',
                           valeur: Formatters.montant(caisse, devise: data.devise),
                           couleur: caisse >= 0 ? AppColors.succes : AppColors.alerte,
                           icone: Icons.account_balance_wallet_outlined,
                         ),
                         _CarteIndicateur(
-                          titre: 'Pénalités',
+                          titre: context.tr('penalites'),
                           sousTitre: 'collectées',
                           valeur: Formatters.montant(penalites, devise: data.devise),
                           couleur: AppColors.or,
                           icone: Icons.gavel_outlined,
                         ),
                         _CarteIndicateur(
-                          titre: 'Prêts en cours',
+                          titre: context.tr('prets_en_cours'),
                           sousTitre: pretsInfo.nombre > 0
                               ? '${Formatters.montant(pretsInfo.totalDu, devise: data.devise)} restant dû'
                               : 'aucun prêt actif',
@@ -428,7 +429,7 @@ class DashboardScreen extends StatelessWidget {
                           icone: Icons.handshake_outlined,
                         ),
                         _CarteIndicateur(
-                          titre: 'Votes ouverts',
+                          titre: context.tr('votes_ouverts'),
                           sousTitre: 'en cours',
                           valeur: '$votesOuverts',
                           couleur: votesOuverts > 0 ? AppColors.encreDoux : AppColors.texteDoux,
@@ -592,8 +593,8 @@ class _CarteBeneficiaire extends StatelessWidget {
                     icon: const Icon(Icons.refresh_rounded, size: 18),
                     label: Text(
                       estGest
-                          ? 'Proposer un nouveau cycle'
-                          : 'Voir le vote de redémarrage',
+                          ? context.tr('proposer_nouveau_cycle')
+                          : context.tr('vote_redemarrage'),
                       style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 13,
@@ -622,7 +623,7 @@ class _CarteBeneficiaire extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Bénéficiaire du tour',
+                      context.tr('beneficiaire_tour'),
                       style: GoogleFonts.inter(
                         fontSize: 11,
                         color: Colors.white.withValues(alpha: 0.65),
@@ -679,7 +680,7 @@ class _CarteBeneficiaire extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          'Recevra',
+                          context.tr('recevra'),
                           style: GoogleFonts.inter(
                             fontSize: 11,
                             color: Colors.white.withValues(alpha: 0.65),
@@ -956,7 +957,7 @@ class _BoutonPartagerRecap extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BtnWhatsApp(
-      label: 'Partager le récap sur WhatsApp',
+      label: context.tr('partager_recapitulatif'),
       onTap: () async {
         final msg = Uri.encodeComponent(_construireMessage());
         // Double fallback : app native → wa.me (web)

@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../utils/app_colors.dart';
 import '../widgets/app_widgets.dart';
 import 'detail_screen.dart';
+import '../utils/app_localizations.dart';
 
 class CodeCreerScreen extends StatelessWidget {
   final String code;
@@ -134,7 +135,7 @@ class CodeCreerScreen extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               BtnPrincipal(
-                label: 'Ouvrir la tontine',
+                label: context.tr('ouvrir_tontine'),
                 onTap: () => Navigator.of(context).pushReplacement(
                   MaterialPageRoute(
                     builder: (_) => DetailScreen(code: code),

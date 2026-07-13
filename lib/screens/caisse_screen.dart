@@ -7,6 +7,7 @@ import '../services/supabase_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
+import '../utils/app_localizations.dart';
 
 class CaisseScreen extends StatelessWidget {
   final String code;
@@ -28,15 +29,15 @@ class CaisseScreen extends StatelessWidget {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+              padding: EdgeInsets.fromLTRB(16, 18, 16, 0),
               child: Row(
                 children: [
-                  const LogoTontineClair(),
-                  const Spacer(),
+                  LogoTontineClair(),
+                  Spacer(),
                   TextButton.icon(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.arrow_back, size: 16),
-                    label: const Text('Retour'),
+                    icon: Icon(Icons.arrow_back, size: 16),
+                    label: Text(context.tr('retour')),
                     style: TextButton.styleFrom(foregroundColor: AppColors.encre),
                   ),
                 ],
@@ -44,28 +45,28 @@ class CaisseScreen extends StatelessWidget {
             ),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.all(16),
                 children: [
-                  const Text(
-                    'Caisse commune',
+                  Text(
+                    context.tr('caisse_commune'),
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
                       fontSize: 28,
                       color: AppColors.encre,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
                   // Solde
                   Container(
-                    padding: const EdgeInsets.all(20),
+                    padding: EdgeInsets.all(20),
                     decoration: BoxDecoration(
                       color: AppColors.encre,
                       borderRadius: BorderRadius.circular(18),
                     ),
                     child: Column(
                       children: [
-                        const Text(
-                          'SOLDE DISPONIBLE',
+                        Text(
+                          context.tr('solde_disponible'),
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
@@ -85,7 +86,7 @@ class CaisseScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
                   // Actions gestionnaire
                   if (estGest) ...[
                     Row(
@@ -93,49 +94,49 @@ class CaisseScreen extends StatelessWidget {
                         Expanded(
                           child: _BtnAction(
                             icon: Icons.add,
-                            label: 'Apport',
+                            label: context.tr('apport'),
                             couleur: AppColors.succes,
                             onTap: () => _mouvement(context, provider, data, 'apport'),
                           ),
                         ),
-                        const SizedBox(width: 10),
+                        SizedBox(width: 10),
                         Expanded(
                           child: _BtnAction(
                             icon: Icons.remove,
-                            label: 'Dépense',
+                            label: context.tr('depense'),
                             couleur: AppColors.alerte,
                             onTap: () => _mouvement(context, provider, data, 'depense'),
                           ),
                         ),
-                        const SizedBox(width: 10),
+                        SizedBox(width: 10),
                         Expanded(
                           child: _BtnAction(
                             icon: Icons.warning_amber,
-                            label: 'Pénalité',
+                            label: context.tr('penalite'),
                             couleur: AppColors.orFonce,
                             onTap: () => _mouvement(context, provider, data, 'penalite'),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
+                    SizedBox(height: 16),
                   ],
                   // Historique
-                  const Text(
-                    'Mouvements',
+                  Text(
+                    context.tr('mouvements'),
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 18,
                       color: AppColors.encre,
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  SizedBox(height: 10),
                   if (data.caisse.isEmpty)
-                    const Center(
+                    Center(
                       child: Padding(
                         padding: EdgeInsets.all(24),
                         child: Text(
-                          'Aucun mouvement enregistré.',
+                          context.tr('aucun_mouvement'),
                           style: TextStyle(color: AppColors.texteDoux),
                         ),
                       ),
@@ -199,14 +200,14 @@ class CaisseScreen extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 Text(
                   type == 'apport'
-                      ? 'Apport en caisse'
+                      ? context.tr('apport_caisse')
                       : type == 'depense'
                           ? 'Dépense de caisse'
                           : 'Appliquer une pénalité',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 20,
                     color: AppColors.encre,
@@ -214,7 +215,7 @@ class CaisseScreen extends StatelessWidget {
                 ),
                 // Membre pénalisé (pénalité uniquement)
                 if (type == 'penalite' && membresOrdre.isNotEmpty) ...[
-                  const ChampLabel(label: 'Membre pénalisé'),
+                  ChampLabel(label: context.tr('membre_penalise')),
                   DropdownButtonFormField<String>(
                     value: membrePenaliteId,
                     isExpanded: true,
@@ -232,10 +233,10 @@ class CaisseScreen extends StatelessWidget {
                 TextField(
                   controller: montantCtrl,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(hintText: '5 000'),
+                  decoration: InputDecoration(hintText: '5 000'),
                   autofocus: true,
                 ),
-                const ChampLabel(label: 'Description / Motif'),
+                ChampLabel(label: context.tr('description_motif')),
                 TextField(
                   controller: descCtrl,
                   maxLength: 100,
@@ -247,10 +248,10 @@ class CaisseScreen extends StatelessWidget {
                   ),
                 ),
                 if (type != 'penalite') ...[
-                  const ChampLabel(label: 'Mode de paiement'),
+                  ChampLabel(label: context.tr('mode_paiement_label')),
                   DropdownButtonFormField<String>(
                     value: methode,
-                    decoration: const InputDecoration(),
+                    decoration: InputDecoration(),
                     items: ['especes', 'orange', 'mtn', 'moov', 'wave']
                         .map((m) => DropdownMenuItem(
                               value: m,
@@ -260,9 +261,9 @@ class CaisseScreen extends StatelessWidget {
                     onChanged: (v) => setS(() => methode = v!),
                   ),
                 ],
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 BtnPrincipal(
-                  label: 'Enregistrer',
+                  label: context.tr('enregistrer'),
                   onTap: () => Navigator.pop(ctx, true),
                 ),
                 const SizedBox(height: 8),

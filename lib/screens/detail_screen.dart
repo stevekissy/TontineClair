@@ -22,6 +22,7 @@ import 'membres_screen.dart';
 import 'dashboard_screen.dart';
 import 'nouveau_cycle_screen.dart';
 import 'supprimer_tontine_screen.dart';
+import '../utils/app_localizations.dart';
 
 class DetailScreen extends StatefulWidget {
   final String code;
@@ -57,13 +58,13 @@ class _DetailScreenState extends State<DetailScreen> {
 
   void _debloqur(BuildContext context) {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const VerrouScreen()),
+      MaterialPageRoute(builder: (_) => VerrouScreen()),
     );
   }
 
   void _verrouiller(BuildContext context) {
     context.read<TontineProvider>().verrouiller();
-    afficherToast(context, 'Session gestionnaire terminée.');
+    afficherToast(context, context.tr('session_terminee'));
   }
 
   @override
@@ -95,16 +96,16 @@ class _DetailScreenState extends State<DetailScreen> {
                       color: AppColors.alerte.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.delete_outline_rounded,
                       size: 36,
                       color: AppColors.alerte,
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'Tontine supprimée',
-                    style: TextStyle(
+                  SizedBox(height: 20),
+                  Text(
+                    context.tr('tontine_supprimee'),
+                    style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
                       color: AppColors.encre,
@@ -156,20 +157,20 @@ class _DetailScreenState extends State<DetailScreen> {
         backgroundColor: AppColors.fondPapier,
         body: Center(
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.all(24),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.error_outline, size: 48, color: AppColors.alerte),
-                const SizedBox(height: 16),
+                Icon(Icons.error_outline, size: 48, color: AppColors.alerte),
+                SizedBox(height: 16),
                 Text(
                   provider.erreur!,
-                  style: const TextStyle(color: AppColors.alerte),
+                  style: TextStyle(color: AppColors.alerte),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 BtnPrincipal(
-                  label: 'Réessayer',
+                  label: context.tr('reessayer'),
                   onTap: () => provider.chargerTontine(widget.code),
                 ),
               ],
@@ -199,21 +200,21 @@ class _DetailScreenState extends State<DetailScreen> {
             RefreshIndicator(
               onRefresh: () => provider.chargerTontine(widget.code),
               child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
+                physics: AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 120),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Header
-                    const SizedBox(height: 18),
+                    SizedBox(height: 18),
                     Row(
                       children: [
-                        const LogoTontineClair(),
-                        const Spacer(),
+                        LogoTontineClair(),
+                        Spacer(),
                         TextButton.icon(
                           onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.arrow_back, size: 16),
-                          label: const Text('Mes tontines'),
+                          icon: Icon(Icons.arrow_back, size: 16),
+                          label: Text(context.tr('mes_tontines')),
                           style: TextButton.styleFrom(
                             foregroundColor: AppColors.encre,
                             textStyle: const TextStyle(
@@ -367,13 +368,13 @@ class _BandeauMode extends StatelessWidget {
             GestureDetector(
               onTap: onVerrouiller,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                 decoration: BoxDecoration(
                   color: AppColors.encre,
                   borderRadius: BorderRadius.circular(9),
                 ),
-                child: const Text(
-                  'Verrouiller',
+                child: Text(
+                  context.tr('verrouiller'),
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 12.5,
@@ -388,18 +389,18 @@ class _BandeauMode extends StatelessWidget {
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: AppColors.fondConsultation,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
-          const Icon(Icons.visibility, size: 16, color: AppColors.orFonce),
-          const SizedBox(width: 8),
-          const Expanded(
+          Icon(Icons.visibility, size: 16, color: AppColors.orFonce),
+          SizedBox(width: 8),
+          Expanded(
             child: Text(
-              'Mode consultation',
+              context.tr('mode_consultation'),
               style: TextStyle(
                 fontWeight: FontWeight.w600,
                 fontSize: 13,
@@ -411,13 +412,13 @@ class _BandeauMode extends StatelessWidget {
             onTap: onDebloqur,
             child: Container(
               padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  EdgeInsets.symmetric(horizontal: 12, vertical: 7),
               decoration: BoxDecoration(
                 color: AppColors.or,
                 borderRadius: BorderRadius.circular(9),
               ),
-              child: const Text(
-                'Accès gestionnaire',
+              child: Text(
+                context.tr('acces_gestionnaire'),
                 style: TextStyle(
                   fontWeight: FontWeight.w700,
                   fontSize: 12.5,
@@ -537,13 +538,13 @@ class _BandeauEcheanceState extends State<_BandeauEcheance> {
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Confirmer avec votre PIN'),
+        title: Text(context.tr('confirmer_pin')),
         content: TextField(
           controller: ctrl,
           obscureText: true,
           keyboardType: TextInputType.number,
           maxLength: 6,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             hintText: 'PIN gestionnaire',
             counterText: '',
           ),
@@ -552,11 +553,11 @@ class _BandeauEcheanceState extends State<_BandeauEcheance> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Annuler'),
+            child: Text(context.tr('annuler')),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            child: const Text('Confirmer',
+            child: Text(context.tr('confirmer'),
                 style: TextStyle(fontWeight: FontWeight.w700)),
           ),
         ],
@@ -846,30 +847,30 @@ class _DialogCalendrierState extends State<_DialogCalendrier> {
               return GridView.count(
                 crossAxisCount: 7,
                 shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
+                physics: NeverScrollableScrollPhysics(),
                 childAspectRatio: 1,
                 children: cells,
               );
             }),
-            const SizedBox(height: 12),
+            SizedBox(height: 12),
             // ── Légende ───────────────────────────────────────────────────────
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 _LegendePuce(couleur: AppColors.encre, label: "Aujourd'hui"),
-                const SizedBox(width: 12),
+                SizedBox(width: 12),
                 _LegendePuce(
-                    couleur: const Color(0xFFFFB74D),
-                    label: 'Jours restants'),
-                const SizedBox(width: 12),
+                    couleur: Color(0xFFFFB74D),
+                    label: context.tr('jours_restants')),
+                SizedBox(width: 12),
                 _LegendePuce(
-                    couleur: const Color(0xFFE65100), label: 'Échéance'),
+                    couleur: Color(0xFFE65100), label: 'Échéance'),
               ],
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Fermer'),
+              child: Text(context.tr('fermer')),
             ),
           ],
         ),
@@ -926,7 +927,7 @@ class _ActionsRapides extends StatelessWidget {
   final bool isPremium;
   final String code;
 
-  const _ActionsRapides({
+  _ActionsRapides({
     required this.data,
     required this.estGest,
     required this.isPremium,
@@ -938,18 +939,18 @@ class _ActionsRapides extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Modules',
+        Text(
+          context.tr('membres_modules'),
           style: TextStyle(
             fontWeight: FontWeight.w700,
             fontSize: 18,
             color: AppColors.encre,
           ),
         ),
-        const SizedBox(height: 10),
+        SizedBox(height: 10),
         GridView.count(
           shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
+          physics: NeverScrollableScrollPhysics(),
           crossAxisCount: 2,
           childAspectRatio: 1.7,
           crossAxisSpacing: 10,
@@ -957,7 +958,7 @@ class _ActionsRapides extends StatelessWidget {
           children: [
             _ActionBtn(
               icon: Icons.dashboard_outlined,
-              label: 'Tableau de bord',
+              label: context.tr('tableau_de_bord'),
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -967,7 +968,7 @@ class _ActionsRapides extends StatelessWidget {
             ),
             _ActionBtn(
               icon: Icons.group_outlined,
-              label: 'Membres',
+              label: context.tr('membres'),
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -977,7 +978,7 @@ class _ActionsRapides extends StatelessWidget {
             ),
             _ActionBtn(
               icon: Icons.payments_outlined,
-              label: 'Cotisations',
+              label: context.tr('cotisations'),
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -987,7 +988,7 @@ class _ActionsRapides extends StatelessWidget {
             ),
             _ActionBtn(
               icon: Icons.shuffle,
-              label: 'Tirage',
+              label: context.tr('tirage'),
               badge: data.tirageVerrouille ? '🔒' : null,
               onTap: () => Navigator.push(
                 context,
@@ -998,7 +999,7 @@ class _ActionsRapides extends StatelessWidget {
             ),
             _ActionBtn(
               icon: Icons.account_balance_wallet_outlined,
-              label: 'Caisse',
+              label: context.tr('caisse'),
               locked: !isPremium,
               onTap: isPremium
                   ? () => Navigator.push(
@@ -1016,7 +1017,7 @@ class _ActionsRapides extends StatelessWidget {
             ),
             _ActionBtn(
               icon: Icons.handshake_outlined,
-              label: 'Prêts',
+              label: context.tr('prets'),
               locked: !isPremium,
               onTap: isPremium
                   ? () => Navigator.push(
@@ -1034,7 +1035,7 @@ class _ActionsRapides extends StatelessWidget {
             ),
             _ActionBtn(
               icon: Icons.how_to_vote_outlined,
-              label: 'Votes',
+              label: context.tr('votes'),
               locked: !isPremium,
               onTap: isPremium
                   ? () => Navigator.push(
@@ -1052,7 +1053,7 @@ class _ActionsRapides extends StatelessWidget {
             ),
             _ActionBtn(
               icon: Icons.history,
-              label: 'Journal',
+              label: context.tr('journal'),
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -1063,7 +1064,7 @@ class _ActionsRapides extends StatelessWidget {
             if (data.cycleTermine)
               _ActionBtn(
                 icon: Icons.refresh_rounded,
-                label: 'Nouveau cycle',
+                label: context.tr('nouveau_cycle'),
                 badge: '🎉',
                 onTap: () => Navigator.push(
                   context,
@@ -1147,7 +1148,7 @@ class _ZoneDangereuse extends StatelessWidget {
   final String code;
   final String nomTontine;
 
-  const _ZoneDangereuse({required this.code, required this.nomTontine});
+  _ZoneDangereuse({required this.code, required this.nomTontine});
 
   @override
   Widget build(BuildContext context) {
@@ -1159,9 +1160,9 @@ class _ZoneDangereuse extends StatelessWidget {
           children: [
             Expanded(child: Divider(color: AppColors.alerte.withValues(alpha: 0.35))),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
+              padding: EdgeInsets.symmetric(horizontal: 10),
               child: Text(
-                'Zone dangereuse',
+                context.tr('zone_dangereuse'),
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
@@ -1178,7 +1179,7 @@ class _ZoneDangereuse extends StatelessWidget {
         // Carte suppression
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: AppColors.alerte.withValues(alpha: 0.04),
             borderRadius: BorderRadius.circular(12),
@@ -1189,9 +1190,9 @@ class _ZoneDangereuse extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Supprimer la tontine',
-                style: TextStyle(
+              Text(
+                context.tr('supprimer_tontine'),
+                style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
                   color: AppColors.encre,
