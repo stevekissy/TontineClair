@@ -15,7 +15,7 @@ if (keyPropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.tontineconnect.tontine"
+    namespace = "com.tontineclair.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -39,7 +39,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.tontineconnect.tontine"
+        applicationId = "com.tontineclair.app"
         minSdk        = flutter.minSdkVersion
         targetSdk     = flutter.targetSdkVersion
         versionCode   = flutter.versionCode

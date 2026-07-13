@@ -1,4 +1,4 @@
-package com.tontineconnect.tontine
+package com.tontineclair.app
 
 import io.flutter.embedding.android.FlutterActivity
 
