@@ -59,6 +59,9 @@ class TontineClaireApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => TontineProvider()..initialiser()),
         ChangeNotifierProvider<LocaleService>.value(value: localeService),
       ],
+      // AppLocalizationsWrapper écoute LocaleService et rebuilde uniquement
+      // les widgets qui utilisent context.tr() — sans toucher MaterialApp.locale
+      // ce qui évite tout rechargement des données (tontines, etc.)
       child: Consumer<LocaleService>(
         builder: (_, ls, __) => AppLocalizationsWrapper(
           localeService: ls,
@@ -67,8 +70,6 @@ class TontineClaireApp extends StatelessWidget {
             debugShowCheckedModeBanner: false,
             theme: AppTheme.theme,
             home: const AppShell(),
-            locale: ls.locale,
-            supportedLocales: LocaleService.langues.map((l) => l.locale).toList(),
           ),
         ),
       ),

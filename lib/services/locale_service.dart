@@ -1,15 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // LocaleService — Gestion de la langue de l'application
 //
-// Langues disponibles, choisies selon les devises/pays couverts par TontineClair :
-//   🇫🇷 Français   — Afrique de l'Ouest, France, Belgique, Suisse, Maghreb
-//   🇬🇧 English    — Afrique de l'Est/Sud, Nigeria, Ghana, États-Unis, UK
-//   🇸🇦 العربية    — Maghreb, Égypte, Moyen-Orient
-//   🇵🇹 Português  — Brésil, Angola, Cap-Vert, Mozambique, Guinée-Bissau
-//   🇪🇸 Español    — Amérique du Sud, Espagne, Mexique
-//   🇰🇪 Kiswahili  — Kenya, Tanzanie, Ouganda, Rwanda, Burundi
-//   🇳🇬 Hausa      — Nigeria Nord, Niger, Ghana Nord, Afrique de l'Ouest
-//   🇪🇹 Amharique  — Éthiopie, Érythrée
+// 8 langues disponibles — change uniquement les textes de l'UI.
+// Les données (tontines, montants, devises) ne sont jamais affectées.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'package:flutter/material.dart';
@@ -20,13 +13,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 class AppLangue {
-  final String code;        // ex: 'fr'
-  final String region;      // ex: 'FR'
-  final String nom;         // nom dans la langue elle-même
-  final String nomFr;       // nom en français (pour l'UI de sélection)
-  final String drapeau;     // emoji drapeau
-  final String devises;     // devises principales associées
-  final TextDirection direction;
+  final String code;     // ex: 'fr'
+  final String region;   // ex: 'FR'
+  final String nom;      // nom dans la langue elle-même
+  final String nomFr;    // nom en français
+  final String drapeau;  // emoji drapeau
 
   const AppLangue({
     required this.code,
@@ -34,8 +25,6 @@ class AppLangue {
     required this.nom,
     required this.nomFr,
     required this.drapeau,
-    required this.devises,
-    this.direction = TextDirection.ltr,
   });
 
   Locale get locale => Locale(code, region);
@@ -53,71 +42,14 @@ class LocaleService extends ChangeNotifier {
 
   // ── Langues disponibles ──────────────────────────────────────────────────
   static const List<AppLangue> langues = [
-    AppLangue(
-      code:    'fr',
-      region:  'FR',
-      nom:     'Français',
-      nomFr:   'Français',
-      drapeau: '🇫🇷',
-      devises: 'XOF · XAF · EUR · MAD · DZD · TND',
-    ),
-    AppLangue(
-      code:    'en',
-      region:  'US',
-      nom:     'English',
-      nomFr:   'Anglais',
-      drapeau: '🇬🇧',
-      devises: 'USD · GBP · NGN · GHS · KES · ZAR',
-    ),
-    AppLangue(
-      code:    'ar',
-      region:  'SA',
-      nom:     'العربية',
-      nomFr:   'Arabe',
-      drapeau: '🇸🇦',
-      devises: 'SAR · AED · MAD · EGP · DZD · TND',
-      direction: TextDirection.rtl,
-    ),
-    AppLangue(
-      code:    'pt',
-      region:  'BR',
-      nom:     'Português',
-      nomFr:   'Portugais',
-      drapeau: '🇧🇷',
-      devises: 'BRL · AOA · MZN · CVE',
-    ),
-    AppLangue(
-      code:    'es',
-      region:  'ES',
-      nom:     'Español',
-      nomFr:   'Espagnol',
-      drapeau: '🇪🇸',
-      devises: 'EUR · MXN · COP · ARS · CLP · PEN',
-    ),
-    AppLangue(
-      code:    'sw',
-      region:  'KE',
-      nom:     'Kiswahili',
-      nomFr:   'Swahili',
-      drapeau: '🇰🇪',
-      devises: 'KES · TZS · UGX · RWF · BIF',
-    ),
-    AppLangue(
-      code:    'ha',
-      region:  'NG',
-      nom:     'Hausa',
-      nomFr:   'Haoussa',
-      drapeau: '🇳🇬',
-      devises: 'NGN · XOF · GHS',
-    ),
-    AppLangue(
-      code:    'am',
-      region:  'ET',
-      nom:     'አማርኛ',
-      nomFr:   'Amharique',
-      drapeau: '🇪🇹',
-      devises: 'ETB · ERN',
-    ),
+    AppLangue(code: 'fr', region: 'FR', nom: 'Français',  nomFr: 'Français',  drapeau: '🇫🇷'),
+    AppLangue(code: 'en', region: 'US', nom: 'English',   nomFr: 'Anglais',   drapeau: '🇬🇧'),
+    AppLangue(code: 'ar', region: 'SA', nom: 'العربية',   nomFr: 'Arabe',     drapeau: '🇸🇦'),
+    AppLangue(code: 'pt', region: 'BR', nom: 'Português', nomFr: 'Portugais', drapeau: '🇧🇷'),
+    AppLangue(code: 'es', region: 'ES', nom: 'Español',   nomFr: 'Espagnol',  drapeau: '🇪🇸'),
+    AppLangue(code: 'sw', region: 'KE', nom: 'Kiswahili', nomFr: 'Swahili',   drapeau: '🇰🇪'),
+    AppLangue(code: 'ha', region: 'NG', nom: 'Hausa',     nomFr: 'Haoussa',   drapeau: '🇳🇬'),
+    AppLangue(code: 'am', region: 'ET', nom: 'አማርኛ',      nomFr: 'Amharique', drapeau: '🇪🇹'),
   ];
 
   // ── État courant ─────────────────────────────────────────────────────────
