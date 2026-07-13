@@ -912,7 +912,7 @@ class _LegendePuce extends StatelessWidget {
           label,
           style: TextStyle(
             fontSize: 10,
-            color: texte ?? Colors.white,
+            color: texte ?? AppColors.encre,
           ),
         ),
       ],
