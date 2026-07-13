@@ -43,6 +43,11 @@ dependencies:
   # Crypto (tirage certifié)
   crypto: ^3.0.3
 
+  # Firebase Cloud Messaging (notifications push)
+  firebase_core: 3.6.0
+  firebase_messaging: 15.1.3
+  flutter_local_notifications: ^18.0.1
+
   # In-App Purchase (Google Play + Apple)
   # Activé pour la structure — les achats réels nécessitent publication store
   in_app_purchase: ^3.2.0
