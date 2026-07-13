@@ -330,6 +330,38 @@ class TontineProvider extends ChangeNotifier {
     }
   }
 
+  // ── Injection voix fraîches ────────────────────────────────────────────────
+
+  /// Injecte les voix fraîches dans les votes de _courante puis notifie
+  /// les widgets. Appelé après chaque vote pour mettre à jour les compteurs
+  /// "Résultats en temps réel" sans attendre un rechargement complet.
+  Future<void> injecterVoix(String code) async {
+    if (_courante == null) return;
+    try {
+      final voixBrutes = await SupabaseService.lireVoix(code);
+      if (voixBrutes.isEmpty) return;
+      for (final v in _courante!.data.votes) {
+        final voixDuVote = voixBrutes.where((vb) {
+          final id = vb['vote_id'] as String?
+              ?? vb['voteId'] as String?
+              ?? '';
+          return id == v.id;
+        }).toList();
+        if (voixDuVote.isEmpty) continue;
+        final nouvellesVoix = <String, dynamic>{};
+        for (final vb in voixDuVote) {
+          final memId = vb['membre_id'] as String?
+              ?? vb['membreId'] as String?
+              ?? '';
+          final choix = vb['choix'] as String? ?? '';
+          if (memId.isNotEmpty) nouvellesVoix[memId] = choix;
+        }
+        v.voix = nouvellesVoix;
+      }
+      notifyListeners();
+    } catch (_) {}
+  }
+
   // ── Nouveau Cycle ──────────────────────────────────────────────────────────
 
   /// Propose un nouveau cycle en créant un vote de redémarrage.
