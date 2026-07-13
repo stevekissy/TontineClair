@@ -1023,6 +1023,11 @@ class TontineData {
     }
     tirageVerrouille = json['ordreVerrouille'] as bool? ?? tirageVerrouille;
 
+    // Sécurité défensive : si ordre[] est vide (nouveau cycle non encore tiré),
+    // le tirage NE PEUT PAS être verrouillé — c'est une donnée obsolète du
+    // cycle précédent. On force à false pour débloquer le tirage.
+    if (ordre.isEmpty) tirageVerrouille = false;
+
     // ── Périodicité ──────────────────────────────────────────────────────
     final periode = json['periodicite'] as String?
         ?? json['periode'] as String?

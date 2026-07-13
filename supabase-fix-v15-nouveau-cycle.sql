@@ -588,21 +588,28 @@ BEGIN
 
   -- 8. Construire le nouveau data (reset du cycle)
   v_data := v_data || jsonb_build_object(
-    'cycleNum',       v_new_cycle_num,
-    'cycleNumero',    v_new_cycle_num,
-    'cycleTermine',   false,
-    'tourActuel',     0,
-    'ordre',          '[]'::jsonb,
-    'paiements',      '{}'::jsonb,
-    'historique',     '[]'::jsonb,
-    'membres',        v_membres,
-    'montant',        v_montant,
-    'periodicite',    v_periodicite,
-    'periode',        v_periodicite,
-    'methodeOrdre',   v_methode_ordre,
-    'cyclesArchives', v_archives,
-    'votes',          '[]'::jsonb,
-    'journal',        jsonb_build_array(jsonb_build_object(
+    'cycleNum',         v_new_cycle_num,
+    'cycleNumero',      v_new_cycle_num,
+    'cycleTermine',     false,
+    'tourActuel',       0,
+    'ordre',            '[]'::jsonb,
+    'paiements',        '{}'::jsonb,
+    'historique',       '[]'::jsonb,
+    'membres',          v_membres,
+    'montant',          v_montant,
+    'periodicite',      v_periodicite,
+    'periode',          v_periodicite,
+    'methodeOrdre',     v_methode_ordre,
+    'cyclesArchives',   v_archives,
+    'votes',            '[]'::jsonb,
+    -- ── Reset tirage : le nouveau cycle nécessite un nouveau tirage ──────
+    'ordreVerrouille',  false,
+    'ordreMeta',        jsonb_build_object(
+                          'verrouille', false,
+                          'methode',    v_methode_ordre,
+                          'tirage',     null
+                        ),
+    'journal',          jsonb_build_array(jsonb_build_object(
       'quoi',         'NOUVEAU_CYCLE_DEMARRE',
       'gestionnaire', p_nom,
       'quand',        v_now,
