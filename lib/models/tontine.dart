@@ -789,9 +789,29 @@ class TontineData {
   }
 
   /// Décompte du vote de redémarrage {oui, non, abstention}
+  ///
+  /// Priorité : voix{} injectées en temps réel (après injecterVoix()) >
+  ///            decompte Supabase (snapshot figé au moment de la clôture).
+  /// Raison : decompte est un champ JSON stocké côté serveur, non mis à jour
+  /// par injecterVoix(). Si voix{} est peuplé, il est toujours plus frais.
   Map<String, int> get decompteRedemarrage {
     final v = voteRedemarrage;
     if (v == null) return {'oui': 0, 'non': 0, 'abstention': 0};
+
+    // ── Source primaire : voix{} injectées (temps réel) ─────────────────────
+    if (v.voix.isNotEmpty) {
+      int oui = 0, non = 0, abs = 0;
+      for (final choix in v.voix.values) {
+        switch (choix.toString().toLowerCase()) {
+          case 'oui':        oui++; break;
+          case 'non':        non++; break;
+          case 'abstention': abs++; break;
+        }
+      }
+      return {'oui': oui, 'non': non, 'abstention': abs};
+    }
+
+    // ── Source secondaire : decompte Supabase (fallback si voix vides) ──────
     if (v.decompte != null) {
       return {
         'oui':        (v.decompte!['oui'] as num?)?.toInt() ?? 0,
@@ -799,16 +819,8 @@ class TontineData {
         'abstention': (v.decompte!['abstention'] as num?)?.toInt() ?? 0,
       };
     }
-    // Calculer depuis voix{}
-    int oui = 0, non = 0, abs = 0;
-    for (final choix in v.voix.values) {
-      switch (choix.toString().toLowerCase()) {
-        case 'oui':        oui++; break;
-        case 'non':        non++; break;
-        case 'abstention': abs++; break;
-      }
-    }
-    return {'oui': oui, 'non': non, 'abstention': abs};
+
+    return {'oui': 0, 'non': 0, 'abstention': 0};
   }
 
   /// Membres n'ayant pas encore voté sur le vote de redémarrage
