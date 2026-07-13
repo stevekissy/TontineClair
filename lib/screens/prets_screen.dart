@@ -9,6 +9,7 @@ import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
+import '../services/locale_service.dart';
 
 // ── Bug #3 fix : StatefulWidget pour permettre le rechargement des membres ──
 class PretsScreen extends StatefulWidget {
@@ -354,11 +355,18 @@ class _PretsScreenState extends State<PretsScreen> {
 
     if (ok == true && context.mounted) {
       afficherToast(context, 'Prêt créé avec succès !');
+      final _lang = Provider.of<LocaleService>(context, listen: false).langue.code;
+      final _t = SupabaseService.notifTexte('pret', _lang, vars: {
+        'nom': nomEmprunteur,
+        'montant': Formatters.montant(montant, devise: data.devise),
+        'taux': taux.toString(),
+        'duree': durees.toString(),
+      });
       SupabaseService.envoyerNotification(
         code: widget.code,
         type: 'pret',
-        titre: '🤝 Nouveau prêt accordé',
-        message: 'Prêt de ${Formatters.montant(montant, devise: data.devise)} accordé à $nomEmprunteur (${taux}% — $durees mois)',
+        titre: _t['titre']!,
+        message: _t['message']!,
       );
     }
   }
@@ -635,11 +643,17 @@ class _CartePret extends StatelessWidget {
       afficherToast(context, 'Remboursement annulé et caisse corrigée.');
       final tontineCode = provider.courante?.code ?? '';
       if (tontineCode.isNotEmpty) {
+        final _lang = Provider.of<LocaleService>(context, listen: false).langue.code;
+        final _t = SupabaseService.notifTexte('annulation_remboursement', _lang, vars: {
+          'montant': Formatters.montant(remb.montant, devise: data.devise),
+          'nom': pret.emprunteurNom,
+          'ref': remb.reference,
+        });
         SupabaseService.envoyerNotification(
           code: tontineCode,
           type: 'annulation_remboursement',
-          titre: '↩️ Remboursement annulé',
-          message: 'Annulation remboursement de ${Formatters.montant(remb.montant, devise: data.devise)} — ${pret.emprunteurNom} (Réf. ${remb.reference})',
+          titre: _t['titre']!,
+          message: _t['message']!,
         );
       }
     }
@@ -849,13 +863,20 @@ class _CartePret extends StatelessWidget {
       );
       final tontineCode = provider.courante?.code ?? '';
       if (tontineCode.isNotEmpty) {
+        final _lang = Provider.of<LocaleService>(context, listen: false).langue.code;
+        final _typeNotif2 = pretSolde ? 'pret_solde' : 'remboursement';
+        final _t2 = SupabaseService.notifTexte(_typeNotif2, _lang, vars: {
+          'nom': pret.emprunteurNom,
+          'montant': pretSolde
+              ? Formatters.montant(pret.totalDu, devise: data.devise)
+              : Formatters.montant(montant, devise: data.devise),
+          'reste': Formatters.montant(resteApres, devise: data.devise),
+        });
         SupabaseService.envoyerNotification(
           code: tontineCode,
-          type: pretSolde ? 'pret_solde' : 'remboursement',
-          titre: pretSolde ? '✅ Prêt entièrement soldé' : '💳 Remboursement enregistré',
-          message: pretSolde
-              ? 'Le prêt de ${pret.emprunteurNom} est entièrement remboursé (${Formatters.montant(pret.totalDu, devise: data.devise)})'
-              : 'Remboursement de ${Formatters.montant(montant, devise: data.devise)} reçu de ${pret.emprunteurNom} — Reste : ${Formatters.montant(resteApres, devise: data.devise)}',
+          type: _typeNotif2,
+          titre: _t2['titre']!,
+          message: _t2['message']!,
         );
       }
 

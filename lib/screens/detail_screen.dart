@@ -23,6 +23,7 @@ import 'dashboard_screen.dart';
 import 'nouveau_cycle_screen.dart';
 import 'supprimer_tontine_screen.dart';
 import '../utils/app_localizations.dart';
+import '../services/locale_service.dart';
 
 class DetailScreen extends StatefulWidget {
   final String code;
@@ -1759,13 +1760,15 @@ class _BarreDetail extends StatelessWidget {
             : 'Tour $numerTourAffiche clôturé avec succès.',
       );
       // Notification push décaissement
+      final _lang = Provider.of<LocaleService>(context, listen: false).langue.code;
+      final _typeNotif = data.cycleTermine ? 'decaissement_cycle_fin' : 'decaissement';
+      final _t = SupabaseService.notifTexte(_typeNotif, _lang,
+          vars: {'nom': benefNom, 'tour': numerTourAffiche.toString()});
       SupabaseService.envoyerNotification(
         code: provider.courante!.code,
         type: 'decaissement',
-        titre: data.cycleTermine ? '🎊 Cycle terminé !' : '💸 Décaissement effectué',
-        message: data.cycleTermine
-            ? 'Tous les membres ont été servis. Le cycle est terminé !'
-            : '$benefNom a reçu le décaissement du tour $numerTourAffiche.',
+        titre: _t['titre']!,
+        message: _t['message']!,
         donneesExtra: {'beneficiaire': benefNom},
       );
     }

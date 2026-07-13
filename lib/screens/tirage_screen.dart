@@ -10,6 +10,7 @@ import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
+import '../services/locale_service.dart';
 
 class TirageScreen extends StatefulWidget {
   final String code;
@@ -227,11 +228,13 @@ class _TirageScreenState extends State<TirageScreen> {
       afficherToast(context, 'Tirage verrouillé et signé !');
       final tontineCode = provider.courante?.code ?? widget.code;
       final ordreNoms = _membresOrdonnes.map((m) => m.nom).join(', ');
+      final _lang = Provider.of<LocaleService>(context, listen: false).langue.code;
+      final _t = SupabaseService.notifTexte('tirage_verrouille', _lang, vars: {'ordre': ordreNoms});
       SupabaseService.envoyerNotification(
         code: tontineCode,
         type: 'tirage_verrouille',
-        titre: '🔒 Tirage verrouillé',
-        message: 'L\'ordre de passage est définitif : $ordreNoms',
+        titre: _t['titre']!,
+        message: _t['message']!,
       );
     }
   }

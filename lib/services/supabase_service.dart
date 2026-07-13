@@ -941,6 +941,320 @@ class SupabaseService {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LANGUE UTILISATEUR
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Sauvegarde la langue préférée de l'utilisateur dans Supabase.
+  /// Clé SharedPreferences utilisée comme identifiant appareil.
+  /// Silencieux — SharedPreferences reste la source de vérité locale.
+  static Future<void> sauvegarderLangue({
+    required String langueCode,
+    required String token,   // fcm_token ou identifiant appareil
+  }) async {
+    try {
+      await rpc('sauvegarder_langue_appareil', {
+        'p_token':  token,
+        'p_langue': langueCode,
+      });
+    } catch (_) {
+      // Silencieux — non bloquant, SharedPreferences est la source de vérité
+    }
+  }
+
+  /// Charge la langue préférée depuis Supabase pour un appareil.
+  /// Retourne null si la RPC n'existe pas ou si aucune préférence n'est
+  /// enregistrée. Dans ce cas, SharedPreferences prend le relais.
+  static Future<String?> chargerLangue({required String token}) async {
+    try {
+      final result = await rpc('charger_langue_appareil', {'p_token': token});
+      if (result is Map<String, dynamic>) {
+        final code = result['langue'] as String?;
+        if (code != null && code.isNotEmpty) return code;
+      }
+    } catch (_) {
+      // RPC absente ou erreur réseau → fallback SharedPreferences
+    }
+    return null;
+  }
+
+  // ══════════════════════════════════════════════════════
+  // HELPER TRADUCTION NOTIFICATIONS
+  // ══════════════════════════════════════════════════════
+
+  /// Retourne {titre, message} traduit pour un type de notification.
+  /// [vars] : variables à substituer (ex: {'nom': 'Alice', 'montant': '5000'})
+  static Map<String, String> notifTexte(
+    String type,
+    String langueCode, {
+    Map<String, String> vars = const {},
+  }) {
+    const _n = <String, Map<String, Map<String, String>>>{
+      'cotisation': {
+        'titre': {
+          'fr': '💰 Cotisation reçue',
+          'en': '💰 Contribution received',
+          'es': '💰 Cotización recibida',
+          'pt': '💰 Contribuição recebida',
+          'ar': '💰 تم استلام الاشتراك',
+        },
+        'message': {
+          'fr': '{nom} a cotisé pour le tour en cours.',
+          'en': '{nom} has contributed for the current round.',
+          'es': '{nom} ha cotizado para la ronda actual.',
+          'pt': '{nom} contribuiu para a rodada atual.',
+          'ar': '{nom} دفع اشتراكه للجولة الحالية.',
+        },
+      },
+      'decaissement': {
+        'titre': {
+          'fr': '💸 Décaissement effectué',
+          'en': '💸 Disbursement made',
+          'es': '💸 Desembolso realizado',
+          'pt': '💸 Desembolso efetuado',
+          'ar': '💸 تم الصرف',
+        },
+        'message': {
+          'fr': '{nom} a reçu le décaissement du tour {tour}.',
+          'en': '{nom} received the disbursement for round {tour}.',
+          'es': '{nom} recibió el desembolso del turno {tour}.',
+          'pt': '{nom} recebeu o desembolso da rodada {tour}.',
+          'ar': '{nom} استلم الدفعة في الجولة {tour}.',
+        },
+      },
+      'decaissement_cycle_fin': {
+        'titre': {
+          'fr': '🎊 Cycle terminé !',
+          'en': '🎊 Cycle completed!',
+          'es': '🎊 ¡Ciclo completado!',
+          'pt': '🎊 Ciclo concluído!',
+          'ar': '🎊 اكتملت الدورة!',
+        },
+        'message': {
+          'fr': 'Tous les membres ont été servis. Le cycle est terminé !',
+          'en': 'All members have been served. The cycle is complete!',
+          'es': 'Todos los miembros han sido atendidos. ¡El ciclo ha terminado!',
+          'pt': 'Todos os membros foram atendidos. O ciclo está concluído!',
+          'ar': 'تمت خدمة جميع الأعضاء. انتهت الدورة!',
+        },
+      },
+      'tirage_verrouille': {
+        'titre': {
+          'fr': '🔒 Tirage verrouillé',
+          'en': '🔒 Draw locked',
+          'es': '🔒 Sorteo bloqueado',
+          'pt': '🔒 Sorteio bloqueado',
+          'ar': '🔒 تم قفل القرعة',
+        },
+        'message': {
+          'fr': 'L\'ordre de passage est définitif : {ordre}',
+          'en': 'The order of turns is final: {ordre}',
+          'es': 'El orden de turnos es definitivo: {ordre}',
+          'pt': 'A ordem das rodadas é definitiva: {ordre}',
+          'ar': 'ترتيب الأدوار نهائي: {ordre}',
+        },
+      },
+      'penalite': {
+        'titre': {
+          'fr': '⚠️ Pénalité appliquée',
+          'en': '⚠️ Penalty applied',
+          'es': '⚠️ Penalización aplicada',
+          'pt': '⚠️ Penalidade aplicada',
+          'ar': '⚠️ تم تطبيق العقوبة',
+        },
+        'message': {
+          'fr': 'Pénalité de {montant} appliquée à {nom}',
+          'en': 'Penalty of {montant} applied to {nom}',
+          'es': 'Penalización de {montant} aplicada a {nom}',
+          'pt': 'Penalidade de {montant} aplicada a {nom}',
+          'ar': 'غرامة {montant} طُبِّقت على {nom}',
+        },
+      },
+      'caisse': {
+        'titre': {
+          'fr': '💰 Apport en caisse',
+          'en': '💰 Cash contribution',
+          'es': '💰 Aportación en caja',
+          'pt': '💰 Contribuição em caixa',
+          'ar': '💰 إيداع في الصندوق',
+        },
+        'message': {
+          'fr': '{libelle} de {montant}{desc}',
+          'en': '{libelle} of {montant}{desc}',
+          'es': '{libelle} de {montant}{desc}',
+          'pt': '{libelle} de {montant}{desc}',
+          'ar': '{libelle} بمبلغ {montant}{desc}',
+        },
+      },
+      'pret': {
+        'titre': {
+          'fr': '🤝 Nouveau prêt accordé',
+          'en': '🤝 New loan granted',
+          'es': '🤝 Nuevo préstamo concedido',
+          'pt': '🤝 Novo empréstimo concedido',
+          'ar': '🤝 تم منح قرض جديد',
+        },
+        'message': {
+          'fr': 'Prêt de {montant} accordé à {nom} ({taux}% — {duree} mois)',
+          'en': 'Loan of {montant} granted to {nom} ({taux}% — {duree} months)',
+          'es': 'Préstamo de {montant} concedido a {nom} ({taux}% — {duree} meses)',
+          'pt': 'Empréstimo de {montant} concedido a {nom} ({taux}% — {duree} meses)',
+          'ar': 'قرض بمبلغ {montant} لـ {nom} ({taux}% — {duree} أشهر)',
+        },
+      },
+      'remboursement': {
+        'titre': {
+          'fr': '💳 Remboursement enregistré',
+          'en': '💳 Repayment recorded',
+          'es': '💳 Reembolso registrado',
+          'pt': '💳 Reembolso registado',
+          'ar': '💳 تم تسجيل السداد',
+        },
+        'message': {
+          'fr': 'Remboursement de {montant} reçu de {nom} — Reste : {reste}',
+          'en': 'Repayment of {montant} received from {nom} — Remaining: {reste}',
+          'es': 'Reembolso de {montant} recibido de {nom} — Resto: {reste}',
+          'pt': 'Reembolso de {montant} recebido de {nom} — Restante: {reste}',
+          'ar': 'استلام سداد {montant} من {nom} — المتبقي: {reste}',
+        },
+      },
+      'pret_solde': {
+        'titre': {
+          'fr': '✅ Prêt entièrement soldé',
+          'en': '✅ Loan fully repaid',
+          'es': '✅ Préstamo totalmente saldado',
+          'pt': '✅ Empréstimo totalmente liquidado',
+          'ar': '✅ تم سداد القرض بالكامل',
+        },
+        'message': {
+          'fr': 'Le prêt de {nom} est entièrement remboursé ({montant})',
+          'en': 'The loan of {nom} is fully repaid ({montant})',
+          'es': 'El préstamo de {nom} está totalmente reembolsado ({montant})',
+          'pt': 'O empréstimo de {nom} foi totalmente reembolsado ({montant})',
+          'ar': 'تم سداد قرض {nom} بالكامل ({montant})',
+        },
+      },
+      'annulation_remboursement': {
+        'titre': {
+          'fr': '↩️ Remboursement annulé',
+          'en': '↩️ Repayment cancelled',
+          'es': '↩️ Reembolso cancelado',
+          'pt': '↩️ Reembolso cancelado',
+          'ar': '↩️ تم إلغاء السداد',
+        },
+        'message': {
+          'fr': 'Annulation remboursement de {montant} — {nom} (Réf. {ref})',
+          'en': 'Repayment cancellation of {montant} — {nom} (Ref. {ref})',
+          'es': 'Cancelación reembolso de {montant} — {nom} (Ref. {ref})',
+          'pt': 'Cancelamento reembolso de {montant} — {nom} (Ref. {ref})',
+          'ar': 'إلغاء سداد {montant} — {nom} (مرجع {ref})',
+        },
+      },
+      'vote_ouvert': {
+        'titre': {
+          'fr': '🗳️ Vote ouvert',
+          'en': '🗳️ Vote opened',
+          'es': '🗳️ Votación abierta',
+          'pt': '🗳️ Votação aberta',
+          'ar': '🗳️ تم فتح التصويت',
+        },
+        'message': {
+          'fr': 'Un nouveau vote est ouvert : {question}',
+          'en': 'A new vote is open: {question}',
+          'es': 'Una nueva votación está abierta: {question}',
+          'pt': 'Uma nova votação está aberta: {question}',
+          'ar': 'تم فتح تصويت جديد: {question}',
+        },
+      },
+      'vote_enregistre': {
+        'titre': {
+          'fr': '🗳️ Nouveau vote',
+          'en': '🗳️ New vote cast',
+          'es': '🗳️ Nuevo voto',
+          'pt': '🗳️ Novo voto',
+          'ar': '🗳️ تصويت جديد',
+        },
+        'message': {
+          'fr': 'Un membre vient de voter sur : {question}',
+          'en': 'A member just voted on: {question}',
+          'es': 'Un miembro acaba de votar sobre: {question}',
+          'pt': 'Um membro acabou de votar sobre: {question}',
+          'ar': 'صوّت أحد الأعضاء على: {question}',
+        },
+      },
+      'nouveau_membre': {
+        'titre': {
+          'fr': '🎉 Nouveau membre admis',
+          'en': '🎉 New member admitted',
+          'es': '🎉 Nuevo miembro admitido',
+          'pt': '🎉 Novo membro admitido',
+          'ar': '🎉 تم قبول عضو جديد',
+        },
+        'message': {
+          'fr': '{nom} a été admis(e) dans la tontine par vote.',
+          'en': '{nom} has been admitted to the tontine by vote.',
+          'es': '{nom} ha sido admitido(a) en la tontina por votación.',
+          'pt': '{nom} foi admitido(a) na tontina por votação.',
+          'ar': 'تم قبول {nom} في التنتين عن طريق التصويت.',
+        },
+      },
+      'vote_clos': {
+        'titre': {
+          'fr': '✅ Vote adopté',
+          'en': '✅ Vote passed',
+          'es': '✅ Votación aprobada',
+          'pt': '✅ Votação aprovada',
+          'ar': '✅ تمت الموافقة على التصويت',
+        },
+        'titre_rejete': {
+          'fr': '❌ Vote rejeté',
+          'en': '❌ Vote rejected',
+          'es': '❌ Votación rechazada',
+          'pt': '❌ Votação rejeitada',
+          'ar': '❌ تم رفض التصويت',
+        },
+        'message': {
+          'fr': 'Le vote "{question}" est clôturé : {resultat}.',
+          'en': 'The vote "{question}" is closed: {resultat}.',
+          'es': 'La votación "{question}" está cerrada: {resultat}.',
+          'pt': 'A votação "{question}" foi encerrada: {resultat}.',
+          'ar': 'التصويت "{question}" أُغلق: {resultat}.',
+        },
+      },
+      'nouveau_cycle': {
+        'titre': {
+          'fr': '🔄 Nouveau cycle démarré',
+          'en': '🔄 New cycle started',
+          'es': '🔄 Nuevo ciclo iniciado',
+          'pt': '🔄 Novo ciclo iniciado',
+          'ar': '🔄 بدأت دورة جديدة',
+        },
+        'message': {
+          'fr': 'Le cycle {num} de la tontine vient de démarrer ! Tour 1 en cours.',
+          'en': 'Cycle {num} of the tontine has just started! Round 1 in progress.',
+          'es': '¡El ciclo {num} de la tontina acaba de empezar! Turno 1 en curso.',
+          'pt': 'O ciclo {num} da tontina acabou de começar! Rodada 1 em andamento.',
+          'ar': 'انطلقت الدورة {num} من التنتين! الجولة 1 جارية.',
+        },
+      },
+    };
+
+    String _sub(String? tpl) {
+      if (tpl == null) return '';
+      var s = tpl;
+      vars.forEach((k, v) => s = s.replaceAll('{$k}', v));
+      return s;
+    }
+
+    final lang = ['fr', 'en', 'es', 'pt', 'ar'].contains(langueCode) ? langueCode : 'fr';
+    final bloc = _n[type];
+    if (bloc == null) return {'titre': '', 'message': ''};
+
+    final titre = _sub(bloc['titre']?[lang] ?? bloc['titre']?['fr']);
+    final message = _sub(bloc['message']?[lang] ?? bloc['message']?['fr']);
+    return {'titre': titre, 'message': message};
+  }
+
   /// Envoie une notification push via l'Edge Function Supabase.
   /// [type] : 'cotisation' | 'vote' | 'decaissement' | 'membre' | 'cycle'
   static Future<void> envoyerNotification({

@@ -95,6 +95,10 @@ class RappelService {
       // Anti-spam : ne pas re-notifier le même jour pour la même tontine
       if (await _dejaNotifieAujourdhui(code)) return;
 
+      // Lire la langue depuis SharedPreferences (pas de BuildContext disponible)
+      final prefs = await SharedPreferences.getInstance();
+      final langueCode = prefs.getString('app_langue_code') ?? 'fr';
+
       // Construire les textes selon la situation
       final textes = _construireTextes(
         nomTontine: data.nom,
@@ -103,6 +107,7 @@ class RappelService {
         devise: data.devise,
         periode: data.periode,
         nbMembresNonPayes: _compterNonPayes(data),
+        langueCode: langueCode,
       );
 
       // 1. Notification locale immédiate
@@ -195,35 +200,117 @@ class RappelService {
     required String devise,
     required String periode,
     required int nbMembresNonPayes,
+    String langueCode = 'fr',
   }) {
+    final lang = ['fr', 'en', 'es', 'pt', 'ar'].contains(langueCode) ? langueCode : 'fr';
     final montantFormate = _formaterMontant(montant, devise);
-    final suffixe = nbMembresNonPayes > 0
-        ? ' — $nbMembresNonPayes membre${nbMembresNonPayes > 1 ? 's' : ''} n\'${nbMembresNonPayes > 1 ? 'ont' : 'a'} pas encore payé'
-        : '';
+    final retard = (-joursRestants);
+
+    // Suffixe membres non payés (traduit)
+    final _suffixes = {
+      'fr': nbMembresNonPayes > 0
+          ? ' — $nbMembresNonPayes membre${nbMembresNonPayes > 1 ? 's' : ''} n\'${nbMembresNonPayes > 1 ? 'ont' : 'a'} pas encore payé'
+          : '',
+      'en': nbMembresNonPayes > 0
+          ? ' — $nbMembresNonPayes member${nbMembresNonPayes > 1 ? 's' : ''} ha${nbMembresNonPayes > 1 ? 've' : 's'} not paid yet'
+          : '',
+      'es': nbMembresNonPayes > 0
+          ? ' — $nbMembresNonPayes miembro${nbMembresNonPayes > 1 ? 's' : ''} aún no ha${nbMembresNonPayes > 1 ? 'n' : ''} pagado'
+          : '',
+      'pt': nbMembresNonPayes > 0
+          ? ' — $nbMembresNonPayes membro${nbMembresNonPayes > 1 ? 's' : ''} ainda não pago${nbMembresNonPayes > 1 ? 'u' : ''}'
+          : '',
+      'ar': nbMembresNonPayes > 0
+          ? ' — $nbMembresNonPayes عضو لم يدفع بعد'
+          : '',
+    };
+    final suffixe = _suffixes[lang] ?? '';
 
     if (joursRestants < 0) {
-      final retard = (-joursRestants);
+      const _titres = {
+        'fr': '❗ Cotisation en retard',
+        'en': '❗ Late contribution',
+        'es': '❗ Cotización atrasada',
+        'pt': '❗ Contribuição em atraso',
+        'ar': '❗ اشتراك متأخر',
+      };
+      final _corps = {
+        'fr': 'La cotisation de $montantFormate est en retard de $retard jour${retard > 1 ? 's' : ''}.$suffixe',
+        'en': 'The contribution of $montantFormate is $retard day${retard > 1 ? 's' : ''} late.$suffixe',
+        'es': 'La cotización de $montantFormate lleva $retard día${retard > 1 ? 's' : ''} de retraso.$suffixe',
+        'pt': 'A contribuição de $montantFormate está $retard dia${retard > 1 ? 's' : ''} atrasada.$suffixe',
+        'ar': 'اشتراك $montantFormate متأخر بـ $retard يوم.$suffixe',
+      };
       return {
-        'titre': '❗ Cotisation en retard — $nomTontine',
-        'corps': 'La cotisation de $montantFormate est en retard de $retard jour${retard > 1 ? 's' : ''}.$suffixe',
+        'titre': '${_titres[lang]!} — $nomTontine',
+        'corps': _corps[lang]!,
       };
     }
     if (joursRestants == 0) {
+      const _titres = {
+        'fr': '🔴 Cotisation aujourd\'hui',
+        'en': '🔴 Contribution due today',
+        'es': '🔴 Cotización hoy',
+        'pt': '🔴 Contribuição hoje',
+        'ar': '🔴 الاشتراك اليوم',
+      };
+      final _corps = {
+        'fr': 'La cotisation de $montantFormate est à payer aujourd\'hui.$suffixe',
+        'en': 'The contribution of $montantFormate is due today.$suffixe',
+        'es': 'La cotización de $montantFormate debe pagarse hoy.$suffixe',
+        'pt': 'A contribuição de $montantFormate deve ser paga hoje.$suffixe',
+        'ar': 'يجب دفع اشتراك $montantFormate اليوم.$suffixe',
+      };
       return {
-        'titre': '🔴 Cotisation aujourd\'hui — $nomTontine',
-        'corps': 'La cotisation de $montantFormate est à payer aujourd\'hui.$suffixe',
+        'titre': '${_titres[lang]!} — $nomTontine',
+        'corps': _corps[lang]!,
       };
     }
     if (joursRestants == 1) {
+      const _titres = {
+        'fr': '⚠️ Cotisation demain',
+        'en': '⚠️ Contribution tomorrow',
+        'es': '⚠️ Cotización mañana',
+        'pt': '⚠️ Contribuição amanhã',
+        'ar': '⚠️ الاشتراك غداً',
+      };
+      final _corps = {
+        'fr': 'Rappel : la cotisation de $montantFormate est à payer demain.$suffixe',
+        'en': 'Reminder: the contribution of $montantFormate is due tomorrow.$suffixe',
+        'es': 'Recordatorio: la cotización de $montantFormate vence mañana.$suffixe',
+        'pt': 'Lembrete: a contribuição de $montantFormate vence amanhã.$suffixe',
+        'ar': 'تذكير: يجب دفع اشتراك $montantFormate غداً.$suffixe',
+      };
       return {
-        'titre': '⚠️ Cotisation demain — $nomTontine',
-        'corps': 'Rappel : la cotisation de $montantFormate est à payer demain.$suffixe',
+        'titre': '${_titres[lang]!} — $nomTontine',
+        'corps': _corps[lang]!,
       };
     }
     // J-3
+    const _titres3 = {
+      'fr': '⏰ Cotisation dans',
+      'en': '⏰ Contribution in',
+      'es': '⏰ Cotización en',
+      'pt': '⏰ Contribuição em',
+      'ar': '⏰ الاشتراك خلال',
+    };
+    final _jours3 = {
+      'fr': '$joursRestants jours',
+      'en': '$joursRestants days',
+      'es': '$joursRestants días',
+      'pt': '$joursRestants dias',
+      'ar': '$joursRestants أيام',
+    };
+    final _corps3 = {
+      'fr': 'Rappel : la cotisation de $montantFormate est à payer dans $joursRestants jours.$suffixe',
+      'en': 'Reminder: the contribution of $montantFormate is due in $joursRestants days.$suffixe',
+      'es': 'Recordatorio: la cotización de $montantFormate vence en $joursRestants días.$suffixe',
+      'pt': 'Lembrete: a contribuição de $montantFormate vence em $joursRestants dias.$suffixe',
+      'ar': 'تذكير: يجب دفع اشتراك $montantFormate خلال $joursRestants أيام.$suffixe',
+    };
     return {
-      'titre': '⏰ Cotisation dans $joursRestants jours — $nomTontine',
-      'corps': 'Rappel : la cotisation de $montantFormate est à payer dans $joursRestants jours.$suffixe',
+      'titre': '${_titres3[lang]!} ${_jours3[lang]!} — $nomTontine',
+      'corps': _corps3[lang]!,
     };
   }
 

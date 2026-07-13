@@ -21,6 +21,7 @@ import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
+import '../services/locale_service.dart';
 
 class NouveauCycleScreen extends StatefulWidget {
   final String code;
@@ -371,11 +372,13 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
       // Retourner à l'écran précédent — le cycle est démarré
       if (mounted) {
         afficherToast(context, '🎉 Cycle $cycleNum démarré ! Tour 1 en cours.');
+        final _lang = Provider.of<LocaleService>(context, listen: false).langue.code;
+        final _t = SupabaseService.notifTexte('nouveau_cycle', _lang, vars: {'num': cycleNum.toString()});
         SupabaseService.envoyerNotification(
           code: widget.code,
           type: 'nouveau_cycle',
-          titre: '🔄 Nouveau cycle démarré',
-          message: 'Le cycle $cycleNum de la tontine vient de démarrer ! Tour 1 en cours.',
+          titre: _t['titre']!,
+          message: _t['message']!,
         );
         Navigator.of(context).pop();
       }

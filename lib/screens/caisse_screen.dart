@@ -8,6 +8,7 @@ import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
+import '../services/locale_service.dart';
 
 class CaisseScreen extends StatelessWidget {
   final String code;
@@ -383,19 +384,21 @@ class CaisseScreen extends StatelessWidget {
     if (ok == true && context.mounted) {
       afficherToast(context,
           type == 'penalite' ? 'Pénalité appliquée !' : 'Mouvement enregistré !');
-      final titreNotif = type == 'penalite'
-          ? '⚠️ Pénalité appliquée'
-          : type == 'apport'
-              ? '💰 Apport en caisse'
-              : '💸 Dépense de caisse';
-      final msgNotif = type == 'penalite' && nomMembre.isNotEmpty
-          ? 'Pénalité de ${Formatters.montant(montant, devise: data.devise)} appliquée à $nomMembre'
-          : '${libelleType} de ${Formatters.montant(montant, devise: data.devise)}${descFinale.isNotEmpty ? ' — $descFinale' : ''}';
+      final _lang = Provider.of<LocaleService>(context, listen: false).langue.code;
+      final _typeNotif = type == 'penalite' ? 'penalite' : 'caisse';
+      final _montantStr = Formatters.montant(montant, devise: data.devise);
+      final _desc = descFinale.isNotEmpty ? ' — $descFinale' : '';
+      final _t = SupabaseService.notifTexte(_typeNotif, _lang, vars: {
+        'nom': nomMembre,
+        'montant': _montantStr,
+        'libelle': libelleType,
+        'desc': _desc,
+      });
       SupabaseService.envoyerNotification(
         code: code,
-        type: type == 'penalite' ? 'penalite' : 'caisse',
-        titre: titreNotif,
-        message: msgNotif,
+        type: _typeNotif,
+        titre: _t['titre']!,
+        message: _t['message']!,
       );
     }
   }

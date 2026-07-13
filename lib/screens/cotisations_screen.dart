@@ -287,11 +287,13 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
       if (ok == true && context.mounted) {
         afficherToast(context, 'Paiement de ${membre.nom} enregistré !');
         // Notification push à tous les membres
+        final _lang = Provider.of<LocaleService>(context, listen: false).langue.code;
+        final _t = SupabaseService.notifTexte('cotisation', _lang, vars: {'nom': membre.nom});
         SupabaseService.envoyerNotification(
           code: provider.courante!.code,
           type: 'cotisation',
-          titre: '💰 Cotisation reçue',
-          message: '${membre.nom} a cotisé pour le tour en cours.',
+          titre: _t['titre']!,
+          message: _t['message']!,
           donneesExtra: {'membre': membre.nom},
         );
 
