@@ -36,6 +36,22 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
   String? _succes;
 
   @override
+  void initState() {
+    super.initState();
+    // Injecter les voix au chargement initial pour avoir les compteurs corrects
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final provider = context.read<TontineProvider>();
+      await provider.injecterVoix(widget.code);
+    });
+  }
+
+  Future<void> _rafraichir() async {
+    final provider = context.read<TontineProvider>();
+    await provider.chargerTontine(widget.code);
+    if (mounted) await provider.injecterVoix(widget.code);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final provider = context.watch<TontineProvider>();
     final tontine = provider.courante;
@@ -56,7 +72,7 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
             _EnTete(code: widget.code),
             Expanded(
               child: RefreshIndicator(
-                onRefresh: () => provider.chargerTontine(widget.code),
+                onRefresh: _rafraichir,
                 child: SingleChildScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
@@ -109,7 +125,7 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
                           enChargement: _enChargement,
                           onVoter: (membreId) => _voter(context, provider, data, vote, membreId),
                           onClore: estGest ? () => _cloreVote(provider, vote) : null,
-                          onRefresh: () => provider.chargerTontine(widget.code),
+                          onRefresh: _rafraichir,
                         )
 
                       // ── État 4 : Vote clos, accepté → configurer et démarrer ──
