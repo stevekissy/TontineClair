@@ -809,8 +809,8 @@ class _DialogCalendrierState extends State<_DialogCalendrier> {
                   texteCouleur = Colors.white;
                   poids = FontWeight.w700;
                 } else if (estRestant) {
-                  fondCellule = const Color(0xFFFFF3E0);
-                  texteCouleur = const Color(0xFFE65100);
+                  fondCellule = const Color(0xFFFFB74D);
+                  texteCouleur = Colors.white;
                   poids = FontWeight.w600;
                 } else if (estPasse) {
                   fondCellule = null;
@@ -859,9 +859,9 @@ class _DialogCalendrierState extends State<_DialogCalendrier> {
                 _LegendePuce(couleur: AppColors.encre, label: "Aujourd'hui"),
                 const SizedBox(width: 12),
                 _LegendePuce(
-                    couleur: const Color(0xFFFFF3E0),
+                    couleur: const Color(0xFFFFB74D),
                     label: 'Jours restants',
-                    texte: const Color(0xFFE65100)),
+                    texte: Colors.white),
                 const SizedBox(width: 12),
                 _LegendePuce(
                     couleur: const Color(0xFFE65100), label: 'Échéance'),
