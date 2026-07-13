@@ -14,6 +14,7 @@ import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
+import '../services/locale_service.dart';
 
 // ─── Couleurs du score ────────────────────────────────────────────────────────
 Color _couleurScore(int score) {
@@ -116,7 +117,8 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
       final membreFrais = data.membres.where((m) => m.id == widget.membre.id).firstOrNull
                           ?? widget.membre;
       final detail = ScoreService.calculerScore(data, membreFrais.id, voixMembre);
-      final recs   = ScoreService.genererRecommandations(data, membreFrais, detail, voixMembre);
+      final _langIA = context.read<LocaleService>().langue.code;
+      final recs   = ScoreService.genererRecommandations(data, membreFrais, detail, voixMembre, langueCode: _langIA);
 
       // ── Historique des scores (v6) ───────────────────────────────────────
       List<HistoriqueScore> historique = [];

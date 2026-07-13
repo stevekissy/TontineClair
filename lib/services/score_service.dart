@@ -384,8 +384,12 @@ class ScoreService {
     TontineData data,
     Membre membre,
     ScoreDetail scoreDetail,
-    List<Map<String, dynamic>> voixMembre,
-  ) {
+    List<Map<String, dynamic>> voixMembre, {
+    String langueCode = 'fr',
+  }) {
+    // Helper traduction IA interne
+    final _l = ['fr','en','es','pt','ar'].contains(langueCode) ? langueCode : 'fr';
+    String _tr(Map<String,String> m) => m[_l] ?? m['fr'] ?? '';
     final recs    = <RecommandationIA>[];
     final score   = scoreDetail.score;
     final statsRaw = data.stats[membre.id];
@@ -430,30 +434,42 @@ class ScoreService {
       if (taux >= 0.95 && score >= 75) {
         recs.add(RecommandationIA(
           type: TypeRecommandation.positif,
-          titre: 'Membre très fiable',
-          message: '${membre.nom} a payé ${(taux * 100).round()}% de ses '
-              'cotisations ($toursPayes sur $toursTotal). Profil excellent, '
-              'éligible à un prêt plus important si besoin.',
+          titre: _tr({'fr':'Membre très fiable','en':'Very reliable member','es':'Miembro muy fiable','pt':'Membro muito fiável','ar':'عضو موثوق جداً'}),
+          message: _tr({
+            'fr': '${membre.nom} a payé ${(taux*100).round()}% de ses cotisations ($toursPayes sur $toursTotal). Profil excellent, éligible à un prêt plus important si besoin.',
+            'en': '${membre.nom} paid ${(taux*100).round()}% of contributions ($toursPayes out of $toursTotal). Excellent profile, eligible for a larger loan if needed.',
+            'es': '${membre.nom} ha pagado el ${(taux*100).round()}% de sus cotizaciones ($toursPayes de $toursTotal). Perfil excelente, elegible para un préstamo mayor si es necesario.',
+            'pt': '${membre.nom} pagou ${(taux*100).round()}% das contribuições ($toursPayes de $toursTotal). Perfil excelente, elegível para um empréstimo maior se necessário.',
+            'ar': 'دفع ${membre.nom} ${(taux*100).round()}% من الاشتراكات ($toursPayes من $toursTotal). ملف ممتاز، مؤهل للحصول على قرض أكبر عند الحاجة.',
+          }),
           priorite: 1,
-          actionSuggeree: 'Envisager un plafond de prêt plus élevé',
+          actionSuggeree: _tr({'fr':'Envisager un plafond de prêt plus élevé','en':'Consider a higher loan limit','es':'Considerar un límite de préstamo más alto','pt':'Considerar um limite de empréstimo mais alto','ar':'النظر في رفع سقف القرض'}),
         ));
       } else if (taux < 0.6 && retards >= 2) {
         recs.add(RecommandationIA(
           type: TypeRecommandation.alerte,
-          titre: 'Plusieurs retards de paiement',
-          message: '${membre.nom} présente $retards retard(s) avec un taux '
-              'de cotisation de ${(taux * 100).round()}% '
-              '($toursPayes payé(s) sur $toursTotal). '
-              'Un suivi rapproché est recommandé.',
+          titre: _tr({'fr':'Plusieurs retards de paiement','en':'Multiple payment delays','es':'Varios retrasos de pago','pt':'Vários atrasos de pagamento','ar':'تأخيرات متعددة في الدفع'}),
+          message: _tr({
+            'fr': '${membre.nom} présente $retards retard(s) avec un taux de cotisation de ${(taux*100).round()}% ($toursPayes payé(s) sur $toursTotal). Un suivi rapproché est recommandé.',
+            'en': '${membre.nom} has $retards delay(s) with a contribution rate of ${(taux*100).round()}% ($toursPayes paid out of $toursTotal). Close monitoring is recommended.',
+            'es': '${membre.nom} presenta $retards retraso(s) con una tasa de cotización del ${(taux*100).round()}% ($toursPayes pagado(s) de $toursTotal). Se recomienda un seguimiento cercano.',
+            'pt': '${membre.nom} tem $retards atraso(s) com uma taxa de contribuição de ${(taux*100).round()}% ($toursPayes pago(s) de $toursTotal). Recomenda-se um acompanhamento próximo.',
+            'ar': 'لدى ${membre.nom} $retards تأخير(ات) بمعدل اشتراك ${(taux*100).round()}% ($toursPayes مدفوع من $toursTotal). يُوصى بمتابعة دقيقة.',
+          }),
           priorite: 1,
-          actionSuggeree: 'Envoyer une relance via WhatsApp',
+          actionSuggeree: _tr({'fr':'Envoyer une relance via WhatsApp','en':'Send a reminder via WhatsApp','es':'Enviar un recordatorio por WhatsApp','pt':'Enviar um lembrete via WhatsApp','ar':'إرسال تذكير عبر WhatsApp'}),
         ));
       } else if (taux == 1.0 && toursTotal >= 3) {
         recs.add(RecommandationIA(
           type: TypeRecommandation.positif,
-          titre: 'Régularité parfaite',
-          message: '${membre.nom} a payé $toursTotal cotisations sur '
-              '$toursTotal à temps — aucun retard enregistré.',
+          titre: _tr({'fr':'Régularité parfaite','en':'Perfect regularity','es':'Regularidad perfecta','pt':'Regularidade perfeita','ar':'انتظام مثالي'}),
+          message: _tr({
+            'fr': '${membre.nom} a payé $toursTotal cotisations sur $toursTotal à temps — aucun retard enregistré.',
+            'en': '${membre.nom} paid $toursTotal out of $toursTotal contributions on time — no delays recorded.',
+            'es': '${membre.nom} ha pagado $toursTotal de $toursTotal cotizaciones a tiempo — ningún retraso registrado.',
+            'pt': '${membre.nom} pagou $toursTotal de $toursTotal contribuições a tempo — nenhum atraso registado.',
+            'ar': 'دفع ${membre.nom} $toursTotal من $toursTotal اشتراكاً في الوقت المحدد — لا تأخيرات مسجلة.',
+          }),
           priorite: 2,
           actionSuggeree: null,
         ));
@@ -481,12 +497,16 @@ class ScoreService {
     if (pretsRetard.isNotEmpty) {
       recs.add(RecommandationIA(
         type: TypeRecommandation.alerte,
-        titre: 'Prêt(s) en retard de remboursement',
-        message: '${membre.nom} a ${pretsRetard.length} prêt(s) avec des '
-            'échéances dépassées non remboursées. '
-            'Le recouvrement doit être prioritaire.',
+        titre: _tr({'fr':'Prêt(s) en retard de remboursement','en':'Overdue loan repayment(s)','es':'Préstamo(s) con reembolso atrasado','pt':'Empréstimo(s) com reembolso em atraso','ar':'قرض(روض) متأخر في السداد'}),
+        message: _tr({
+          'fr': '${membre.nom} a ${pretsRetard.length} prêt(s) avec des échéances dépassées non remboursées. Le recouvrement doit être prioritaire.',
+          'en': '${membre.nom} has ${pretsRetard.length} loan(s) with overdue unpaid instalments. Recovery must be a priority.',
+          'es': '${membre.nom} tiene ${pretsRetard.length} préstamo(s) con cuotas vencidas sin pagar. El cobro debe ser prioritario.',
+          'pt': '${membre.nom} tem ${pretsRetard.length} empréstimo(s) com prestações vencidas não pagas. A cobrança deve ser prioritária.',
+          'ar': 'لدى ${membre.nom} ${pretsRetard.length} قرض(قروض) بأقساط متأخرة غير مسددة. يجب إعطاء الأولوية للتحصيل.',
+        }),
         priorite: 1,
-        actionSuggeree: 'Contacter le membre pour un plan de remboursement',
+        actionSuggeree: _tr({'fr':'Contacter le membre pour un plan de remboursement','en':'Contact the member for a repayment plan','es':'Contactar al miembro para un plan de reembolso','pt':'Contactar o membro para um plano de reembolso','ar':'التواصل مع العضو لوضع خطة سداد'}),
       ));
     }
 
@@ -494,17 +514,28 @@ class ScoreService {
     if (pretsRembourses >= 2) {
       recs.add(RecommandationIA(
         type: TypeRecommandation.positif,
-        titre: 'Excellent comportement de remboursement',
-        message: '${membre.nom} a intégralement remboursé $pretsRembourses '
-            'prêt(s). Ce membre démontre sa fiabilité financière.',
+        titre: _tr({'fr':'Excellent comportement de remboursement','en':'Excellent repayment behaviour','es':'Excelente comportamiento de reembolso','pt':'Excelente comportamento de reembolso','ar':'سلوك سداد ممتاز'}),
+        message: _tr({
+          'fr': '${membre.nom} a intégralement remboursé $pretsRembourses prêt(s). Ce membre démontre sa fiabilité financière.',
+          'en': '${membre.nom} has fully repaid $pretsRembourses loan(s). This member demonstrates financial reliability.',
+          'es': '${membre.nom} ha reembolsado íntegramente $pretsRembourses préstamo(s). Este miembro demuestra su fiabilidad financiera.',
+          'pt': '${membre.nom} reembolsou integralmente $pretsRembourses empréstimo(s). Este membro demonstra fiabilidade financeira.',
+          'ar': 'سدّد ${membre.nom} $pretsRembourses قرض(قروض) بالكامل. يُظهر هذا العضو موثوقيته المالية.',
+        }),
         priorite: 3,
         actionSuggeree: null,
       ));
     } else if (pretsRembourses == 1) {
       recs.add(RecommandationIA(
         type: TypeRecommandation.positif,
-        titre: 'Prêt remboursé à temps',
-        message: '${membre.nom} a remboursé son prêt sans retard.',
+        titre: _tr({'fr':'Prêt remboursé à temps','en':'Loan repaid on time','es':'Préstamo reembolsado a tiempo','pt':'Empréstimo reembolsado a tempo','ar':'تم سداد القرض في الوقت المحدد'}),
+        message: _tr({
+          'fr': '${membre.nom} a remboursé son prêt sans retard.',
+          'en': '${membre.nom} repaid their loan without delay.',
+          'es': '${membre.nom} reembolsó su préstamo sin retraso.',
+          'pt': '${membre.nom} reembolsou o seu empréstimo sem atraso.',
+          'ar': 'سدّد ${membre.nom} قرضه في الوقت المحدد دون تأخير.',
+        }),
         priorite: 3,
         actionSuggeree: null,
       ));
@@ -516,20 +547,28 @@ class ScoreService {
       if (taux < 0.4) {
         recs.add(RecommandationIA(
           type: TypeRecommandation.info,
-          titre: 'Membre peu actif dans les votes',
-          message: '${membre.nom} n\'a participé qu\'à $nbParticipes vote(s) '
-              'sur $votesEligibles scrutin(s) éligibles '
-              '(${(taux * 100).round()}%). La participation démocratique '
-              'est essentielle au bon fonctionnement de la tontine.',
+          titre: _tr({'fr':'Membre peu actif dans les votes','en':'Member rarely participates in votes','es':'Miembro poco activo en las votaciones','pt':'Membro pouco ativo nas votações','ar':'عضو قليل المشاركة في التصويت'}),
+          message: _tr({
+            'fr': '${membre.nom} n\'a participé qu\'à $nbParticipes vote(s) sur $votesEligibles scrutin(s) éligibles (${(taux*100).round()}%). La participation démocratique est essentielle au bon fonctionnement de la tontine.',
+            'en': '${membre.nom} only participated in $nbParticipes vote(s) out of $votesEligibles eligible poll(s) (${(taux*100).round()}%). Democratic participation is essential to the tontine\'s proper functioning.',
+            'es': '${membre.nom} solo participó en $nbParticipes votación(es) de $votesEligibles escrutinio(s) elegibles (${(taux*100).round()}%). La participación democrática es esencial para el buen funcionamiento de la tontina.',
+            'pt': '${membre.nom} só participou em $nbParticipes voto(s) de $votesEligibles escrutínio(s) elegíveis (${(taux*100).round()}%). A participação democrática é essencial para o bom funcionamento da tontina.',
+            'ar': 'شارك ${membre.nom} فقط في $nbParticipes تصويت(ات) من $votesEligibles تصويت(ات) مؤهلة (${(taux*100).round()}%). المشاركة الديمقراطية أساسية لحسن سير التنتين.',
+          }),
           priorite: 2,
-          actionSuggeree: 'Rappeler l\'importance du vote lors de la prochaine réunion',
+          actionSuggeree: _tr({'fr':'Rappeler l\'importance du vote lors de la prochaine réunion','en':'Remind about the importance of voting at the next meeting','es':'Recordar la importancia del voto en la próxima reunión','pt':'Lembrar a importância do voto na próxima reunião','ar':'تذكير بأهمية التصويت في الاجتماع القادم'}),
         ));
       } else if (taux >= 0.9) {
         recs.add(RecommandationIA(
           type: TypeRecommandation.positif,
-          titre: 'Participation citoyenne exemplaire',
-          message: '${membre.nom} a participé à ${(taux * 100).round()}% '
-              'des scrutins éligibles ($nbParticipes/$votesEligibles).',
+          titre: _tr({'fr':'Participation citoyenne exemplaire','en':'Exemplary civic participation','es':'Participación ciudadana ejemplar','pt':'Participação cívica exemplar','ar':'مشاركة مدنية مثالية'}),
+          message: _tr({
+            'fr': '${membre.nom} a participé à ${(taux*100).round()}% des scrutins éligibles ($nbParticipes/$votesEligibles).',
+            'en': '${membre.nom} participated in ${(taux*100).round()}% of eligible polls ($nbParticipes/$votesEligibles).',
+            'es': '${membre.nom} participó en el ${(taux*100).round()}% de los escrutinios elegibles ($nbParticipes/$votesEligibles).',
+            'pt': '${membre.nom} participou em ${(taux*100).round()}% dos escrutínios elegíveis ($nbParticipes/$votesEligibles).',
+            'ar': 'شارك ${membre.nom} في ${(taux*100).round()}% من التصويتات المؤهلة ($nbParticipes/$votesEligibles).',
+          }),
           priorite: 3,
           actionSuggeree: null,
         ));
@@ -540,11 +579,16 @@ class ScoreService {
     if (penalites > 0) {
       recs.add(RecommandationIA(
         type: TypeRecommandation.info,
-        titre: 'Pénalités enregistrées',
-        message: '${membre.nom} a reçu $penalites pénalité(s). '
-            'La régularisation de ces pénalités améliorera le score.',
+        titre: _tr({'fr':'Pénalités enregistrées','en':'Penalties recorded','es':'Penalizaciones registradas','pt':'Penalidades registadas','ar':'عقوبات مسجلة'}),
+        message: _tr({
+          'fr': '${membre.nom} a reçu $penalites pénalité(s). La régularisation de ces pénalités améliorera le score.',
+          'en': '${membre.nom} received $penalites penalty(ies). Settling these penalties will improve the score.',
+          'es': '${membre.nom} ha recibido $penalites penalización(es). La regularización de estas penalizaciones mejorará la puntuación.',
+          'pt': '${membre.nom} recebeu $penalites penalidade(s). A regularização destas penalidades melhorará a pontuação.',
+          'ar': 'تلقّى ${membre.nom} $penalites عقوبة(عقوبات). تسوية هذه العقوبات ستحسّن النتيجة.',
+        }),
         priorite: 2,
-        actionSuggeree: 'Vérifier les pénalités en suspens',
+        actionSuggeree: _tr({'fr':'Vérifier les pénalités en suspens','en':'Check pending penalties','es':'Verificar las penalizaciones pendientes','pt':'Verificar as penalidades pendentes','ar':'مراجعة العقوبات المعلقة'}),
       ));
     }
 
@@ -552,38 +596,47 @@ class ScoreService {
     if (score < 35) {
       recs.add(RecommandationIA(
         type: TypeRecommandation.risque,
-        titre: 'Risque élevé — Action collective recommandée',
-        message: 'Le score de ${membre.nom} ($score/100) indique un risque '
-            'sérieux pour la tontine. Les membres peuvent initier un vote '
-            'de maintien ou de retrait selon le règlement intérieur.',
+        titre: _tr({'fr':'Risque élevé — Action collective recommandée','en':'High risk — Collective action recommended','es':'Riesgo alto — Acción colectiva recomendada','pt':'Risco elevado — Ação coletiva recomendada','ar':'خطر مرتفع — يُوصى باتخاذ إجراء جماعي'}),
+        message: _tr({
+          'fr': 'Le score de ${membre.nom} ($score/100) indique un risque sérieux pour la tontine. Les membres peuvent initier un vote de maintien ou de retrait selon le règlement intérieur.',
+          'en': '${membre.nom}\'s score ($score/100) indicates a serious risk for the tontine. Members may initiate a vote to maintain or remove the member according to internal rules.',
+          'es': 'La puntuación de ${membre.nom} ($score/100) indica un riesgo serio para la tontina. Los miembros pueden iniciar una votación de mantenimiento o retirada según el reglamento interno.',
+          'pt': 'A pontuação de ${membre.nom} ($score/100) indica um risco sério para a tontina. Os membros podem iniciar uma votação de manutenção ou retirada de acordo com o regulamento interno.',
+          'ar': 'تشير نتيجة ${membre.nom} ($score/100) إلى خطر جدي على التنتين. يمكن للأعضاء بدء تصويت للإبقاء أو الإقصاء وفقاً للنظام الداخلي.',
+        }),
         priorite: 1,
-        actionSuggeree: 'Proposer un vote de maintien ou de retrait',
+        actionSuggeree: _tr({'fr':'Proposer un vote de maintien ou de retrait','en':'Propose a vote to maintain or remove the member','es':'Proponer una votación de mantenimiento o retirada','pt':'Propor uma votação de manutenção ou retirada','ar':'اقتراح تصويت للإبقاء أو الإقصاء'}),
       ));
     } else if (score < 50) {
       recs.add(RecommandationIA(
         type: TypeRecommandation.alerte,
-        titre: 'Profil à surveiller',
-        message: '${membre.nom} présente des signaux préoccupants '
-            '(score $score/100). Un accompagnement préventif peut '
-            'améliorer la situation.',
+        titre: _tr({'fr':'Profil à surveiller','en':'Profile to monitor','es':'Perfil a vigilar','pt':'Perfil a monitorizar','ar':'ملف يستدعي المراقبة'}),
+        message: _tr({
+          'fr': '${membre.nom} présente des signaux préoccupants (score $score/100). Un accompagnement préventif peut améliorer la situation.',
+          'en': '${membre.nom} shows concerning signals (score $score/100). Preventive support can improve the situation.',
+          'es': '${membre.nom} presenta señales preocupantes (puntuación $score/100). Un acompañamiento preventivo puede mejorar la situación.',
+          'pt': '${membre.nom} apresenta sinais preocupantes (pontuação $score/100). Um acompanhamento preventivo pode melhorar a situação.',
+          'ar': 'يُظهر ${membre.nom} إشارات مقلقة (النتيجة $score/100). المرافقة الوقائية يمكن أن تحسّن الوضع.',
+        }),
         priorite: 2,
-        actionSuggeree: 'Planifier un entretien de suivi',
+        actionSuggeree: _tr({'fr':'Planifier un entretien de suivi','en':'Schedule a follow-up interview','es':'Planificar una entrevista de seguimiento','pt':'Planear uma entrevista de acompanhamento','ar':'جدولة مقابلة متابعة'}),
       ));
     }
 
     // ── Conseils d'amélioration ────────────────────────────────────────────
     if (score < 70) {
       final conseils = _conseilsAmelioration(
-        retards:      retards,
-        penalites:    penalites,
+        retards:       retards,
+        penalites:     penalites,
         nbPretsRetard: pretsRetard.length,
-        tauxVote:     votesEligibles > 0 ? nbParticipes / votesEligibles : 1.0,
-        score:        score,
+        tauxVote:      votesEligibles > 0 ? nbParticipes / votesEligibles : 1.0,
+        score:         score,
+        langueCode:    _l,
       );
       if (conseils.isNotEmpty) {
         recs.add(RecommandationIA(
           type: TypeRecommandation.conseil,
-          titre: 'Comment améliorer le score',
+          titre: _tr({'fr':'Comment améliorer le score','en':'How to improve the score','es':'Cómo mejorar la puntuación','pt':'Como melhorar a pontuação','ar':'كيفية تحسين النتيجة'}),
           message: conseils,
           priorite: 3,
           actionSuggeree: null,
@@ -677,23 +730,54 @@ class ScoreService {
     required int nbPretsRetard,
     required double tauxVote,
     required int score,
+    String langueCode = 'fr',
   }) {
+    final l = ['fr','en','es','pt','ar'].contains(langueCode) ? langueCode : 'fr';
     final items = <String>[];
     if (nbPretsRetard > 0) {
-      items.add('• Rembourser les échéances de prêt en attente (prioritaire)');
+      items.add({
+        'fr': '• Rembourser les échéances de prêt en attente (prioritaire)',
+        'en': '• Repay pending loan instalments (priority)',
+        'es': '• Reembolsar las cuotas de préstamo pendientes (prioritario)',
+        'pt': '• Reembolsar as prestações de empréstimo pendentes (prioritário)',
+        'ar': '• سداد أقساط القرض المعلقة (أولوية)',
+      }[l]!);
     }
     if (retards > 0) {
-      items.add('• Payer les cotisations avant ou à la date d\'échéance');
+      items.add({
+        'fr': '• Payer les cotisations avant ou à la date d\'échéance',
+        'en': '• Pay contributions before or on the due date',
+        'es': '• Pagar las cotizaciones antes o en la fecha de vencimiento',
+        'pt': '• Pagar as contribuições antes ou na data de vencimento',
+        'ar': '• دفع الاشتراكات قبل أو في موعد الاستحقاق',
+      }[l]!);
     }
     if (penalites > 0) {
-      items.add('• Régulariser les pénalités en suspens');
+      items.add({
+        'fr': '• Régulariser les pénalités en suspens',
+        'en': '• Settle pending penalties',
+        'es': '• Regularizar las penalizaciones pendientes',
+        'pt': '• Regularizar as penalidades pendentes',
+        'ar': '• تسوية العقوبات المعلقة',
+      }[l]!);
     }
     if (tauxVote < 0.7) {
-      items.add('• Participer activement aux votes de la tontine');
+      items.add({
+        'fr': '• Participer activement aux votes de la tontine',
+        'en': '• Actively participate in tontine votes',
+        'es': '• Participar activamente en las votaciones de la tontina',
+        'pt': '• Participar ativamente nas votações da tontina',
+        'ar': '• المشاركة الفعالة في تصويتات التنتين',
+      }[l]!);
     }
     if (score < 60) {
-      items.add(
-          '• La régularité sur les 3 prochains tours améliorera rapidement le score');
+      items.add({
+        'fr': '• La régularité sur les 3 prochains tours améliorera rapidement le score',
+        'en': '• Regularity over the next 3 rounds will quickly improve the score',
+        'es': '• La regularidad en las próximas 3 rondas mejorará rápidamente la puntuación',
+        'pt': '• A regularidade nas próximas 3 rondas melhorará rapidamente a pontuação',
+        'ar': '• الانتظام في الجولات الـ3 القادمة سيحسّن النتيجة بسرعة',
+      }[l]!);
     }
     return items.join('\n');
   }
@@ -703,13 +787,21 @@ class ScoreService {
   // Utilisables depuis n'importe quelle interface Flutter.
   // ═══════════════════════════════════════════════════════════════════════════
 
-  static String labelNiveau(NiveauScore niveau) {
+  static String labelNiveau(NiveauScore niveau, {String langueCode = 'fr'}) {
+    final l = ['fr','en','es','pt','ar'].contains(langueCode) ? langueCode : 'fr';
+    const _labels = {
+      'tresFiable':  {'fr':'Très fiable',   'en':'Very reliable',  'es':'Muy fiable',    'pt':'Muito fiável',   'ar':'موثوق جداً'},
+      'fiable':      {'fr':'Fiable',         'en':'Reliable',       'es':'Fiable',         'pt':'Fiável',         'ar':'موثوق'},
+      'aSurveiller': {'fr':'À surveiller',   'en':'To monitor',     'es':'A vigilar',      'pt':'A monitorizar',  'ar':'يستدعي المراقبة'},
+      'risque':      {'fr':'Risqué',         'en':'Risky',          'es':'Arriesgado',     'pt':'Arriscado',      'ar':'خطر'},
+      'tresRisque':  {'fr':'Très risqué',    'en':'Very risky',     'es':'Muy arriesgado', 'pt':'Muito arriscado','ar':'خطر جداً'},
+    };
     switch (niveau) {
-      case NiveauScore.tresFiable:   return 'Très fiable';
-      case NiveauScore.fiable:       return 'Fiable';
-      case NiveauScore.aSurveiller:  return 'À surveiller';
-      case NiveauScore.risque:       return 'Risqué';
-      case NiveauScore.tresRisque:   return 'Très risqué';
+      case NiveauScore.tresFiable:   return _labels['tresFiable']![l]!;
+      case NiveauScore.fiable:       return _labels['fiable']![l]!;
+      case NiveauScore.aSurveiller:  return _labels['aSurveiller']![l]!;
+      case NiveauScore.risque:       return _labels['risque']![l]!;
+      case NiveauScore.tresRisque:   return _labels['tresRisque']![l]!;
     }
   }
 
