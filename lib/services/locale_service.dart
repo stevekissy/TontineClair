@@ -9,6 +9,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'supabase_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Modèle langue
@@ -61,27 +62,73 @@ class LocaleService extends ChangeNotifier {
   AppLangue get langue => _langue;
   Locale    get locale  => _langue.locale;
 
-  // ── Initialisation depuis SharedPreferences ──────────────────────────────
+  // ── Initialisation ───────────────────────────────────────────────────────
+  // Ordre de priorité :
+  //   1. SharedPreferences (local, immédiat — source de vérité hors-ligne)
+  //   2. Supabase (distant, asynchrone — synchronise entre appareils)
+  // Règle : Supabase écrase SharedPreferences SEULEMENT si la langue locale
+  //         est 'fr' (défaut) et que Supabase a une préférence différente,
+  //         afin de ne pas effacer un choix explicite fait hors-ligne.
   Future<void> initialiser() async {
     final prefs = await SharedPreferences.getInstance();
-    final code  = prefs.getString(_prefKey);
-    if (code != null) {
-      final trouve = langues.firstWhere(
-        (l) => l.code == code,
+
+    // 1. Charger depuis SharedPreferences (immédiat)
+    final codeLocal = prefs.getString(_prefKey);
+    if (codeLocal != null) {
+      _langue = langues.firstWhere(
+        (l) => l.code == codeLocal,
         orElse: () => langues.first,
       );
-      _langue = trouve;
       notifyListeners();
+    }
+
+    // 2. Tenter de charger depuis Supabase (asynchrone, silencieux)
+    try {
+      final token = prefs.getString('fcm_token') ?? '';
+      if (token.isNotEmpty) {
+        final codeDistant = await SupabaseService.chargerLangue(token: token);
+        if (codeDistant != null && codeDistant != _langue.code) {
+          // Supabase a une préférence : on la respecte et on met à jour local
+          final langueDistante = langues.firstWhere(
+            (l) => l.code == codeDistant,
+            orElse: () => _langue,
+          );
+          if (langueDistante.code != _langue.code) {
+            _langue = langueDistante;
+            await prefs.setString(_prefKey, langueDistante.code);
+            notifyListeners();
+          }
+        }
+      }
+    } catch (_) {
+      // Silencieux — offline ou RPC absente, SharedPreferences suffit
     }
   }
 
   // ── Changer la langue ────────────────────────────────────────────────────
+  // 1. Mise à jour immédiate de l'état + UI (notifyListeners)
+  // 2. Persistance locale dans SharedPreferences
+  // 3. Persistance distante dans Supabase (silencieuse, non bloquante)
   Future<void> changerLangue(AppLangue langue) async {
     if (_langue.code == langue.code) return;
     _langue = langue;
-    notifyListeners();
+    notifyListeners();               // ← UI se met à jour immédiatement
+
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefKey, langue.code);
+    await prefs.setString(_prefKey, langue.code);  // local toujours en premier
+
+    // Supabase : silencieux, non bloquant
+    try {
+      final token = prefs.getString('fcm_token') ?? '';
+      if (token.isNotEmpty) {
+        await SupabaseService.sauvegarderLangue(
+          langueCode: langue.code,
+          token: token,
+        );
+      }
+    } catch (_) {
+      // Silencieux — l'UI est déjà à jour, SharedPreferences suffit
+    }
   }
 
   // ── Helpers statiques ────────────────────────────────────────────────────
