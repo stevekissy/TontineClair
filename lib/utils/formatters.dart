@@ -1,5 +1,6 @@
 import 'package:intl/intl.dart';
 import '../services/devise_service.dart';
+import '../services/paiement_service.dart';
 
 class Formatters {
   static final NumberFormat fcfa = NumberFormat.decimalPattern('fr_FR');
@@ -91,20 +92,7 @@ class Formatters {
   }
 
   static String methodePaiement(String m) {
-    switch (m) {
-      case 'especes':
-        return 'Espèces';
-      case 'orange':
-        return 'Orange Money';
-      case 'mtn':
-        return 'MTN Money';
-      case 'moov':
-        return 'Moov Money';
-      case 'wave':
-        return 'Wave';
-      default:
-        return m;
-    }
+    return PaiementService.label(m);
   }
 
   static String capitaliser(String s) {

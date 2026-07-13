@@ -6,6 +6,7 @@ import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
 import '../services/echeance_service.dart';
 import '../services/pdf_service.dart';
+import '../services/paiement_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
@@ -203,8 +204,8 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
     final ref = Formatters.genererReference();
 
     if (!membre.paye) {
-      // Marquer payé — choisir méthode
-      final methode = await _choisirMethode(context);
+      // Marquer payé — choisir méthode (filtrée selon la devise de la tontine)
+      final methode = await _choisirMethode(context, devise: data.devise);
       if (methode == null || !context.mounted) return;
 
       final ok = await afficherModalePin(
@@ -491,32 +492,84 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
     }
   }
 
-  Future<String?> _choisirMethode(BuildContext context) async {
+  Future<String?> _choisirMethode(BuildContext context, {String? devise}) async {
+    final methodes = PaiementService.methodesPour(devise);
     return showModalBottomSheet<String>(
       context: context,
       backgroundColor: AppColors.fondPapier,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.55,
+        minChildSize: 0.35,
+        maxChildSize: 0.85,
+        expand: false,
+        builder: (_, scrollCtrl) => Column(
           children: [
-            const Text(
-              'Méthode de paiement',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 18,
-                color: AppColors.encre,
+            // Poignée
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.lignes,
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
-            const SizedBox(height: 16),
-            ...['especes', 'orange', 'mtn', 'moov', 'wave'].map(
-              (m) => ListTile(
-                title: Text(Formatters.methodePaiement(m)),
-                leading: const Icon(Icons.payment, color: AppColors.encre),
-                onTap: () => Navigator.pop(ctx, m),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Méthode de paiement',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 18,
+                        color: AppColors.encre,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    icon: const Icon(Icons.close, size: 20, color: AppColors.texteDoux),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView.builder(
+                controller: scrollCtrl,
+                itemCount: methodes.length,
+                itemBuilder: (_, i) {
+                  final m = methodes[i];
+                  return ListTile(
+                    leading: Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: AppColors.encre.withValues(alpha: 0.07),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: Text(m.emoji, style: const TextStyle(fontSize: 18)),
+                      ),
+                    ),
+                    title: Text(
+                      m.label,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 15,
+                        color: AppColors.encre,
+                      ),
+                    ),
+                    trailing: const Icon(Icons.chevron_right, size: 18, color: AppColors.texteDoux),
+                    onTap: () => Navigator.pop(ctx, m.code),
+                  );
+                },
               ),
             ),
           ],
