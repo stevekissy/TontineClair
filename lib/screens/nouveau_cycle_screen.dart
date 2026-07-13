@@ -92,14 +92,12 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
                       else if (data.cycleActif)
                         _EtatCycleEnCours(data: data)
 
-                      // ── État 2 : Cycle terminé, peut proposer ──
-                      else if (data.cycleTermine && (vote == null || data.peutProposerNouveauCycle))
-                        _EtatPeutProposer(
-                          data: data,
-                          estGest: estGest,
-                          enChargement: _enChargement,
-                          onProposer: estGest ? () => _proposerCycle(provider, data) : null,
-                        )
+                      // ── États vote (3, 4, 5) AVANT état 2 ──────────────────
+                      // PRIORITÉ : un vote actif ou clos prend le dessus sur
+                      // "cycle terminé, peut proposer". Sans cela, l'État 2
+                      // s'affiche même quand un vote clos+adopté attend de
+                      // démarrer (peutProposerNouveauCycle retourne true si
+                      // aucun vote OUVERT, mais ignore les votes clos).
 
                       // ── État 3 : Vote ouvert ──
                       else if (vote != null && !vote.clos)
@@ -134,6 +132,16 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
                           estGest: estGest,
                           enChargement: _enChargement,
                           onReproposer: estGest ? () => _proposerCycle(provider, data) : null,
+                        )
+
+                      // ── État 2 : Cycle terminé, peut proposer ──
+                      // Affiché seulement si aucun vote en cours (ouvert OU clos)
+                      else if (data.cycleTermine)
+                        _EtatPeutProposer(
+                          data: data,
+                          estGest: estGest,
+                          enChargement: _enChargement,
+                          onProposer: estGest ? () => _proposerCycle(provider, data) : null,
                         )
 
                       // ── Fallback ──
