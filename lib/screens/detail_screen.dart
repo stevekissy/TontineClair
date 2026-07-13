@@ -1727,7 +1727,7 @@ class _BarreDetail extends StatelessWidget {
         caisseMvts.insert(0, {
           'id': '${ref}D',
           'type': 'decaissement',
-          'montant': -total,
+          'montant': total,
           'description': 'Décaissement Tour $numerTourAffiche — $benefNom',
           'gestionnaire': provider.gestActifNom ?? '',
           'date': DateTime.now().toIso8601String(),
