@@ -736,6 +736,14 @@ class _VotesScreenState extends State<VotesScreen> {
           );
           ordre.add(newId);
           newData['ordre'] = ordre;
+
+          // Notification nouveau membre admis
+          SupabaseService.envoyerNotification(
+            code: widget.code,
+            type: 'nouveau_membre',
+            titre: '🎉 Nouveau membre admis',
+            message: '${vote.nouveauMembreNom} a été admis(e) dans la tontine par vote.',
+          );
         }
 
         // ── Vote de retrait adopté → passer le membre en "Retiré" ─────────

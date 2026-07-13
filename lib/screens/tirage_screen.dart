@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
+import '../services/supabase_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
@@ -223,6 +224,14 @@ class _TirageScreenState extends State<TirageScreen> {
     if (ok == true && context.mounted) {
       setState(() => _tirageFait = false);
       afficherToast(context, 'Tirage verrouillé et signé !');
+      final tontineCode = provider.courante?.code ?? widget.code;
+      final ordreNoms = _membresOrdonnes.map((m) => m.nom).join(', ');
+      SupabaseService.envoyerNotification(
+        code: tontineCode,
+        type: 'tirage_verrouille',
+        titre: '🔒 Tirage verrouillé',
+        message: 'L\'ordre de passage est définitif : $ordreNoms',
+      );
     }
   }
 }

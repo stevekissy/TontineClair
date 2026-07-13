@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
 import '../services/devise_service.dart';
+import '../services/supabase_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
@@ -381,6 +382,20 @@ class CaisseScreen extends StatelessWidget {
     if (ok == true && context.mounted) {
       afficherToast(context,
           type == 'penalite' ? 'Pénalité appliquée !' : 'Mouvement enregistré !');
+      final titreNotif = type == 'penalite'
+          ? '⚠️ Pénalité appliquée'
+          : type == 'apport'
+              ? '💰 Apport en caisse'
+              : '💸 Dépense de caisse';
+      final msgNotif = type == 'penalite' && nomMembre.isNotEmpty
+          ? 'Pénalité de ${Formatters.montant(montant, devise: data.devise)} appliquée à $nomMembre'
+          : '${libelleType} de ${Formatters.montant(montant, devise: data.devise)}${descFinale.isNotEmpty ? ' — $descFinale' : ''}';
+      SupabaseService.envoyerNotification(
+        code: code,
+        type: type == 'penalite' ? 'penalite' : 'caisse',
+        titre: titreNotif,
+        message: msgNotif,
+      );
     }
   }
 }

@@ -354,6 +354,12 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
       // Retourner à l'écran précédent — le cycle est démarré
       if (mounted) {
         afficherToast(context, '🎉 Cycle $cycleNum démarré ! Tour 1 en cours.');
+        SupabaseService.envoyerNotification(
+          code: widget.code,
+          type: 'nouveau_cycle',
+          titre: '🔄 Nouveau cycle démarré',
+          message: 'Le cycle $cycleNum de la tontine vient de démarrer ! Tour 1 en cours.',
+        );
         Navigator.of(context).pop();
       }
     } else {

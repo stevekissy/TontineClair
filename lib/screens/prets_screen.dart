@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
 import '../services/devise_service.dart';
+import '../services/supabase_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
@@ -352,6 +353,12 @@ class _PretsScreenState extends State<PretsScreen> {
 
     if (ok == true && context.mounted) {
       afficherToast(context, 'Prêt créé avec succès !');
+      SupabaseService.envoyerNotification(
+        code: widget.code,
+        type: 'pret',
+        titre: '🤝 Nouveau prêt accordé',
+        message: 'Prêt de ${Formatters.montant(montant, devise: data.devise)} accordé à $nomEmprunteur (${taux}% — $durees mois)',
+      );
     }
   }
 }
@@ -625,6 +632,15 @@ class _CartePret extends StatelessWidget {
 
     if (ok == true && context.mounted) {
       afficherToast(context, 'Remboursement annulé et caisse corrigée.');
+      final tontineCode = provider.courante?.code ?? '';
+      if (tontineCode.isNotEmpty) {
+        SupabaseService.envoyerNotification(
+          code: tontineCode,
+          type: 'annulation_remboursement',
+          titre: '↩️ Remboursement annulé',
+          message: 'Annulation remboursement de ${Formatters.montant(remb.montant, devise: data.devise)} — ${pret.emprunteurNom} (Réf. ${remb.reference})',
+        );
+      }
     }
   }
 
@@ -830,6 +846,17 @@ class _CartePret extends StatelessWidget {
             ? '✅ Prêt soldé intégralement !'
             : 'Remboursement enregistré !',
       );
+      final tontineCode = provider.courante?.code ?? '';
+      if (tontineCode.isNotEmpty) {
+        SupabaseService.envoyerNotification(
+          code: tontineCode,
+          type: pretSolde ? 'pret_solde' : 'remboursement',
+          titre: pretSolde ? '✅ Prêt entièrement soldé' : '💳 Remboursement enregistré',
+          message: pretSolde
+              ? 'Le prêt de ${pret.emprunteurNom} est entièrement remboursé (${Formatters.montant(pret.totalDu, devise: data.devise)})'
+              : 'Remboursement de ${Formatters.montant(montant, devise: data.devise)} reçu de ${pret.emprunteurNom} — Reste : ${Formatters.montant(resteApres, devise: data.devise)}',
+        );
+      }
 
       // ── Reçu WhatsApp remboursement ───────────────────────────────────────
       final telEmprunteur = data.membres
