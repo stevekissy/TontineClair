@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -737,24 +738,23 @@ class _BoutonRecapWhatsApp extends StatelessWidget {
       child: ElevatedButton.icon(
         onPressed: () async {
           final msg = Uri.encodeComponent(_construireMessage());
-          // Essayer d'abord l'URL directe WhatsApp (app installée)
-          // puis fallback vers wa.me (web / SMS)
           final urlApp = Uri.parse('whatsapp://send?text=$msg');
           final urlWeb = Uri.parse('https://wa.me/?text=$msg');
+          bool ouvert = false;
+          // Tentative 1 : app WhatsApp native (sans canLaunchUrl — non fiable Android 11+)
           try {
-            if (await canLaunchUrl(urlApp)) {
-              await launchUrl(urlApp, mode: LaunchMode.externalApplication);
-            } else {
-              await launchUrl(urlWeb, mode: LaunchMode.externalApplication);
-            }
-          } catch (_) {
-            if (context.mounted) {
-              afficherToast(
-                context,
-                'WhatsApp non disponible. Le message a été copié.',
-                estErreur: true,
-              );
-            }
+            ouvert = await launchUrl(urlApp, mode: LaunchMode.externalApplication);
+          } catch (_) {}
+          // Tentative 2 : wa.me (navigateur / WhatsApp web)
+          if (!ouvert) {
+            try {
+              ouvert = await launchUrl(urlWeb, mode: LaunchMode.externalApplication);
+            } catch (_) {}
+          }
+          // Fallback : copie dans le presse-papiers
+          if (!ouvert && context.mounted) {
+            await Clipboard.setData(ClipboardData(text: _construireMessage()));
+            afficherToast(context, '📋 Message copié ! Collez-le dans WhatsApp.');
           }
         },
         icon: const Icon(Icons.share_outlined, size: 18, color: Colors.white),
