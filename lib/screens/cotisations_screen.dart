@@ -13,6 +13,7 @@ import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
+import '../services/locale_service.dart';
 
 // ── Bug #6 fix : StatefulWidget pour rechargement depuis Supabase à l'ouverture ──
 class CotisationsScreen extends StatefulWidget {
@@ -495,6 +496,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
         ref: ref,
         methode: methode,
         dateStr: dateStr,
+        langueCode: Provider.of<LocaleService>(context, listen: false).langue.code,
       );
     } catch (e) {
       if (context.mounted) {
@@ -626,6 +628,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
         ref: membre.referencePaiement ?? '—',
         methode: membre.methodePaiement ?? 'especes',
         dateStr: membre.datePaiement ?? DateTime.now().toIso8601String(),
+        langueCode: Provider.of<LocaleService>(context, listen: false).langue.code,
       );
     } catch (e) {
       if (context.mounted) {

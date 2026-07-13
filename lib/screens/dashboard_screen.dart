@@ -17,6 +17,7 @@ import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import 'nouveau_cycle_screen.dart';
 import '../utils/app_localizations.dart';
+import '../services/locale_service.dart';
 
 // ─── Constante seuil score faible ────────────────────────────────────────────
 const int _seuilScoreFaible = 40;
@@ -868,6 +869,7 @@ class _BoutonExportPdfState extends State<_BoutonExportPdf> {
           await PdfService.exporterReleve(
             tontine: widget.tontine,
             nomGestionnaire: widget.provider.gestActifNom ?? '',
+            langueCode: Provider.of<LocaleService>(context, listen: false).langue.code,
           );
         } catch (e) {
           if (context.mounted) {

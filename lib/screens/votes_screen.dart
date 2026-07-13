@@ -9,6 +9,7 @@ import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
+import '../services/locale_service.dart';
 
 class VotesScreen extends StatefulWidget {
   final String code;
@@ -193,6 +194,7 @@ class _VotesScreenState extends State<VotesScreen> {
                                         voixDetaillees: _voixParVote[v.id] ?? [],
                                         nomGestionnaire:
                                             provider.gestActifNom ?? '',
+                                        langueCode: Provider.of<LocaleService>(context, listen: false).langue.code,
                                       )
                                   : null,
                             ),

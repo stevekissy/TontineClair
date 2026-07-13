@@ -23,6 +23,80 @@ class PdfService {
   static const _or = PdfColor.fromInt(0xFFD99A2B);
   static const _encre = PdfColor.fromInt(0xFF1C2447);
   static const _fondGris = PdfColor.fromInt(0xFFEEEEEE);
+
+  // ── Traductions PDF (labels statiques dans les documents) ────────────────
+  // Seuls les labels fixes du document sont traduits ici.
+  // Les données (noms, montants, dates) ne sont JAMAIS traduits.
+  static String _t(String key, String langueCode) {
+    const Map<String, Map<String, String>> _pdf = {
+      'releve_titre':          {'fr': 'Relevé de la tontine', 'en': 'Tontine statement', 'es': 'Estado de la tontina', 'pt': 'Extrato da tontina', 'ar': 'كشف التونتين'},
+      'releve_genere':         {'fr': 'Relevé généré le', 'en': 'Statement generated on', 'es': 'Estado generado el', 'pt': 'Extrato gerado em', 'ar': 'تم إنشاء الكشف في'},
+      'membres':               {'fr': 'membres', 'en': 'members', 'es': 'miembros', 'pt': 'membros', 'ar': 'أعضاء'},
+      'par_pers':              {'fr': '/pers.', 'en': '/person', 'es': '/pers.', 'pt': '/pessoa', 'ar': '/شخص'},
+      'code':                  {'fr': 'Code', 'en': 'Code', 'es': 'Código', 'pt': 'Código', 'ar': 'الرمز'},
+      'confidentiel':          {'fr': 'TontineClair — Relevé confidentiel', 'en': 'TontineClair — Confidential statement', 'es': 'TontineClair — Estado confidencial', 'pt': 'TontineClair — Extrato confidencial', 'ar': 'TontineClair — كشف سري'},
+      'page':                  {'fr': 'Page', 'en': 'Page', 'es': 'Página', 'pt': 'Página', 'ar': 'صفحة'},
+      'sur':                   {'fr': 'sur', 'en': 'of', 'es': 'de', 'pt': 'de', 'ar': 'من'},
+      'caisse_titre':          {'fr': 'Caisse commune', 'en': 'Common treasury', 'es': 'Caja común', 'pt': 'Caixa comum', 'ar': 'الصندوق المشترك'},
+      'solde_dispo':           {'fr': 'Solde disponible', 'en': 'Available balance', 'es': 'Saldo disponible', 'pt': 'Saldo disponível', 'ar': 'الرصيد المتاح'},
+      'aucun_mouvement':       {'fr': 'Aucun mouvement enregistré.', 'en': 'No transactions recorded.', 'es': 'Sin movimientos registrados.', 'pt': 'Nenhum movimento registrado.', 'ar': 'لا توجد حركات مسجلة.'},
+      'col_date':              {'fr': 'Date', 'en': 'Date', 'es': 'Fecha', 'pt': 'Data', 'ar': 'التاريخ'},
+      'col_motif':             {'fr': 'Motif', 'en': 'Reason', 'es': 'Motivo', 'pt': 'Motivo', 'ar': 'السبب'},
+      'col_par_qui':           {'fr': 'Par qui', 'en': 'By whom', 'es': 'Por quién', 'pt': 'Por quem', 'ar': 'من'},
+      'col_montant':           {'fr': 'Montant', 'en': 'Amount', 'es': 'Monto', 'pt': 'Valor', 'ar': 'المبلغ'},
+      'tours_titre':           {'fr': 'Tours du cycle', 'en': 'Cycle rounds', 'es': 'Rondas del ciclo', 'pt': 'Rodadas do ciclo', 'ar': 'جولات الدورة'},
+      'tour_sur':              {'fr': 'Tour', 'en': 'Round', 'es': 'Ronda', 'pt': 'Rodada', 'ar': 'الجولة'},
+      'en_cours':              {'fr': 'EN COURS', 'en': 'IN PROGRESS', 'es': 'EN CURSO', 'pt': 'EM ANDAMENTO', 'ar': 'جارٍ'},
+      'beneficiaire':          {'fr': 'Bénéficiaire', 'en': 'Beneficiary', 'es': 'Beneficiario', 'pt': 'Beneficiário', 'ar': 'المستفيد'},
+      'cotisations':           {'fr': 'cotisations', 'en': 'contributions', 'es': 'cuotas', 'pt': 'contribuições', 'ar': 'اشتراكات'},
+      'en_attente':            {'fr': 'Tontine en attente de démarrage — aucun tour commencé.', 'en': 'Tontine waiting to start — no round begun.', 'es': 'Tontina en espera de inicio — ninguna ronda comenzada.', 'pt': 'Tontina aguardando início — nenhuma rodada iniciada.', 'ar': 'التونتين في انتظار البدء — لم تبدأ أي جولة.'},
+      'aucun_tour':            {'fr': "Aucun tour clôturé pour l'instant.", 'en': 'No closed rounds yet.', 'es': 'Ninguna ronda cerrada por ahora.', 'pt': 'Nenhuma rodada encerrada ainda.', 'ar': 'لا توجد جولات مغلقة حتى الآن.'},
+      'col_tour':              {'fr': 'Tour', 'en': 'Round', 'es': 'Ronda', 'pt': 'Rodada', 'ar': 'الجولة'},
+      'col_beneficiaire':      {'fr': 'Bénéficiaire', 'en': 'Beneficiary', 'es': 'Beneficiario', 'pt': 'Beneficiário', 'ar': 'المستفيد'},
+      'benef_non_designe':     {'fr': 'Bénéficiaire non encore désigné', 'en': 'Beneficiary not yet designated', 'es': 'Beneficiario aún no designado', 'pt': 'Beneficiário ainda não designado', 'ar': 'المستفيد لم يُحدَّد بعد'},
+      'prets_titre':           {'fr': 'Prêts', 'en': 'Loans', 'es': 'Préstamos', 'pt': 'Empréstimos', 'ar': 'القروض'},
+      'aucun_pret':            {'fr': 'Aucun prêt enregistré.', 'en': 'No loans recorded.', 'es': 'Sin préstamos registrados.', 'pt': 'Nenhum empréstimo registrado.', 'ar': 'لا توجد قروض مسجلة.'},
+      'statut':                {'fr': 'Statut', 'en': 'Status', 'es': 'Estado', 'pt': 'Status', 'ar': 'الحالة'},
+      'restant':               {'fr': 'Restant', 'en': 'Remaining', 'es': 'Restante', 'pt': 'Restante', 'ar': 'المتبقي'},
+      'col_methode':           {'fr': 'Méthode', 'en': 'Method', 'es': 'Método', 'pt': 'Método', 'ar': 'الطريقة'},
+      'col_ref':               {'fr': 'Réf.', 'en': 'Ref.', 'es': 'Ref.', 'pt': 'Ref.', 'ar': 'مرجع'},
+      'journal_titre':         {'fr': "Journal d'activité", 'en': 'Activity log', 'es': 'Registro de actividad', 'pt': 'Registro de atividade', 'ar': 'سجل النشاط'},
+      'aucune_action':         {'fr': 'Aucune action dans le journal.', 'en': 'No actions in the log.', 'es': 'Sin acciones en el registro.', 'pt': 'Nenhuma ação no registro.', 'ar': 'لا توجد إجراءات في السجل.'},
+      'col_action':            {'fr': 'Action', 'en': 'Action', 'es': 'Acción', 'pt': 'Ação', 'ar': 'الإجراء'},
+      'col_auteur':            {'fr': 'Auteur', 'en': 'Author', 'es': 'Autor', 'pt': 'Autor', 'ar': 'المؤلف'},
+      // PV vote
+      'pv_titre':              {'fr': 'Procès-verbal de vote', 'en': 'Voting minutes', 'es': 'Acta de votación', 'pt': 'Ata de votação', 'ar': 'محضر التصويت'},
+      'adopte':                {'fr': 'ADOPTÉ', 'en': 'ADOPTED', 'es': 'ADOPTADO', 'pt': 'APROVADO', 'ar': 'مقبول'},
+      'rejete':                {'fr': 'REJETÉ', 'en': 'REJECTED', 'es': 'RECHAZADO', 'pt': 'REJEITADO', 'ar': 'مرفوض'},
+      'sans_decision':         {'fr': 'SANS DÉCISION', 'en': 'NO DECISION', 'es': 'SIN DECISIÓN', 'pt': 'SEM DECISÃO', 'ar': 'بدون قرار'},
+      'participation':         {'fr': 'Participation', 'en': 'Participation', 'es': 'Participación', 'pt': 'Participação', 'ar': 'المشاركة'},
+      'depouillement':         {'fr': 'Dépouillement nominatif', 'en': 'Individual ballot count', 'es': 'Escrutinio nominativo', 'pt': 'Apuração nominativa', 'ar': 'فرز الأصوات الاسمي'},
+      'aucune_voix':           {'fr': 'Aucune voix enregistrée.', 'en': 'No votes recorded.', 'es': 'Ningún voto registrado.', 'pt': 'Nenhum voto registrado.', 'ar': 'لا توجد أصوات مسجلة.'},
+      'col_membre':            {'fr': 'Membre', 'en': 'Member', 'es': 'Miembro', 'pt': 'Membro', 'ar': 'العضو'},
+      'col_vote':              {'fr': 'Vote', 'en': 'Vote', 'es': 'Voto', 'pt': 'Voto', 'ar': 'التصويت'},
+      'col_horodatage':        {'fr': 'Horodatage', 'en': 'Timestamp', 'es': 'Fecha/hora', 'pt': 'Carimbo de data/hora', 'ar': 'الطابع الزمني'},
+      'non_votants':           {'fr': "Membres n'ayant pas voté", 'en': 'Members who did not vote', 'es': 'Miembros que no votaron', 'pt': 'Membros que não votaram', 'ar': 'الأعضاء الذين لم يصوتوا'},
+      'gestionnaire_label':    {'fr': 'Gestionnaire :', 'en': 'Manager:', 'es': 'Gestor:', 'pt': 'Gestor:', 'ar': 'المسير:'},
+      'signature':             {'fr': 'Signature', 'en': 'Signature', 'es': 'Firma', 'pt': 'Assinatura', 'ar': 'التوقيع'},
+      // Reçu cotisation
+      'recu_titre':            {'fr': 'REÇU DE COTISATION', 'en': 'CONTRIBUTION RECEIPT', 'es': 'RECIBO DE CUOTA', 'pt': 'RECIBO DE CONTRIBUIÇÃO', 'ar': 'إيصال الاشتراك'},
+      'recu_genere':           {'fr': 'Généré le', 'en': 'Generated on', 'es': 'Generado el', 'pt': 'Gerado em', 'ar': 'تم الإنشاء في'},
+      'tontine':               {'fr': 'Tontine', 'en': 'Tontine', 'es': 'Tontina', 'pt': 'Tontina', 'ar': 'التونتين'},
+      'membre':                {'fr': 'Membre', 'en': 'Member', 'es': 'Miembro', 'pt': 'Membro', 'ar': 'العضو'},
+      'tour_n':                {'fr': 'Tour N°', 'en': 'Round No.', 'es': 'Ronda N°', 'pt': 'Rodada N°', 'ar': 'الجولة رقم'},
+      'methode':               {'fr': 'Méthode', 'en': 'Method', 'es': 'Método', 'pt': 'Método', 'ar': 'الطريقة'},
+      'col_date_label':        {'fr': 'Date', 'en': 'Date', 'es': 'Fecha', 'pt': 'Data', 'ar': 'التاريخ'},
+      'reference':             {'fr': 'Référence', 'en': 'Reference', 'es': 'Referencia', 'pt': 'Referência', 'ar': 'المرجع'},
+      'code_tontine':          {'fr': 'Code tontine', 'en': 'Tontine code', 'es': 'Código de tontina', 'pt': 'Código da tontina', 'ar': 'رمز التونتين'},
+      'paiement_valide':       {'fr': 'Paiement enregistré et validé par TontineClair', 'en': 'Payment recorded and validated by TontineClair', 'es': 'Pago registrado y validado por TontineClair', 'pt': 'Pagamento registrado e validado pelo TontineClair', 'ar': 'تم تسجيل الدفع والتحقق منه بواسطة TontineClair'},
+      'oui':                   {'fr': 'Oui', 'en': 'Yes', 'es': 'Sí', 'pt': 'Sim', 'ar': 'نعم'},
+      'non':                   {'fr': 'Non', 'en': 'No', 'es': 'No', 'pt': 'Não', 'ar': 'لا'},
+      'abstention':            {'fr': 'Abst.', 'en': 'Abst.', 'es': 'Abst.', 'pt': 'Abst.', 'ar': 'امتناع'},
+    };
+    final lang = _pdf[key];
+    if (lang == null) return key;
+    return lang[langueCode] ?? lang['fr'] ?? key;
+  }
   static const _texteDoux = PdfColor.fromInt(0xFF6E6C60);
 
   // ── Bug #4 : téléchargement PDF unifié Web + Mobile ─────────────────────
@@ -46,6 +120,7 @@ class PdfService {
   static Future<void> exporterReleve({
     required Tontine tontine,
     required String nomGestionnaire,
+    String langueCode = 'fr',
   }) async {
     final data = tontine.data;
     final doc = pw.Document();
@@ -64,16 +139,16 @@ class PdfService {
         theme: theme,
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
-        header: (ctx) => _buildHeader(data, tontine.code, bold, regular),
-        footer: (ctx) => _buildFooter(ctx, regular),
+        header: (ctx) => _buildHeader(data, tontine.code, bold, regular, langueCode),
+        footer: (ctx) => _buildFooter(ctx, regular, langueCode),
         build: (ctx) => [
-          _sectionCaisse(data, bold, regular),
+          _sectionCaisse(data, bold, regular, langueCode),
           pw.SizedBox(height: 20),
-          _sectionTours(data, bold, regular),
+          _sectionTours(data, bold, regular, langueCode),
           pw.SizedBox(height: 20),
-          _sectionPrets(data, bold, regular),
+          _sectionPrets(data, bold, regular, langueCode),
           pw.SizedBox(height: 20),
-          _sectionJournal(data, bold, regular),
+          _sectionJournal(data, bold, regular, langueCode),
         ],
       ),
     );
@@ -90,6 +165,7 @@ class PdfService {
     String code,
     pw.Font bold,
     pw.Font regular,
+    String langueCode,
   ) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -124,16 +200,16 @@ class PdfService {
   }
 
   // ── Pied de page ─────────────────────────────────────────────────────────
-  static pw.Widget _buildFooter(pw.Context ctx, pw.Font regular) {
+  static pw.Widget _buildFooter(pw.Context ctx, pw.Font regular, String langueCode) {
     return pw.Row(
       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
       children: [
         pw.Text(
-          'TontineClair — Relevé confidentiel',
+          _t('confidentiel', langueCode),
           style: pw.TextStyle(font: regular, fontSize: 8, color: _texteDoux),
         ),
         pw.Text(
-          'Page ${ctx.pageNumber} / ${ctx.pagesCount}',
+          '${_t('page', langueCode)} \${ctx.pageNumber} ${_t('sur', langueCode)} \${ctx.pagesCount}',
           style: pw.TextStyle(font: regular, fontSize: 8, color: _texteDoux),
         ),
       ],
@@ -145,11 +221,12 @@ class PdfService {
     TontineData data,
     pw.Font bold,
     pw.Font regular,
+    String langueCode,
   ) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        _titreSousSection('Caisse commune', bold),
+        _titreSousSection(_t('caisse_titre', langueCode), bold),
         pw.SizedBox(height: 6),
         // Solde actuel en gros
         pw.Container(
@@ -162,7 +239,7 @@ class PdfService {
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
               pw.Text(
-                'Solde disponible',
+                _t('solde_dispo', langueCode),
                 style: pw.TextStyle(font: bold, fontSize: 12, color: PdfColors.white),
               ),
               pw.Text(
@@ -175,12 +252,12 @@ class PdfService {
         pw.SizedBox(height: 10),
         if (data.caisse.isEmpty)
           pw.Text(
-            'Aucun mouvement enregistré.',
+            _t('aucun_mouvement', langueCode),
             style: pw.TextStyle(font: regular, fontSize: 10, color: _texteDoux),
           )
         else
           pw.TableHelper.fromTextArray(
-            headers: ['Date', 'Motif', 'Par qui', 'Montant'],
+            headers: [_t('col_date', langueCode), _t('col_motif', langueCode), _t('col_par_qui', langueCode), _t('col_montant', langueCode)],
             headerStyle: pw.TextStyle(font: bold, fontSize: 9, color: PdfColors.white),
             headerDecoration: const pw.BoxDecoration(color: _encre),
             cellStyle: pw.TextStyle(font: regular, fontSize: 9),
@@ -213,13 +290,14 @@ class PdfService {
     TontineData data,
     pw.Font bold,
     pw.Font regular,
+    String langueCode,
   ) {
     final historique = data.historique;
     final nbTours = data.nbTours;
 
     // Construire la liste des widgets de la section
     final List<pw.Widget> contenu = [
-      _titreSousSection('Tours du cycle (Tour ${data.numerTour} sur $nbTours)', bold),
+      _titreSousSection("${_t('tours_titre', langueCode)} (${_t('tour_sur', langueCode)} ${data.numerTour} sur $nbTours)", bold),
       pw.SizedBox(height: 6),
     ];
 
@@ -239,12 +317,12 @@ class PdfService {
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
                   pw.Text(
-                    'Tour ${data.numerTour} / $nbTours — EN COURS',
+                    "${_t('tour_sur', langueCode)} ${data.numerTour} / $nbTours — ${_t('en_cours', langueCode)}",
                     style: pw.TextStyle(font: bold, fontSize: 10, color: PdfColors.white),
                   ),
                   pw.SizedBox(height: 2),
                   pw.Text(
-                    'Bénéficiaire : ${data.beneficiaireNomOuFallback}',
+                    "${_t('beneficiaire', langueCode)} : ${data.beneficiaireNomOuFallback}",
                     style: pw.TextStyle(font: regular, fontSize: 9, color: _or),
                   ),
                 ],
@@ -267,7 +345,7 @@ class PdfService {
             borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
           ),
           child: pw.Text(
-            'Tontine en attente de démarrage — aucun tour commencé.',
+            _t('en_attente', langueCode),
             style: pw.TextStyle(font: regular, fontSize: 10, color: _texteDoux),
           ),
         ),
@@ -279,14 +357,14 @@ class PdfService {
     if (historique.isEmpty) {
       contenu.add(
         pw.Text(
-          'Aucun tour clôturé pour l\'instant.',
+          _t('aucun_tour', langueCode),
           style: pw.TextStyle(font: regular, fontSize: 10, color: _texteDoux),
         ),
       );
     } else {
       contenu.add(
         pw.TableHelper.fromTextArray(
-          headers: ['Tour', 'Bénéficiaire', 'Cotisations', 'Montant', 'Date'],
+          headers: [_t('col_tour', langueCode), _t('col_beneficiaire', langueCode), _t('cotisations', langueCode), _t('col_montant', langueCode), _t('col_date', langueCode)],
           headerStyle: pw.TextStyle(font: bold, fontSize: 9, color: PdfColors.white),
           headerDecoration: const pw.BoxDecoration(color: _encre),
           cellStyle: pw.TextStyle(font: regular, fontSize: 9),
@@ -308,7 +386,7 @@ class PdfService {
                     .map((m) => m.nom)
                     .firstOrNull ?? 'Bénéficiaire non encore désigné';
               } else {
-                benef = 'Bénéficiaire non encore désigné';
+                benef = _t('benef_non_designe', langueCode);
               }
             }
             final recu = (h['totalRecu'] as num?)?.toInt()
@@ -347,15 +425,16 @@ class PdfService {
     TontineData data,
     pw.Font bold,
     pw.Font regular,
+    String langueCode,
   ) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        _titreSousSection('Prêts', bold),
+        _titreSousSection(_t('prets_titre', langueCode), bold),
         pw.SizedBox(height: 6),
         if (data.prets.isEmpty)
           pw.Text(
-            'Aucun prêt enregistré.',
+            _t('aucun_pret', langueCode),
             style: pw.TextStyle(font: regular, fontSize: 10, color: _texteDoux),
           )
         else
@@ -417,22 +496,23 @@ class PdfService {
     TontineData data,
     pw.Font bold,
     pw.Font regular,
+    String langueCode,
   ) {
     final entries = data.journal.take(200).toList();
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        _titreSousSection("Journal d'activité (${entries.length} actions)", bold),
+        _titreSousSection("${_t('journal_titre', langueCode)} (${entries.length} actions)", bold),
         pw.SizedBox(height: 6),
         if (entries.isEmpty)
           pw.Text(
-            'Aucune action dans le journal.',
+            _t('aucune_action', langueCode),
             style: pw.TextStyle(font: regular, fontSize: 10, color: _texteDoux),
           )
         else
           pw.TableHelper.fromTextArray(
-            headers: ['Date/heure', 'Action', 'Auteur'],
+            headers: [_t('col_date', langueCode), _t('col_action', langueCode), _t('col_auteur', langueCode)],
             headerStyle: pw.TextStyle(font: bold, fontSize: 9, color: PdfColors.white),
             headerDecoration: const pw.BoxDecoration(color: _encre),
             cellStyle: pw.TextStyle(font: regular, fontSize: 8),
@@ -459,6 +539,7 @@ class PdfService {
     required Vote vote,
     required List<Map<String, dynamic>> voixDetaillees,
     required String nomGestionnaire,
+    String langueCode = 'fr',
   }) async {
     final data = tontine.data;
     final doc = pw.Document();
@@ -486,8 +567,8 @@ class PdfService {
         theme: theme,
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
-        header: (_) => _buildPvHeader(data, tontine.code, vote, bold, regular),
-        footer: (ctx) => _buildFooter(ctx, regular),
+        header: (_) => _buildPvHeader(data, tontine.code, vote, bold, regular, langueCode),
+        footer: (ctx) => _buildFooter(ctx, regular, langueCode),
         build: (_) => [
           // ── Bloc résumé ───────────────────────────────────────────────────
           pw.Container(
@@ -504,15 +585,15 @@ class PdfService {
                   children: [
                     pw.Text(
                       adopte == true
-                          ? 'ADOPTE'
+                          ? _t('adopte', langueCode)
                           : adopte == false
-                              ? 'REJETE'
-                              : 'SANS DECISION',
+                              ? _t('rejete', langueCode)
+                              : _t('sans_decision', langueCode),
                       style: pw.TextStyle(font: bold, fontSize: 14, color: _or),
                     ),
                     pw.SizedBox(height: 4),
                     pw.Text(
-                      'Participation : $totalVotants / $totalMembres membres',
+                      "${_t('participation', langueCode)} : $totalVotants / $totalMembres ${_t('membres', langueCode)}",
                       style: pw.TextStyle(font: regular, fontSize: 9,
                           color: PdfColors.white),
                     ),
@@ -520,11 +601,11 @@ class PdfService {
                 ),
                 pw.Row(
                   children: [
-                    _compteurVote('Oui', oui, bold, regular),
+                    _compteurVote(_t('oui', langueCode), oui, bold, regular),
                     pw.SizedBox(width: 16),
-                    _compteurVote('Non', non, bold, regular),
+                    _compteurVote(_t('non', langueCode), non, bold, regular),
                     pw.SizedBox(width: 16),
-                    _compteurVote('Abst.', abstention, bold, regular),
+                    _compteurVote(_t('abstention', langueCode), abstention, bold, regular),
                   ],
                 ),
               ],
@@ -533,16 +614,16 @@ class PdfService {
           pw.SizedBox(height: 16),
 
           // ── Tableau nominatif des votes ───────────────────────────────────
-          _titreSousSection('Depouillement nominatif', bold),
+          _titreSousSection(_t('depouillement', langueCode), bold),
           pw.SizedBox(height: 6),
           if (voixDetaillees.isEmpty)
             pw.Text(
-              'Aucune voix enregistrée.',
+              _t('aucune_voix', langueCode),
               style: pw.TextStyle(font: regular, fontSize: 10, color: _texteDoux),
             )
           else
             pw.TableHelper.fromTextArray(
-              headers: ['#', 'Membre', 'Vote', 'Horodatage'],
+              headers: ['#', _t('col_membre', langueCode), _t('col_vote', langueCode), _t('col_horodatage', langueCode)],
               headerStyle: pw.TextStyle(font: bold, fontSize: 9, color: PdfColors.white),
               headerDecoration: const pw.BoxDecoration(color: _encre),
               cellStyle: pw.TextStyle(font: regular, fontSize: 9),
@@ -567,12 +648,12 @@ class PdfService {
                     ?? '—';
                 final choix = v['choix'] as String? ?? '—';
                 final choixLabel = choix.toLowerCase() == 'oui'
-                    ? 'Oui'
+                    ? _t('oui', langueCode)
                     : choix.toLowerCase() == 'non'
-                        ? 'Non'
+                        ? _t('non', langueCode)
                         : choix.toLowerCase() == 'abstention'
-                            ? 'Abstention'
-                            : 'Abst.';
+                            ? _t('abstention', langueCode)
+                            : _t('abstention', langueCode);
 
                 // Timestamp du vote — Bug fix : gérer les deux formats
                 DateTime? ts;
@@ -595,7 +676,7 @@ class PdfService {
 
           // ── Non-votants ──────────────────────────────────────────────────
           if (nonVotants.isNotEmpty) ...[
-            _titreSousSection('Membres n\'ayant pas vote (${nonVotants.length})', bold),
+            _titreSousSection("${_t('non_votants', langueCode)} (${nonVotants.length})", bold),
             pw.SizedBox(height: 6),
             pw.Wrap(
               spacing: 8,
@@ -620,14 +701,14 @@ class PdfService {
               pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Text('Gestionnaire :',
+                  pw.Text(_t('gestionnaire_label', langueCode),
                       style: pw.TextStyle(font: regular, fontSize: 9, color: _texteDoux)),
                   pw.SizedBox(height: 2),
                   pw.Text(nomGestionnaire,
                       style: pw.TextStyle(font: bold, fontSize: 10, color: _encre)),
                   pw.SizedBox(height: 24),
                   pw.Container(width: 120, height: 1, color: _encre),
-                  pw.Text('Signature',
+                  pw.Text(_t('signature', langueCode),
                       style: pw.TextStyle(font: regular, fontSize: 8, color: _texteDoux)),
                 ],
               ),
@@ -666,6 +747,7 @@ class PdfService {
     required String ref,
     required String methode,
     required String dateStr,
+    String langueCode = 'fr',
   }) async {
     final data = tontine.data;
     final doc = pw.Document();
@@ -691,7 +773,7 @@ class PdfService {
                 pw.Text('TontineClair',
                     style: pw.TextStyle(font: bold, fontSize: 20, color: _encre)),
                 pw.Text(
-                  'Généré le ${Formatters.dateHeure(DateTime.now())}',
+                  "${_t('recu_genere', langueCode)} ${Formatters.dateHeure(DateTime.now())}",
                   style: pw.TextStyle(font: regular, fontSize: 8, color: _texteDoux),
                 ),
               ],
@@ -699,7 +781,7 @@ class PdfService {
             pw.Divider(color: _or, thickness: 1.5),
             pw.SizedBox(height: 12),
             pw.Text(
-              'RECU DE COTISATION',
+              _t('recu_titre', langueCode),
               style: pw.TextStyle(font: bold, fontSize: 16, color: _encre),
             ),
             pw.SizedBox(height: 16),
@@ -716,7 +798,7 @@ class PdfService {
                   pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
-                      pw.Text('Montant',
+                      pw.Text(_t('col_montant', langueCode),
                           style: pw.TextStyle(font: regular, fontSize: 10, color: PdfColors.white)),
                       pw.Text(
                         Formatters.montant(data.montant, devise: data.devise),
@@ -729,14 +811,14 @@ class PdfService {
             ),
             pw.SizedBox(height: 14),
             // Détails
-            _ligneRecu('Tontine', data.nom, bold, regular),
-            _ligneRecu('Membre', membre.nom, bold, regular),
-            _ligneRecu('Tour N°', 'Tour ${data.numerTour} sur ${data.nbTours}', bold, regular),
-            _ligneRecu('Bénéficiaire', data.beneficiaireNomOuFallback, bold, regular),
-            _ligneRecu('Méthode', Formatters.methodePaiement(methode), bold, regular),
-            _ligneRecu('Date', Formatters.dateHeure(datePaiement), bold, regular),
-            _ligneRecu('Référence', ref, bold, regular),
-            _ligneRecu('Code tontine', tontine.code as String, bold, regular),
+            _ligneRecu(_t('tontine', langueCode), data.nom, bold, regular),
+            _ligneRecu(_t('membre', langueCode), membre.nom, bold, regular),
+            _ligneRecu(_t('tour_n', langueCode), "${_t('tour_sur', langueCode)} ${data.numerTour} ${_t('sur', langueCode)} ${data.nbTours}", bold, regular),
+            _ligneRecu(_t('beneficiaire', langueCode), data.beneficiaireNomOuFallback, bold, regular),
+            _ligneRecu(_t('methode', langueCode), Formatters.methodePaiement(methode), bold, regular),
+            _ligneRecu(_t('col_date_label', langueCode), Formatters.dateHeure(datePaiement), bold, regular),
+            _ligneRecu(_t('reference', langueCode), ref, bold, regular),
+            _ligneRecu(_t('code_tontine', langueCode), tontine.code as String, bold, regular),
             pw.SizedBox(height: 20),
             pw.Container(
               padding: const pw.EdgeInsets.all(10),
@@ -745,7 +827,7 @@ class PdfService {
                 borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
               ),
               child: pw.Text(
-                'Paiement enregistre et valide par TontineClair',
+                _t('paiement_valide', langueCode),
                 style: pw.TextStyle(font: bold, fontSize: 10, color: const PdfColor.fromInt(0xFF2E7D5B)),
               ),
             ),
@@ -788,6 +870,7 @@ class PdfService {
     Vote vote,
     pw.Font bold,
     pw.Font regular,
+    String langueCode,
   ) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
