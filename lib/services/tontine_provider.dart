@@ -3,6 +3,7 @@ import '../models/tontine.dart';
 import '../services/supabase_service.dart';
 import '../services/storage_service.dart';
 import '../services/echeance_service.dart';
+import '../services/notification_service.dart';
 
 class TontineProvider extends ChangeNotifier {
   List<TontineLocale> _mesTontines = [];
@@ -33,6 +34,8 @@ class TontineProvider extends ChangeNotifier {
       _courante = await SupabaseService.lireTontine(code);
       await StorageService.mettreAJourNom(code, _courante!.data.nom);
       _mesTontines = await StorageService.getListe();
+      // Abonner l'appareil aux notifications de cette tontine
+      NotificationService.abonnerATontine(code);
 
       // Restaurer le gestionnaire actif si en session
       final gest = await StorageService.getGestActif(code);

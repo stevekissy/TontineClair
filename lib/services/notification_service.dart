@@ -4,6 +4,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'supabase_service.dart';
 
 // ─── Handler background (top-level, hors classe) ───────────────────────────
 @pragma('vm:entry-point')
@@ -139,8 +140,33 @@ class NotificationService {
   static Future<void> _enregistrerToken(String token) async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      // Sauvegarder localement
       await prefs.setString('fcm_token', token);
-      if (kDebugMode) debugPrint('[FCM] Token sauvegardé: $token');
+      // Enregistrer dans Supabase pour toutes les tontines connues
+      final codes = prefs.getStringList('tontines_codes') ?? [];
+      for (final code in codes) {
+        await SupabaseService.sauvegarderTokenFCM(code: code, token: token);
+      }
+      if (kDebugMode) debugPrint('[FCM] Token enregistré: $token');
+    } catch (_) {}
+  }
+
+  /// Appelée quand l'utilisateur rejoint ou crée une tontine.
+  /// Associe son token FCM à ce code tontine dans Supabase.
+  static Future<void> abonnerATontine(String code) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // Mémoriser le code localement
+      final codes = prefs.getStringList('tontines_codes') ?? [];
+      if (!codes.contains(code.toUpperCase())) {
+        codes.add(code.toUpperCase());
+        await prefs.setStringList('tontines_codes', codes);
+      }
+      // Envoyer le token à Supabase
+      final token = prefs.getString('fcm_token');
+      if (token != null) {
+        await SupabaseService.sauvegarderTokenFCM(code: code, token: token);
+      }
     } catch (_) {}
   }
 

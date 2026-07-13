@@ -8,6 +8,7 @@ import '../services/tontine_provider.dart';
 import '../services/echeance_service.dart';
 import '../services/pdf_service.dart';
 import '../services/paiement_service.dart';
+import '../services/supabase_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
@@ -283,6 +284,14 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
 
       if (ok == true && context.mounted) {
         afficherToast(context, 'Paiement de ${membre.nom} enregistré !');
+        // Notification push à tous les membres
+        SupabaseService.envoyerNotification(
+          code: provider.courante!.code,
+          type: 'cotisation',
+          titre: '💰 Cotisation reçue',
+          message: '${membre.nom} a cotisé pour le tour en cours.',
+          donneesExtra: {'membre': membre.nom},
+        );
 
         // Bug #6 : proposer le reçu WhatsApp après validation
         final membreActualise = Membre(

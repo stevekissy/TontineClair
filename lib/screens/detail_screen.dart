@@ -1757,6 +1757,16 @@ class _BarreDetail extends StatelessWidget {
             ? 'Cycle terminé 🎊 Chaque membre a été servi !'
             : 'Tour $numerTourAffiche clôturé avec succès.',
       );
+      // Notification push décaissement
+      SupabaseService.envoyerNotification(
+        code: provider.courante!.code,
+        type: 'decaissement',
+        titre: data.cycleTermine ? '🎊 Cycle terminé !' : '💸 Décaissement effectué',
+        message: data.cycleTermine
+            ? 'Tous les membres ont été servis. Le cycle est terminé !'
+            : '$benefNom a reçu le décaissement du tour $numerTourAffiche.',
+        donneesExtra: {'beneficiaire': benefNom},
+      );
     }
   }
 }

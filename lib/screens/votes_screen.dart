@@ -364,6 +364,13 @@ class _VotesScreenState extends State<VotesScreen> {
 
     if (ok == true && context.mounted) {
       afficherToast(context, 'Vote ouvert !');
+      // Notification push à tous les membres
+      SupabaseService.envoyerNotification(
+        code: provider.courante!.code,
+        type: 'vote',
+        titre: '🗳️ Vote ouvert',
+        message: 'Un nouveau vote est ouvert : $question',
+      );
       await _chargerVoix();
     }
   }
@@ -581,6 +588,14 @@ class _VotesScreenState extends State<VotesScreen> {
 
       if (res == 'OK') {
         afficherToast(context, 'Vote enregistré !');
+        // Notification push à tous les membres
+        SupabaseService.envoyerNotification(
+          code: provider.courante!.code,
+          type: 'vote',
+          titre: '🗳️ Nouveau vote',
+          message: 'Un membre vient de voter sur : ${vote.question}',
+          donneesExtra: {'vote_id': vote.id},
+        );
         await _chargerVoix();
       } else {
         final msgErreur = res == 'PIN_INCORRECT'
@@ -804,6 +819,14 @@ class _VotesScreenState extends State<VotesScreen> {
         message = 'Vote clos. ${adopte ? 'Proposition adoptée !' : 'Proposition rejetée.'}';
       }
       afficherToast(context, message);
+      // Notification push résultat du vote
+      SupabaseService.envoyerNotification(
+        code: provider.courante!.code,
+        type: 'vote',
+        titre: adopte ? '✅ Vote adopté' : '❌ Vote rejeté',
+        message: 'Le vote "${vote.question}" est clôturé : ${adopte ? "adoptée" : "rejetée"}.',
+        donneesExtra: {'vote_id': vote.id},
+      );
       await _chargerVoix();
     }
   }

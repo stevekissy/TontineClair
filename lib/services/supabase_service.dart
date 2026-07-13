@@ -919,6 +919,59 @@ class SupabaseService {
     if (result is Map<String, dynamic>) return result;
     return {'ok': false, 'erreur': 'Réponse inattendue du serveur.'};
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // NOTIFICATIONS FCM
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Enregistre le token FCM d'un appareil pour une tontine donnée.
+  /// Appelée au démarrage de l'app pour chaque tontine enregistrée.
+  static Future<void> sauvegarderTokenFCM({
+    required String code,
+    required String token,
+  }) async {
+    try {
+      await rpc('sauvegarder_token', {
+        'p_code':     code.toUpperCase(),
+        'p_token':    token,
+        'p_appareil': 'android',
+      });
+    } catch (_) {
+      // Silencieux — non bloquant
+    }
+  }
+
+  /// Envoie une notification push via l'Edge Function Supabase.
+  /// [type] : 'cotisation' | 'vote' | 'decaissement' | 'membre' | 'cycle'
+  static Future<void> envoyerNotification({
+    required String code,
+    required String type,
+    required String titre,
+    required String message,
+    Map<String, String>? donneesExtra,
+  }) async {
+    try {
+      final url = Uri.parse('$_url/functions/v1/envoyer_notification');
+      final body = {
+        'code':    code.toUpperCase(),
+        'type':    type,
+        'titre':   titre,
+        'message': message,
+        if (donneesExtra != null) 'donneesExtra': donneesExtra,
+      };
+      await http.post(
+        url,
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': 'Bearer $_key',
+          'apikey':        _key,
+        },
+        body: jsonEncode(body),
+      );
+    } catch (_) {
+      // Silencieux — la notification n'est jamais bloquante
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
