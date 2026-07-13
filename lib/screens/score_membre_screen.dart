@@ -273,12 +273,12 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                           size: 18, color: Color(0xFFC4453C)),
                     ),
                     const SizedBox(width: 10),
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Proposer le retrait du membre',
+                            context.tr('proposer_retrait'),
                             style: TextStyle(
                               fontWeight: FontWeight.w700,
                               fontSize: 17,
@@ -286,7 +286,7 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                             ),
                           ),
                           Text(
-                            'Vote sécurisé · Décision collective',
+                            context.tr('vote_securise_collectif'),
                             style: TextStyle(
                                 fontSize: 11, color: AppColors.texteDoux),
                           ),
@@ -380,7 +380,7 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                                     ),
                                   ),
                                   Text(
-                                    'Score de confiance : ${_scoreDetail!.score}/100',
+                                    "${context.tr('score_confiance')} : ${_scoreDetail!.score}/100",
                                     style: const TextStyle(
                                         fontSize: 11,
                                         color: AppColors.texteDoux),
@@ -482,13 +482,13 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Row(
+                        Row(
                           children: [
-                            Icon(Icons.auto_awesome_rounded,
+                            const Icon(Icons.auto_awesome_rounded,
                                 size: 13, color: Color(0xFFD99A2B)),
-                            SizedBox(width: 5),
+                            const SizedBox(width: 5),
                             Text(
-                              'Recommandations de l\'IA (consultatif uniquement)',
+                              context.tr('recommandations_ia_consultatif'),
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
@@ -519,14 +519,14 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                 ],
 
                 // ── Motif obligatoire ─────────────────────────────────────
-                const ChampLabel(label: 'Motif de la proposition (obligatoire)'),
+                ChampLabel(label: context.tr('motif_proposition')),
                 TextField(
                   controller: motifCtrl,
                   maxLines: 3,
                   maxLength: 300,
                   decoration: InputDecoration(
                     hintText:
-                        'Décrivez précisément les raisons justifiant cette proposition de retrait...',
+                        context.tr('motif_retrait_hint'),
                     hintStyle: TextStyle(
                         fontSize: 12, color: AppColors.texteDoux.withValues(alpha: 0.7)),
                   ),
@@ -551,8 +551,8 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                         children: [
                           Row(
                             children: [
-                              const Text(
-                                'Quorum minimum',
+                              Text(
+                                context.tr('quorum_minimum'),
                                 style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
@@ -569,7 +569,7 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                             ],
                           ),
                           Text(
-                            'Taux de participation requis',
+                            context.tr('taux_participation_requis'),
                             style: TextStyle(
                                 fontSize: 10, color: AppColors.texteDoux),
                           ),
@@ -606,8 +606,8 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                         children: [
                           Row(
                             children: [
-                              const Text(
-                                'Majorité requise',
+                              Text(
+                                context.tr('majorite_requise'),
                                 style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
@@ -635,7 +635,7 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                             ],
                           ),
                           Text(
-                            'Votes Pour requis pour adoption',
+                            context.tr('votes_pour_requis'),
                             style: TextStyle(
                                 fontSize: 10, color: AppColors.texteDoux),
                           ),
@@ -664,7 +664,7 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                 const SizedBox(height: 14),
 
                 // ── PIN gestionnaire ──────────────────────────────────────
-                const ChampLabel(label: 'Votre PIN gestionnaire'),
+                ChampLabel(label: context.tr('votre_pin_gest')),
                 TextField(
                   controller: pinCtrl,
                   keyboardType: TextInputType.number,
@@ -701,14 +701,14 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Row(
+                      Row(
                         children: [
-                          Icon(Icons.gavel_rounded,
+                          const Icon(Icons.gavel_rounded,
                               size: 13, color: Color(0xFFD99A2B)),
-                          SizedBox(width: 5),
+                          const SizedBox(width: 5),
                           Expanded(
                             child: Text(
-                              'Conditions du vote de retrait',
+                              context.tr('conditions_vote_retrait'),
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
@@ -739,7 +739,7 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                   const Center(child: CircularProgressIndicator())
                 else
                   BtnPrincipal(
-                    label: 'Créer le vote de retrait',
+                    label: context.tr('creer_vote_retrait'),
                     couleur: const Color(0xFFC4453C),
                     icone: Icons.how_to_vote_rounded,
                     onTap: () async {
@@ -939,14 +939,14 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                 ),
               ),
               const SizedBox(height: 16),
-              const Row(
+              Row(
                 children: [
-                  Icon(Icons.admin_panel_settings_rounded,
+                  const Icon(Icons.admin_panel_settings_rounded,
                       size: 18, color: AppColors.encreDoux),
-                  SizedBox(width: 8),
+                  const SizedBox(width: 8),
                   Text(
-                    'Modifier le score manuellement',
-                    style: TextStyle(
+                    context.tr('modifier_score_manuel'),
+                    style: const TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 16,
                       color: AppColors.encre,
@@ -955,12 +955,12 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                 ],
               ),
               const SizedBox(height: 4),
-              const Text(
-                'Réservé aux administrateurs · Enregistré dans l\'audit',
+              Text(
+                context.tr('reserve_admin_audit'),
                 style: TextStyle(fontSize: 11, color: AppColors.texteDoux),
               ),
               const SizedBox(height: 16),
-              const ChampLabel(label: 'Nouveau score (0-100)'),
+              ChampLabel(label: context.tr('nouveau_score')),
               TextField(
                 controller: scoreCtrl,
                 keyboardType: TextInputType.number,
@@ -973,20 +973,20 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                 },
               ),
               const SizedBox(height: 10),
-              const ChampLabel(label: 'Motif de la modification'),
+              ChampLabel(label: context.tr('motif_modification')),
               TextField(
                 controller: motifCtrl,
                 maxLines: 2,
                 maxLength: 200,
-                decoration: const InputDecoration(
-                  hintText: 'Raison justifiant cette modification manuelle...',
+                decoration: InputDecoration(
+                  hintText: context.tr('motif_modif_hint'),
                 ),
                 onChanged: (_) {
                   if (erreur != null) setSt(() => erreur = null);
                 },
               ),
               const SizedBox(height: 10),
-              const ChampLabel(label: 'Votre PIN gestionnaire'),
+              ChampLabel(label: context.tr('votre_pin_gest')),
               TextField(
                 controller: pinCtrl,
                 keyboardType: TextInputType.number,
@@ -1116,8 +1116,8 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                 color: AppColors.encre,
               ),
             ),
-            const Text(
-              'Score de confiance IA',
+            Text(
+              context.tr('score_confiance_ia'),
               style: TextStyle(fontSize: 11, color: AppColors.texteDoux),
             ),
           ],
@@ -1127,14 +1127,14 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
             IconButton(
               icon: const Icon(Icons.edit_note_rounded,
                   size: 20, color: AppColors.encreDoux),
-              tooltip: 'Modifier le score manuellement',
+              tooltip: context.tr('modifier_score_manuel'),
               onPressed: () => _afficherModalModifScore(context, data),
             ),
           IconButton(
             icon: const Icon(Icons.refresh_rounded,
                 size: 20, color: AppColors.encreDoux),
             onPressed: _charger,
-            tooltip: 'Recalculer',
+            tooltip: context.tr('recalculer'),
           ),
         ],
         bottom: TabBar(
@@ -1145,10 +1145,10 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
           indicatorWeight: 2,
           labelStyle:
               const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-          tabs: const [
-            Tab(text: 'Score & IA'),
-            Tab(text: 'Historique'),
-            Tab(text: 'Décisions'),
+          tabs: [
+            Tab(text: context.tr('tab_score_ia')),
+            Tab(text: context.tr('historique')),
+            Tab(text: context.tr('decisions')),
           ],
         ),
       ),
