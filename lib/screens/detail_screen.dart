@@ -860,8 +860,7 @@ class _DialogCalendrierState extends State<_DialogCalendrier> {
                 const SizedBox(width: 12),
                 _LegendePuce(
                     couleur: const Color(0xFFFFB74D),
-                    label: 'Jours restants',
-                    texte: Colors.white),
+                    label: 'Jours restants'),
                 const SizedBox(width: 12),
                 _LegendePuce(
                     couleur: const Color(0xFFE65100), label: 'Échéance'),
