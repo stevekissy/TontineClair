@@ -562,6 +562,10 @@ class _VotesScreenState extends State<VotesScreen> {
       afficherToast(context, 'Données incomplètes', estErreur: true);
       return;
     }
+    if (vote.id.isEmpty) {
+      afficherToast(context, 'Erreur : identifiant du vote manquant. Rechargez la tontine.', estErreur: true);
+      return;
+    }
 
     try {
       final res = await SupabaseService.voter(

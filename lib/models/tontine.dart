@@ -409,7 +409,10 @@ class Vote {
     }
 
     return Vote(
-      id: json['id'] as String? ?? '',
+      id: json['id'] as String?
+          ?? json['vote_id'] as String?
+          ?? json['voteId'] as String?
+          ?? '',
       type: json['type'] as String? ?? 'libre',
       question: json['sujet'] as String? ?? json['question'] as String? ?? '',
       createur: json['creePar'] as String? ?? json['createur'] as String? ?? '',
