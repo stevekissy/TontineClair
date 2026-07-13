@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../services/tontine_provider.dart';
 import '../services/supabase_service.dart';
 import '../services/storage_service.dart';
+import '../services/locale_service.dart';
 import '../utils/app_colors.dart';
 import '../widgets/app_widgets.dart';
 import 'creation_screen.dart';
@@ -13,6 +14,7 @@ import 'rejoindre_screen.dart';
 import 'detail_screen.dart';
 import 'admin_screen.dart';
 import 'config_screen.dart';
+import 'langue_screen.dart';
 
 class AccueilScreen extends StatelessWidget {
   const AccueilScreen({super.key});
@@ -37,6 +39,8 @@ class AccueilScreen extends StatelessWidget {
                     child: const LogoTontineClair(),
                   ),
                   const Spacer(),
+                  // ── Bouton langue ──────────────────────────────────────
+                  _BoutonLangue(),
                 ],
               ),
             ),
@@ -708,6 +712,59 @@ class _EtatVideAccueil extends StatelessWidget {
 }
 
 // ─── Barre d'actions du bas ──────────────────────────────────────────────────
+
+// ─── Bouton langue (globe) dans le header ─────────────────────────────────────
+
+class _BoutonLangue extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final ls = context.watch<LocaleService>();
+
+    return GestureDetector(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const LangueScreen()),
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppColors.encre.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: AppColors.encre.withValues(alpha: 0.10),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              ls.langue.drapeau,
+              style: const TextStyle(fontSize: 16),
+            ),
+            const SizedBox(width: 5),
+            Text(
+              ls.langue.code.toUpperCase(),
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: AppColors.encre,
+                letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(
+              Icons.keyboard_arrow_down_rounded,
+              size: 16,
+              color: AppColors.encre,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _BarreActions extends StatelessWidget {
   final VoidCallback onRejoindre;

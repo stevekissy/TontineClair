@@ -7,8 +7,10 @@ import 'services/storage_service.dart';
 import 'services/tontine_provider.dart';
 import 'services/notification_service.dart';
 import 'services/rappel_service.dart';
+import 'services/locale_service.dart';
 import 'utils/app_theme.dart';
 import 'utils/app_colors.dart';
+import 'utils/app_localizations.dart';
 import 'screens/accueil_screen.dart';
 
 void main() async {
@@ -28,6 +30,10 @@ void main() async {
   // (unawaited — ne bloque pas le démarrage de l'app)
   RappelService.verifierToutesAuDemarrage();
 
+  // Charger la langue sauvegardée
+  final localeService = LocaleService();
+  await localeService.initialiser();
+
   // Style de la barre système
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -38,22 +44,33 @@ void main() async {
     ),
   );
 
-  runApp(const TontineClaireApp());
+  runApp(TontineClaireApp(localeService: localeService));
 }
 
 class TontineClaireApp extends StatelessWidget {
-  const TontineClaireApp({super.key});
+  final LocaleService localeService;
+
+  const TontineClaireApp({super.key, required this.localeService});
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => TontineProvider()..initialiser(),
-      child: MaterialApp(
-        title: 'TontineClair',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.theme,
-        home: const AppShell(),
-        locale: const Locale('fr', 'FR'),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => TontineProvider()..initialiser()),
+        ChangeNotifierProvider<LocaleService>.value(value: localeService),
+      ],
+      child: Consumer<LocaleService>(
+        builder: (_, ls, __) => AppLocalizationsWrapper(
+          localeService: ls,
+          child: MaterialApp(
+            title: 'TontineClair',
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.theme,
+            home: const AppShell(),
+            locale: ls.locale,
+            supportedLocales: LocaleService.langues.map((l) => l.locale).toList(),
+          ),
+        ),
       ),
     );
   }
