@@ -231,6 +231,18 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
           }
           newData['membres'] = membres;
 
+          // ── Mettre à jour paiements{} — source de vérité pour membre.paye ──
+          final paiements = Map<String, dynamic>.from(
+            (newData['paiements'] as Map<String, dynamic>?) ?? {},
+          );
+          paiements[membre.id] = {
+            'date': nowStr,
+            'methode': methode,
+            'reference': ref,
+            'montant': data.montant,
+          };
+          newData['paiements'] = paiements;
+
           // ── Caisse : ajouter l'apport ─────────────────────────────────────
           final caisseMap = newData['caisse'];
           final caisse = List<Map<String, dynamic>>.from(
@@ -314,6 +326,13 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
             membres[idx].remove('referencePaiement');
           }
           newData['membres'] = membres;
+
+          // ── Retirer de paiements{} — source de vérité pour membre.paye ────
+          final paiements = Map<String, dynamic>.from(
+            (newData['paiements'] as Map<String, dynamic>?) ?? {},
+          );
+          paiements.remove(membre.id);
+          newData['paiements'] = paiements;
 
           // ── 2. Contre-passer la caisse (sortie du montant) ────────────────
           final caisseMap = newData['caisse'];
