@@ -19,6 +19,7 @@ import '../widgets/app_widgets.dart';
 import 'score_membre_screen.dart';
 import 'classement_screen.dart';
 import '../utils/app_localizations.dart';
+import '../services/locale_service.dart';
 
 // ─── Constantes couleurs score ────────────────────────────────────────────────
 const _scoreExcellent = Color(0xFF2E7D5B); // ≥80
@@ -116,13 +117,54 @@ class _MembresScreenState extends State<MembresScreen> {
     String pin,
     TontineData data,
   ) async {
-    final msg = '🔑 *TON PIN DE VOTE — Tontine ${data.nom}*\n'
-        'Bonjour ${membre.nom}, voici ton PIN de vote personnel : *$pin*\n'
-        'Change-le dès maintenant (2 minutes) :\n'
-        '1. Ouvre TontineClair et entre le code : ${widget.code}\n'
-        '2. Va dans l\'onglet Membres, tout en bas : « 🔑 Changer mon PIN de vote »\n'
-        '3. Choisis ton nom, entre ce PIN provisoire puis ton nouveau PIN secret\n'
-        'Après ça, toi seul connais ton PIN. Personne d\'autre ne peut voter à ta place. 🔒';
+    final lang = Provider.of<LocaleService>(ctx, listen: false).langue.code;
+    const _pinMsgs = {
+      'fr': '🔑 *TON PIN DE VOTE*\n'
+          'Bonjour {nom}, voici ton PIN de vote personnel : *{pin}*\n'
+          'Tontine : {tontine}\n'
+          'Change-le dès maintenant (2 minutes) :\n'
+          '1. Ouvre TontineClair et entre le code : {code}\n'
+          '2. Va dans l\'onglet Membres, tout en bas : « 🔑 Changer mon PIN de vote »\n'
+          '3. Choisis ton nom, entre ce PIN provisoire puis ton nouveau PIN secret\n'
+          'Après ça, toi seul connais ton PIN. Personne d\'autre ne peut voter à ta place. 🔒',
+      'en': '🔑 *YOUR VOTING PIN*\n'
+          'Hello {nom}, here is your personal voting PIN: *{pin}*\n'
+          'Tontine: {tontine}\n'
+          'Change it now (2 minutes):\n'
+          '1. Open TontineClair and enter the code: {code}\n'
+          '2. Go to the Members tab, at the bottom: « 🔑 Change my voting PIN »\n'
+          '3. Choose your name, enter this temporary PIN then your new secret PIN\n'
+          'After that, only you know your PIN. No one else can vote in your place. 🔒',
+      'es': '🔑 *TU PIN DE VOTACIÓN*\n'
+          'Hola {nom}, aquí está tu PIN de votación personal: *{pin}*\n'
+          'Tontina: {tontine}\n'
+          'Cámbialo ahora (2 minutos):\n'
+          '1. Abre TontineClair e introduce el código: {code}\n'
+          '2. Ve a la pestaña Miembros, al final: « 🔑 Cambiar mi PIN de votación »\n'
+          '3. Elige tu nombre, introduce este PIN provisional y luego tu nuevo PIN secreto\n'
+          'Después, solo tú conoces tu PIN. Nadie más puede votar en tu lugar. 🔒',
+      'pt': '🔑 *O SEU PIN DE VOTAÇÃO*\n'
+          'Olá {nom}, aqui está o seu PIN de votação pessoal: *{pin}*\n'
+          'Tontina: {tontine}\n'
+          'Altere-o agora (2 minutos):\n'
+          '1. Abra o TontineClair e insira o código: {code}\n'
+          '2. Vá ao separador Membros, no final: « 🔑 Alterar o meu PIN de votação »\n'
+          '3. Escolha o seu nome, insira este PIN provisório e depois o seu novo PIN secreto\n'
+          'Depois disso, só você conhece o seu PIN. Mais ninguém pode votar em seu lugar. 🔒',
+      'ar': '🔑 *رمز التصويت الخاص بك*\n'
+          'مرحباً {nom}، إليك رمز التصويت الشخصي الخاص بك: *{pin}*\n'
+          'التنتين: {tontine}\n'
+          'قم بتغييره الآن (دقيقتان):\n'
+          '1. افتح TontineClair وأدخل الرمز: {code}\n'
+          '2. انتقل إلى تبويب الأعضاء، في الأسفل: « 🔑 تغيير رمز التصويت »\n'
+          '3. اختر اسمك، أدخل هذا الرمز المؤقت ثم رمزك السري الجديد\n'
+          'بعد ذلك، أنت وحدك تعرف رمزك. لا يمكن لأحد آخر التصويت بدلاً عنك. 🔒',
+    };
+    final msg = (_pinMsgs[lang] ?? _pinMsgs['fr']!)
+        .replaceAll('{nom}', membre.nom)
+        .replaceAll('{pin}', pin)
+        .replaceAll('{tontine}', data.nom)
+        .replaceAll('{code}', widget.code);
     final encoded = Uri.encodeComponent(msg);
 
     // Utiliser le numéro si disponible (message privé direct), sinon sélecteur de contact
