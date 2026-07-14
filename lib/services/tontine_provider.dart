@@ -26,13 +26,18 @@ class TontineProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> chargerTontine(String code) async {
-    _enChargement = true;
-    _erreur = null;
-    notifyListeners();
+  Future<void> chargerTontine(String code, {bool silencieux = false}) async {
+    // silencieux = true → pas de spinner, on garde l'écran actuel pendant le retry
+    if (!silencieux) {
+      _enChargement = true;
+      _erreur = null;
+      notifyListeners();
+    }
 
     try {
+      // lireTontine intègre déjà 3 retries dans SupabaseService.rpc()
       _courante = await SupabaseService.lireTontine(code);
+      _erreur = null; // Succès → effacer toute erreur précédente
       await StorageService.mettreAJourNom(code, _courante!.data.nom);
       _mesTontines = await StorageService.getListe();
       // Abonner l'appareil aux notifications de cette tontine
@@ -58,6 +63,13 @@ class TontineProvider extends ChangeNotifier {
         await StorageService.effacerGestActif(code);
         _mesTontines = await StorageService.getListe();
         _erreur = 'TONTINE_DELETED';
+      } else if (msg.startsWith('RESEAU')) {
+        // Erreur réseau : on affiche uniquement si pas de données en cache
+        // Si _courante est déjà chargée, on garde l'écran actuel sans crasher
+        if (_courante == null) {
+          _erreur = msg;
+        }
+        // Sinon → on ignore silencieusement, l'utilisateur reste sur ses données
       } else {
         _erreur = msg;
       }
@@ -504,6 +516,14 @@ class TontineProvider extends ChangeNotifier {
     } catch (e) {
       return {'ok': false, 'erreur': e.toString()};
     }
+  }
+
+  /// Rafraîchit les données en arrière-plan sans afficher d'erreur réseau.
+  /// Utilisé par le pull-to-refresh et les timers de rafraîchissement auto.
+  /// Si le réseau échoue mais que les données sont en cache → on garde l'écran.
+  Future<void> rafraichirSilencieux() async {
+    if (_courante == null) return;
+    await chargerTontine(_courante!.code, silencieux: true);
   }
 
   String _genererCode() {

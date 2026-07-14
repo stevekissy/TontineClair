@@ -47,6 +47,11 @@ class SupabaseService {
   //   • "OK"         → String (ex: voter)
   //   • [{...}]      → List  (ex: lire_voix_tontine retourne jsonb agrégé)
   // ─────────────────────────────────────────────────────────────────────────
+  // Nombre de tentatives automatiques en cas d'échec réseau
+  static const int _maxRetries = 3;
+  // Délai entre chaque tentative (exponentiel : 1s, 2s, 4s)
+  static const Duration _retryBase = Duration(seconds: 1);
+
   static Future<dynamic> rpc(String fn, Map<String, dynamic> args) async {
     const url = _url;
     const key = _key;
@@ -54,47 +59,62 @@ class SupabaseService {
     final uri = Uri.parse('$url/rest/v1/rpc/$fn');
     if (kDebugMode) debugPrint('[RPC] → $fn  args=$args');
 
-    http.Response response;
-    try {
-      response = await http
-          .post(
-            uri,
-            headers: {
-              'Content-Type': 'application/json',
-              'apikey': key,
-              'Authorization': 'Bearer $key',
-              // Pas de "Prefer" : comportement identique à index.html
-            },
-            body: jsonEncode(args),
-          )
-          .timeout(const Duration(seconds: 15));
-    } catch (e) {
-      throw Exception('RESEAU: connexion à Supabase impossible — vérifiez votre connexion internet.');
+    http.Response response = http.Response('', 0);
+    Exception? derniereErreur;
+
+    // ── Retry automatique jusqu'à 3 fois ─────────────────────────────────────
+    for (int tentative = 1; tentative <= _maxRetries; tentative++) {
+      try {
+        response = await http
+            .post(
+              uri,
+              headers: {
+                'Content-Type': 'application/json',
+                'apikey': key,
+                'Authorization': 'Bearer $key',
+              },
+              body: jsonEncode(args),
+            )
+            .timeout(const Duration(seconds: 30)); // 30s au lieu de 15s
+        derniereErreur = null;
+        break; // Succès → sortir de la boucle
+      } catch (e) {
+        derniereErreur = Exception('RESEAU: connexion à Supabase impossible — vérifiez votre connexion internet.');
+        if (tentative < _maxRetries) {
+          // Attente exponentielle avant retry : 1s, 2s, 4s
+          await Future.delayed(_retryBase * (1 << (tentative - 1)));
+          if (kDebugMode) debugPrint('[RPC] retry $tentative/$_maxRetries → $fn');
+        }
+      }
     }
 
+    if (derniereErreur != null) throw derniereErreur!;
+
+    final resp = response;
+
     if (kDebugMode) {
-      debugPrint('[RPC] ← ${response.statusCode}  '
-          '${response.body.length > 300 ? response.body.substring(0, 300) : response.body}');
+      debugPrint('[RPC] ← ${resp.statusCode}  '
+          '${resp.body.length > 300 ? resp.body.substring(0, 300) : resp.body}');
     }
 
     // ── Erreurs HTTP (identique à index.html) ──────────────────────────────
-    if (!_isOk(response.statusCode)) {
-      final txt = response.body;
-      if (response.statusCode == 404 || txt.contains('Could not find the function')) {
+    if (!_isOk(resp.statusCode)) {
+      final txt = resp.body;
+      if (resp.statusCode == 404 || txt.contains('Could not find the function')) {
         throw Exception(
             'SQL: la fonction "$fn" est introuvable dans la base. '
             'Exécutez les scripts supabase.sql → v2 → v3 → v4 → v5 dans Supabase › SQL Editor.');
       }
-      if (response.statusCode == 401 || response.statusCode == 403) {
+      if (resp.statusCode == 401 || resp.statusCode == 403) {
         throw Exception(
-            'CLE: clé anon refusée (${response.statusCode}). '
+            'CLE: clé anon refusée (${resp.statusCode}). '
             'Vérifiez Settings › API › anon public dans votre projet Supabase.');
       }
-      throw Exception('Erreur Supabase $fn (${response.statusCode}) : $txt');
+      throw Exception('Erreur Supabase $fn (${resp.statusCode}) : $txt');
     }
 
     // ── Corps de la réponse ────────────────────────────────────────────────
-    final body = response.body.trim();
+    final body = resp.body.trim();
     if (body.isEmpty || body == 'null') return null;
 
     // ── Décodage JSON ──────────────────────────────────────────────────────

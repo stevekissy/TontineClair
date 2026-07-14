@@ -41,12 +41,14 @@ class _DetailScreenState extends State<DetailScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Premier chargement : normal (avec spinner si pas de données)
       context.read<TontineProvider>().chargerTontine(widget.code);
     });
-    // Rafraîchissement automatique toutes les 30 secondes
+    // Rafraîchissement automatique toutes les 30 secondes — silencieux
+    // Si le réseau coupe temporairement, on garde l'écran actuel sans erreur
     _timer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) {
-        context.read<TontineProvider>().chargerTontine(widget.code);
+        context.read<TontineProvider>().rafraichirSilencieux();
       }
     });
   }
@@ -199,7 +201,7 @@ class _DetailScreenState extends State<DetailScreen> {
         child: Stack(
           children: [
             RefreshIndicator(
-              onRefresh: () => provider.chargerTontine(widget.code),
+              onRefresh: () => provider.rafraichirSilencieux(),
               child: SingleChildScrollView(
                 physics: AlwaysScrollableScrollPhysics(),
                 padding: EdgeInsets.fromLTRB(16, 0, 16, 120),

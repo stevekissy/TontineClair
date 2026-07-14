@@ -323,7 +323,7 @@ class DashboardScreen extends StatelessWidget {
             // ── Corps ──
             Expanded(
               child: RefreshIndicator(
-                onRefresh: () => provider.chargerTontine(code),
+                onRefresh: () => provider.rafraichirSilencieux(),
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
                   children: [
