@@ -1,9 +1,9 @@
-[build]
-  command   = "flutter build web --release"
-  publish   = "build/web"
+# Déploiement manuel uniquement (ZIP via API)
+# Le build Flutter est fait en local puis déployé via API Netlify
+# NE PAS activer le build automatique — Flutter n'est pas dispo sur Netlify CI
 
-[build.environment]
-  FLUTTER_VERSION = "3.35.4"
+[build]
+  ignore = "/bin/true"
 
 [[redirects]]
   from   = "/*"
