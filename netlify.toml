@@ -1,9 +1,10 @@
-# Déploiement manuel uniquement (ZIP via API)
-# Le build Flutter est fait en local puis déployé via API Netlify
-# NE PAS activer le build automatique — Flutter n'est pas dispo sur Netlify CI
+# TontineClair — Netlify config
+# Le build Flutter est fait localement et déployé via API (ZIP)
+# Ce fichier désactive le build côté Netlify CI
 
 [build]
-  ignore = "/bin/true"
+  command = ""
+  publish = "build/web"
 
 [[redirects]]
   from   = "/*"
