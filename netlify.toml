@@ -1,66 +1,11 @@
-# ═══════════════════════════════════════════════════════════════════════════════
-# TontineClair — netlify.toml
-# Technologie : Flutter Web (Flutter 3.35.4 / Dart 3.9.2)
-#
-# BUILD :
-#   commande  → bash netlify_build.sh
-#   publication → build/web  (généré par flutter build web --release)
-#
-# VARIABLES D'ENVIRONNEMENT (Netlify UI > Site settings > Environment variables)
-# ┌─────────────────────┬────────────────────────────────────────────────────┐
-# │ Nom                 │ Valeur                                             │
-# ├─────────────────────┼────────────────────────────────────────────────────┤
-# │ SUPABASE_URL        │ https://mkmkpjdcydtpjwrmvbzd.supabase.co          │
-# │ SUPABASE_ANON_KEY   │ eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...          │
-# └─────────────────────┴────────────────────────────────────────────────────┘
-# ⚠ Ne jamais ajouter service_role — la clé anon est suffisante côté client.
-# ═══════════════════════════════════════════════════════════════════════════════
-
 [build]
-  command = "bash netlify_build.sh"
-  publish = "build/web"
+  command   = "flutter build web --release"
+  publish   = "build/web"
 
-# Variables connues au moment du build (non secrètes)
-# Les variables secrètes (SUPABASE_*) sont définies dans l'UI Netlify, pas ici.
 [build.environment]
-  FLUTTER_VERSION   = "3.35.4"
-  # Désactive la télémétrie Flutter pendant le build CI
-  FLUTTER_SUPPRESS_ANALYTICS = "true"
+  FLUTTER_VERSION = "3.35.4"
 
-# Cache entre les builds (chemins relatifs à $HOME sur les builders Netlify)
-# → accélère les builds suivants (Flutter passe de ~6 min à ~2 min)
-[build.cache]
-  paths = ["flutter", ".pub-cache"]
-
-# ── Redirections SPA ─────────────────────────────────────────────────────────
-# Flutter Web utilise un routage côté client — toutes les routes → index.html
 [[redirects]]
   from   = "/*"
   to     = "/index.html"
   status = 200
-
-# ── En-têtes de sécurité ─────────────────────────────────────────────────────
-[[headers]]
-  for = "/*"
-  [headers.values]
-    X-Frame-Options        = "SAMEORIGIN"
-    X-Content-Type-Options = "nosniff"
-    Referrer-Policy        = "strict-origin-when-cross-origin"
-
-# Service worker Flutter — ne pas mettre en cache
-[[headers]]
-  for = "/flutter_service_worker.js"
-  [headers.values]
-    Cache-Control = "no-cache, no-store, must-revalidate"
-
-# Assets Flutter — cache longue durée (hash dans le nom de fichier)
-[[headers]]
-  for = "/assets/**"
-  [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
-
-# Canvaskit WASM — cache longue durée
-[[headers]]
-  for = "/canvaskit/**"
-  [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
