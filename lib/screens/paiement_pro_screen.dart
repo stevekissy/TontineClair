@@ -48,6 +48,7 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
   String? _messageErreur;
   int      _pollingSecondes = 0;
   Timer?   _pollingTimer;
+  Timer?   _watchdogTimer;          // ← protège contre le gel sur enCours
   DateTime? _debutEnregistrement;
 
   @override
@@ -55,6 +56,7 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
     _telCtrl.dispose();
     _otpCtrl.dispose();
     _pollingTimer?.cancel();
+    _watchdogTimer?.cancel();
     super.dispose();
   }
 
@@ -81,49 +83,79 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
       _messageErreur = null;
     });
 
-    final numCommande = SycaPayService.genererNumCommande(
-      widget.code,
-      widget.membre.id,
-    );
+    // ── Watchdog 60 s : force la sortie de enCours si tout explose ──────────
+    _watchdogTimer?.cancel();
+    _watchdogTimer = Timer(const Duration(seconds: 60), () {
+      if (mounted && _etape == _Etape.enCours) {
+        if (kDebugMode) debugPrint('[PaiementPro] WATCHDOG déclenché — forçage retour saisie');
+        setState(() {
+          _etape         = _Etape.saisie;
+          _messageErreur =
+              '⏱ Délai SycaPay dépassé (60 s). '
+              'Si votre argent a été débité, notez la référence '
+              'et contactez le gestionnaire. Vous pouvez réessayer.';
+        });
+      }
+    });
 
-    final resultat = await SycaPayService.initierPaiement(
-      telephone:   _telCtrl.text.trim(),
-      montant:     montant,
-      numCommande: numCommande,
-      operateur:   _operateur,
-      otp:         _operateur == 'orange' ? _otpCtrl.text.trim() : null,
-      nomMembre:   widget.membre.nom.split(' ').last,
-      prenomMembre: widget.membre.nom.split(' ').first,
-    );
+    try {
+      final numCommande = SycaPayService.genererNumCommande(
+        widget.code,
+        widget.membre.id,
+      );
 
-    if (!mounted) return;
+      final resultat = await SycaPayService.initierPaiement(
+        telephone:    _telCtrl.text.trim(),
+        montant:      montant,
+        numCommande:  numCommande,
+        operateur:    _operateur,
+        otp:          _operateur == 'orange' ? _otpCtrl.text.trim() : null,
+        nomMembre:    widget.membre.nom.split(' ').last,
+        prenomMembre: widget.membre.nom.split(' ').first,
+      );
 
-    if (resultat.erreurReseau) {
+      _watchdogTimer?.cancel();
+      if (!mounted) return;
+
+      if (resultat.erreurReseau) {
+        setState(() {
+          _etape         = _Etape.saisie;
+          _messageErreur = resultat.messageFr;
+        });
+        return;
+      }
+
+      if (resultat.estEchec && !resultat.estEnAttente) {
+        setState(() {
+          _etape         = _Etape.saisie;
+          _messageErreur = resultat.messageFr;
+        });
+        return;
+      }
+
+      _transactionId = resultat.transactionId;
+
+      if (resultat.estSucces) {
+        // Succès immédiat (Orange Money OTP) → état enregistrement visible
+        setState(() => _etape = _Etape.enregistrement);
+        await _validerCotisation(provider, montant);
+      } else {
+        // Pending → polling jusqu'à confirmation ou timeout 2 min
+        setState(() => _etape = _Etape.attente);
+        _demarrerPolling(provider, montant);
+      }
+    } catch (e) {
+      // ── Catch universel : TimeoutException, SocketException, erreur parsing, etc.
+      _watchdogTimer?.cancel();
+      if (kDebugMode) debugPrint('[PaiementPro] _initierPaiement EXCEPTION: $e');
+      if (!mounted) return;
       setState(() {
         _etape         = _Etape.saisie;
-        _messageErreur = resultat.messageFr;
+        _messageErreur =
+            '⚠️ Erreur de connexion SycaPay. '
+            'Si votre argent a été débité (vérifiez votre SMS), '
+            'notez la référence et contactez le gestionnaire avant de réessayer.';
       });
-      return;
-    }
-
-    if (resultat.estEchec && !resultat.estEnAttente) {
-      setState(() {
-        _etape         = _Etape.saisie;
-        _messageErreur = resultat.messageFr;
-      });
-      return;
-    }
-
-    _transactionId = resultat.transactionId;
-
-    if (resultat.estSucces) {
-      // Succès immédiat (Orange Money OTP) → état enregistrement visible
-      setState(() => _etape = _Etape.enregistrement);
-      await _validerCotisation(provider, montant);
-    } else {
-      // Pending → polling jusqu'à confirmation ou timeout 2 min
-      setState(() => _etape = _Etape.attente);
-      _demarrerPolling(provider, montant);
     }
   }
 

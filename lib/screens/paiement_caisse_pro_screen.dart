@@ -44,6 +44,7 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
   String? _messageErreur;
   int _pollingSecondes = 0;
   Timer? _pollingTimer;
+  Timer? _watchdogTimer;          // ← protège contre le gel sur enCours
   DateTime? _debutEnregistrement;
 
   @override
@@ -51,6 +52,7 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
     _telCtrl.dispose();
     _otpCtrl.dispose();
     _pollingTimer?.cancel();
+    _watchdogTimer?.cancel();
     super.dispose();
   }
 
@@ -73,49 +75,79 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
       _messageErreur = null;
     });
 
-    final numCommande = SycaPayService.genererNumCommande(
-      widget.code,
-      'CAISSE_${DateTime.now().millisecondsSinceEpoch}',
-    );
+    // ── Watchdog 60 s : force la sortie de enCours si tout explose ──────────
+    _watchdogTimer?.cancel();
+    _watchdogTimer = Timer(const Duration(seconds: 60), () {
+      if (mounted && _etape == _EtapeCaisse.enCours) {
+        if (kDebugMode) debugPrint('[CaissePro] WATCHDOG déclenché — forçage retour saisie');
+        setState(() {
+          _etape = _EtapeCaisse.saisie;
+          _messageErreur =
+              '⏱ Délai SycaPay dépassé (60 s). '
+              'Si votre argent a été débité, notez la référence Orange Money '
+              'et contactez le gestionnaire. Vous pouvez réessayer.';
+        });
+      }
+    });
 
-    final resultat = await SycaPayService.initierPaiement(
-      telephone: _telCtrl.text.trim(),
-      montant: widget.montant,
-      numCommande: numCommande,
-      operateur: _operateur,
-      otp: _operateur == 'orange' ? _otpCtrl.text.trim() : null,
-      nomMembre: 'Apport',
-      prenomMembre: 'Caisse',
-    );
+    try {
+      final numCommande = SycaPayService.genererNumCommande(
+        widget.code,
+        'CAISSE_${DateTime.now().millisecondsSinceEpoch}',
+      );
 
-    if (!mounted) return;
+      final resultat = await SycaPayService.initierPaiement(
+        telephone: _telCtrl.text.trim(),
+        montant: widget.montant,
+        numCommande: numCommande,
+        operateur: _operateur,
+        otp: _operateur == 'orange' ? _otpCtrl.text.trim() : null,
+        nomMembre: 'Apport',
+        prenomMembre: 'Caisse',
+      );
 
-    if (resultat.erreurReseau) {
+      _watchdogTimer?.cancel();
+      if (!mounted) return;
+
+      if (resultat.erreurReseau) {
+        setState(() {
+          _etape = _EtapeCaisse.saisie;
+          _messageErreur = resultat.messageFr;
+        });
+        return;
+      }
+
+      if (resultat.estEchec && !resultat.estEnAttente) {
+        setState(() {
+          _etape = _EtapeCaisse.saisie;
+          _messageErreur = resultat.messageFr;
+        });
+        return;
+      }
+
+      _transactionId = resultat.transactionId;
+
+      if (resultat.estSucces) {
+        // Succès immédiat (Orange Money OTP) → état enregistrement visible
+        setState(() => _etape = _EtapeCaisse.enregistrement);
+        await _validerApportCaisse();
+      } else {
+        // Pending → polling jusqu'à confirmation ou timeout 2 min
+        setState(() => _etape = _EtapeCaisse.attente);
+        _demarrerPolling();
+      }
+    } catch (e) {
+      // ── Catch universel : TimeoutException, SocketException, erreur parsing, etc.
+      _watchdogTimer?.cancel();
+      if (kDebugMode) debugPrint('[CaissePro] _initierPaiement EXCEPTION: $e');
+      if (!mounted) return;
       setState(() {
         _etape = _EtapeCaisse.saisie;
-        _messageErreur = resultat.messageFr;
+        _messageErreur =
+            '⚠️ Erreur de connexion SycaPay. '
+            'Si votre argent a été débité (vérifiez votre SMS), '
+            'notez la référence et contactez le gestionnaire avant de réessayer.';
       });
-      return;
-    }
-
-    if (resultat.estEchec && !resultat.estEnAttente) {
-      setState(() {
-        _etape = _EtapeCaisse.saisie;
-        _messageErreur = resultat.messageFr;
-      });
-      return;
-    }
-
-    _transactionId = resultat.transactionId;
-
-    if (resultat.estSucces) {
-      // Succès immédiat (Orange Money OTP) → état enregistrement visible
-      setState(() => _etape = _EtapeCaisse.enregistrement);
-      await _validerApportCaisse();
-    } else {
-      // Pending → polling jusqu'à confirmation ou timeout 2 min
-      setState(() => _etape = _EtapeCaisse.attente);
-      _demarrerPolling();
     }
   }
 
