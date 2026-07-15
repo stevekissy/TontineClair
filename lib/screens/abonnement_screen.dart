@@ -9,9 +9,12 @@ import '../services/supabase_service.dart';
 import '../services/platform_service.dart';
 import '../services/subscription_service.dart';
 import '../services/feature_gate_service.dart';
+import '../models/tontine.dart';
+import '../services/mandat_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
+import 'mandat_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ÉCRAN ABONNEMENT — détection automatique de la plateforme
@@ -144,6 +147,15 @@ class _AbonnementScreenState extends State<AbonnementScreen> {
               ],
 
               const SizedBox(height: 32),
+
+              // ── Section Forfait Mandat ────────────────────────────────────
+              if (tontine != null) ...[
+                const Divider(height: 1),
+                const SizedBox(height: 24),
+                _SectionForfaitMandat(tontine: tontine),
+                const SizedBox(height: 24),
+              ],
+
               _buildNotesLegales(),
             ],
           ),
@@ -1080,6 +1092,187 @@ class _LigneTableau extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ─── Section Forfait Mandat ──────────────────────────────────────────────────
+
+class _SectionForfaitMandat extends StatelessWidget {
+  final Tontine tontine;
+
+  const _SectionForfaitMandat({required this.tontine});
+
+  @override
+  Widget build(BuildContext context) {
+    final estMandat = tontine.estSousMandat;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Titre section
+        Row(
+          children: [
+            Icon(
+              Icons.verified_rounded,
+              size: 18,
+              color: estMandat ? AppColors.or : AppColors.texteDoux,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Mode Gestion sous Mandat',
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w700,
+                fontSize: 16,
+                color: AppColors.encre,
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (estMandat) const BadgeMandat(),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Activez le Mode Mandat pour gérer les paiements réels de votre tontine avec une commission transparente.',
+          style: GoogleFonts.inter(
+            fontSize: 13,
+            color: AppColors.texteDoux,
+            height: 1.5,
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Carte conditions
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: estMandat
+                ? AppColors.or.withValues(alpha: 0.07)
+                : AppColors.carte,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: estMandat
+                  ? AppColors.or.withValues(alpha: 0.25)
+                  : AppColors.lignes,
+            ),
+          ),
+          child: Column(
+            children: [
+              _LigneForfait(
+                icone: Icons.receipt_long_rounded,
+                label: 'Forfait mensuel',
+                valeur: Formatters.montant(MandatService.forfaitMensuelFCFA, devise: 'XOF'),
+                accent: true,
+              ),
+              const Divider(height: 20),
+              _LigneForfait(
+                icone: Icons.percent_rounded,
+                label: 'Commission sur décaissements',
+                valeur: '1%',
+                accent: true,
+              ),
+              const Divider(height: 20),
+              _LigneForfait(
+                icone: Icons.payments_rounded,
+                label: 'Paiements réels activés',
+                valeur: '✅',
+                accent: false,
+              ),
+              const Divider(height: 20),
+              _LigneForfait(
+                icone: Icons.swap_horiz_rounded,
+                label: 'Basculement libre ↔ mandat',
+                valeur: 'Réversible',
+                accent: false,
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // Bouton
+        SizedBox(
+          width: double.infinity,
+          child: estMandat
+              ? OutlinedButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => MandatScreen(code: tontine.code),
+                    ),
+                  ),
+                  icon: const Icon(Icons.settings_rounded, size: 16),
+                  label: const Text('Gérer le Mode Mandat'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.or,
+                    side: BorderSide(color: AppColors.or),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                )
+              : FilledButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => MandatScreen(code: tontine.code),
+                    ),
+                  ),
+                  icon: const Icon(Icons.verified_rounded, size: 16),
+                  label: const Text('Activer le Mode Mandat'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.or,
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LigneForfait extends StatelessWidget {
+  final IconData icone;
+  final String label;
+  final String valeur;
+  final bool accent;
+
+  const _LigneForfait({
+    required this.icone,
+    required this.label,
+    required this.valeur,
+    required this.accent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icone, size: 16, color: AppColors.texteDoux),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: AppColors.texte,
+            ),
+          ),
+        ),
+        Text(
+          valeur,
+          style: GoogleFonts.inter(
+            fontWeight: FontWeight.w700,
+            fontSize: 14,
+            color: accent ? AppColors.or : AppColors.succes,
+          ),
+        ),
+      ],
     );
   }
 }
