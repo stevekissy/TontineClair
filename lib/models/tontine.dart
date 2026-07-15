@@ -551,7 +551,6 @@ class TontineData {
   List<Map<String, dynamic>> historique; // historique des tours
   List<Map<String, dynamic>> cyclesArchives; // archives des anciens cycles
   Map<String, dynamic> stats;    // stats par membre
-  String modeGestion;            // 'libre' | 'mandat'
 
   TontineData({
     required this.nom,
@@ -575,7 +574,6 @@ class TontineData {
     this.historique = const [],
     this.cyclesArchives = const [],
     this.stats = const {},
-    this.modeGestion = 'libre',
   });
 
   // ── Accesseurs calculés ────────────────────────────────────────────────────
@@ -1103,7 +1101,6 @@ class TontineData {
       historique: historique,
       cyclesArchives: cyclesArchives,
       stats: stats,
-      modeGestion: json['modeGestion'] as String? ?? 'libre',
     );
   }
 
@@ -1132,7 +1129,6 @@ class TontineData {
         'historique': historique,
         'cyclesArchives': cyclesArchives,
         'stats': stats,
-        'modeGestion': modeGestion,
       };
 }
 
@@ -1169,9 +1165,6 @@ class Tontine {
 
   /// true si la tontine est accessible normalement
   bool get estActive => status == 'active';
-
-  /// true si la tontine fonctionne en mode Gestion sous Mandat
-  bool get estSousMandat => data.modeGestion == 'mandat';
 }
 
 // ─── TontineLocale (liste mémorisée sur l'appareil) ──────────────────────────

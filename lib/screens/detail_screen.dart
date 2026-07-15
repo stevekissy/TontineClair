@@ -18,7 +18,6 @@ import 'prets_screen.dart';
 import 'votes_screen.dart';
 import 'tirage_screen.dart';
 import 'cotisations_screen.dart';
-import 'mandat_screen.dart';
 import 'membres_screen.dart';
 import 'dashboard_screen.dart';
 import 'nouveau_cycle_screen.dart';
@@ -289,8 +288,6 @@ class _DetailScreenState extends State<DetailScreen> {
                           ),
                         ),
                         BadgePlan(isPremium: tontine.isPremium),
-                        if (tontine.estSousMandat) ...
-                          [const SizedBox(width: 6), const BadgeMandat()],
                       ],
                     ),
                     const SizedBox(height: 4),
@@ -1605,90 +1602,25 @@ class _BarreDetail extends StatelessWidget {
           ],
         ),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
         children: [
-          // Bouton Mode Gestion (gestionnaire uniquement)
-          InkWell(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => MandatScreen(code: code),
-              ),
-            ),
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: data.modeGestion == 'mandat'
-                    ? AppColors.or.withValues(alpha: 0.1)
-                    : AppColors.encre.withValues(alpha: 0.05),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: data.modeGestion == 'mandat'
-                      ? AppColors.or.withValues(alpha: 0.3)
-                      : AppColors.encre.withValues(alpha: 0.15),
+          Expanded(
+            child: BtnSecondaire(
+              label: 'Cotisations',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => CotisationsScreen(code: code),
                 ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    data.modeGestion == 'mandat'
-                        ? Icons.verified_rounded
-                        : Icons.lock_open_rounded,
-                    size: 14,
-                    color: data.modeGestion == 'mandat'
-                        ? AppColors.or
-                        : AppColors.texte,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    data.modeGestion == 'mandat'
-                        ? 'Mode Mandat actif'
-                        : 'Mode Libre — Activer le Mandat',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: data.modeGestion == 'mandat'
-                          ? AppColors.or
-                          : AppColors.texte,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    size: 14,
-                    color: data.modeGestion == 'mandat'
-                        ? AppColors.or
-                        : AppColors.texte,
-                  ),
-                ],
               ),
             ),
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: BtnSecondaire(
-                  label: 'Cotisations',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => CotisationsScreen(code: code),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: BtnPrincipal(
-                  label: 'Clôturer le tour',
-                  onTap: () => _cloturerTour(context),
-                ),
-              ),
-            ],
+          const SizedBox(width: 10),
+          Expanded(
+            child: BtnPrincipal(
+              label: 'Clôturer le tour',
+              onTap: () => _cloturerTour(context),
+            ),
           ),
         ],
       ),
@@ -1768,10 +1700,6 @@ class _BarreDetail extends StatelessWidget {
         (label: 'Montant versé', valeur: Formatters.montant(data.montant * data.membres.length, devise: data.devise)),
         (label: 'Cotisants payés', valeur: '$nbPayesClot / ${data.membres.length}'),
         (label: 'Tour', valeur: 'N° $numerTourAffiche → N° ${numerTourAffiche + 1}'),
-        if (data.modeGestion == 'mandat') ...[
-          (label: 'Commission (1%)', valeur: Formatters.montant((data.montant * data.membres.length * 0.01).round(), devise: data.devise)),
-          (label: 'Net bénéficiaire', valeur: Formatters.montant(data.montant * data.membres.length - (data.montant * data.membres.length * 0.01).round(), devise: data.devise)),
-        ],
       ],
       onValider: (pin) async {
         // Préparer les nouvelles données

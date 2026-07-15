@@ -643,33 +643,14 @@ class _CarteTontine extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          nom,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 16,
-                            color: AppColors.encre,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      // BadgeMandat : affiché si la tontine courante = ce code et mode mandat
-                      Builder(builder: (ctx) {
-                        final courante = ctx.watch<TontineProvider>().courante;
-                        if (courante != null &&
-                            courante.code == code &&
-                            courante.estSousMandat) {
-                          return const Padding(
-                            padding: EdgeInsets.only(left: 6),
-                            child: BadgeMandat(),
-                          );
-                        }
-                        return const SizedBox.shrink();
-                      }),
-                    ],
+                  Text(
+                    nom,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                      color: AppColors.encre,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                   SizedBox(height: 5),
                   Row(

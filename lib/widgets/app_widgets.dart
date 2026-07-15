@@ -272,41 +272,6 @@ class CodePuce extends StatelessWidget {
   }
 }
 
-/// Badge affiché sur les tontines en Mode Gestion sous Mandat.
-class BadgeMandat extends StatelessWidget {
-  const BadgeMandat({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.or.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: AppColors.or.withValues(alpha: 0.3),
-          width: 0.8,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.verified_rounded, size: 11, color: AppColors.or),
-          const SizedBox(width: 4),
-          Text(
-            'Mandat',
-            style: GoogleFonts.inter(
-              fontWeight: FontWeight.w700,
-              fontSize: 11,
-              color: AppColors.or,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class BadgePlan extends StatelessWidget {
   final bool isPremium;
 

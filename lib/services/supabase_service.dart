@@ -1324,38 +1324,6 @@ class SupabaseService {
           'ar': 'تم تعديل نقاط {nom}: {ancien} → {nouveau}/100',
         },
       },
-      'mandat_active': {
-        'titre': {
-          'fr': '🔐 Mode Mandat activé',
-          'en': '🔐 Mandate Mode activated',
-          'es': '🔐 Modo Mandato activado',
-          'pt': '🔐 Modo Mandato ativado',
-          'ar': '🔐 تم تفعيل وضع التفويض',
-        },
-        'message': {
-          'fr': 'La tontine passe en Gestion sous Mandat. Une commission de 1% s\'applique sur les décaissements.',
-          'en': 'The tontine switches to Mandate Management. A 1% commission applies on disbursements.',
-          'es': 'La tontina pasa a Gestión bajo Mandato. Se aplica una comisión del 1% sobre los desembolsos.',
-          'pt': 'A tontine passa para Gestão sob Mandato. Uma comissão de 1% se aplica nos desembolsos.',
-          'ar': 'تنتقل التونتين إلى الإدارة بتفويض. تُطبَّق عمولة 1% على المدفوعات.',
-        },
-      },
-      'mandat_desactive': {
-        'titre': {
-          'fr': '🔓 Mode Libre activé',
-          'en': '🔓 Free Mode activated',
-          'es': '🔓 Modo Libre activado',
-          'pt': '🔓 Modo Livre ativado',
-          'ar': '🔓 تم تفعيل الوضع الحر',
-        },
-        'message': {
-          'fr': 'La tontine revient en Gestion Libre. Plus de commission ni de forfait mensuel.',
-          'en': 'The tontine returns to Free Management. No more commission or monthly fee.',
-          'es': 'La tontina vuelve a Gestión Libre. Sin más comisión ni cuota mensual.',
-          'pt': 'A tontine retorna à Gestão Livre. Sem mais comissão ou mensalidade.',
-          'ar': 'تعود التونتين إلى الإدارة الحرة. لا مزيد من العمولات أو الرسوم الشهرية.',
-        },
-      },
     };
 
     String _sub(String? tpl) {
