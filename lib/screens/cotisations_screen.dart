@@ -172,7 +172,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
                           // ── Bouton "Payer" Pro — visible si Pro + non-payé
                           // Accessible à TOUS (gest et membres) en mode Pro
                           // Le gest conserve aussi son toggle manuel (onToggle)
-                          onPayer: tontine.isPro && !e.value.paye && !data.cycleTermine
+                          onPayer: tontine.isPremium && !e.value.paye && !data.cycleTermine
                               ? () => Navigator.push(
                                     context,
                                     MaterialPageRoute(

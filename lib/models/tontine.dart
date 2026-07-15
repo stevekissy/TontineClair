@@ -551,7 +551,7 @@ class TontineData {
   List<Map<String, dynamic>> historique; // historique des tours
   List<Map<String, dynamic>> cyclesArchives; // archives des anciens cycles
   Map<String, dynamic> stats;    // stats par membre
-  String tier;                   // 'lite' | 'pro' — migration à sens unique (jamais pro→lite)
+  String tier;                   // 'gratuite' | 'premium' — migration à sens unique (jamais premium→gratuite)
 
   TontineData({
     required this.nom,
@@ -575,7 +575,7 @@ class TontineData {
     this.historique = const [],
     this.cyclesArchives = const [],
     this.stats = const {},
-    this.tier = 'lite',
+    this.tier = 'gratuite',
   });
 
   // ── Accesseurs calculés ────────────────────────────────────────────────────
@@ -1107,10 +1107,15 @@ class TontineData {
     );
   }
 
-  /// Garantit que le tier ne peut jamais rétrograder de 'pro' à 'lite'.
+  /// Getter : true si la tontine est en mode Premium (paiements SycaPay actifs).
+  bool get isPremium => tier == 'premium';
+
+  /// Garantit que le tier ne peut jamais rétrograder de 'premium' à 'gratuite'.
+  /// Rétrocompatibilité : 'pro' (ancien) → 'premium', 'lite' (ancien) → 'gratuite'.
   static String _parseTier(dynamic raw) {
-    final v = raw as String? ?? 'lite';
-    return v == 'pro' ? 'pro' : 'lite';
+    final v = raw as String? ?? 'gratuite';
+    if (v == 'premium' || v == 'pro') return 'premium';
+    return 'gratuite';
   }
 
   Map<String, dynamic> toJson() => {
@@ -1164,25 +1169,23 @@ class Tontine {
     this.invitationCodeActive = true,
   });
 
-  bool get isPremium {
-    if (plan != 'premium') return false;
-    if (planExpire == null) return true;
-    return planExpire!.isAfter(DateTime.now());
-  }
-
   /// true si la tontine a été supprimée (soft delete)
   bool get estSupprimee => status == 'deleted';
 
   /// true si la tontine est accessible normalement
   bool get estActive => status == 'active';
 
-  /// true si la tontine est en version Pro (paiements réels via SycaPay)
-  bool get isPro => data.tier == 'pro';
+  /// true si la tontine est en version Premium (paiements SycaPay actifs).
+  /// Source unique : data.tier (stocké dans Supabase).
+  bool get isPremium => data.isPremium;
 
-  /// Passe la tontine en Pro (irréversible — jamais de retour à lite).
+  /// Alias rétrocompat — utiliser isPremium désormais.
+  bool get isPro => isPremium;
+
+  /// Passe la tontine en Premium (irréversible — jamais de retour à gratuite).
   /// Ne modifie que l'objet local ; l'écriture en base est faite par le service.
-  void upgraderVersPro() {
-    data.tier = 'pro';
+  void upgraderVersPremium() {
+    data.tier = 'premium';
   }
 }
 
@@ -1191,22 +1194,27 @@ class TontineLocale {
   final String code;
   final String nom;
   /// Tier local — mis à jour lors du chargement complet de la tontine.
-  /// Permet d'afficher le badge Pro sur l'écran d'accueil sans recharger.
-  final bool isPro;
+  /// Permet d'afficher le badge Premium sur l'écran d'accueil sans recharger.
+  final bool isPremium;
 
-  TontineLocale({required this.code, required this.nom, this.isPro = false});
+  /// Alias rétrocompat
+  bool get isPro => isPremium;
+
+  TontineLocale({required this.code, required this.nom, this.isPremium = false});
 
   factory TontineLocale.fromJson(Map<String, dynamic> json) {
+    final tier = json['tier'] as String? ?? 'gratuite';
     return TontineLocale(
       code: json['code'] as String? ?? '',
       nom: json['nom'] as String? ?? '',
-      isPro: (json['tier'] as String? ?? 'lite') == 'pro',
+      // Rétrocompat : 'pro' (ancien) = premium
+      isPremium: tier == 'premium' || tier == 'pro',
     );
   }
 
   Map<String, dynamic> toJson() => {
     'code': code,
     'nom': nom,
-    'tier': isPro ? 'pro' : 'lite',
+    'tier': isPremium ? 'premium' : 'gratuite',
   };
 }

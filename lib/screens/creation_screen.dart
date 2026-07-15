@@ -2,15 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
-import '../services/subscription_service.dart';
 import '../services/feature_gate_service.dart';
-import '../services/platform_service.dart';
 import '../services/storage_service.dart';
 import '../services/echeance_service.dart';
 import '../services/devise_service.dart';
 import '../utils/app_colors.dart';
 import '../widgets/app_widgets.dart';
-import 'abonnement_screen.dart';
 import 'code_cree_screen.dart';
 import '../utils/app_localizations.dart';
 
@@ -38,6 +35,7 @@ class _CreationScreenState extends State<CreationScreen> {
 
   bool _loading = false;
   String? _erreur;
+  String _typeTontine = 'gratuite'; // 'gratuite' | 'premium'
 
   @override
   void dispose() {
@@ -82,68 +80,23 @@ class _CreationScreenState extends State<CreationScreen> {
     }
 
     final provider = context.read<TontineProvider>();
-    // Plan Premium : lu depuis SubscriptionService (source unique)
-    final isPremium = SubscriptionService.isPremium;
+    final estGratuite = _typeTontine == 'gratuite';
 
-    // ── Limite Gratuit : 5 membres MAX par tontine ────────────────────────
-    // Bloquer UNIQUEMENT si l'utilisateur essaie d'ajouter un 6e membre ou plus.
-    // Un compte Gratuit peut avoir exactement 5 membres dans sa tontine.
-    if (!isPremium && membres.length > FeatureGate.maxMembresGratuit) {
-      if (!mounted) return;
-      afficherDialogUpgrade(
-        context,
-        limiteInfo: LimiteInfo(
-          type: LimiteType.membres,
-          titre: 'Limite de membres atteinte',
-          message: FeatureGate.messageLimite(
-            limite: LimiteType.membres,
-            actuel: membres.length,
-            max: FeatureGate.maxMembresGratuit,
-          ),
-          actuel: membres.length,
-          max: FeatureGate.maxMembresGratuit,
-        ),
-        onUpgrade: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => AbonnementScreen(
-              code: '',
-              platformeForce: PlatformService.current,
-            ),
-          ),
-        ),
-      );
+    // ── Limite Gratuite : 5 membres MAX par tontine ───────────────────────
+    if (estGratuite && membres.length > FeatureGate.maxMembresGratuit) {
+      setState(() => _erreur =
+          'Formule Gratuite : maximum ${FeatureGate.maxMembresGratuit} membres. '
+          'Choisissez la formule Premium pour ajouter plus de membres.');
       return;
     }
 
-    // ── Limite Gratuit : 1 tontine CRÉÉE max ──────────────────────────────
-    // Compter uniquement les tontines où l'utilisateur est gestionnaire
-    // (créées par lui), pas celles qu'il a simplement rejointes.
-    // On utilise nbTontinesCrees stocké localement.
+    // ── Limite Gratuite : 1 tontine créée max ────────────────────────────
     final nbCrees = await StorageService.getNbTontinesCrees();
-    if (!isPremium && nbCrees >= FeatureGate.maxTontinesGratuit) {
+    if (estGratuite && nbCrees >= FeatureGate.maxTontinesGratuit) {
       if (!mounted) return;
-      afficherDialogUpgrade(
-        context,
-        limiteInfo: LimiteInfo(
-          type: LimiteType.tontines,
-          titre: 'Limite de tontines atteinte',
-          message: FeatureGate.messageLimite(
-            limite: LimiteType.tontines,
-            actuel: nbCrees,
-            max: FeatureGate.maxTontinesGratuit,
-          ),
-          actuel: nbCrees,
-          max: FeatureGate.maxTontinesGratuit,
-        ),
-        onUpgrade: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => AbonnementScreen(
-              code: '',
-              platformeForce: PlatformService.current,
-            ),
-          ),
-        ),
-      );
+      setState(() => _erreur =
+          'Vous avez déjà ${FeatureGate.maxTontinesGratuit} tontine gratuite. '
+          'Choisissez la formule Premium pour créer des tontines illimitées.');
       return;
     }
 
@@ -187,6 +140,7 @@ class _CreationScreenState extends State<CreationScreen> {
       devise: _devise,
       membres: membres,
       gestionnaires: gestionnaires,
+      tier: _typeTontine,
     );
 
     if (!mounted) return;
@@ -214,31 +168,17 @@ class _CreationScreenState extends State<CreationScreen> {
   }
 
   void _ajouterMembre() {
-    final isPremium = SubscriptionService.isPremium;
-    // Gratuit : max 5 membres. Bloquer l'ajout du 6e et plus.
-    if (!isPremium && _membresCtrl.length >= FeatureGate.maxMembresGratuit) {
-      afficherDialogUpgrade(
-        context,
-        limiteInfo: LimiteInfo(
-          type: LimiteType.membres,
-          titre: 'Limite atteinte — 5 membres max',
-          message: 'La formule Gratuite autorise jusqu\'à ${FeatureGate.maxMembresGratuit} membres. '
-              'Passez à Premium pour ajouter plus de membres.',
-          actuel: _membresCtrl.length,
-          max: FeatureGate.maxMembresGratuit,
-        ),
-        onUpgrade: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => AbonnementScreen(
-              code: '',
-              platformeForce: PlatformService.current,
-            ),
-          ),
-        ),
-      );
+    // Gratuite : max 5 membres. Bloquer l'ajout du 6e et plus.
+    if (_typeTontine == 'gratuite' && _membresCtrl.length >= FeatureGate.maxMembresGratuit) {
+      setState(() => _erreur =
+          'Formule Gratuite : ${FeatureGate.maxMembresGratuit} membres maximum. '
+          'Passez en Premium pour des membres illimités.');
       return;
     }
-    setState(() => _membresCtrl.add(TextEditingController()));
+    setState(() {
+      _erreur = null;
+      _membresCtrl.add(TextEditingController());
+    });
   }
 
   void _retirerMembre(int i) {
@@ -326,6 +266,14 @@ class _CreationScreenState extends State<CreationScreen> {
                     style: TextStyle(fontSize: 15, color: AppColors.texteDoux),
                   ),
                   SizedBox(height: 16),
+                  _SelecteurTypeTontine(
+                    valeur: _typeTontine,
+                    onChanged: (v) => setState(() {
+                      _typeTontine = v;
+                      _erreur = null;
+                    }),
+                  ),
+                  SizedBox(height: 8),
                   CarteTC(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -914,6 +862,168 @@ class _SelectorDeviseState extends State<_SelectorDevise> {
           ),
           const SizedBox(height: 8),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Sélecteur de type de tontine : Gratuite / Premium ───────────────────────
+
+class _SelecteurTypeTontine extends StatelessWidget {
+  final String valeur;
+  final ValueChanged<String> onChanged;
+
+  const _SelecteurTypeTontine({required this.valeur, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Type de tontine',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 15,
+            color: AppColors.encre,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _CarteOption(
+                titre: 'Gratuite',
+                sousTitre: '1 tontine\n5 membres max\nPaiements manuels',
+                icone: '🆓',
+                selectionne: valeur == 'gratuite',
+                onTap: () => onChanged('gratuite'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _CarteOption(
+                titre: 'Premium',
+                sousTitre: 'Tontines illimitées\nMembres illimités\nSycaPay activé',
+                icone: '⭐',
+                selectionne: valeur == 'premium',
+                onTap: () => onChanged('premium'),
+                couleurAccent: const Color(0xFFF59E0B),
+              ),
+            ),
+          ],
+        ),
+        if (valeur == 'premium') ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF8E7),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.4)),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFFF59E0B)),
+                SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    'Commission 1 % sur les décaissements. Paiement via Google Play lors de la création.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF92400E),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _CarteOption extends StatelessWidget {
+  final String titre;
+  final String sousTitre;
+  final String icone;
+  final bool selectionne;
+  final VoidCallback onTap;
+  final Color couleurAccent;
+
+  const _CarteOption({
+    required this.titre,
+    required this.sousTitre,
+    required this.icone,
+    required this.selectionne,
+    required this.onTap,
+    this.couleurAccent = AppColors.encre,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: selectionne
+              ? couleurAccent.withValues(alpha: 0.08)
+              : Colors.white,
+          border: Border.all(
+            color: selectionne ? couleurAccent : AppColors.lignes,
+            width: selectionne ? 2 : 1.5,
+          ),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(icone, style: const TextStyle(fontSize: 20)),
+                const Spacer(),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: selectionne ? couleurAccent : Colors.transparent,
+                    border: Border.all(
+                      color: selectionne ? couleurAccent : AppColors.lignes,
+                      width: 2,
+                    ),
+                  ),
+                  child: selectionne
+                      ? const Icon(Icons.check, size: 12, color: Colors.white)
+                      : null,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              titre,
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 15,
+                color: selectionne ? couleurAccent : AppColors.encre,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              sousTitre,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.texteDoux,
+                height: 1.5,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

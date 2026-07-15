@@ -74,7 +74,7 @@ class AccueilScreen extends StatelessWidget {
                         (t) => _CarteTontine(
                           code: t.code,
                           nom: t.nom,
-                          isPro: t.isPro,
+                          isPremium: t.isPremium,
                           onTap: () => _ouvrirTontine(context, t.code),
                           onRetirer: () => _retirerTontine(context, t.code, t.nom, provider),
                         ),
@@ -597,14 +597,14 @@ class _LigneDiag extends StatelessWidget {
 class _CarteTontine extends StatelessWidget {
   final String code;
   final String nom;
-  final bool isPro;
+  final bool isPremium;
   final VoidCallback onTap;
   final VoidCallback onRetirer;
 
   const _CarteTontine({
     required this.code,
     required this.nom,
-    required this.isPro,
+    required this.isPremium,
     required this.onTap,
     required this.onRetirer,
   });
@@ -663,9 +663,9 @@ class _CarteTontine extends StatelessWidget {
                         style: const TextStyle(fontSize: 13, color: AppColors.texteDoux),
                       ),
                       CodePuce(code: code),
-                      if (isPro) ...[
+                      if (isPremium) ...[
                         const SizedBox(width: 6),
-                        const BadgePro(),
+                        const BadgePremium(),
                       ],
                     ],
                   ),

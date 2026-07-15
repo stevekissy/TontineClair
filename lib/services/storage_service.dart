@@ -52,21 +52,21 @@ class StorageService {
     final liste = await getListe();
     final idx = liste.indexWhere((t) => t.code == code);
     if (idx >= 0) {
-      liste[idx] = TontineLocale(code: code, nom: nom, isPro: liste[idx].isPro);
+      liste[idx] = TontineLocale(code: code, nom: nom, isPremium: liste[idx].isPremium);
       await sauvegarderListe(liste);
     }
   }
 
-  /// Met à jour le tier (Lite/Pro) d'une tontine dans le cache local.
-  /// Appelé après chargement d'une tontine complète pour afficher le badge Pro.
-  static Future<void> mettreAJourTier(String code, bool isPro) async {
+  /// Met à jour le tier (Gratuite/Premium) d'une tontine dans le cache local.
+  /// Appelé après chargement d'une tontine complète pour afficher le badge Premium.
+  static Future<void> mettreAJourTier(String code, bool isPremium) async {
     final liste = await getListe();
     final idx = liste.indexWhere((t) => t.code == code);
     if (idx >= 0) {
       liste[idx] = TontineLocale(
         code: code,
         nom: liste[idx].nom,
-        isPro: isPro,
+        isPremium: isPremium,
       );
       await sauvegarderListe(liste);
     }

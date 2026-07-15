@@ -99,7 +99,7 @@ class CaisseScreen extends StatelessWidget {
                             label: context.tr('apport'),
                             couleur: AppColors.succes,
                             // Mode Pro : apport via SycaPay — Mode Lite : modale PIN
-                            onTap: () => tontine.isPro
+                            onTap: () => tontine.isPremium
                                 ? _apportPro(context, provider, tontine, data)
                                 : _mouvement(context, provider, data, 'apport'),
                           ),

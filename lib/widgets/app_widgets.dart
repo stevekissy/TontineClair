@@ -272,25 +272,25 @@ class CodePuce extends StatelessWidget {
   }
 }
 
-/// Badge vert "Pro" affiché sur les tontines en mode Pro (Lite/Pro).
-class BadgePro extends StatelessWidget {
-  const BadgePro({super.key});
+/// Badge doré "Premium" affiché sur les tontines Premium.
+class BadgePremium extends StatelessWidget {
+  const BadgePremium({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D8A4E),
+        color: const Color(0xFFF59E0B),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.rocket_launch_rounded, size: 11, color: Colors.white),
+          const Icon(Icons.star_rounded, size: 11, color: Colors.white),
           const SizedBox(width: 4),
           Text(
-            'Pro',
+            'Premium',
             style: GoogleFonts.inter(
               fontWeight: FontWeight.w700,
               fontSize: 11.5,
@@ -303,6 +303,9 @@ class BadgePro extends StatelessWidget {
     );
   }
 }
+
+/// Alias rétrocompat — utiliser BadgePremium à la place.
+typedef BadgePro = BadgePremium;
 
 class BadgePlan extends StatelessWidget {
   final bool isPremium;

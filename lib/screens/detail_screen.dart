@@ -22,7 +22,7 @@ import 'membres_screen.dart';
 import 'dashboard_screen.dart';
 import 'nouveau_cycle_screen.dart';
 import 'supprimer_tontine_screen.dart';
-import 'upgrade_pro_screen.dart';
+import 'upgrade_premium_screen.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
 
@@ -289,9 +289,9 @@ class _DetailScreenState extends State<DetailScreen> {
                           ),
                         ),
                         BadgePlan(isPremium: tontine.isPremium),
-                        if (tontine.isPro) ...[
+                        if (tontine.isPremium) ...[
                           const SizedBox(width: 6),
-                          const BadgePro(),
+                          const BadgePremium(),
                         ],
                       ],
                     ),
@@ -362,7 +362,6 @@ class _DetailScreenState extends State<DetailScreen> {
               child: _BarreDetail(
                 estGest: estGest,
                 isPremium: tontine.isPremium,
-                isPro: tontine.isPro,
                 code: tontine.code,
                 data: data,
               ),
@@ -1561,14 +1560,12 @@ class _InfoLigne extends StatelessWidget {
 class _BarreDetail extends StatelessWidget {
   final bool estGest;
   final bool isPremium;
-  final bool isPro;
   final String code;
   final TontineData data;
 
   const _BarreDetail({
     required this.estGest,
     required this.isPremium,
-    required this.isPro,
     required this.code,
     required this.data,
   });
@@ -1613,8 +1610,8 @@ class _BarreDetail extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Bouton "Passer en Pro" — visible seulement si tontine encore en Lite
-          if (!isPro)
+          // Bouton "Passer en Premium" — visible seulement si tontine encore en Gratuite
+          if (!isPremium)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: SizedBox(
@@ -1623,14 +1620,14 @@ class _BarreDetail extends StatelessWidget {
                   onPressed: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => UpgradeProScreen(code: code),
+                      builder: (_) => UpgradePremiumScreen(code: code),
                     ),
                   ),
-                  icon: const Icon(Icons.rocket_launch_rounded, size: 15),
-                  label: const Text('Passer en Pro — Mobile Money'),
+                  icon: const Icon(Icons.star_rounded, size: 15),
+                  label: const Text('Passer en Premium — Google Play'),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF0D8A4E),
-                    side: const BorderSide(color: Color(0xFF0D8A4E), width: 1.5),
+                    foregroundColor: const Color(0xFFF59E0B),
+                    side: const BorderSide(color: Color(0xFFF59E0B), width: 1.5),
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -1736,21 +1733,21 @@ class _BarreDetail extends StatelessWidget {
 
     // ── Calcul commission Pro (1 % sur le montant versé) ────────────────────
     final montantVerse = data.montant * data.membres.length;
-    final commission = isPro ? (montantVerse * 0.01).round() : 0;
+    final commission = isPremium ? (montantVerse * 0.01).round() : 0;
 
     final ok = await afficherModalePin(
       context,
       titre: 'Clôturer le tour $numerTourAffiche',
-      sousTitre: isPro
+      sousTitre: isPremium
           ? 'Un décaissement sera demandé. Validation Admin requise.'
           : 'Cette action est définitive et déclenche le versement.',
       recap: [
         (label: 'Bénéficiaire', valeur: benefNom),
         (label: 'Montant versé', valeur: Formatters.montant(montantVerse, devise: data.devise)),
         (label: 'Cotisants payés', valeur: '$nbPayesClot / ${data.membres.length}'),
-        if (isPro)
+        if (isPremium)
           (label: '⚠️ Commission TontineClair (1%)', valeur: Formatters.montant(commission, devise: data.devise)),
-        if (isPro)
+        if (isPremium)
           (label: '📤 Mode', valeur: 'Demande Admin — pas de virement auto'),
         (label: 'Tour', valeur: 'N° $numerTourAffiche → N° ${numerTourAffiche + 1}'),
       ],
@@ -1844,8 +1841,8 @@ class _BarreDetail extends StatelessWidget {
     );
 
     if (ok == true && context.mounted) {
-      if (isPro) {
-        // Mode Pro : clôture = demande de décaissement (pas de virement auto)
+      if (isPremium) {
+        // Mode Premium : clôture = demande de décaissement (pas de virement auto)
         afficherToast(
           context,
           '📤 Demande de décaissement envoyée — en attente de validation Admin.',

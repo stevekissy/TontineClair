@@ -8,7 +8,7 @@ class FeatureGate {
   FeatureGate._();
 
   // ─── Limites Gratuit ──────────────────────────────────────────────────────
-  static const int maxTontinesGratuit      = 3;
+  static const int maxTontinesGratuit      = 1;
   static const int maxMembresGratuit       = 5;
 
   // ─── Limites Premium (illimitées en pratique) ─────────────────────────────

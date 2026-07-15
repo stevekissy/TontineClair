@@ -40,7 +40,7 @@ class TontineProvider extends ChangeNotifier {
       _erreur = null; // Succès → effacer toute erreur précédente
       await StorageService.mettreAJourNom(code, _courante!.data.nom);
       // Synchroniser le tier (Lite/Pro) dans le cache local pour le badge accueil
-      await StorageService.mettreAJourTier(code, _courante!.isPro);
+      await StorageService.mettreAJourTier(code, _courante!.isPremium);
       _mesTontines = await StorageService.getListe();
       // Abonner l'appareil aux notifications de cette tontine
       NotificationService.abonnerATontine(code);
@@ -141,6 +141,7 @@ class TontineProvider extends ChangeNotifier {
     String devise = 'XOF',
     required List<String> membres,
     required List<Gestionnaire> gestionnaires,
+    String tier = 'gratuite',
   }) async {
     try {
       // Calcul automatique de l'échéance selon la périodicité
@@ -156,6 +157,7 @@ class TontineProvider extends ChangeNotifier {
         methodeOrdre: methodeOrdre,
         echeance: echeanceAuto,
         devise: devise,
+        tier: tier,
         gestionnaires: gestionnaires,
         membres: membres
             .asMap()
@@ -183,7 +185,7 @@ class TontineProvider extends ChangeNotifier {
         data: data.toJson(),
       );
 
-      await StorageService.ajouterTontine(TontineLocale(code: code, nom: nom));
+      await StorageService.ajouterTontine(TontineLocale(code: code, nom: nom, isPremium: tier == 'premium'));
       // Enregistrer que cette tontine a été CRÉÉE (pas juste rejointe)
       await StorageService.enregistrerTontineCree(code);
       _mesTontines = await StorageService.getListe();
