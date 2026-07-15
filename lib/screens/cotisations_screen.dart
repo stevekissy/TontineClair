@@ -14,6 +14,7 @@ import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
+import 'paiement_pro_screen.dart';
 
 // ── Bug #6 fix : StatefulWidget pour rechargement depuis Supabase à l'ouverture ──
 class CotisationsScreen extends StatefulWidget {
@@ -166,6 +167,18 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
                                     provider,
                                     tontine,
                                     e.value,
+                                  )
+                              : null,
+                          // ── Bouton "Payer" Pro — visible si Pro + non-gest + non-payé
+                          onPayer: tontine.isPro && !estGest && !e.value.paye && !data.cycleTermine
+                              ? () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => PaiementProScreen(
+                                        code: tontine.code,
+                                        membre: e.value,
+                                      ),
+                                    ),
                                   )
                               : null,
                           onEnvoyerRecu: () => _envoyerRecu(context, tontine, e.value),
@@ -823,6 +836,8 @@ class _CarteMembre extends StatelessWidget {
   final VoidCallback? onEnvoyerRecu;
   final VoidCallback? onRelancer;
   final VoidCallback? onGenererPdf;
+  /// Callback "Payer via Mobile Money" (Pro uniquement, non-gestionnaire)
+  final VoidCallback? onPayer;
 
   const _CarteMembre({
     required this.membre,
@@ -836,6 +851,7 @@ class _CarteMembre extends StatelessWidget {
     this.onEnvoyerRecu,
     this.onRelancer,
     this.onGenererPdf,
+    this.onPayer,
   });
 
   bool get _enRetard {
@@ -960,6 +976,35 @@ class _CarteMembre extends StatelessWidget {
                         fontSize: 12,
                         color: membre.paye ? AppColors.succes : Colors.white,
                       ),
+                    ),
+                  ),
+                )
+              else if (!membre.paye && onPayer != null)
+                // ── Bouton "Payer" Pro (membre non-gest, paiement Mobile Money)
+                GestureDetector(
+                  onTap: onPayer,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0D8A4E),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.phone_android_rounded,
+                            size: 12, color: Colors.white),
+                        SizedBox(width: 4),
+                        Text(
+                          'Payer',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 )

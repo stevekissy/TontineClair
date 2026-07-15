@@ -22,6 +22,7 @@ import 'membres_screen.dart';
 import 'dashboard_screen.dart';
 import 'nouveau_cycle_screen.dart';
 import 'supprimer_tontine_screen.dart';
+import 'upgrade_pro_screen.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
 
@@ -288,6 +289,10 @@ class _DetailScreenState extends State<DetailScreen> {
                           ),
                         ),
                         BadgePlan(isPremium: tontine.isPremium),
+                        if (tontine.isPro) ...[
+                          const SizedBox(width: 6),
+                          const BadgePro(),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 4),
@@ -357,6 +362,7 @@ class _DetailScreenState extends State<DetailScreen> {
               child: _BarreDetail(
                 estGest: estGest,
                 isPremium: tontine.isPremium,
+                isPro: tontine.isPro,
                 code: tontine.code,
                 data: data,
               ),
@@ -1555,12 +1561,14 @@ class _InfoLigne extends StatelessWidget {
 class _BarreDetail extends StatelessWidget {
   final bool estGest;
   final bool isPremium;
+  final bool isPro;
   final String code;
   final TontineData data;
 
   const _BarreDetail({
     required this.estGest,
     required this.isPremium,
+    required this.isPro,
     required this.code,
     required this.data,
   });
@@ -1602,25 +1610,60 @@ class _BarreDetail extends StatelessWidget {
           ],
         ),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: BtnSecondaire(
-              label: 'Cotisations',
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => CotisationsScreen(code: code),
+          // Bouton "Passer en Pro" — visible seulement si tontine encore en Lite
+          if (!isPro)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => UpgradeProScreen(code: code),
+                    ),
+                  ),
+                  icon: const Icon(Icons.rocket_launch_rounded, size: 15),
+                  label: const Text('Passer en Pro — Mobile Money'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF0D8A4E),
+                    side: const BorderSide(color: Color(0xFF0D8A4E), width: 1.5),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    textStyle: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13.5,
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: BtnPrincipal(
-              label: 'Clôturer le tour',
-              onTap: () => _cloturerTour(context),
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: BtnSecondaire(
+                  label: 'Cotisations',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => CotisationsScreen(code: code),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: BtnPrincipal(
+                  label: 'Clôturer le tour',
+                  onTap: () => _cloturerTour(context),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -1691,14 +1734,24 @@ class _BarreDetail extends StatelessWidget {
         ? payesIds.length
         : data.membres.length; // ultime fallback : tous membres si données incohérentes
 
+    // ── Calcul commission Pro (1 % sur le montant versé) ────────────────────
+    final montantVerse = data.montant * data.membres.length;
+    final commission = isPro ? (montantVerse * 0.01).round() : 0;
+
     final ok = await afficherModalePin(
       context,
       titre: 'Clôturer le tour $numerTourAffiche',
-      sousTitre: 'Cette action est définitive et déclenche le versement.',
+      sousTitre: isPro
+          ? 'Un décaissement sera demandé. Validation Admin requise.'
+          : 'Cette action est définitive et déclenche le versement.',
       recap: [
         (label: 'Bénéficiaire', valeur: benefNom),
-        (label: 'Montant versé', valeur: Formatters.montant(data.montant * data.membres.length, devise: data.devise)),
+        (label: 'Montant versé', valeur: Formatters.montant(montantVerse, devise: data.devise)),
         (label: 'Cotisants payés', valeur: '$nbPayesClot / ${data.membres.length}'),
+        if (isPro)
+          (label: '⚠️ Commission TontineClair (1%)', valeur: Formatters.montant(commission, devise: data.devise)),
+        if (isPro)
+          (label: '📤 Mode', valeur: 'Demande Admin — pas de virement auto'),
         (label: 'Tour', valeur: 'N° $numerTourAffiche → N° ${numerTourAffiche + 1}'),
       ],
       onValider: (pin) async {
@@ -1791,24 +1844,45 @@ class _BarreDetail extends StatelessWidget {
     );
 
     if (ok == true && context.mounted) {
-      afficherToast(
-        context,
-        data.cycleTermine
-            ? 'Cycle terminé 🎊 Chaque membre a été servi !'
-            : 'Tour $numerTourAffiche clôturé avec succès.',
-      );
-      // Notification push décaissement
-      final _lang = Provider.of<LocaleService>(context, listen: false).langue.code;
-      final _typeNotif = data.cycleTermine ? 'decaissement_cycle_fin' : 'decaissement';
-      final _t = SupabaseService.notifTexte(_typeNotif, _lang,
-          vars: {'nom': benefNom, 'tour': numerTourAffiche.toString()});
-      SupabaseService.envoyerNotification(
-        code: provider.courante!.code,
-        type: 'decaissement',
-        titre: _t['titre']!,
-        message: _t['message']!,
-        donneesExtra: {'beneficiaire': benefNom},
-      );
+      if (isPro) {
+        // Mode Pro : clôture = demande de décaissement (pas de virement auto)
+        afficherToast(
+          context,
+          '📤 Demande de décaissement envoyée — en attente de validation Admin.',
+        );
+        final _lang = Provider.of<LocaleService>(context, listen: false).langue.code;
+        final _t = SupabaseService.notifTexte('decaissement_demande', _lang, vars: {
+          'nom': benefNom,
+          'tour': numerTourAffiche.toString(),
+          'montant': Formatters.montant(montantVerse, devise: data.devise),
+        });
+        SupabaseService.envoyerNotification(
+          code: provider.courante!.code,
+          type: 'decaissement',
+          titre: _t['titre']!,
+          message: _t['message']!,
+          donneesExtra: {'beneficiaire': benefNom, 'mode': 'pro'},
+        );
+      } else {
+        afficherToast(
+          context,
+          data.cycleTermine
+              ? 'Cycle terminé 🎊 Chaque membre a été servi !'
+              : 'Tour $numerTourAffiche clôturé avec succès.',
+        );
+        // Notification push décaissement (mode Lite classique)
+        final _lang = Provider.of<LocaleService>(context, listen: false).langue.code;
+        final _typeNotif = data.cycleTermine ? 'decaissement_cycle_fin' : 'decaissement';
+        final _t = SupabaseService.notifTexte(_typeNotif, _lang,
+            vars: {'nom': benefNom, 'tour': numerTourAffiche.toString()});
+        SupabaseService.envoyerNotification(
+          code: provider.courante!.code,
+          type: 'decaissement',
+          titre: _t['titre']!,
+          message: _t['message']!,
+          donneesExtra: {'beneficiaire': benefNom},
+        );
+      }
     }
   }
 }

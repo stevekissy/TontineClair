@@ -39,6 +39,8 @@ class TontineProvider extends ChangeNotifier {
       _courante = await SupabaseService.lireTontine(code);
       _erreur = null; // Succès → effacer toute erreur précédente
       await StorageService.mettreAJourNom(code, _courante!.data.nom);
+      // Synchroniser le tier (Lite/Pro) dans le cache local pour le badge accueil
+      await StorageService.mettreAJourTier(code, _courante!.isPro);
       _mesTontines = await StorageService.getListe();
       // Abonner l'appareil aux notifications de cette tontine
       NotificationService.abonnerATontine(code);

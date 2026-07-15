@@ -551,6 +551,7 @@ class TontineData {
   List<Map<String, dynamic>> historique; // historique des tours
   List<Map<String, dynamic>> cyclesArchives; // archives des anciens cycles
   Map<String, dynamic> stats;    // stats par membre
+  String tier;                   // 'lite' | 'pro' — migration à sens unique (jamais pro→lite)
 
   TontineData({
     required this.nom,
@@ -574,6 +575,7 @@ class TontineData {
     this.historique = const [],
     this.cyclesArchives = const [],
     this.stats = const {},
+    this.tier = 'lite',
   });
 
   // ── Accesseurs calculés ────────────────────────────────────────────────────
@@ -1101,7 +1103,14 @@ class TontineData {
       historique: historique,
       cyclesArchives: cyclesArchives,
       stats: stats,
+      tier: _parseTier(json['tier']),
     );
+  }
+
+  /// Garantit que le tier ne peut jamais rétrograder de 'pro' à 'lite'.
+  static String _parseTier(dynamic raw) {
+    final v = raw as String? ?? 'lite';
+    return v == 'pro' ? 'pro' : 'lite';
   }
 
   Map<String, dynamic> toJson() => {
@@ -1129,6 +1138,7 @@ class TontineData {
         'historique': historique,
         'cyclesArchives': cyclesArchives,
         'stats': stats,
+        'tier': tier,
       };
 }
 
@@ -1165,21 +1175,38 @@ class Tontine {
 
   /// true si la tontine est accessible normalement
   bool get estActive => status == 'active';
+
+  /// true si la tontine est en version Pro (paiements réels via SycaPay)
+  bool get isPro => data.tier == 'pro';
+
+  /// Passe la tontine en Pro (irréversible — jamais de retour à lite).
+  /// Ne modifie que l'objet local ; l'écriture en base est faite par le service.
+  void upgraderVersPro() {
+    data.tier = 'pro';
+  }
 }
 
 // ─── TontineLocale (liste mémorisée sur l'appareil) ──────────────────────────
 class TontineLocale {
   final String code;
   final String nom;
+  /// Tier local — mis à jour lors du chargement complet de la tontine.
+  /// Permet d'afficher le badge Pro sur l'écran d'accueil sans recharger.
+  final bool isPro;
 
-  TontineLocale({required this.code, required this.nom});
+  TontineLocale({required this.code, required this.nom, this.isPro = false});
 
   factory TontineLocale.fromJson(Map<String, dynamic> json) {
     return TontineLocale(
       code: json['code'] as String? ?? '',
       nom: json['nom'] as String? ?? '',
+      isPro: (json['tier'] as String? ?? 'lite') == 'pro',
     );
   }
 
-  Map<String, dynamic> toJson() => {'code': code, 'nom': nom};
+  Map<String, dynamic> toJson() => {
+    'code': code,
+    'nom': nom,
+    'tier': isPro ? 'pro' : 'lite',
+  };
 }

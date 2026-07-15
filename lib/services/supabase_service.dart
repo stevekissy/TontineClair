@@ -402,6 +402,22 @@ class SupabaseService {
     return result == true;
   }
 
+  /// Écrit les données d'une tontine SANS vérification de PIN gestionnaire.
+  /// Utilisé uniquement quand l'authentification a déjà été effectuée par un
+  /// autre mécanisme (ex : paiement SycaPay confirmé côté serveur).
+  /// La fonction RPC Supabase `ecrire_tontine_sans_pin` doit autoriser l'écriture
+  /// sur la base du code seul (à sécuriser côté RLS Supabase).
+  static Future<bool> ecrireTontineSansPIN({
+    required String code,
+    required Map<String, dynamic> data,
+  }) async {
+    final result = await rpc('ecrire_tontine_sans_pin', {
+      'p_code': code.toUpperCase(),
+      'p_data': data,
+    });
+    return result == true;
+  }
+
   // supprimerTontine (soft delete) est défini plus haut — ancienne version supprimée
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1322,6 +1338,55 @@ class SupabaseService {
           'es': 'La puntuación de {nom} fue modificada: {ancien} → {nouveau}/100',
           'pt': 'A pontuação de {nom} foi modificada: {ancien} → {nouveau}/100',
           'ar': 'تم تعديل نقاط {nom}: {ancien} → {nouveau}/100',
+        },
+      },
+      // ── Lite/Pro ────────────────────────────────────────────────────────────
+      'passage_pro': {
+        'titre': {
+          'fr': '🚀 Tontine passée en Pro !',
+          'en': '🚀 Tontine upgraded to Pro!',
+          'es': '🚀 ¡Tontina actualizada a Pro!',
+          'pt': '🚀 Tontina atualizada para Pro!',
+          'ar': '🚀 ترقية التنتين إلى Pro!',
+        },
+        'message': {
+          'fr': 'Votre tontine est maintenant en mode Pro. Les paiements mobile money sont activés.',
+          'en': 'Your tontine is now in Pro mode. Mobile money payments are enabled.',
+          'es': 'Su tontina ahora está en modo Pro. Los pagos por mobile money están activados.',
+          'pt': 'A sua tontina está agora em modo Pro. Os pagamentos por mobile money estão ativados.',
+          'ar': 'تنتينك الآن في وضع Pro. تم تفعيل المدفوعات عبر الموبايل.',
+        },
+      },
+      'cotisation_pro_confirmee': {
+        'titre': {
+          'fr': '✅ Paiement mobile confirmé',
+          'en': '✅ Mobile payment confirmed',
+          'es': '✅ Pago móvil confirmado',
+          'pt': '✅ Pagamento móvel confirmado',
+          'ar': '✅ تم تأكيد الدفع عبر الموبايل',
+        },
+        'message': {
+          'fr': '{nom} a payé sa cotisation via mobile money (Tour {tour}).',
+          'en': '{nom} paid their contribution via mobile money (Round {tour}).',
+          'es': '{nom} pagó su cotización vía mobile money (Turno {tour}).',
+          'pt': '{nom} pagou a contribuição via mobile money (Rodada {tour}).',
+          'ar': '{nom} دفع اشتراكه عبر الموبايل (الجولة {tour}).',
+        },
+      },
+      'decaissement_demande': {
+        'titre': {
+          'fr': '📤 Demande de décaissement',
+          'en': '📤 Disbursement request',
+          'es': '📤 Solicitud de desembolso',
+          'pt': '📤 Pedido de desembolso',
+          'ar': '📤 طلب صرف',
+        },
+        'message': {
+          'fr': 'Le gestionnaire demande le décaissement du Tour {tour} pour {nom} ({montant}). En attente de validation Admin.',
+          'en': 'The manager requests disbursement for Round {tour} to {nom} ({montant}). Awaiting Admin validation.',
+          'es': 'El gestor solicita el desembolso del Turno {tour} para {nom} ({montant}). Pendiente de validación Admin.',
+          'pt': 'O gestor solicita o desembolso da Rodada {tour} para {nom} ({montant}). Aguardando validação Admin.',
+          'ar': 'المدير يطلب صرف الجولة {tour} لـ {nom} ({montant}). في انتظار موافقة الإدارة.',
         },
       },
     };
