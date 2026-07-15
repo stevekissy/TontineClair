@@ -43,6 +43,7 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
   String? _messageErreur;
   int _pollingSecondes = 0;
   Timer? _pollingTimer;
+  DateTime? _debutEnregistrement;
 
   @override
   void dispose() {
@@ -107,6 +108,8 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
     _transactionId = resultat.transactionId;
 
     if (resultat.estSucces) {
+      // Succès immédiat (Orange Money OTP) → état enregistrement visible
+      setState(() => _etape = _EtapeCaisse.enregistrement);
       await _validerApportCaisse();
     } else {
       // Pending → polling jusqu'à confirmation ou timeout 2 min
@@ -140,6 +143,7 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
 
       if (statut.estSucces) {
         t.cancel();
+        if (mounted) setState(() => _etape = _EtapeCaisse.enregistrement);
         await _validerApportCaisse();
       } else if (statut.estEchec && statut.code != -200 && statut.code != -9) {
         t.cancel();
@@ -156,6 +160,7 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
 
   Future<void> _validerApportCaisse() async {
     _pollingTimer?.cancel();
+    _debutEnregistrement = DateTime.now();
 
     final provider = context.read<TontineProvider>();
     final data = provider.courante!.data;
@@ -205,39 +210,52 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
     });
     newData['journal'] = journal;
 
-    // Écriture en base sans PIN (paiement Mobile Money validé)
-    final ok = await SupabaseService.ecrireTontineSansPIN(
-      code: widget.code,
-      data: newData,
-    );
+    // Écriture en base sans PIN avec timeout explicite de 30s
+    bool ok = false;
+    try {
+      ok = await SupabaseService.ecrireTontineSansPIN(
+        code: widget.code,
+        data: newData,
+      ).timeout(const Duration(seconds: 30), onTimeout: () => false);
+    } catch (_) {
+      ok = false;
+    }
 
     if (!mounted) return;
 
     if (ok) {
-      await provider.chargerTontine(widget.code);
+      // Recharger (non bloquant — timeout 15s)
+      try {
+        await provider.chargerTontine(widget.code)
+            .timeout(const Duration(seconds: 15));
+      } catch (_) {}
       if (!mounted) return;
 
-      // Notification push
-      final lang = Provider.of<LocaleService>(context, listen: false).langue.code;
-      final t = SupabaseService.notifTexte('caisse', lang, vars: {
-        'montant': Formatters.montant(widget.montant, devise: data.devise),
-        'libelle': 'Apport Pro',
-        'nom': '',
-        'desc': widget.description.isNotEmpty ? ' — ${widget.description}' : '',
-      });
-      SupabaseService.envoyerNotification(
-        code: widget.code,
-        type: 'caisse',
-        titre: t['titre']!,
-        message: t['message']!,
-      );
+      // Notification push (non bloquante)
+      try {
+        final lang = Provider.of<LocaleService>(context, listen: false).langue.code;
+        final t = SupabaseService.notifTexte('caisse', lang, vars: {
+          'montant': Formatters.montant(widget.montant, devise: data.devise),
+          'libelle': 'Apport Pro',
+          'nom': '',
+          'desc': widget.description.isNotEmpty ? ' — ${widget.description}' : '',
+        });
+        SupabaseService.envoyerNotification(
+          code: widget.code,
+          type: 'caisse',
+          titre: t['titre']!,
+          message: t['message']!,
+        );
+      } catch (_) {}
 
       setState(() => _etape = _EtapeCaisse.succes);
     } else {
       setState(() {
         _etape = _EtapeCaisse.saisie;
         _messageErreur =
-            'Paiement reçu mais erreur d\'enregistrement. Contactez le gestionnaire.';
+            'Paiement reçu mais erreur d\'enregistrement. '
+            'Réf. SycaPay : ${_transactionId ?? "inconnue"}. '
+            'Contactez le gestionnaire avec cette référence.';
       });
     }
   }
@@ -263,10 +281,11 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
         iconTheme: const IconThemeData(color: AppColors.encre),
       ),
       body: switch (_etape) {
-        _EtapeCaisse.saisie => _vueSaisie(devise),
-        _EtapeCaisse.enCours => _vueEnCours(),
-        _EtapeCaisse.attente => _vueAttente(),
-        _EtapeCaisse.succes => _vueSucces(devise),
+        _EtapeCaisse.saisie         => _vueSaisie(devise),
+        _EtapeCaisse.enCours        => _vueEnCours(),
+        _EtapeCaisse.enregistrement => _vueEnregistrement(),
+        _EtapeCaisse.attente        => _vueAttente(),
+        _EtapeCaisse.succes         => _vueSucces(devise),
       },
     );
   }
@@ -453,6 +472,50 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
     );
   }
 
+  // ── Vue : enregistrement (paiement confirmé, écriture Supabase en cours) ───
+
+  Widget _vueEnregistrement() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 72, height: 72,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF4EE),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.check_circle_outline_rounded,
+                  size: 44, color: Color(0xFF1A6B3C)),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Paiement confirmé !',
+              style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.encre),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Enregistrement de l\'apport en cours…',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: AppColors.texteDoux),
+            ),
+            const SizedBox(height: 24),
+            const SizedBox(
+              width: 28, height: 28,
+              child: CircularProgressIndicator(
+                  strokeWidth: 3, color: Color(0xFF1A6B3C)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ── Vue : en attente de confirmation ──────────────────────────────────────
 
   Widget _vueAttente() {
@@ -563,7 +626,7 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
 
 // ── Enum étapes ───────────────────────────────────────────────────────────────
 
-enum _EtapeCaisse { saisie, enCours, attente, succes }
+enum _EtapeCaisse { saisie, enCours, enregistrement, attente, succes }
 
 // ── Sélecteur opérateur (identique à PaiementProScreen) ──────────────────────
 

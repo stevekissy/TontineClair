@@ -47,6 +47,7 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
   String? _messageErreur;
   int      _pollingSecondes = 0;
   Timer?   _pollingTimer;
+  DateTime? _debutEnregistrement;
 
   @override
   void dispose() {
@@ -112,10 +113,11 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
       return;
     }
 
-    // Succès immédiat (code 0) ou en attente (-200) → polling
     _transactionId = resultat.transactionId;
 
     if (resultat.estSucces) {
+      // Succès immédiat (Orange Money OTP) → état enregistrement visible
+      setState(() => _etape = _Etape.enregistrement);
       await _validerCotisation(provider, montant);
     } else {
       // Pending → polling jusqu'à confirmation ou timeout 2 min
@@ -148,6 +150,7 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
 
       if (statut.estSucces) {
         t.cancel();
+        if (mounted) setState(() => _etape = _Etape.enregistrement);
         await _validerCotisation(provider, montant);
       } else if (statut.estEchec && statut.code != -200 && statut.code != -9) {
         t.cancel();
@@ -164,6 +167,7 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
 
   Future<void> _validerCotisation(TontineProvider provider, int montant) async {
     _pollingTimer?.cancel();
+    _debutEnregistrement = DateTime.now();
 
     final data    = provider.courante!.data;
     final newData = data.toJson();
@@ -204,46 +208,57 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
     });
     newData['journal'] = journal;
 
-    // Écriture en base (sans PIN — c'est le membre qui paye, pas le gestionnaire)
-    // On utilise le gestionnaire actif s'il y en a un, sinon signature anonyme
-    final gestNom = provider.gestActifNom ?? 'membre';
-    final ok = await SupabaseService.ecrireTontineSansPIN(
-      code: widget.code,
-      data: newData,
-    );
+    // Écriture en base sans PIN avec timeout explicite de 30s
+    bool ok = false;
+    try {
+      ok = await SupabaseService.ecrireTontineSansPIN(
+        code: widget.code,
+        data: newData,
+      ).timeout(const Duration(seconds: 30), onTimeout: () => false);
+    } catch (_) {
+      ok = false;
+    }
 
     if (!mounted) return;
 
     if (ok) {
-      await provider.chargerTontine(widget.code);
+      // Recharger (non bloquant — timeout 15s)
+      try {
+        await provider.chargerTontine(widget.code)
+            .timeout(const Duration(seconds: 15));
+      } catch (_) {}
       if (!mounted) return;
 
-      // Notification push
-      final lang = Provider.of<LocaleService>(context, listen: false).langue.code;
-      final tNotif = SupabaseService.notifTexte(
-        'cotisation_pro_confirmee',
-        lang,
-        vars: {
-          'nom':  widget.membre.nom,
-          'tour': provider.courante!.data.numerTour.toString(),
-        },
-      );
-      SupabaseService.envoyerNotification(
-        code:    widget.code,
-        type:    'cotisation_pro_confirmee',
-        titre:   tNotif['titre']!,
-        message: tNotif['message']!,
-        donneesExtra: {
-          'membre':        widget.membre.nom,
-          'transactionId': _transactionId ?? '',
-        },
-      );
+      // Notification push (non bloquante)
+      try {
+        final lang = Provider.of<LocaleService>(context, listen: false).langue.code;
+        final tNotif = SupabaseService.notifTexte(
+          'cotisation_pro_confirmee',
+          lang,
+          vars: {
+            'nom':  widget.membre.nom,
+            'tour': provider.courante!.data.numerTour.toString(),
+          },
+        );
+        SupabaseService.envoyerNotification(
+          code:    widget.code,
+          type:    'cotisation_pro_confirmee',
+          titre:   tNotif['titre']!,
+          message: tNotif['message']!,
+          donneesExtra: {
+            'membre':        widget.membre.nom,
+            'transactionId': _transactionId ?? '',
+          },
+        );
+      } catch (_) {}
 
       setState(() => _etape = _Etape.succes);
     } else {
       setState(() {
         _etape         = _Etape.saisie;
-        _messageErreur = 'Paiement reçu mais erreur d\'enregistrement. Contactez le gestionnaire.';
+        _messageErreur = 'Paiement reçu mais erreur d\'enregistrement. '
+            'Réf. : ${_transactionId ?? "inconnue"}. '
+            'Contactez le gestionnaire.';
       });
     }
   }
@@ -269,10 +284,11 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
         iconTheme: const IconThemeData(color: AppColors.encre),
       ),
       body: switch (_etape) {
-        _Etape.saisie  => _vueSaisie(montant, devise),
-        _Etape.enCours => _vueEnCours(),
-        _Etape.attente => _vueAttente(),
-        _Etape.succes  => _vueSucces(montant, devise),
+        _Etape.saisie          => _vueSaisie(montant, devise),
+        _Etape.enCours         => _vueEnCours(),
+        _Etape.enregistrement  => _vueEnregistrement(),
+        _Etape.attente         => _vueAttente(),
+        _Etape.succes          => _vueSucces(montant, devise),
       },
     );
   }
@@ -404,6 +420,50 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
     );
   }
 
+  // ── Vue : enregistrement (paiement confirmé, écriture Supabase en cours) ───
+
+  Widget _vueEnregistrement() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 72, height: 72,
+              decoration: const BoxDecoration(
+                color: Color(0xFFEAF4EE),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.check_circle_outline_rounded,
+                  size: 44, color: Color(0xFF1A6B3C)),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Paiement confirmé !',
+              style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.encre),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Enregistrement de la cotisation en cours…',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: AppColors.texteDoux),
+            ),
+            const SizedBox(height: 24),
+            const SizedBox(
+              width: 28, height: 28,
+              child: CircularProgressIndicator(
+                  strokeWidth: 3, color: Color(0xFF1A6B3C)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ── Vue : en attente de confirmation ──────────────────────────────────────
 
   Widget _vueAttente() {
@@ -497,7 +557,7 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
 
 // ── Enum étapes ───────────────────────────────────────────────────────────────
 
-enum _Etape { saisie, enCours, attente, succes }
+enum _Etape { saisie, enCours, enregistrement, attente, succes }
 
 // ── Widget : carte montant ────────────────────────────────────────────────────
 
