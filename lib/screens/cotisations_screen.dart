@@ -388,6 +388,23 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
 
       if (ok == true && context.mounted) {
         afficherToast(context, 'Paiement annulé et journal mis à jour.');
+        // Notification push à tous les membres
+        final langCode = Provider.of<LocaleService>(context, listen: false).langue.code;
+        final tNotif = SupabaseService.notifTexte(
+          'annulation_cotisation',
+          langCode,
+          vars: {
+            'nom': membre.nom,
+            'tour': data.numerTour.toString(),
+          },
+        );
+        SupabaseService.envoyerNotification(
+          code: provider.courante!.code,
+          type: 'annulation_cotisation',
+          titre: tNotif['titre']!,
+          message: tNotif['message']!,
+          donneesExtra: {'membre': membre.nom},
+        );
       }
     }
   }

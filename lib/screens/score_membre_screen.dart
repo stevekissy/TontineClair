@@ -1062,9 +1062,27 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
 
                       if (sCtx.mounted) Navigator.pop(sCtx);
                       if (mounted) {
-                        // Utiliser context du State (pas ctx du builder) pouréviter async-gap warning
+                        // Utiliser context du State (pas ctx du builder) pour éviter async-gap warning
                         afficherToast(context,
                           '✅ Score modifié : $ancienScore → $nouveauScore');
+                        // Notification push à tous les membres
+                        final langCode = Provider.of<LocaleService>(context, listen: false).langue.code;
+                        final tNotif = SupabaseService.notifTexte(
+                          'score_modifie',
+                          langCode,
+                          vars: {
+                            'nom': widget.membre.nom,
+                            'ancien': ancienScore.toString(),
+                            'nouveau': nouveauScore.toString(),
+                          },
+                        );
+                        SupabaseService.envoyerNotification(
+                          code: widget.code,
+                          type: 'score_modifie',
+                          titre: tNotif['titre']!,
+                          message: tNotif['message']!,
+                          donneesExtra: {'membre_id': widget.membre.id},
+                        );
                       }
                     } catch (e) {
                       setSt(() {

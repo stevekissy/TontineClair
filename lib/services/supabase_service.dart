@@ -1292,6 +1292,38 @@ class SupabaseService {
           'ar': 'انطلقت الدورة {num} من التنتين! الجولة 1 جارية.',
         },
       },
+      'annulation_cotisation': {
+        'titre': {
+          'fr': '↩️ Paiement annulé',
+          'en': '↩️ Payment cancelled',
+          'es': '↩️ Pago cancelado',
+          'pt': '↩️ Pagamento cancelado',
+          'ar': '↩️ تم إلغاء الدفع',
+        },
+        'message': {
+          'fr': 'Le paiement de {nom} (Tour {tour}) a été annulé par le gestionnaire.',
+          'en': 'The payment of {nom} (Round {tour}) was cancelled by the manager.',
+          'es': 'El pago de {nom} (Turno {tour}) fue cancelado por el gestor.',
+          'pt': 'O pagamento de {nom} (Rodada {tour}) foi cancelado pelo gestor.',
+          'ar': 'تم إلغاء دفع {nom} (الجولة {tour}) من قِبَل المدير.',
+        },
+      },
+      'score_modifie': {
+        'titre': {
+          'fr': '📊 Score modifié',
+          'en': '📊 Score updated',
+          'es': '📊 Puntuación modificada',
+          'pt': '📊 Pontuação modificada',
+          'ar': '📊 تم تعديل النقاط',
+        },
+        'message': {
+          'fr': 'Le score de {nom} a été modifié : {ancien} → {nouveau}/100',
+          'en': 'Score of {nom} updated: {ancien} → {nouveau}/100',
+          'es': 'La puntuación de {nom} fue modificada: {ancien} → {nouveau}/100',
+          'pt': 'A pontuação de {nom} foi modificada: {ancien} → {nouveau}/100',
+          'ar': 'تم تعديل نقاط {nom}: {ancien} → {nouveau}/100',
+        },
+      },
     };
 
     String _sub(String? tpl) {
