@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -212,13 +213,16 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
 
     // Écriture en base sans PIN avec timeout explicite de 30s
     bool ok = false;
+    String? erreurDetail;
     try {
       ok = await SupabaseService.ecrireTontineSansPIN(
         code: widget.code,
         data: newData,
       ).timeout(const Duration(seconds: 30), onTimeout: () => false);
-    } catch (_) {
+    } catch (e) {
       ok = false;
+      erreurDetail = e.toString();
+      if (kDebugMode) debugPrint('[CaissePro] ecrireTontineSansPIN ERREUR: $e');
     }
 
     if (!mounted) return;
@@ -236,7 +240,7 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
         final lang = Provider.of<LocaleService>(context, listen: false).langue.code;
         final t = SupabaseService.notifTexte('caisse', lang, vars: {
           'montant': Formatters.montant(widget.montant, devise: data.devise),
-          'libelle': 'Apport Pro',
+          'libelle': 'Apport caisse',
           'nom': '',
           'desc': widget.description.isNotEmpty ? ' — ${widget.description}' : '',
         });
@@ -250,12 +254,19 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
 
       setState(() => _etape = _EtapeCaisse.succes);
     } else {
+      // Distinguer erreur SQL manquante vs autres erreurs réseau
+      final estErreurFonction = erreurDetail != null &&
+          (erreurDetail.contains('introuvable') || erreurDetail.contains('404'));
       setState(() {
         _etape = _EtapeCaisse.saisie;
-        _messageErreur =
-            'Paiement reçu mais erreur d\'enregistrement. '
-            'Réf. SycaPay : ${_transactionId ?? "inconnue"}. '
-            'Contactez le gestionnaire avec cette référence.';
+        _messageErreur = estErreurFonction
+            ? '⚠️ Configuration Supabase incomplète. '
+              'Exécutez supabase-fix-sycapay-sans-pin.sql dans Supabase SQL Editor. '
+              'Réf. paiement : ${_transactionId ?? "inconnue"}'
+            : '⚠️ Paiement SycaPay reçu (${_operateur.toUpperCase()}) '
+              'mais enregistrement échoué. '
+              'Réf. : ${_transactionId ?? "inconnue"}. '
+              'Retentez ou contactez le gestionnaire.';
       });
     }
   }

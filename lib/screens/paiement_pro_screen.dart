@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -210,13 +211,16 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
 
     // Écriture en base sans PIN avec timeout explicite de 30s
     bool ok = false;
+    String? erreurDetail;
     try {
       ok = await SupabaseService.ecrireTontineSansPIN(
         code: widget.code,
         data: newData,
       ).timeout(const Duration(seconds: 30), onTimeout: () => false);
-    } catch (_) {
+    } catch (e) {
       ok = false;
+      erreurDetail = e.toString();
+      if (kDebugMode) debugPrint('[PaiementPro] ecrireTontineSansPIN ERREUR: $e');
     }
 
     if (!mounted) return;
@@ -254,11 +258,18 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
 
       setState(() => _etape = _Etape.succes);
     } else {
+      final estErreurFonction = erreurDetail != null &&
+          (erreurDetail.contains('introuvable') || erreurDetail.contains('404'));
       setState(() {
-        _etape         = _Etape.saisie;
-        _messageErreur = 'Paiement reçu mais erreur d\'enregistrement. '
-            'Réf. : ${_transactionId ?? "inconnue"}. '
-            'Contactez le gestionnaire.';
+        _etape = _Etape.saisie;
+        _messageErreur = estErreurFonction
+            ? '⚠️ Configuration Supabase incomplète. '
+              'Exécutez supabase-fix-sycapay-sans-pin.sql dans Supabase SQL Editor. '
+              'Réf. : ${_transactionId ?? "inconnue"}'
+            : '⚠️ Paiement SycaPay reçu (${_operateur.toUpperCase()}) '
+              'mais enregistrement échoué. '
+              'Réf. : ${_transactionId ?? "inconnue"}. '
+              'Retentez ou contactez le gestionnaire.';
       });
     }
   }

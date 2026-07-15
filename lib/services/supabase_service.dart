@@ -403,19 +403,41 @@ class SupabaseService {
   }
 
   /// Écrit les données d'une tontine SANS vérification de PIN gestionnaire.
-  /// Utilisé uniquement quand l'authentification a déjà été effectuée par un
-  /// autre mécanisme (ex : paiement SycaPay confirmé côté serveur).
-  /// La fonction RPC Supabase `ecrire_tontine_sans_pin` doit autoriser l'écriture
-  /// sur la base du code seul (à sécuriser côté RLS Supabase).
+  /// Utilisé après confirmation de paiement SycaPay (cotisations + caisse).
+  ///
+  /// Nécessite que la fonction SQL `ecrire_tontine_sans_pin` soit créée
+  /// dans Supabase (fichier : supabase-fix-sycapay-sans-pin.sql).
+  ///
+  /// Le retour de Supabase peut être : true (bool), "true" (string),
+  /// 1 (int), ou null si la fonction est introuvable.
   static Future<bool> ecrireTontineSansPIN({
     required String code,
     required Map<String, dynamic> data,
   }) async {
-    final result = await rpc('ecrire_tontine_sans_pin', {
-      'p_code': code.toUpperCase(),
-      'p_data': data,
-    });
-    return result == true;
+    try {
+      final result = await rpc('ecrire_tontine_sans_pin', {
+        'p_code': code.toUpperCase(),
+        'p_data': data,
+      });
+
+      if (kDebugMode) {
+        debugPrint('[SycaPay] ecrire_tontine_sans_pin → result=$result (${result.runtimeType})');
+      }
+
+      // Supabase peut retourner true, "true", 1, ou null
+      if (result == null) return false;
+      if (result is bool) return result;
+      if (result is int) return result != 0;
+      if (result is String) return result.toLowerCase() == 'true';
+      return false;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[SycaPay] ecrire_tontine_sans_pin ERREUR: $e');
+      }
+      // Si la RPC échoue (404 = fonction absente), lever une exception
+      // explicite pour que l'appelant puisse afficher le bon message
+      rethrow;
+    }
   }
 
   // supprimerTontine (soft delete) est défini plus haut — ancienne version supprimée
