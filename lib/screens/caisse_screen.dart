@@ -9,6 +9,7 @@ import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
+import 'paiement_caisse_pro_screen.dart';
 
 class CaisseScreen extends StatelessWidget {
   final String code;
@@ -97,7 +98,10 @@ class CaisseScreen extends StatelessWidget {
                             icon: Icons.add,
                             label: context.tr('apport'),
                             couleur: AppColors.succes,
-                            onTap: () => _mouvement(context, provider, data, 'apport'),
+                            // Mode Pro : apport via SycaPay — Mode Lite : modale PIN
+                            onTap: () => tontine.isPro
+                                ? _apportPro(context, provider, tontine, data)
+                                : _mouvement(context, provider, data, 'apport'),
                           ),
                         ),
                         SizedBox(width: 10),
@@ -150,6 +154,129 @@ class CaisseScreen extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  // ── Apport Pro : saisie montant + description → SycaPay ──────────────────
+  Future<void> _apportPro(
+    BuildContext context,
+    TontineProvider provider,
+    dynamic tontine,
+    TontineData data,
+  ) async {
+    final montantCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+
+    // Modale légère pour saisir montant et description
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.fondPapier,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.lignes,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Apport de caisse Pro',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 20,
+                  color: AppColors.encre,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEAF4EE),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.rocket_launch_rounded, size: 13, color: Color(0xFF1A6B3C)),
+                    SizedBox(width: 6),
+                    Text(
+                      'Le paiement sera effectué via SycaPay Mobile Money',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF1A6B3C)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              ChampLabel(label: 'Montant (${DeviseService.parCode(data.devise).symbole})'),
+              TextField(
+                controller: montantCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(hintText: '5 000'),
+                autofocus: true,
+              ),
+              ChampLabel(label: context.tr('description_motif')),
+              TextField(
+                controller: descCtrl,
+                maxLength: 100,
+                decoration: const InputDecoration(
+                  hintText: 'Ex : Frais de local',
+                  counterText: '',
+                ),
+              ),
+              const SizedBox(height: 16),
+              BtnPrincipal(
+                label: 'Continuer vers SycaPay',
+                onTap: () => Navigator.pop(ctx, true),
+              ),
+              const SizedBox(height: 8),
+              BtnSecondaire(
+                label: 'Annuler',
+                onTap: () => Navigator.pop(ctx, false),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    final montant = int.tryParse(montantCtrl.text.trim());
+    if (montant == null || montant <= 0) {
+      afficherToast(context, 'Montant invalide', estErreur: true);
+      return;
+    }
+
+    // Ouvrir l'écran SycaPay pour apport caisse
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PaiementCaisseProScreen(
+          code: tontine.code,
+          montant: montant,
+          description: descCtrl.text.trim(),
         ),
       ),
     );

@@ -169,8 +169,10 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
                                     e.value,
                                   )
                               : null,
-                          // ── Bouton "Payer" Pro — visible si Pro + non-gest + non-payé
-                          onPayer: tontine.isPro && !estGest && !e.value.paye && !data.cycleTermine
+                          // ── Bouton "Payer" Pro — visible si Pro + non-payé
+                          // Accessible à TOUS (gest et membres) en mode Pro
+                          // Le gest conserve aussi son toggle manuel (onToggle)
+                          onPayer: tontine.isPro && !e.value.paye && !data.cycleTermine
                               ? () => Navigator.push(
                                     context,
                                     MaterialPageRoute(
@@ -179,7 +181,11 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
                                         membre: e.value,
                                       ),
                                     ),
-                                  )
+                                  ).then((_) {
+                                    // Rechargement après retour de l'écran de paiement
+                                    // pour refléter le nouveau statut paye = true
+                                    if (mounted) _recharger();
+                                  })
                               : null,
                           onEnvoyerRecu: () => _envoyerRecu(context, tontine, e.value),
                           onRelancer: () => _relancer(context, tontine, e.value),
@@ -957,30 +963,12 @@ class _CarteMembre extends StatelessWidget {
                 ),
               ),
               // ── Bouton statut / toggle ──
-              if (estGest)
-                GestureDetector(
-                  onTap: onToggle,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 7),
-                    decoration: BoxDecoration(
-                      color: membre.paye
-                          ? AppColors.succesFond
-                          : AppColors.encre,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      membre.paye ? '✓ Payé' : 'Approuver',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                        color: membre.paye ? AppColors.succes : Colors.white,
-                      ),
-                    ),
-                  ),
-                )
-              else if (!membre.paye && onPayer != null)
-                // ── Bouton "Payer" Pro (membre non-gest, paiement Mobile Money)
+              // Priorité : Pro non-payé → bouton "Payer" SycaPay (tous)
+              //            Gest Lite non-payé → "Approuver" (toggle manuel)
+              //            Payé → badge vert
+              //            Sinon → badge "En attente"
+              if (!membre.paye && onPayer != null)
+                // ── Mode Pro : bouton "Payer" Mobile Money (gest ET membres)
                 GestureDetector(
                   onTap: onPayer,
                   child: Container(
@@ -1008,7 +996,31 @@ class _CarteMembre extends StatelessWidget {
                     ),
                   ),
                 )
+              else if (estGest)
+                // ── Mode Lite gestionnaire : toggle manuel Approuver / ✓ Payé
+                GestureDetector(
+                  onTap: onToggle,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: membre.paye
+                          ? AppColors.succesFond
+                          : AppColors.encre,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      membre.paye ? '✓ Payé' : 'Approuver',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                        color: membre.paye ? AppColors.succes : Colors.white,
+                      ),
+                    ),
+                  ),
+                )
               else
+                // ── Badge lecture seule
                 Container(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 10, vertical: 6),
