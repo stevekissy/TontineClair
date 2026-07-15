@@ -59,6 +59,35 @@ class _DetailScreenState extends State<DetailScreen> {
     super.dispose();
   }
 
+  // ── Traduction des codes RESEAU:xxx en messages lisibles ──────────────────
+  static String _traduireErreur(String code) {
+    switch (code) {
+      case 'RESEAU:INTERNET':
+        return 'Aucune connexion Internet.\nVérifiez votre Wi-Fi ou données mobiles.';
+      case 'RESEAU:TIMEOUT':
+        return 'Le serveur ne répond pas.\nRéessayez dans quelques instants.';
+      case 'RESEAU:SSL':
+        return 'Problème de connexion sécurisée.\nVérifiez votre réseau.';
+      case 'RESEAU:DNS':
+        return 'Impossible de joindre le serveur.\nVérifiez votre connexion Internet.';
+      case 'RESEAU:CONNEXION':
+        return 'Connexion refusée par le serveur.\nRéessayez plus tard.';
+      case 'RESEAU:SERVEUR':
+        return 'Le service est momentanément indisponible.\nRéessayez plus tard.';
+      default:
+        return 'Impossible de contacter le serveur.\nRéessayez plus tard.';
+    }
+  }
+
+  static IconData _iconeErreur(String code) {
+    if (code == 'RESEAU:INTERNET' || code == 'RESEAU:DNS') {
+      return Icons.wifi_off_rounded;
+    }
+    if (code == 'RESEAU:TIMEOUT') return Icons.timer_off_outlined;
+    if (code == 'RESEAU:SSL') return Icons.lock_outline;
+    return Icons.cloud_off_rounded;
+  }
+
   void _debloqur(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => VerrouScreen()),
@@ -155,23 +184,30 @@ class _DetailScreenState extends State<DetailScreen> {
         );
       }
 
-      // ── Autre erreur ──
+      // ── Erreur réseau / serveur ──
+      final msgAffiche = _traduireErreur(provider.erreur!);
+      final icone = _iconeErreur(provider.erreur!);
       return Scaffold(
         backgroundColor: AppColors.fondPapier,
         body: Center(
           child: Padding(
-            padding: EdgeInsets.all(24),
+            padding: const EdgeInsets.all(28),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.error_outline, size: 48, color: AppColors.alerte),
-                SizedBox(height: 16),
+                Icon(icone, size: 52, color: AppColors.alerte),
+                const SizedBox(height: 16),
                 Text(
-                  provider.erreur!,
-                  style: TextStyle(color: AppColors.alerte),
+                  msgAffiche,
+                  style: const TextStyle(
+                    color: AppColors.encre,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    height: 1.5,
+                  ),
                   textAlign: TextAlign.center,
                 ),
-                SizedBox(height: 16),
+                const SizedBox(height: 24),
                 BtnPrincipal(
                   label: context.tr('reessayer'),
                   onTap: () => provider.chargerTontine(widget.code),

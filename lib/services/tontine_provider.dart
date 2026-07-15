@@ -63,15 +63,16 @@ class TontineProvider extends ChangeNotifier {
         await StorageService.effacerGestActif(code);
         _mesTontines = await StorageService.getListe();
         _erreur = 'TONTINE_DELETED';
-      } else if (msg.startsWith('RESEAU')) {
-        // Erreur réseau : on affiche uniquement si pas de données en cache
-        // Si _courante est déjà chargée, on garde l'écran actuel sans crasher
+      } else if (msg.startsWith('RESEAU:')) {
+        // Erreur réseau classifiée : afficher seulement si pas de données en cache
         if (_courante == null) {
-          _erreur = msg;
+          _erreur = msg; // sera traduit en message lisible par l'UI
         }
-        // Sinon → on ignore silencieusement, l'utilisateur reste sur ses données
+        // Si _courante chargée → on garde les données actuelles sans crasher
       } else {
-        _erreur = msg;
+        // Erreur inconnue → logguer mais ne pas afficher brut à l'utilisateur
+        if (kDebugMode) debugPrint('[TontineProvider] erreur non classifiée: $msg');
+        _erreur = 'RESEAU:SERVEUR'; // fallback sûr
       }
     } finally {
       _enChargement = false;

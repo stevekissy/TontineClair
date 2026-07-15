@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/tontine.dart';
@@ -52,17 +53,48 @@ class SupabaseService {
   // Délai entre chaque tentative (exponentiel : 1s, 2s, 4s)
   static const Duration _retryBase = Duration(seconds: 1);
 
+  // ── Classifie toute exception réseau en code interne RESEAU:xxx ────────────
+  static String _classifierErreurReseau(Object e, Object stack, String contexte) {
+    final raw = e.toString();
+    if (kDebugMode) {
+      debugPrint('[RPC] ERREUR réseau — $contexte');
+      debugPrint('[RPC]   type: ${e.runtimeType}');
+      debugPrint('[RPC]   message: $raw');
+      debugPrint('[RPC]   stack: $stack');
+    }
+    if (e is SocketException) {
+      return 'RESEAU:INTERNET';
+    }
+    if (raw.contains('TimeoutException') || raw.contains('timed out')) {
+      return 'RESEAU:TIMEOUT';
+    }
+    if (e is HandshakeException || raw.contains('HandshakeException') || raw.contains('CERTIFICATE')) {
+      return 'RESEAU:SSL';
+    }
+    if (raw.contains('Failed host lookup') || raw.contains('No address associated')) {
+      return 'RESEAU:DNS';
+    }
+    if (raw.contains('Connection refused') || raw.contains('ECONNREFUSED')) {
+      return 'RESEAU:CONNEXION';
+    }
+    if (raw.contains('Invalid argument') || raw.contains('status code 0')) {
+      return 'RESEAU:INTERNET';
+    }
+    return 'RESEAU:SERVEUR';
+  }
+
   static Future<dynamic> rpc(String fn, Map<String, dynamic> args) async {
-    const url = _url;
-    const key = _key;
+    final uri = Uri.parse('$_url/rest/v1/rpc/$fn');
 
-    final uri = Uri.parse('$url/rest/v1/rpc/$fn');
-    if (kDebugMode) debugPrint('[RPC] → $fn  args=$args');
+    if (kDebugMode) {
+      debugPrint('[RPC] → POST ${uri.toString()}');
+      debugPrint('[RPC]   fn=$fn  args=$args');
+    }
 
-    http.Response response = http.Response('', 0);
-    Exception? derniereErreur;
+    http.Response? response;
+    String? codeErreur;
 
-    // ── Retry automatique jusqu'à 3 fois ─────────────────────────────────────
+    // ── Retry 3 fois avec backoff exponentiel (1s, 2s, 4s) ──────────────────
     for (int tentative = 1; tentative <= _maxRetries; tentative++) {
       try {
         response = await http
@@ -70,35 +102,44 @@ class SupabaseService {
               uri,
               headers: {
                 'Content-Type': 'application/json',
-                'apikey': key,
-                'Authorization': 'Bearer $key',
+                'apikey': _key,
+                'Authorization': 'Bearer $_key',
               },
               body: jsonEncode(args),
             )
-            .timeout(const Duration(seconds: 30)); // 30s au lieu de 15s
-        derniereErreur = null;
-        break; // Succès → sortir de la boucle
-      } catch (e) {
-        derniereErreur = Exception('RESEAU: connexion à Supabase impossible — vérifiez votre connexion internet.');
+            .timeout(const Duration(seconds: 30));
+        codeErreur = null;
+        break;
+      } catch (e, stack) {
+        codeErreur = _classifierErreurReseau(e, stack, '$fn tentative $tentative/$_maxRetries');
         if (tentative < _maxRetries) {
-          // Attente exponentielle avant retry : 1s, 2s, 4s
           await Future.delayed(_retryBase * (1 << (tentative - 1)));
-          if (kDebugMode) debugPrint('[RPC] retry $tentative/$_maxRetries → $fn');
         }
       }
     }
 
-    if (derniereErreur != null) throw derniereErreur!;
-
-    final resp = response;
-
-    if (kDebugMode) {
-      debugPrint('[RPC] ← ${resp.statusCode}  '
-          '${resp.body.length > 300 ? resp.body.substring(0, 300) : resp.body}');
+    // Toutes tentatives épuisées → lever exception avec code interne
+    if (codeErreur != null) {
+      if (kDebugMode) debugPrint('[RPC] ✗ échec définitif $codeErreur pour $fn');
+      throw Exception(codeErreur);
     }
 
-    // ── Erreurs HTTP (identique à index.html) ──────────────────────────────
+    final resp = response!;
+
+    if (kDebugMode) {
+      debugPrint('[RPC] ← HTTP ${resp.statusCode} $fn');
+      debugPrint('[RPC]   body=${resp.body.length > 300 ? resp.body.substring(0, 300) + "..." : resp.body}');
+    }
+
+    // ── Status 0 = réponse jamais reçue ─────────────────────────────────────
+    if (resp.statusCode == 0) {
+      if (kDebugMode) debugPrint('[RPC] ✗ statusCode=0 pour $fn');
+      throw Exception('RESEAU:INTERNET');
+    }
+
+    // ── Erreurs HTTP ─────────────────────────────────────────────────────────
     if (!_isOk(resp.statusCode)) {
+      if (kDebugMode) debugPrint('[RPC] ✗ HTTP ${resp.statusCode} pour $fn: ${resp.body}');
       final txt = resp.body;
       if (resp.statusCode == 404 || txt.contains('Could not find the function')) {
         throw Exception(
@@ -110,28 +151,22 @@ class SupabaseService {
             'CLE: clé anon refusée (${resp.statusCode}). '
             'Vérifiez Settings › API › anon public dans votre projet Supabase.');
       }
-      throw Exception('Erreur Supabase $fn (${resp.statusCode}) : $txt');
+      if (resp.statusCode >= 500) {
+        throw Exception('RESEAU:SERVEUR');
+      }
+      throw Exception('RESEAU:SERVEUR');
     }
 
-    // ── Corps de la réponse ────────────────────────────────────────────────
+    // ── Corps de la réponse ──────────────────────────────────────────────────
     final body = resp.body.trim();
     if (body.isEmpty || body == 'null') return null;
 
-    // ── Décodage JSON ──────────────────────────────────────────────────────
-    dynamic decoded;
+    // ── Décodage JSON ────────────────────────────────────────────────────────
     try {
-      decoded = jsonDecode(body);
+      return jsonDecode(body);
     } catch (_) {
-      // Réponse texte brute (ne devrait pas arriver pour nos fonctions)
       return body;
     }
-
-    // PostgREST sans "Prefer" retourne la valeur directe pour RETURNS jsonb :
-    //   • scalaire JSON : bool, String, int → retourné tel quel
-    //   • objet JSON    : Map               → retourné tel quel
-    //   • tableau JSON  : List              → retourné tel quel (lire_voix_tontine etc.)
-    // Aucune désencapsulation supplémentaire nécessaire.
-    return decoded;
   }
 
   static bool _isOk(int statusCode) => statusCode >= 200 && statusCode < 300;
