@@ -291,7 +291,7 @@ class _DetailScreenState extends State<DetailScreen> {
                         BadgePlan(isPremium: tontine.isPremium),
                         if (tontine.isPremium) ...[
                           const SizedBox(width: 6),
-                          const BadgePremium(),
+                          const BadgeProVert(),
                         ],
                       ],
                     ),

@@ -307,6 +307,38 @@ class BadgePremium extends StatelessWidget {
 /// Alias rétrocompat — utiliser BadgePremium à la place.
 typedef BadgePro = BadgePremium;
 
+/// Badge vert "Pro" — affiché à côté du badge Premium dans les détails.
+class BadgeProVert extends StatelessWidget {
+  const BadgeProVert({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D8A4E),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.rocket_launch_rounded, size: 11, color: Colors.white),
+          const SizedBox(width: 4),
+          Text(
+            'Pro',
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w700,
+              fontSize: 11.5,
+              color: Colors.white,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class BadgePlan extends StatelessWidget {
   final bool isPremium;
 
