@@ -83,23 +83,59 @@ CREATE POLICY "admin_actions_service" ON admin_actions USING (true) WITH CHECK (
 -- 4. sycapay_transactions
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS sycapay_transactions (
-  id               BIGSERIAL PRIMARY KEY,
-  type             TEXT        NOT NULL,
+  id                   BIGSERIAL PRIMARY KEY,
+  type                 TEXT        NOT NULL,
   -- 'cotisation','caisse','penalite','remboursement_pret','decaissement'
-  code             TEXT        NOT NULL,
-  membre_id        TEXT,
-  membre_nom       TEXT,
-  montant          NUMERIC(14,2) NOT NULL,
-  devise           TEXT        NOT NULL DEFAULT 'XOF',
-  statut           TEXT        NOT NULL DEFAULT 'pending'
-                   CHECK (statut IN ('pending','completed','failed','cancelled')),
-  sycapay_ref      TEXT,
-  numero_telephone TEXT,
-  gestionnaire     TEXT,
-  metadata         JSONB       DEFAULT '{}',
-  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  code                 TEXT        NOT NULL,
+  membre_id            TEXT,
+  membre_nom           TEXT,
+  montant              NUMERIC(14,2) NOT NULL,
+  devise               TEXT        NOT NULL DEFAULT 'XOF',
+  statut               TEXT        NOT NULL DEFAULT 'pending'
+                       CHECK (statut IN ('pending','completed','failed','cancelled')),
+  sycapay_ref          TEXT,
+  numero_telephone     TEXT,
+  gestionnaire         TEXT,
+  -- Colonnes v2 : idempotence et suivi avancé
+  internal_reference   TEXT        UNIQUE,   -- numcommande TC_... (anti-doublon)
+  idempotency_key      TEXT        UNIQUE,   -- clé idempotence SycaPay
+  statut_traitement    TEXT        NOT NULL DEFAULT 'non_traite'
+                       CHECK (statut_traitement IN ('non_traite','en_cours','traite','erreur')),
+  user_id              TEXT,
+  tontine_code         TEXT,
+  type_operation       TEXT,
+  pret_id              TEXT,
+  emprunteur_id        TEXT,
+  metadata             JSONB       DEFAULT '{}',
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Ajouter colonnes v2 sur bases existantes (idempotent)
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS internal_reference       TEXT UNIQUE;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS idempotency_key          TEXT UNIQUE;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS statut_traitement        TEXT NOT NULL DEFAULT 'non_traite';
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS user_id                  TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS tontine_code             TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS type_operation           TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS pret_id                  TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS emprunteur_id            TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS provider_transaction_id  TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS sycapay_reference        TEXT;
+-- Colonnes nommées à la convention SycaPay (source supabase-sycapay-transactions.sql)
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS amount                   INTEGER;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS currency                 TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS operator                 TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS phone_number_masked      TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS description              TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS status                   TEXT DEFAULT 'pending';
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS polling_attempts         INTEGER DEFAULT 0;
+
+-- Index performance pour les colonnes critiques (idempotence)
+CREATE INDEX IF NOT EXISTS idx_sycapay_txn_ref         ON sycapay_transactions(internal_reference) WHERE internal_reference IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_sycapay_txn_idempotency ON sycapay_transactions(idempotency_key)    WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_sycapay_txn_membre      ON sycapay_transactions(code, membre_id);
+CREATE INDEX IF NOT EXISTS idx_sycapay_txn_provider    ON sycapay_transactions(provider_transaction_id) WHERE provider_transaction_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_sycapay_code   ON sycapay_transactions(code);
 CREATE INDEX IF NOT EXISTS idx_sycapay_statut ON sycapay_transactions(statut);

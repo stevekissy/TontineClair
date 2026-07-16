@@ -80,7 +80,7 @@ begin
         and plan = 'premium'
         and (plan_expire is null or plan_expire > now())
     ) into v_ok;
-  exception when undefined_column, undefined_table then
+  exception when undefined_column then
     v_ok := false;
   end;
 
@@ -285,7 +285,7 @@ begin
       'Plan: ' || p_plan || ' | Montant: ' || coalesce(p_montant::text,'2500') || ' FCFA | Réf: ' || coalesce(p_reference,'-'),
       coalesce(p_active_par, 'ADMIN')
     );
-  exception when undefined_table, undefined_column then null;
+  exception when others then null;
   end;
 
   return jsonb_build_object(
@@ -497,7 +497,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.admin_valider_pret(text, bigint) TO service_role, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_valider_pret(text, bigint) TO anon, authenticated;
 
 -- ────────────────────────────────────────────────────────────
 -- B2. admin_rejeter_pret
@@ -519,7 +519,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.admin_rejeter_pret(text, bigint, text) TO service_role, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_rejeter_pret(text, bigint, text) TO anon, authenticated;
 
 -- ────────────────────────────────────────────────────────────
 -- B3. crediter_remboursement_sycapay
@@ -638,7 +638,7 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.crediter_remboursement_sycapay(
   text, integer, text, text, text, text, text, text, text, text
-) TO service_role, anon, authenticated;
+) TO anon, authenticated;
 
 -- ============================================================
 -- SECTION C : Décaissements
@@ -681,7 +681,7 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.admin_lister_decaissements(TEXT, TEXT) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_lister_decaissements(TEXT, TEXT) TO anon, authenticated;
 
 -- ────────────────────────────────────────────────────────────
 -- C2. admin_valider_decaissement
@@ -784,7 +784,7 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.admin_valider_decaissement(TEXT, BIGINT) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_valider_decaissement(TEXT, BIGINT) TO anon, authenticated;
 
 -- ────────────────────────────────────────────────────────────
 -- C3. admin_rejeter_decaissement
@@ -826,7 +826,7 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.admin_rejeter_decaissement(TEXT, BIGINT, TEXT) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_rejeter_decaissement(TEXT, BIGINT, TEXT) TO anon, authenticated;
 
 -- ============================================================
 -- SECTION D : Dépenses
@@ -900,7 +900,7 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.admin_valider_depense TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_valider_depense TO anon, authenticated;
 
 -- ────────────────────────────────────────────────────────────
 -- D2. admin_rejeter_depense
@@ -939,7 +939,7 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.admin_rejeter_depense TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_rejeter_depense TO anon, authenticated;
 
 -- ============================================================
 -- SECTION E : KYC

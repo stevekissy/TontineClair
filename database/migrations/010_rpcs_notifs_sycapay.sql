@@ -99,14 +99,14 @@ CREATE OR REPLACE FUNCTION public.creer_transaction_sycapay(
   p_membre_id          text DEFAULT NULL,
   p_description        text DEFAULT NULL
 )
-RETURNS uuid
+RETURNS bigint
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_id              uuid;
-  v_existing_id     uuid;
+  v_id              bigint;
+  v_existing_id     bigint;
   v_existing_status text;
 BEGIN
   -- Vérifier si la référence existe déjà (idempotence)
@@ -152,7 +152,7 @@ CREATE OR REPLACE FUNCTION public.get_pending_sycapay_transactions(
   p_tontine_code text
 )
 RETURNS TABLE(
-  id                      uuid,
+  id                      bigint,
   internal_reference      text,
   provider_transaction_id text,
   amount                  integer,
@@ -288,7 +288,7 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.crediter_caisse_sycapay TO service_role;
+GRANT EXECUTE ON FUNCTION public.crediter_caisse_sycapay TO anon, authenticated;
 
 -- =============================================================================
 -- 6. RPC : crediter_cotisation_sycapay
@@ -396,7 +396,7 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.crediter_cotisation_sycapay TO service_role;
+GRANT EXECUTE ON FUNCTION public.crediter_cotisation_sycapay TO anon, authenticated;
 
 -- =============================================================================
 -- 7. RPC : crediter_penalite_sycapay
@@ -532,7 +532,7 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.crediter_penalite_sycapay TO service_role;
+GRANT EXECUTE ON FUNCTION public.crediter_penalite_sycapay TO anon, authenticated;
 
 -- =============================================================================
 -- 8. RPC : recalculer_echeances_expir

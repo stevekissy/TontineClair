@@ -1,6 +1,6 @@
 -- =============================================================================
 -- TontineClair — Migration 001 : Tables fondamentales
--- Ordre d'exécution : 1/10
+-- Ordre d'exécution : 1/11
 -- Remplace : (table tontines gérée par Supabase directement)
 --            supabase-v6.sql (tables scores/audit)
 --            supabase-v16-soft-delete.sql (colonnes status/deleted_at)
@@ -9,20 +9,47 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 1. TABLE tontines (table principale — gérée nativement par Supabase)
 --    Si elle n'existe pas encore, la créer ici.
+--    Toutes les colonnes jamais utilisées par les RPCs sont déclarées ici
+--    pour éviter les erreurs "column does not exist" sur base vierge.
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS tontines (
-  id         BIGSERIAL PRIMARY KEY,
-  code       TEXT        NOT NULL UNIQUE,
-  data       JSONB       NOT NULL DEFAULT '{}',
-  -- Colonnes ajoutées en v16 (soft-delete)
-  status     TEXT        NOT NULL DEFAULT 'active'
-             CHECK (status IN ('active','inactive','suspended','deleted')),
-  deleted_at TIMESTAMPTZ,
-  deleted_by TEXT,
-  deletion_reason TEXT,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id                     BIGSERIAL   PRIMARY KEY,
+  code                   TEXT        NOT NULL UNIQUE,
+  data                   JSONB       NOT NULL DEFAULT '{}',
+  -- Colonnes gestionnaires / membres (v1)
+  gestionnaires          JSONB       DEFAULT '[]',
+  membres_pins           JSONB       DEFAULT '[]',
+  -- Colonnes plan/abonnement (v5/v6)
+  plan                   TEXT        NOT NULL DEFAULT 'free',
+  plan_expire            TIMESTAMPTZ,
+  -- Timestamps
+  cree                   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  modifie_le             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- Colonnes soft-delete (v16)
+  status                 TEXT        NOT NULL DEFAULT 'active'
+                         CHECK (status IN ('active','inactive','suspended','deleted')),
+  deleted_at             TIMESTAMPTZ,
+  deleted_by             TEXT,
+  deletion_reason        TEXT,
+  invitation_code_active BOOLEAN     NOT NULL DEFAULT TRUE,
+  updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Ajouter colonnes manquantes sur bases existantes (idempotent)
+ALTER TABLE tontines ADD COLUMN IF NOT EXISTS gestionnaires          JSONB       DEFAULT '[]';
+ALTER TABLE tontines ADD COLUMN IF NOT EXISTS membres_pins           JSONB       DEFAULT '[]';
+ALTER TABLE tontines ADD COLUMN IF NOT EXISTS plan                   TEXT        NOT NULL DEFAULT 'free';
+ALTER TABLE tontines ADD COLUMN IF NOT EXISTS plan_expire            TIMESTAMPTZ;
+ALTER TABLE tontines ADD COLUMN IF NOT EXISTS cree                   TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE tontines ADD COLUMN IF NOT EXISTS modifie_le             TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE tontines ADD COLUMN IF NOT EXISTS status                 TEXT        NOT NULL DEFAULT 'active';
+ALTER TABLE tontines ADD COLUMN IF NOT EXISTS deleted_at             TIMESTAMPTZ;
+ALTER TABLE tontines ADD COLUMN IF NOT EXISTS deleted_by             TEXT;
+ALTER TABLE tontines ADD COLUMN IF NOT EXISTS deletion_reason        TEXT;
+ALTER TABLE tontines ADD COLUMN IF NOT EXISTS invitation_code_active BOOLEAN     NOT NULL DEFAULT TRUE;
+ALTER TABLE tontines ADD COLUMN IF NOT EXISTS updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE tontines ADD COLUMN IF NOT EXISTS created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 CREATE INDEX IF NOT EXISTS idx_tontines_code   ON tontines(code);
 CREATE INDEX IF NOT EXISTS idx_tontines_status ON tontines(status);
@@ -123,3 +150,25 @@ CREATE TABLE IF NOT EXISTS admin_config (
 ALTER TABLE admin_config ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "admin_config_no_access" ON admin_config;
 CREATE POLICY "admin_config_no_access" ON admin_config USING (false);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 6. TABLE voix (votes des membres — utilisée par voter() et lire_voix_tontine())
+--    Référencée dans migrations 006 (voter v18) et 011 (lire_voix_tontine)
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS voix (
+  id         BIGSERIAL   PRIMARY KEY,
+  code       TEXT        NOT NULL,
+  vote_id    TEXT        NOT NULL,
+  membre_id  TEXT        NOT NULL,
+  choix      TEXT        NOT NULL CHECK (choix IN ('oui','non','abstention')),
+  methode    TEXT        NOT NULL DEFAULT 'PIN',
+  appareil   TEXT,
+  vote_le    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (code, vote_id, membre_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_voix_code    ON voix(code);
+CREATE INDEX IF NOT EXISTS idx_voix_vote_id ON voix(code, vote_id);
+ALTER TABLE voix ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "voix_anon" ON voix;
+CREATE POLICY "voix_anon" ON voix FOR ALL TO anon USING (true) WITH CHECK (true);
