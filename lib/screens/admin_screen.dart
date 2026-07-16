@@ -20,11 +20,14 @@ class _AdminScreenState extends State<AdminScreen> {
   String? _erreur;
   List<Map<String, dynamic>> _demandes = [];
   List<Map<String, dynamic>> _tontines = [];
+  List<Map<String, dynamic>> _depenses = [];
   // Compteurs unifiés calculés depuis adminTontineCounts
   Map<String, dynamic> _counts = {};
   int _onglet = 0;
   // Filtre tontines : null=toutes, 'active','deleted','suspended','inactive','premium','gratuit','expire'
   String? _filtreStatut;
+  // Filtre dépenses : 'tous' | 'pending' | 'validee' | 'rejetee'
+  String _filtreDepense = 'pending';
   String get _cle => _cleCtrl.text.trim();
 
   @override
@@ -42,10 +45,11 @@ class _AdminScreenState extends State<AdminScreen> {
     });
 
     try {
-      // Charger en parallèle : demandes + tontines + compteurs
+      // Charger en parallèle : demandes + tontines + compteurs + dépenses
       final results = await Future.wait([
         SupabaseService.adminListerDemandes(cle),
         SupabaseService.adminListerTontines(cle),
+        SupabaseService.adminListerDepensesPending(cle),
       ]);
       final counts = await SupabaseService.adminTontineCounts(cle);
 
@@ -53,6 +57,7 @@ class _AdminScreenState extends State<AdminScreen> {
         _connecte = true;
         _demandes = results[0] as List<Map<String, dynamic>>;
         _tontines = results[1] as List<Map<String, dynamic>>;
+        _depenses = results[2] as List<Map<String, dynamic>>;
         _counts   = counts;
       });
     } catch (e) {
@@ -210,13 +215,126 @@ class _AdminScreenState extends State<AdminScreen> {
     final results = await Future.wait([
       SupabaseService.adminListerDemandes(cle),
       SupabaseService.adminListerTontines(cle),
+      SupabaseService.adminListerDepensesPending(cle),
     ]);
     final counts = await SupabaseService.adminTontineCounts(cle);
     setState(() {
       _demandes = results[0] as List<Map<String, dynamic>>;
       _tontines = results[1] as List<Map<String, dynamic>>;
+      _depenses = results[2] as List<Map<String, dynamic>>;
       _counts   = counts;
     });
+  }
+
+  Future<void> _validerDepense(int id, String code, int montant, String devise) async {
+    final confirmer = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.fondPapier,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Valider la dépense',
+          style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.encre),
+        ),
+        content: Text(
+          'Confirmer la validation ?\nLa caisse de $code sera débitée de ${Formatters.montant(montant, devise: devise)}.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.succes),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Valider', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (confirmer != true || !mounted) return;
+
+    final result = await SupabaseService.adminValiderDepense(cle: _cle, id: id);
+    if (!mounted) return;
+    if (result['ok'] == true) {
+      afficherToast(context, '✅ ${result['message'] ?? 'Dépense validée !'}');
+      // Notification aux membres de la tontine
+      SupabaseService.envoyerNotification(
+        code:    code,
+        type:    'caisse',
+        titre:   '💸 Dépense approuvée',
+        message: 'Une dépense de ${Formatters.montant(montant, devise: devise)} a été approuvée par l\'admin.',
+      );
+      await _recharger();
+    } else {
+      afficherToast(context, result['erreur'] as String? ?? 'Erreur validation.', estErreur: true);
+    }
+  }
+
+  Future<void> _rejeterDepense(int id) async {
+    final motifCtrl = TextEditingController();
+    String? motifErreur;
+
+    final motif = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (sCtx, setSt) => AlertDialog(
+          backgroundColor: AppColors.fondPapier,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            'Rejeter la dépense',
+            style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.alerte),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Indiquez le motif de refus :'),
+              const SizedBox(height: 10),
+              TextField(
+                controller: motifCtrl,
+                maxLines: 2,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: InputDecoration(
+                  hintText: 'Ex : Bénéficiaire non identifié...',
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  errorText: motifErreur,
+                ),
+                onChanged: (_) {
+                  if (motifErreur != null) setSt(() => motifErreur = null);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, null), child: const Text('Annuler')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.alerte),
+              onPressed: () {
+                final t = motifCtrl.text.trim();
+                if (t.length < 3) {
+                  setSt(() => motifErreur = 'Motif requis.');
+                  return;
+                }
+                Navigator.pop(ctx, t);
+              },
+              child: const Text('Rejeter', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (motif == null || !mounted) return;
+
+    final result = await SupabaseService.adminRejeterDepense(cle: _cle, id: id, motif: motif);
+    if (!mounted) return;
+    if (result['ok'] == true) {
+      afficherToast(context, 'Dépense rejetée.');
+      await _recharger();
+    } else {
+      afficherToast(context, result['erreur'] as String? ?? 'Erreur rejet.', estErreur: true);
+    }
   }
 
   @override
@@ -294,6 +412,7 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Widget _VueAdmin() {
+    final nbDepensesPending = _depenses.where((d) => (d['statut'] as String? ?? '') == 'pending').length;
     return Column(
       children: [
         // Onglets
@@ -310,8 +429,6 @@ class _AdminScreenState extends State<AdminScreen> {
                 ),
                 const SizedBox(width: 10),
                 _OngletBtn(
-                  // Compteur = tontines NON supprimées (actives + suspendues + inactives)
-                  // Si counts chargés on utilise 'total', sinon on calcule localement
                   label: 'Tontines (${_counts.isNotEmpty
                       ? (_counts['total'] ?? _tontines.where((t) => (t['status'] as String? ?? 'active') != 'deleted').length)
                       : _tontines.where((t) => (t['status'] as String? ?? 'active') != 'deleted').length})',
@@ -324,6 +441,38 @@ class _AdminScreenState extends State<AdminScreen> {
                   selected: _onglet == 2,
                   onTap: () => setState(() => _onglet = 2),
                 ),
+                const SizedBox(width: 10),
+                // Onglet dépenses avec badge rouge si pending
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    _OngletBtn(
+                      label: '💸 Dépenses',
+                      selected: _onglet == 3,
+                      onTap: () => setState(() => _onglet = 3),
+                    ),
+                    if (nbDepensesPending > 0)
+                      Positioned(
+                        top: -4,
+                        right: -4,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: AppColors.alerte,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Text(
+                            '$nbDepensesPending',
+                            style: const TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -333,7 +482,9 @@ class _AdminScreenState extends State<AdminScreen> {
               ? _ListeDemandes()
               : _onglet == 1
                   ? _ListeTontines()
-                  : AdminDashboardScreen(cle: _cle),
+                  : _onglet == 2
+                      ? AdminDashboardScreen(cle: _cle)
+                      : _ListeDepenses(),
         ),
       ],
     );
@@ -422,6 +573,269 @@ class _AdminScreenState extends State<AdminScreen> {
           ...traitees.map((d) => _CarteDemande(d, enAttente: false)),
         ],
       ],
+    );
+  }
+
+  Widget _ListeDepenses() {
+    // Filtrage selon statut sélectionné
+    final filtered = _filtreDepense == 'tous'
+        ? _depenses
+        : _depenses.where((d) => (d['statut'] as String? ?? '') == _filtreDepense).toList();
+
+    final nbPending  = _depenses.where((d) => d['statut'] == 'pending').length;
+    final nbValidee  = _depenses.where((d) => d['statut'] == 'validee').length;
+    final nbRejetee  = _depenses.where((d) => d['statut'] == 'rejetee').length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Filtres ──────────────────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _FiltreChip(
+                  label: 'En attente ($nbPending)',
+                  selected: _filtreDepense == 'pending',
+                  onTap: () => setState(() => _filtreDepense = 'pending'),
+                  couleur: AppColors.orFonce,
+                ),
+                const SizedBox(width: 8),
+                _FiltreChip(
+                  label: 'Validées ($nbValidee)',
+                  selected: _filtreDepense == 'validee',
+                  onTap: () => setState(() => _filtreDepense = 'validee'),
+                  couleur: AppColors.succes,
+                ),
+                const SizedBox(width: 8),
+                _FiltreChip(
+                  label: 'Rejetées ($nbRejetee)',
+                  selected: _filtreDepense == 'rejetee',
+                  onTap: () => setState(() => _filtreDepense = 'rejetee'),
+                  couleur: AppColors.alerte,
+                ),
+                const SizedBox(width: 8),
+                _FiltreChip(
+                  label: 'Toutes (${_depenses.length})',
+                  selected: _filtreDepense == 'tous',
+                  onTap: () => setState(() => _filtreDepense = 'tous'),
+                  couleur: AppColors.encreDoux,
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // ── Liste ─────────────────────────────────────────────────────────────
+        if (filtered.isEmpty)
+          Expanded(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.receipt_long_outlined,
+                    size: 48,
+                    color: AppColors.texteDoux.withValues(alpha: 0.4),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    _filtreDepense == 'pending'
+                        ? 'Aucune dépense en attente'
+                        : 'Aucune dépense dans cette catégorie',
+                    style: const TextStyle(color: AppColors.texteDoux, fontSize: 15),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+              itemCount: filtered.length,
+              itemBuilder: (_, i) => _CarteDepense(filtered[i]),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _CarteDepense(Map<String, dynamic> d) {
+    final id              = d['id'] as int? ?? 0;
+    final code            = d['code'] as String? ?? '—';
+    final montant         = d['montant'] as int? ?? 0;
+    final description     = d['description'] as String? ?? '';
+    final operateur       = d['operateur'] as String? ?? '—';
+    final numBenef        = d['numero_beneficiaire'] as String? ?? '—';
+    final nomBenef        = d['nom_beneficiaire'] as String? ?? '—';
+    final gestionnaire    = d['gestionnaire'] as String? ?? '—';
+    final devise          = d['devise'] as String? ?? 'XOF';
+    final statut          = d['statut'] as String? ?? 'pending';
+    final motifRejet      = d['motif_rejet'] as String?;
+    final createdAt       = DateTime.tryParse(d['created_at'] as String? ?? '');
+    final valideAt       = d['valide_le'] != null ? DateTime.tryParse(d['valide_le'] as String) : null;
+
+    // Couleurs selon statut
+    final Color statutCouleur;
+    final Color statutFond;
+    final String statutLabel;
+    switch (statut) {
+      case 'validee':
+        statutCouleur = AppColors.succes;
+        statutFond    = AppColors.succesFond;
+        statutLabel   = '✓ Validée';
+        break;
+      case 'rejetee':
+        statutCouleur = AppColors.alerte;
+        statutFond    = AppColors.alerteFond;
+        statutLabel   = '✗ Rejetée';
+        break;
+      default:
+        statutCouleur = AppColors.orFonce;
+        statutFond    = AppColors.fondConsultation;
+        statutLabel   = '⏳ En attente';
+    }
+
+    // Icône opérateur
+    final IconData opIcon;
+    switch (operateur.toLowerCase()) {
+      case 'orange': opIcon = Icons.signal_cellular_alt; break;
+      case 'mtn':    opIcon = Icons.signal_cellular_alt; break;
+      case 'moov':   opIcon = Icons.signal_cellular_alt; break;
+      case 'wave':   opIcon = Icons.waves_rounded;       break;
+      default:       opIcon = Icons.phone_android_rounded;
+    }
+
+    return CarteTC(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Ligne titre + badge statut ─────────────────────────────────────
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      Formatters.montant(montant, devise: devise),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 18,
+                        color: AppColors.alerte,
+                      ),
+                    ),
+                    Text(
+                      'Tontine : $code',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontFamily: 'monospace',
+                        color: AppColors.encreDoux,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: statutFond,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  statutLabel,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: statutCouleur,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // ── Infos Mobile Money ────────────────────────────────────────────
+          _InfoLigneAdmin(
+            icone: opIcon,
+            label: 'Opérateur',
+            valeur: operateur[0].toUpperCase() + operateur.substring(1),
+          ),
+          _InfoLigneAdmin(
+            icone: Icons.person_outline_rounded,
+            label: 'Bénéficiaire',
+            valeur: nomBenef,
+          ),
+          _InfoLigneAdmin(
+            icone: Icons.phone_outlined,
+            label: 'Numéro',
+            valeur: numBenef,
+          ),
+          if (description.isNotEmpty)
+            _InfoLigneAdmin(
+              icone: Icons.notes_rounded,
+              label: 'Motif',
+              valeur: description,
+            ),
+          _InfoLigneAdmin(
+            icone: Icons.manage_accounts_outlined,
+            label: 'Gestionnaire',
+            valeur: gestionnaire,
+          ),
+          _InfoLigneAdmin(
+            icone: Icons.calendar_today_outlined,
+            label: 'Soumis le',
+            valeur: Formatters.dateFormatee(createdAt),
+          ),
+          if (valideAt != null)
+            _InfoLigneAdmin(
+              icone: Icons.check_circle_outline,
+              label: statut == 'validee' ? 'Validé le' : 'Rejeté le',
+              valeur: Formatters.dateFormatee(valideAt),
+            ),
+          if (motifRejet != null && motifRejet.isNotEmpty)
+            _InfoLigneAdmin(
+              icone: Icons.cancel_outlined,
+              label: 'Motif rejet',
+              valeur: motifRejet,
+            ),
+
+          // ── Boutons d'action (seulement si pending) ────────────────────────
+          if (statut == 'pending') ...
+            [
+              const SizedBox(height: 12),
+              const Divider(color: AppColors.lignes, height: 1),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: BtnPrincipal(
+                      label: 'Valider',
+                      icone: Icons.check_circle_rounded,
+                      couleur: AppColors.succes,
+                      onTap: () => _validerDepense(id, code, montant, devise),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 2,
+                    child: BtnSecondaire(
+                      label: 'Rejeter',
+                      onTap: () => _rejeterDepense(id),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+        ],
+      ),
     );
   }
 

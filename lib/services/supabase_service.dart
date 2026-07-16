@@ -1431,6 +1431,120 @@ class SupabaseService {
 
   /// Envoie une notification push via l'Edge Function Supabase.
   /// [type] : 'cotisation' | 'vote' | 'decaissement' | 'membre' | 'cycle'
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DÉPENSES PENDING (Mobile Money — validation admin)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Soumet une dépense Mobile Money en statut 'pending'.
+  /// La caisse n'est PAS débitée — l'admin devra valider.
+  static Future<void> soumettreDepensePending({
+    required String code,
+    required int montant,
+    required String description,
+    required String operateur,
+    required String numeroBeneficiaire,
+    required String nomBeneficiaire,
+    required String gestionnaire,
+    required String reference,
+    required String devise,
+  }) async {
+    final url = Uri.parse('$_url/rest/v1/depenses_pending');
+    final body = {
+      'code':               code.toUpperCase(),
+      'montant':            montant,
+      'description':        description,
+      'operateur':          operateur,
+      'numero_beneficiaire': numeroBeneficiaire,
+      'nom_beneficiaire':   nomBeneficiaire,
+      'gestionnaire':       gestionnaire,
+      'reference':          reference,
+      'devise':             devise,
+      'statut':             'pending',
+    };
+    final resp = await http.post(
+      url,
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': 'Bearer $_key',
+        'apikey':        _key,
+        'Prefer':        'return=minimal',
+      },
+      body: jsonEncode(body),
+    );
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      throw Exception('Erreur soumission dépense: ${resp.statusCode} ${resp.body}');
+    }
+  }
+
+  /// Récupère les dépenses pending pour l'admin.
+  /// Retourne toutes les dépenses ou filtrées par [statut] (pending|validee|rejetee).
+  static Future<List<Map<String, dynamic>>> adminListerDepensesPending(
+    String cle, {
+    String statut = 'tous',
+  }) async {
+    try {
+      final params = <String, String>{
+        'order': 'created_at.desc',
+        'limit': '200',
+      };
+      if (statut != 'tous') params['statut'] = 'eq.$statut';
+
+      final url = Uri.parse('$_url/rest/v1/depenses_pending')
+          .replace(queryParameters: params);
+
+      final resp = await http.get(
+        url,
+        headers: {
+          'Authorization': 'Bearer $_key',
+          'apikey':        _key,
+        },
+      );
+      if (resp.statusCode != 200) return [];
+      final list = jsonDecode(resp.body) as List<dynamic>;
+      return list.cast<Map<String, dynamic>>();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Valide une dépense pending : débite la caisse + marque validee.
+  /// [id] = id de la dépense dans depenses_pending.
+  /// [cle] = clé admin pour authentification.
+  static Future<Map<String, dynamic>> adminValiderDepense({
+    required String cle,
+    required int id,
+  }) async {
+    try {
+      final result = await rpc('admin_valider_depense', {
+        'p_cle': cle,
+        'p_id':  id,
+      });
+      if (result is Map<String, dynamic>) return result;
+      return {'ok': false, 'erreur': 'Réponse inattendue'};
+    } catch (e) {
+      return {'ok': false, 'erreur': '$e'};
+    }
+  }
+
+  /// Rejette une dépense pending.
+  static Future<Map<String, dynamic>> adminRejeterDepense({
+    required String cle,
+    required int id,
+    required String motif,
+  }) async {
+    try {
+      final result = await rpc('admin_rejeter_depense', {
+        'p_cle':   cle,
+        'p_id':    id,
+        'p_motif': motif,
+      });
+      if (result is Map<String, dynamic>) return result;
+      return {'ok': false, 'erreur': 'Réponse inattendue'};
+    } catch (e) {
+      return {'ok': false, 'erreur': '$e'};
+    }
+  }
+
   static Future<void> envoyerNotification({
     required String code,
     required String type,

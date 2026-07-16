@@ -11,6 +11,9 @@ import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
 import 'paiement_caisse_pro_screen.dart';
 
+// ─── Opérateurs Mobile Money disponibles ──────────────────────────────────────
+const _operateursMobileMoney = ['orange', 'moov', 'mtn', 'wave'];
+
 class CaisseScreen extends StatelessWidget {
   final String code;
 
@@ -110,7 +113,9 @@ class CaisseScreen extends StatelessWidget {
                             icon: Icons.remove,
                             label: context.tr('depense'),
                             couleur: AppColors.alerte,
-                            onTap: () => _mouvement(context, provider, data, 'depense'),
+                            onTap: () => tontine.isPremium
+                                ? _depensePremium(context, provider, tontine, data)
+                                : _mouvement(context, provider, data, 'depense'),
                           ),
                         ),
                         SizedBox(width: 10),
@@ -280,6 +285,247 @@ class CaisseScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  // ── Dépense Premium : Mobile Money uniquement → statut pending → validation admin ──
+  Future<void> _depensePremium(
+    BuildContext context,
+    TontineProvider provider,
+    dynamic tontine,
+    TontineData data,
+  ) async {
+    final montantCtrl = TextEditingController();
+    final descCtrl    = TextEditingController();
+    final numCtrl     = TextEditingController();
+    final nomCtrl     = TextEditingController();
+    String operateur  = _operateursMobileMoney.first;
+
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.fondPapier,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.lignes,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Dépense de caisse',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 20,
+                    color: AppColors.encre,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                // Badge info paiement
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF3E0),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.phone_android_rounded, size: 13, color: Color(0xFFE65100)),
+                      SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          'Mobile Money — validation admin requise',
+                          style: TextStyle(fontSize: 12, color: Color(0xFFE65100)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Montant
+                ChampLabel(label: 'Montant (${DeviseService.parCode(data.devise).symbole})'),
+                TextField(
+                  controller: montantCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(hintText: '5 000'),
+                  autofocus: true,
+                ),
+                // Description
+                ChampLabel(label: 'Description / motif'),
+                TextField(
+                  controller: descCtrl,
+                  maxLength: 100,
+                  decoration: const InputDecoration(
+                    hintText: 'Ex : Frais de local',
+                    counterText: '',
+                  ),
+                ),
+                // Opérateur
+                ChampLabel(label: 'Opérateur Mobile Money'),
+                DropdownButtonFormField<String>(
+                  value: operateur,
+                  decoration: const InputDecoration(),
+                  items: _operateursMobileMoney
+                      .map((op) => DropdownMenuItem(
+                            value: op,
+                            child: Text(Formatters.methodePaiement(op)),
+                          ))
+                      .toList(),
+                  onChanged: (v) => setS(() => operateur = v!),
+                ),
+                // Numéro bénéficiaire
+                ChampLabel(label: 'Numéro bénéficiaire'),
+                TextField(
+                  controller: numCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(hintText: 'Ex : 07 01 02 03'),
+                ),
+                // Nom bénéficiaire
+                ChampLabel(label: 'Nom bénéficiaire'),
+                TextField(
+                  controller: nomCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(hintText: 'Ex : Kouamé Jean'),
+                ),
+                const SizedBox(height: 16),
+                BtnPrincipal(
+                  label: 'Soumettre pour validation',
+                  icone: Icons.send_rounded,
+                  onTap: () => Navigator.pop(ctx, true),
+                ),
+                const SizedBox(height: 8),
+                BtnSecondaire(
+                  label: 'Annuler',
+                  onTap: () => Navigator.pop(ctx, false),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    // Validations
+    final montant = int.tryParse(montantCtrl.text.trim());
+    if (montant == null || montant <= 0) {
+      afficherToast(context, 'Montant invalide', estErreur: true);
+      return;
+    }
+    if (montant > data.soldeCaisse) {
+      afficherToast(
+        context,
+        'Solde insuffisant (${Formatters.montant(data.soldeCaisse, devise: data.devise)} disponibles)',
+        estErreur: true,
+      );
+      return;
+    }
+    if (numCtrl.text.trim().isEmpty) {
+      afficherToast(context, 'Numéro bénéficiaire requis', estErreur: true);
+      return;
+    }
+    if (nomCtrl.text.trim().isEmpty) {
+      afficherToast(context, 'Nom bénéficiaire requis', estErreur: true);
+      return;
+    }
+
+    // Confirmation simple (pas de PIN — la validation sera faite par l'admin)
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.fondPapier,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Confirmer la dépense',
+          style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.encre),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _RecapLigne('Montant', Formatters.montant(montant, devise: data.devise)),
+            _RecapLigne('Opérateur', Formatters.methodePaiement(operateur)),
+            _RecapLigne('Bénéficiaire', nomCtrl.text.trim()),
+            _RecapLigne('Numéro', numCtrl.text.trim()),
+            if (descCtrl.text.trim().isNotEmpty)
+              _RecapLigne('Motif', descCtrl.text.trim()),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.orFonce.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                '⏳ La dépense sera soumise à validation par l\'admin. La caisse ne sera débitée qu\'après approbation.',
+                style: TextStyle(fontSize: 12, color: AppColors.orFonce, height: 1.4),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.alerte),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Soumettre', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true || !context.mounted) return;
+
+    // Soumettre la dépense en pending dans Supabase
+    try {
+      final ref = Formatters.genererReference();
+      await SupabaseService.soumettreDepensePending(
+        code: tontine.code,
+        montant: montant,
+        description: descCtrl.text.trim(),
+        operateur: operateur,
+        numeroBeneficiaire: numCtrl.text.trim(),
+        nomBeneficiaire: nomCtrl.text.trim(),
+        gestionnaire: provider.gestActifNom ?? '',
+        reference: ref,
+        devise: data.devise,
+      );
+      if (context.mounted) {
+        afficherToast(
+          context,
+          '✅ Dépense soumise ! En attente de validation admin.',
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        afficherToast(context, 'Erreur : $e', estErreur: true);
+      }
+    }
   }
 
   Future<void> _mouvement(
@@ -528,6 +774,39 @@ class CaisseScreen extends StatelessWidget {
         message: _t['message']!,
       );
     }
+  }
+}
+
+// ─── Ligne récap dialog de confirmation ───────────────────────────────────────
+class _RecapLigne extends StatelessWidget {
+  final String label;
+  final String valeur;
+  const _RecapLigne(this.label, this.valeur);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$label : ',
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.texteDoux,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              valeur,
+              style: const TextStyle(fontSize: 13, color: AppColors.encre),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
