@@ -12,7 +12,6 @@ import '../widgets/app_widgets.dart';
 import 'creation_screen.dart';
 import 'rejoindre_screen.dart';
 import 'detail_screen.dart';
-import 'admin_screen.dart';
 import 'support_screen.dart';
 import 'config_screen.dart';
 import 'langue_screen.dart';
@@ -91,7 +90,6 @@ class AccueilScreen extends StatelessWidget {
       bottomSheet: _BarreActions(
         onRejoindre: () => _aller(context, const RejoindreScreen()),
         onCreer:     () => _aller(context, const CreationScreen()),
-        onAdmin:     () => _aller(context, const AdminScreen()),
         onSupport:   () {
           final gestNom = context.read<TontineProvider>().gestActifNom ?? '';
           _aller(context, SupportScreen(gestionnaire: gestNom));
@@ -781,13 +779,11 @@ class _BoutonLangue extends StatelessWidget {
 class _BarreActions extends StatelessWidget {
   final VoidCallback onRejoindre;
   final VoidCallback onCreer;
-  final VoidCallback onAdmin;
   final VoidCallback onSupport;
 
   const _BarreActions({
     required this.onRejoindre,
     required this.onCreer,
-    required this.onAdmin,
     required this.onSupport,
   });
 
@@ -826,46 +822,25 @@ class _BarreActions extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          // Boutons discrets : Support | Admin
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              GestureDetector(
-                onTap: onSupport,
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                  child: Row(
-                    children: [
-                      Icon(Icons.support_agent_outlined, size: 13,
-                          color: AppColors.encre.withValues(alpha: 0.40)),
-                      const SizedBox(width: 4),
-                      Text('Support',
-                          style: TextStyle(fontSize: 11.5,
-                              color: AppColors.encre.withValues(alpha: 0.45))),
-                    ],
-                  ),
-                ),
+          // Bouton discret : Support
+          GestureDetector(
+            onTap: onSupport,
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.support_agent_outlined, size: 13,
+                      color: AppColors.encre.withValues(alpha: 0.40)),
+                  const SizedBox(width: 4),
+                  Text('Support',
+                      style: TextStyle(fontSize: 11.5,
+                          color: AppColors.encre.withValues(alpha: 0.45))),
+                ],
               ),
-              Text('·', style: TextStyle(color: AppColors.encre.withValues(alpha: 0.25))),
-              GestureDetector(
-                onTap: onAdmin,
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                  child: Row(
-                    children: [
-                      Icon(Icons.lock_outline, size: 12,
-                          color: AppColors.encre.withValues(alpha: 0.30)),
-                      const SizedBox(width: 4),
-                      Text('Espace administrateur',
-                          style: TextStyle(fontSize: 11.5,
-                              color: AppColors.encre.withValues(alpha: 0.35))),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
           const SizedBox(height: 4),
         ],
