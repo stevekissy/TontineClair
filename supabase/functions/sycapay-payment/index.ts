@@ -327,6 +327,23 @@ async function crediterCoteServeur(tx: Record<string, unknown>): Promise<{ ok: b
         p_description:   description.length > 0 ? description : `Pénalité SycaPay — ${membreNom || membreId}`,
         p_now:           now,
       });
+    } else if (typeOp === "remboursement_pret") {
+      // Remboursement de prêt via SycaPay — crédite caisse + met à jour le prêt dans JSON
+      const pretId        = tx["pret_id"]         as string ?? "";
+      const emprunteurId  = tx["emprunteur_id"]   as string ?? membreId ?? "";
+      const emprunteurNom = tx["emprunteur_nom"]  as string ?? membreNom;
+      await sbRpc("crediter_remboursement_sycapay", {
+        p_code:             tontineCode.toUpperCase(),
+        p_montant:          amount,
+        p_reference:        ref,
+        p_num_commande:     numcommande,
+        p_operateur:        operator,
+        p_pret_id:          pretId,
+        p_emprunteur_id:    emprunteurId,
+        p_emprunteur_nom:   emprunteurNom,
+        p_description:      description.length > 0 ? description : `Remboursement prêt ${emprunteurNom} via SycaPay`,
+        p_now:              now,
+      });
     } else {
       // Créditer la cotisation via RPC
       await sbRpc("crediter_cotisation_sycapay", {
@@ -405,9 +422,11 @@ Deno.serve(async (req: Request) => {
       const operateur   = (body["operateur"]   as string) ?? "";
       const tontineCode = (body["tontine_code"] as string) ?? "";
       const typeOp      = (body["type_operation"] as string) ?? "cotisation";
-      const membreId    = body["membre_id"]    as string | undefined;
-      const membreNomPayer = (body["membre_nom"] as string) ?? "";
-      const description = body["description"] as string | undefined;
+      const membreId       = body["membre_id"]       as string | undefined;
+      const membreNomPayer = (body["membre_nom"]     as string) ?? "";
+      const pretIdPayer    = (body["pret_id"]        as string) ?? null;
+      const emprunteurIdPayer = (body["emprunteur_id"] as string) ?? null;
+      const description    = body["description"]     as string | undefined;
 
       if (!telephone || !montant || !numcommande) {
         return json({ erreur: true, code: -400, message: "Paramètres manquants" }, 400);
@@ -506,6 +525,8 @@ Deno.serve(async (req: Request) => {
           status:                  txStatus,
           membre_id:               membreId ?? null,
           membre_nom:              membreNomPayer || null,
+          pret_id:                 pretIdPayer || null,
+          emprunteur_id:           emprunteurIdPayer || null,
           description:             description ?? null,
           confirmed_at:            code === 0 ? new Date().toISOString() : null,
         }).catch(async (e: Error) => {
@@ -576,9 +597,11 @@ Deno.serve(async (req: Request) => {
           currency:                "XOF",
           operator:                body["operateur"] as string ?? "",
           status:                  "pending",
-          membre_id:               body["membre_id"] as string ?? null,
+          membre_id:               body["membre_id"]       as string ?? null,
           membre_nom:              membreNomIn || null,
-          description:             body["description"] as string ?? null,
+          pret_id:                 body["pret_id"]         as string ?? null,
+          emprunteur_id:           body["emprunteur_id"]   as string ?? null,
+          description:             body["description"]     as string ?? null,
         }).catch(e => console.error("[confirmer] création minimale:", e));
 
         rows = await sbSelect(
@@ -601,7 +624,13 @@ Deno.serve(async (req: Request) => {
           });
         }
         // confirmed mais pas credited → créditer maintenant
-        const txEnriched = membreNomIn ? { ...tx, membre_nom: membreNomIn } : tx;
+        const txEnriched = {
+          ...tx,
+          ...(membreNomIn      ? { membre_nom:     membreNomIn }                                : {}),
+          ...(body["pret_id"]  ? { pret_id:        body["pret_id"]       as string }           : {}),
+          ...(body["emprunteur_id"] ? { emprunteur_id: body["emprunteur_id"] as string }       : {}),
+          ...(body["emprunteur_nom"] ? { emprunteur_nom: body["emprunteur_nom"] as string }    : {}),
+        };
         const creditResult = await crediterCoteServeur(txEnriched);
         return json({
           ok:              creditResult.ok,
@@ -658,7 +687,13 @@ Deno.serve(async (req: Request) => {
               `internal_reference=eq.${encodeURIComponent(numcommande)}&select=*`,
             );
             if (fullTx.length > 0) {
-              const creditResult = await crediterCoteServeur(membreNomIn ? { ...fullTx[0], membre_nom: membreNomIn } : fullTx[0]);
+              const creditResult = await crediterCoteServeur({
+                ...fullTx[0],
+                ...(membreNomIn           ? { membre_nom:     membreNomIn }                                : {}),
+                ...(body["pret_id"]       ? { pret_id:        body["pret_id"]       as string }           : {}),
+                ...(body["emprunteur_id"] ? { emprunteur_id:  body["emprunteur_id"] as string }           : {}),
+                ...(body["emprunteur_nom"]? { emprunteur_nom: body["emprunteur_nom"] as string }          : {}),
+              });
               return json({
                 ok:              creditResult.ok,
                 code:            creditResult.ok ? 0 : -1,
@@ -721,7 +756,13 @@ Deno.serve(async (req: Request) => {
               `internal_reference=eq.${encodeURIComponent(numcommande)}&select=*`,
             );
             if (fullTx.length > 0) {
-              const creditResult = await crediterCoteServeur(membreNomIn ? { ...fullTx[0], membre_nom: membreNomIn } : fullTx[0]);
+              const creditResult = await crediterCoteServeur({
+                ...fullTx[0],
+                ...(membreNomIn           ? { membre_nom:     membreNomIn }                                : {}),
+                ...(body["pret_id"]       ? { pret_id:        body["pret_id"]       as string }           : {}),
+                ...(body["emprunteur_id"] ? { emprunteur_id:  body["emprunteur_id"] as string }           : {}),
+                ...(body["emprunteur_nom"]? { emprunteur_nom: body["emprunteur_nom"] as string }          : {}),
+              });
               return json({
                 ok:              creditResult.ok,
                 code:            creditResult.ok ? 0 : -1,

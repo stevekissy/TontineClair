@@ -304,3 +304,9 @@ END $$;
 -- ─────────────────────────────────────────────────────────────────────────────
 ALTER TABLE public.sycapay_transactions
   ADD COLUMN IF NOT EXISTS membre_nom text;
+
+-- Colonnes supplémentaires pour remboursement prêt via SycaPay
+ALTER TABLE public.sycapay_transactions
+  ADD COLUMN IF NOT EXISTS pret_id        text,
+  ADD COLUMN IF NOT EXISTS emprunteur_id  text;
+

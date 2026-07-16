@@ -33,10 +33,12 @@ class PaiementCaisseProScreen extends StatefulWidget {
   final String description;
   /// 'caisse' (défaut) ou 'penalite'
   final String typeOperation;
-  /// ID du membre pénalisé (uniquement si typeOperation == 'penalite')
+  /// ID du membre concerné (pénalité ou emprunteur pour remboursement)
   final String? membreId;
-  /// Nom du membre pénalisé (uniquement si typeOperation == 'penalite')
+  /// Nom du membre concerné
   final String? membreNom;
+  /// ID du prêt (uniquement si typeOperation == 'remboursement_pret')
+  final String? pretId;
 
   const PaiementCaisseProScreen({
     super.key,
@@ -46,6 +48,7 @@ class PaiementCaisseProScreen extends StatefulWidget {
     this.typeOperation = 'caisse',
     this.membreId,
     this.membreNom,
+    this.pretId,
   });
 
   @override
@@ -142,6 +145,7 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
         typeOperation: widget.typeOperation,
         membreId:      widget.membreId,
         membreNom:     widget.membreNom,
+        pretId:        widget.pretId,
         description:   widget.description.isNotEmpty ? widget.description : null,
       );
 
@@ -200,6 +204,7 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
         operateur:     _operateur,
         membreId:      widget.membreId,
         membreNom:     widget.membreNom,
+        pretId:        widget.pretId,
         description:   widget.description.isNotEmpty ? widget.description : null,
       );
 
@@ -420,7 +425,7 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
             child: Column(
               children: [
                 // Badge membre pénalisé (uniquement pour pénalité)
-                if (widget.typeOperation == 'penalite' && widget.membreNom != null) ...[
+                if ((widget.typeOperation == 'penalite' || widget.typeOperation == 'remboursement_pret') && widget.membreNom != null) ...[
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     margin: const EdgeInsets.only(bottom: 10),
@@ -435,7 +440,9 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
                         const Icon(Icons.person_rounded, size: 14, color: AppColors.orFonce),
                         const SizedBox(width: 6),
                         Text(
-                          'Pénalité pour : ${widget.membreNom}',
+                          widget.typeOperation == 'remboursement_pret'
+                              ? 'Emprunteur : ${widget.membreNom}'
+                              : 'Pénalité pour : ${widget.membreNom}',
                           style: const TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
@@ -449,7 +456,9 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
                 Text(
                   widget.typeOperation == 'penalite'
                       ? 'Montant de la pénalité'
-                      : 'Montant de l\'apport',
+                      : widget.typeOperation == 'remboursement_pret'
+                          ? 'Montant du remboursement'
+                          : 'Montant de l\'apport',
                   style: const TextStyle(fontSize: 13, color: AppColors.texteDoux),
                 ),
                 const SizedBox(height: 6),
@@ -588,7 +597,9 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
             label: Text(
               widget.typeOperation == 'penalite'
                   ? 'Payer pénalité ${Formatters.montant(widget.montant, devise: 'XOF')} via Mobile Money'
-                  : 'Verser ${Formatters.montant(widget.montant, devise: 'XOF')} via Mobile Money',
+                  : widget.typeOperation == 'remboursement_pret'
+                      ? 'Rembourser ${Formatters.montant(widget.montant, devise: 'XOF')} via Mobile Money'
+                      : 'Verser ${Formatters.montant(widget.montant, devise: 'XOF')} via Mobile Money',
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
             ),
             style: FilledButton.styleFrom(

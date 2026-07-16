@@ -21,6 +21,7 @@ class _AdminScreenState extends State<AdminScreen> {
   List<Map<String, dynamic>> _demandes = [];
   List<Map<String, dynamic>> _tontines = [];
   List<Map<String, dynamic>> _depenses = [];
+  List<Map<String, dynamic>> _prets    = [];
   // Compteurs unifiés calculés depuis adminTontineCounts
   Map<String, dynamic> _counts = {};
   int _onglet = 0;
@@ -28,6 +29,8 @@ class _AdminScreenState extends State<AdminScreen> {
   String? _filtreStatut;
   // Filtre dépenses : 'tous' | 'pending' | 'validee' | 'rejetee'
   String _filtreDepense = 'pending';
+  // Filtre prêts : 'pending' | 'validee' | 'rejetee' | 'tous'
+  String _filtrePret    = 'pending';
   String get _cle => _cleCtrl.text.trim();
 
   @override
@@ -50,6 +53,7 @@ class _AdminScreenState extends State<AdminScreen> {
         SupabaseService.adminListerDemandes(cle),
         SupabaseService.adminListerTontines(cle),
         SupabaseService.adminListerDepensesPending(cle),
+        SupabaseService.adminListerPretsPending(cle, statut: 'tous'),
       ]);
       final counts = await SupabaseService.adminTontineCounts(cle);
 
@@ -58,6 +62,7 @@ class _AdminScreenState extends State<AdminScreen> {
         _demandes = results[0] as List<Map<String, dynamic>>;
         _tontines = results[1] as List<Map<String, dynamic>>;
         _depenses = results[2] as List<Map<String, dynamic>>;
+        _prets    = results[3] as List<Map<String, dynamic>>;
         _counts   = counts;
       });
     } catch (e) {
@@ -216,14 +221,126 @@ class _AdminScreenState extends State<AdminScreen> {
       SupabaseService.adminListerDemandes(cle),
       SupabaseService.adminListerTontines(cle),
       SupabaseService.adminListerDepensesPending(cle),
+      SupabaseService.adminListerPretsPending(cle, statut: 'tous'),
     ]);
     final counts = await SupabaseService.adminTontineCounts(cle);
     setState(() {
       _demandes = results[0] as List<Map<String, dynamic>>;
       _tontines = results[1] as List<Map<String, dynamic>>;
       _depenses = results[2] as List<Map<String, dynamic>>;
+      _prets    = results[3] as List<Map<String, dynamic>>;
       _counts   = counts;
     });
+  }
+
+  Future<void> _validerPret(int id, String code, int montantNet, String devise) async {
+    final confirmer = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.fondPapier,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Valider le prêt',
+          style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.encre),
+        ),
+        content: Text(
+          'Confirmer la validation ?\nLa caisse de $code sera débitée de ${Formatters.montant(montantNet, devise: devise)} (montant net).',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.succes),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Valider', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (confirmer != true || !mounted) return;
+
+    final result = await SupabaseService.adminValiderPret(cle: _cle, id: id);
+    if (!mounted) return;
+    if (result['ok'] == true) {
+      afficherToast(context, '✅ Prêt validé — caisse débitée !');
+      SupabaseService.envoyerNotification(
+        code:    code,
+        type:    'pret',
+        titre:   '🏦 Prêt approuvé',
+        message: 'Un prêt de ${Formatters.montant(montantNet, devise: devise)} a été approuvé et décaissé.',
+      );
+      await _recharger();
+    } else {
+      afficherToast(context, result['erreur'] as String? ?? 'Erreur validation.', estErreur: true);
+    }
+  }
+
+  Future<void> _rejeterPret(int id) async {
+    final motifCtrl = TextEditingController();
+    String? motifErreur;
+
+    final motif = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (sCtx, setSt) => AlertDialog(
+          backgroundColor: AppColors.fondPapier,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            'Rejeter le prêt',
+            style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.alerte),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Indiquez le motif de refus :'),
+              const SizedBox(height: 10),
+              TextField(
+                controller: motifCtrl,
+                maxLines: 2,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: InputDecoration(
+                  hintText: 'Ex : Solde insuffisant, doublon...',
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  errorText: motifErreur,
+                ),
+                onChanged: (_) {
+                  if (motifErreur != null) setSt(() => motifErreur = null);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, null), child: const Text('Annuler')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.alerte),
+              onPressed: () {
+                final t = motifCtrl.text.trim();
+                if (t.length < 3) {
+                  setSt(() => motifErreur = 'Motif requis.');
+                  return;
+                }
+                Navigator.pop(ctx, t);
+              },
+              child: const Text('Rejeter', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (motif == null || !mounted) return;
+
+    final result = await SupabaseService.adminRejeterPret(cle: _cle, id: id, motif: motif);
+    if (!mounted) return;
+    if (result['ok'] == true) {
+      afficherToast(context, 'Prêt rejeté.');
+      await _recharger();
+    } else {
+      afficherToast(context, result['erreur'] as String? ?? 'Erreur rejet.', estErreur: true);
+    }
   }
 
   Future<void> _validerDepense(int id, String code, int montant, String devise) async {
@@ -413,6 +530,7 @@ class _AdminScreenState extends State<AdminScreen> {
 
   Widget _VueAdmin() {
     final nbDepensesPending = _depenses.where((d) => (d['statut'] as String? ?? '') == 'pending').length;
+    final nbPretsPending    = _prets.where((p) => (p['statut'] as String? ?? '') == 'pending').length;
     return Column(
       children: [
         // Onglets
@@ -473,6 +591,38 @@ class _AdminScreenState extends State<AdminScreen> {
                       ),
                   ],
                 ),
+                const SizedBox(width: 10),
+                // Onglet prêts avec badge rouge si pending
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    _OngletBtn(
+                      label: '🏦 Prêts',
+                      selected: _onglet == 4,
+                      onTap: () => setState(() => _onglet = 4),
+                    ),
+                    if (nbPretsPending > 0)
+                      Positioned(
+                        top: -4,
+                        right: -4,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: AppColors.alerte,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Text(
+                            '$nbPretsPending',
+                            style: const TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -484,9 +634,271 @@ class _AdminScreenState extends State<AdminScreen> {
                   ? _ListeTontines()
                   : _onglet == 2
                       ? AdminDashboardScreen(cle: _cle)
-                      : _ListeDepenses(),
+                      : _onglet == 3
+                          ? _ListeDepenses()
+                          : _ListePrets(),
         ),
       ],
+    );
+  }
+
+  // ── Onglet 🏦 Prêts pending ──────────────────────────────────────────────────
+  Widget _ListePrets() {
+    final filtered = _filtrePret == 'tous'
+        ? _prets
+        : _prets.where((p) => (p['statut'] as String? ?? '') == _filtrePret).toList();
+
+    final nbPending = _prets.where((p) => p['statut'] == 'pending').length;
+    final nbValidee = _prets.where((p) => p['statut'] == 'validee').length;
+    final nbRejetee = _prets.where((p) => p['statut'] == 'rejetee').length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Filtres ──────────────────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _FiltreChip(
+                  label: 'En attente ($nbPending)',
+                  selected: _filtrePret == 'pending',
+                  onTap: () => setState(() => _filtrePret = 'pending'),
+                  couleur: AppColors.orFonce,
+                ),
+                const SizedBox(width: 8),
+                _FiltreChip(
+                  label: 'Validés ($nbValidee)',
+                  selected: _filtrePret == 'validee',
+                  onTap: () => setState(() => _filtrePret = 'validee'),
+                  couleur: AppColors.succes,
+                ),
+                const SizedBox(width: 8),
+                _FiltreChip(
+                  label: 'Rejetés ($nbRejetee)',
+                  selected: _filtrePret == 'rejetee',
+                  onTap: () => setState(() => _filtrePret = 'rejetee'),
+                  couleur: AppColors.alerte,
+                ),
+                const SizedBox(width: 8),
+                _FiltreChip(
+                  label: 'Tous (${_prets.length})',
+                  selected: _filtrePret == 'tous',
+                  onTap: () => setState(() => _filtrePret = 'tous'),
+                  couleur: AppColors.encreDoux,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (filtered.isEmpty)
+          Expanded(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.account_balance_outlined, size: 48, color: AppColors.texteDoux.withValues(alpha: 0.4)),
+                  const SizedBox(height: 12),
+                  Text(
+                    _filtrePret == 'pending' ? 'Aucun prêt en attente' : 'Aucun prêt dans cette catégorie',
+                    style: const TextStyle(color: AppColors.texteDoux, fontSize: 15),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+              itemCount: filtered.length,
+              itemBuilder: (_, i) => _CartePret(filtered[i]),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _CartePret(Map<String, dynamic> p) {
+    final id              = p['id'] as int? ?? 0;
+    final code            = p['code'] as String? ?? '—';
+    final emprunteur      = p['emprunteur_nom'] as String? ?? '—';
+    final montant         = p['montant'] as int? ?? 0;
+    final frais           = p['frais_transaction'] as int? ?? 0;
+    final montantNet      = p['montant_net'] as int? ?? 0;
+    final taux            = p['taux'];
+    final durees          = p['durees_mois'] as int? ?? 0;
+    final operateur       = p['operateur'] as String? ?? '—';
+    final numBenef        = p['numero_beneficiaire'] as String? ?? '—';
+    final nomBenef        = p['nom_beneficiaire'] as String? ?? '—';
+    final gestionnaire    = p['gestionnaire'] as String? ?? '—';
+    final devise          = p['devise'] as String? ?? 'XOF';
+    final statut          = p['statut'] as String? ?? 'pending';
+    final motifRejet      = p['motif_rejet'] as String?;
+    final createdAt       = DateTime.tryParse(p['created_at'] as String? ?? '');
+    final validatedAt     = p['validated_at'] != null ? DateTime.tryParse(p['validated_at'] as String) : null;
+
+    final Color statutCouleur;
+    final Color statutFond;
+    final String statutLabel;
+    switch (statut) {
+      case 'validee':
+        statutCouleur = AppColors.succes;
+        statutFond    = AppColors.succesFond;
+        statutLabel   = '✓ Validé';
+        break;
+      case 'rejetee':
+        statutCouleur = AppColors.alerte;
+        statutFond    = AppColors.alerteFond;
+        statutLabel   = '✗ Rejeté';
+        break;
+      default:
+        statutCouleur = AppColors.orFonce;
+        statutFond    = AppColors.fondConsultation;
+        statutLabel   = '⏳ En attente';
+    }
+
+    return CarteTC(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── En-tête ───────────────────────────────────────────────────────
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      emprunteur,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                        color: AppColors.encre,
+                      ),
+                    ),
+                    Text(
+                      'Tontine : $code',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontFamily: 'monospace',
+                        color: AppColors.encreDoux,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: statutFond,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  statutLabel,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: statutCouleur,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // ── Montants ─────────────────────────────────────────────────────
+          _InfoLigneAdmin(
+            icone: Icons.monetization_on_outlined,
+            label: 'Montant brut',
+            valeur: Formatters.montant(montant, devise: devise),
+          ),
+          _InfoLigneAdmin(
+            icone: Icons.percent_rounded,
+            label: 'Frais (2%)',
+            valeur: Formatters.montant(frais, devise: devise),
+          ),
+          _InfoLigneAdmin(
+            icone: Icons.account_balance_wallet_outlined,
+            label: 'Montant net',
+            valeur: Formatters.montant(montantNet, devise: devise),
+          ),
+          _InfoLigneAdmin(
+            icone: Icons.trending_up_rounded,
+            label: 'Taux / Durée',
+            valeur: '${taux ?? 5} % · $durees mois',
+          ),
+          // ── Mobile Money ─────────────────────────────────────────────────
+          _InfoLigneAdmin(
+            icone: Icons.phone_android_rounded,
+            label: 'Opérateur',
+            valeur: operateur.isNotEmpty ? (operateur[0].toUpperCase() + operateur.substring(1)) : '—',
+          ),
+          _InfoLigneAdmin(
+            icone: Icons.person_outline_rounded,
+            label: 'Bénéficiaire',
+            valeur: nomBenef,
+          ),
+          _InfoLigneAdmin(
+            icone: Icons.phone_outlined,
+            label: 'Numéro',
+            valeur: numBenef,
+          ),
+          _InfoLigneAdmin(
+            icone: Icons.manage_accounts_outlined,
+            label: 'Gestionnaire',
+            valeur: gestionnaire,
+          ),
+          _InfoLigneAdmin(
+            icone: Icons.calendar_today_outlined,
+            label: 'Soumis le',
+            valeur: Formatters.dateFormatee(createdAt),
+          ),
+          if (validatedAt != null)
+            _InfoLigneAdmin(
+              icone: Icons.check_circle_outline,
+              label: statut == 'validee' ? 'Validé le' : 'Rejeté le',
+              valeur: Formatters.dateFormatee(validatedAt),
+            ),
+          if (motifRejet != null && motifRejet.isNotEmpty)
+            _InfoLigneAdmin(
+              icone: Icons.cancel_outlined,
+              label: 'Motif rejet',
+              valeur: motifRejet,
+            ),
+          // ── Boutons d'action (seulement si pending) ───────────────────────
+          if (statut == 'pending') ...[
+            const SizedBox(height: 12),
+            const Divider(color: AppColors.lignes, height: 1),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: BtnPrincipal(
+                    label: 'Valider',
+                    icone: Icons.check_circle_rounded,
+                    couleur: AppColors.succes,
+                    onTap: () => _validerPret(id, code, montantNet, devise),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: BtnSecondaire(
+                    label: 'Rejeter',
+                    onTap: () => _rejeterPret(id),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 

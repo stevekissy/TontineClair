@@ -1545,6 +1545,126 @@ class SupabaseService {
     }
   }
 
+  // ── Prêts pending (Premium) ───────────────────────────────────────────────
+
+  /// Soumet une demande de prêt en attente de validation admin.
+  static Future<void> soumettrePretenPending({
+    required String code,
+    required String emprunteurId,
+    required String emprunteurNom,
+    required int    montant,
+    required int    fraisTransaction,
+    required int    montantNet,
+    required double taux,
+    required int    dureesMois,
+    required String operateur,
+    required String numeroBeneficiaire,
+    required String nomBeneficiaire,
+    required String gestionnaire,
+    required String reference,
+    required String devise,
+    String description = '',
+  }) async {
+    final url  = Uri.parse('$_url/rest/v1/prets_pending');
+    final body = {
+      'code':                  code.toUpperCase(),
+      'emprunteur_id':         emprunteurId,
+      'emprunteur_nom':        emprunteurNom,
+      'montant':               montant,
+      'frais_transaction':     fraisTransaction,
+      'montant_net':           montantNet,
+      'taux':                  taux,
+      'durees_mois':           dureesMois,
+      'operateur':             operateur,
+      'numero_beneficiaire':   numeroBeneficiaire,
+      'nom_beneficiaire':      nomBeneficiaire,
+      'gestionnaire':          gestionnaire,
+      'reference':             reference,
+      'devise':                devise,
+      'description':           description,
+      'statut':                'pending',
+    };
+    final resp = await http.post(
+      url,
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': 'Bearer $_key',
+        'apikey':        _key,
+        'Prefer':        'return=minimal',
+      },
+      body: jsonEncode(body),
+    );
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      throw Exception('Erreur soumission prêt: ${resp.statusCode} ${resp.body}');
+    }
+  }
+
+  /// Récupère les demandes de prêts pending pour l'admin.
+  static Future<List<Map<String, dynamic>>> adminListerPretsPending(
+    String cle, {
+    String statut = 'tous',
+  }) async {
+    try {
+      final params = <String, String>{
+        'order': 'created_at.desc',
+        'limit': '200',
+      };
+      if (statut != 'tous') params['statut'] = 'eq.$statut';
+
+      final url = Uri.parse('$_url/rest/v1/prets_pending')
+          .replace(queryParameters: params);
+
+      final resp = await http.get(
+        url,
+        headers: {
+          'Authorization': 'Bearer $_key',
+          'apikey':        _key,
+        },
+      );
+      if (resp.statusCode != 200) return [];
+      final list = jsonDecode(resp.body) as List<dynamic>;
+      return list.cast<Map<String, dynamic>>();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Valide un prêt pending : débite caisse + crée le prêt dans le JSON tontine.
+  static Future<Map<String, dynamic>> adminValiderPret({
+    required String cle,
+    required int    id,
+  }) async {
+    try {
+      final result = await rpc('admin_valider_pret', {
+        'p_cle': cle,
+        'p_id':  id,
+      });
+      if (result is Map<String, dynamic>) return result;
+      return {'ok': false, 'erreur': 'Réponse inattendue'};
+    } catch (e) {
+      return {'ok': false, 'erreur': '$e'};
+    }
+  }
+
+  /// Rejette un prêt pending.
+  static Future<Map<String, dynamic>> adminRejeterPret({
+    required String cle,
+    required int    id,
+    required String motif,
+  }) async {
+    try {
+      final result = await rpc('admin_rejeter_pret', {
+        'p_cle':   cle,
+        'p_id':    id,
+        'p_motif': motif,
+      });
+      if (result is Map<String, dynamic>) return result;
+      return {'ok': false, 'erreur': 'Réponse inattendue'};
+    } catch (e) {
+      return {'ok': false, 'erreur': '$e'};
+    }
+  }
+
   static Future<void> envoyerNotification({
     required String code,
     required String type,
