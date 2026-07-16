@@ -1,22 +1,51 @@
 -- ============================================================
--- TontineClair — upgrade.sql  v3
+-- TontineClair — upgrade.sql  v4
 -- Mise à jour schéma (tables, colonnes, index, triggers, RLS)
 -- sans aucune perte de données
 -- ============================================================
 --
 -- PÉRIMÈTRE DE CE FICHIER :
---   ✅ Section A — Nouvelles tables           (IF NOT EXISTS)
---   ✅ Section B — Nouvelles colonnes          (ADD COLUMN IF NOT EXISTS)
---   ✅ Section C — Nouveaux index              (IF NOT EXISTS)
---   ✅ Section D — Triggers                    (DROP IF EXISTS + recréation)
---   ✅ Section E — Politiques RLS              (DROP IF EXISTS + recréation)
---   ✅ Section F — Fonctions / RPCs            → voir init_inline.sql
+--   ✅ Bloc 0  — Diagnostic pre-vol    (RAISE NOTICE si colonne absente)
+--   ✅ Section A — Nouvelles tables     (IF NOT EXISTS)
+--   ✅ Section B — Nouvelles colonnes   (ADD COLUMN IF NOT EXISTS)
+--   ✅ Section C — Nouveaux index       (IF NOT EXISTS)
+--   ✅ Section D — Triggers             (DROP IF EXISTS + recréation)
+--   ✅ Section E — Politiques RLS       (DROP IF EXISTS + recréation)
+--   ✅ Section F — Fonctions / RPCs     → voir init_inline.sql
 --
--- POURQUOI LES FONCTIONS SONT DANS init_inline.sql ET PAS ICI :
---   PostgreSQL refuse CREATE OR REPLACE FUNCTION si les NOMS des
---   paramètres changent entre l'ancienne et la nouvelle version.
---   init_inline.sql contient les vraies signatures — c'est le
---   fichier canonique pour tous les RPCs.
+-- POURQUOI v4 CORRIGE v3 :
+--   v3 échouait sur production réelle avec ERROR 42703
+--   (column "statut" does not exist) sur sycapay_transactions et
+--   subscriptions. Analyse exhaustive menée :
+--
+--   CAUSES IDENTIFIÉES (v3 → v4) :
+--   1. sycapay_transactions.statut : B.10 ajoutait statut_traitement
+--      et status (anglais) mais PAS statut (français) — or l'index
+--      idx_sycapay_statut en Section C référençait statut. Corrigé.
+--   2. subscriptions.statut : B.7 ajoutait date_debut/date_fin/stripe_id
+--      mais PAS statut — or l'index idx_subscriptions_statut le
+--      référençait. Corrigé.
+--   3. audit.quand, scores_historique.quand, journal_audit.quand :
+--      colonnes absentes des très anciens schémas prod ; ajoutées
+--      en Section B (safe avec DEFAULT NOW()).
+--
+--   ANALYSE SYSTÉMATIQUE (Section C vs Section B) :
+--   ┌─────────────────────────────────────┬────────────────────┬──────┐
+--   │ Table                               │ Colonne indexée    │ v4   │
+--   ├─────────────────────────────────────┼────────────────────┼──────┤
+--   │ tontines                            │ status             │  ✓   │
+--   │ subscriptions                       │ statut             │ FIX  │
+--   │ sycapay_transactions                │ statut             │ FIX  │
+--   │ prets_pending                       │ statut             │  ✓   │
+--   │ decaissements_pending               │ statut             │  ✓   │
+--   │ depenses_pending                    │ statut             │  ✓   │
+--   │ premium_requests                    │ statut             │  ✓   │
+--   │ kyc_submissions                     │ statut             │  ✓   │
+--   │ support_tickets                     │ statut             │  ✓   │
+--   │ audit                               │ quand              │ FIX  │
+--   │ scores_historique                   │ quand              │ FIX  │
+--   │ journal_audit                       │ quand              │ FIX  │
+--   └─────────────────────────────────────┴────────────────────┴──────┘
 --
 -- GARANTIE DE NON-DESTRUCTION :
 --   ✅ Aucun DROP TABLE / TRUNCATE / DELETE FROM
@@ -27,23 +56,8 @@
 --   ✅ CREATE INDEX         uniquement IF NOT EXISTS
 --   ✅ DROP TRIGGER IF EXISTS avant recréation (safe)
 --   ✅ DROP POLICY IF EXISTS avant recréation (métadonnées seules)
---   ✅ Rejouer n fois       → résultat identique
---
--- POURQUOI v3 CORRIGE v2 :
---   v2 échouait sur production avec ERROR 42703 (column "code" does not exist)
---   car la table sycapay_transactions existait avec un ANCIEN schéma à ~10
---   colonnes. CREATE TABLE IF NOT EXISTS était no-op, mais la Section B
---   ne couvrait que les colonnes v2 (internal_reference, idempotency_key…)
---   en supposant que code/membre_nom/devise/metadata/created_at/updated_at
---   étaient déjà présents. Ce n'est pas le cas sur la base de production.
---
---   v3 ajoute en Section B les ADD COLUMN IF NOT EXISTS pour TOUTES les
---   colonnes potentiellement absentes, en utilisant les vrais noms de
---   colonnes découverts par audit de la base de production réelle.
---
--- DONNÉES CONSERVÉES : utilisateurs, tontines, cotisations, prêts,
---   abonnements, votes, scores, KYC, tickets support, transactions,
---   tokens FCM — rien n'est effacé ni modifié.
+--   ✅ Rejouer n fois       → résultat identique (idempotent)
+--   ✅ Transactionnel       → BEGIN/COMMIT — rollback automatique si erreur
 --
 -- COMMENT UTILISER CE FICHIER :
 --   Étape 1 — Schéma :
@@ -52,8 +66,133 @@
 --     Supabase SQL Editor → New query → Coller init_inline.sql → Run
 --   (ou psql -f upgrade.sql && psql -f init_inline.sql)
 --
--- VERSION : migrations 001→011 — 2025-07-17  (v3)
+-- VERSION : migrations 001→011 — 2025-07-17  (v4)
 -- ============================================================
+
+BEGIN;
+
+-- ============================================================
+-- BLOC 0 : DIAGNOSTIC PRÉ-VOL
+-- ============================================================
+-- Ce bloc PL/pgSQL inspecte information_schema.columns AVANT
+-- tout DDL. Pour chaque colonne référencée dans Section C
+-- (index) ou Section E (RLS) qui serait encore absente malgré
+-- la Section A (CREATE TABLE IF NOT EXISTS), il émet un RAISE
+-- NOTICE décrivant précisément la table et la colonne manquantes.
+--
+-- ▶ RAISE NOTICE (pas EXCEPTION) : le script continue mais
+--   l'opérateur voit exactement ce qui manque avant l'erreur.
+-- ▶ Les colonnes critiques (celles dont l'absence ferait échouer
+--   Section C ou E) sont listées exhaustivement.
+-- ▶ Ce bloc ne corrige rien — la correction est en Section B.
+-- ============================================================
+DO $$
+DECLARE
+  rec          RECORD;
+  missing_any  BOOLEAN := FALSE;
+BEGIN
+  -- Liste exhaustive de toutes les colonnes référencées dans
+  -- Section C (CREATE INDEX) et potentiellement absentes sur
+  -- un ancien schéma de production.
+  FOR rec IN
+    SELECT t.tbl, t.col, t.ctx
+    FROM (VALUES
+      -- Section C : index sur tontines
+      ('tontines',              'code',           'idx_tontines_code'),
+      ('tontines',              'status',         'idx_tontines_status'),
+      ('tontines',              'updated_at',     'trigger trg_tontines_updated_at'),
+      -- Section C : index sur voix (table nouvelle — pas de risque)
+      -- Section C : index sur audit
+      ('audit',                 'code',           'idx_audit_code'),
+      ('audit',                 'quand',          'idx_audit_code (quand DESC)'),
+      ('audit',                 'gestionnaire',   'Section B.2'),
+      ('audit',                 'empreinte',      'Section B.2'),
+      -- Section C : index sur subscriptions
+      ('subscriptions',         'code',           'idx_subscriptions_code'),
+      ('subscriptions',         'statut',         'idx_subscriptions_statut'),  -- CRITIQUE v4
+      ('subscriptions',         'modifie_le',     'trigger trg_sub_modifie_le'),
+      -- Section C : index sur sycapay_transactions
+      ('sycapay_transactions',  'code',           'idx_sycapay_code'),
+      ('sycapay_transactions',  'statut',         'idx_sycapay_statut'),         -- CRITIQUE v4
+      ('sycapay_transactions',  'type',           'idx_sycapay_type'),
+      ('sycapay_transactions',  'internal_reference',  'idx_sycapay_txn_ref'),
+      ('sycapay_transactions',  'idempotency_key',     'idx_sycapay_txn_idempotency'),
+      ('sycapay_transactions',  'membre_id',      'idx_sycapay_txn_membre'),
+      ('sycapay_transactions',  'provider_transaction_id', 'idx_sycapay_txn_provider'),
+      -- Section C : index sur prets_pending
+      ('prets_pending',         'code',           'idx_prets_code'),
+      ('prets_pending',         'statut',         'idx_prets_statut'),
+      -- Section C : index sur decaissements_pending
+      ('decaissements_pending', 'code',           'idx_decaiss_code'),
+      ('decaissements_pending', 'statut',         'idx_decaiss_statut'),
+      -- Section C : index sur depenses_pending
+      ('depenses_pending',      'code',           'idx_depenses_code'),
+      ('depenses_pending',      'statut',         'idx_depenses_statut'),
+      -- Section C : index sur premium_requests
+      ('premium_requests',      'code',           'idx_premium_req_code'),
+      ('premium_requests',      'statut',         'idx_premium_req_statut'),
+      -- Section C : index sur kyc_submissions
+      ('kyc_submissions',       'code',           'idx_kyc_code'),
+      ('kyc_submissions',       'statut',         'idx_kyc_statut'),
+      -- Section C : index sur scores_historique
+      ('scores_historique',     'code',           'idx_scores_hist_code_membre'),
+      ('scores_historique',     'membre_id',      'idx_scores_hist_code_membre'),
+      ('scores_historique',     'quand',          'idx_scores_hist_code_quand'),  -- CRITIQUE v4
+      -- Section C : index sur journal_audit
+      ('journal_audit',         'code',           'idx_journal_audit_code'),
+      ('journal_audit',         'quand',          'idx_journal_audit_code (quand DESC)'), -- CRITIQUE v4
+      -- Section C : index sur fcm_tokens
+      ('fcm_tokens',            'tontine',        'idx_fcm_tontine'),
+      ('fcm_tokens',            'token',          'fcm_tokens_token_key'),
+      -- Section C : index sur rappels_envoyes
+      ('rappels_envoyes',       'code',           'idx_rappels_code'),
+      -- Section C : index sur admin_membres
+      ('admin_membres',         'pseudo',         'idx_admin_membres_pseudo'),
+      ('admin_membres',         'role',           'idx_admin_membres_role'),
+      -- Section C : index sur admin_messages
+      ('admin_messages',        'destinataire',   'idx_admin_msg_dest'),
+      ('admin_messages',        'expediteur',     'idx_admin_msg_exp'),
+      ('admin_messages',        'envoye_le',      'idx_admin_msg_date'),
+      -- Section C : index sur support_tickets
+      ('support_tickets',       'statut',         'idx_support_tickets_statut'),
+      ('support_tickets',       'gestionnaire',   'idx_support_tickets_gestionnaire'),
+      ('support_tickets',       'ref',            'idx_support_tickets_ref'),
+      ('support_tickets',       'cree_le',        'idx_support_tickets_cree_le'),
+      -- Section C : index sur support_messages
+      ('support_messages',      'ticket_id',      'idx_support_msg_ticket'),
+      ('support_messages',      'envoye_le',      'idx_support_msg_date')
+    ) AS t(tbl, col, ctx)
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM   information_schema.columns c
+      WHERE  c.table_schema = 'public'
+        AND  c.table_name   = t.tbl
+        AND  c.column_name  = t.col
+    )
+    -- Ignorer les tables qui n'existent pas encore (elles seront créées en Section A)
+    AND EXISTS (
+      SELECT 1
+      FROM   information_schema.tables tb
+      WHERE  tb.table_schema = 'public'
+        AND  tb.table_name   = t.tbl
+    )
+    ORDER BY t.tbl, t.col
+  LOOP
+    RAISE NOTICE
+      'DIAGNOSTIC v4 — COLONNE MANQUANTE: table "%" colonne "%" (utilisée par: %)',
+      rec.tbl, rec.col, rec.ctx;
+    missing_any := TRUE;
+  END LOOP;
+
+  IF missing_any THEN
+    RAISE NOTICE
+      'DIAGNOSTIC v4 — Les colonnes manquantes ci-dessus seront ajoutées par Section B ci-dessous.';
+  ELSE
+    RAISE NOTICE
+      'DIAGNOSTIC v4 — Aucune colonne critique manquante détectée (schéma déjà à jour ou tables nouvelles).';
+  END IF;
+END;
+$$;
 
 
 -- ============================================================
@@ -92,7 +231,6 @@ CREATE TABLE IF NOT EXISTS tontines (
 -- ─────────────────────────────────────────────────────────────
 -- A.2 — audit
 -- Schéma réel prod : id, code, gestionnaire, empreinte, quand
--- (upgrade v2 avait "action TEXT, data JSONB" — incorrect)
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS audit (
   id           BIGSERIAL   PRIMARY KEY,
@@ -122,7 +260,8 @@ CREATE TABLE IF NOT EXISTS demandes_premium (
 -- ─────────────────────────────────────────────────────────────
 -- A.4 — config / app_config / admin_config
 -- Schéma réel prod : UNIQUEMENT cle (TEXT PK) + valeur (TEXT)
--- SANS colonne id (upgrade v2 avait BIGSERIAL PRIMARY KEY — incorrect)
+-- SANS colonne id (les anciennes bases prod ont BIGSERIAL id —
+-- CREATE TABLE IF NOT EXISTS sera no-op, l'ancien schéma est préservé)
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS config (
   cle    TEXT PRIMARY KEY,
@@ -158,7 +297,6 @@ CREATE TABLE IF NOT EXISTS voix (
 -- A.6 — scores_historique
 -- Schéma réel prod : id, code, membre_id, score, score_prec,
 --   evenement, description, gestionnaire, quand
--- (upgrade v2 avait type/delta/raison — incorrect)
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS scores_historique (
   id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -174,9 +312,6 @@ CREATE TABLE IF NOT EXISTS scores_historique (
 
 -- ─────────────────────────────────────────────────────────────
 -- A.7 — propositions_retrait
--- Schéma réel prod : id, code, membre_id, membre_nom,
---   score_moment, motif, propose_par, vote_id, quorum, majorite,
---   statut, quand, clos_le, resultat_oui, resultat_non, resultat_abs
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS propositions_retrait (
   id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -202,7 +337,6 @@ CREATE TABLE IF NOT EXISTS propositions_retrait (
 -- A.8 — journal_audit
 -- Schéma réel prod : id, code, gestionnaire, action, detail,
 --   membre_id, ancien_val, nouveau_val, quand
--- (upgrade v2 avait acteur/details — incorrect)
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS journal_audit (
   id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -220,7 +354,6 @@ CREATE TABLE IF NOT EXISTS journal_audit (
 -- A.9 — subscriptions
 -- Schéma réel prod : id, code, plan, statut, date_debut,
 --   date_fin, stripe_id, modifie_le
--- (upgrade v2 avait debut/fin — incorrect ; vrais noms : date_debut/date_fin)
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS subscriptions (
   id         BIGSERIAL   PRIMARY KEY,
@@ -237,8 +370,6 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 
 -- ─────────────────────────────────────────────────────────────
 -- A.10 — abonnements
--- Schéma réel prod : id, code, gestionnaire, contact, formule,
---   statut, debut, fin, montant, devise, note, cree_le
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS abonnements (
   id           BIGSERIAL     PRIMARY KEY,
@@ -259,7 +390,6 @@ CREATE TABLE IF NOT EXISTS abonnements (
 -- ─────────────────────────────────────────────────────────────
 -- A.11 — admin_actions
 -- Schéma réel prod : id, type, code, detail, admin, quand
--- (upgrade v2 avait admin_id/action/cible/details/fait_le — incorrect)
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS admin_actions (
   id     BIGSERIAL   PRIMARY KEY,
@@ -272,9 +402,8 @@ CREATE TABLE IF NOT EXISTS admin_actions (
 
 -- ─────────────────────────────────────────────────────────────
 -- A.12 — sycapay_transactions
--- Schéma réel prod (ancien) : ~10 colonnes seulement.
--- On déclare ici le schéma complet v2.
--- La Section B gère les ADD COLUMN IF NOT EXISTS pour la prod.
+-- Schéma complet v2 — la Section B gère les ADD COLUMN IF NOT EXISTS
+-- pour la prod (qui peut avoir un très ancien schéma ~7 colonnes).
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS sycapay_transactions (
   id                   BIGSERIAL     PRIMARY KEY,
@@ -314,9 +443,6 @@ CREATE TABLE IF NOT EXISTS sycapay_transactions (
 
 -- ─────────────────────────────────────────────────────────────
 -- A.13 — prets_pending
--- Schéma réel prod : id, code, membre_id, membre_nom, montant,
---   montant_net, taux_interet, duree_mois, devise, motif, statut,
---   motif_rejet, gestionnaire, cree_le, traite_le
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS prets_pending (
   id             BIGSERIAL     PRIMARY KEY,
@@ -339,8 +465,6 @@ CREATE TABLE IF NOT EXISTS prets_pending (
 
 -- ─────────────────────────────────────────────────────────────
 -- A.14 — decaissements_pending
--- Schéma réel prod : id, code, beneficiaire, montant, devise,
---   motif, statut, motif_rejet, gestionnaire, cree_le, traite_le
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS decaissements_pending (
   id           BIGSERIAL     PRIMARY KEY,
@@ -359,8 +483,6 @@ CREATE TABLE IF NOT EXISTS decaissements_pending (
 
 -- ─────────────────────────────────────────────────────────────
 -- A.15 — depenses_pending
--- Schéma réel prod : id, code, libelle, montant, devise,
---   categorie, statut, motif_rejet, gestionnaire, cree_le, traite_le
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS depenses_pending (
   id           BIGSERIAL     PRIMARY KEY,
@@ -379,8 +501,6 @@ CREATE TABLE IF NOT EXISTS depenses_pending (
 
 -- ─────────────────────────────────────────────────────────────
 -- A.16 — premium_requests
--- Schéma réel prod : id, code, gestionnaire, nom, contact,
---   formule, statut, cree_le, mis_a_jour
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS premium_requests (
   id           BIGSERIAL   PRIMARY KEY,
@@ -397,10 +517,6 @@ CREATE TABLE IF NOT EXISTS premium_requests (
 
 -- ─────────────────────────────────────────────────────────────
 -- A.17 — kyc_submissions
--- Schéma réel prod : id, code, gestionnaire, nom_complet,
---   type_piece, numero_piece, photo_recto_url, photo_verso_url,
---   photo_selfie_url, statut, motif_rejet, note_admin,
---   soumis_le, traite_le
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.kyc_submissions (
   id               BIGSERIAL   PRIMARY KEY,
@@ -425,7 +541,6 @@ CREATE TABLE IF NOT EXISTS public.kyc_submissions (
 -- A.18 — fcm_tokens
 -- Schéma réel prod : id, token, tontine, membre_id, platform,
 --   cree_le, mis_a_jour, langue
--- (upgrade v2 avait appareil — incorrect ; vrai nom : platform)
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.fcm_tokens (
   id         BIGSERIAL   PRIMARY KEY,
@@ -454,7 +569,6 @@ CREATE TABLE IF NOT EXISTS rappels_envoyes (
 -- A.20 — admin_membres
 -- Schéma réel prod : id, nom, pseudo, cle_hash, role, actif,
 --   cree_par, cree_le, derniere_connexion
--- (upgrade v2 avait cle_perso — incorrect ; vrai nom : cle_hash)
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS admin_membres (
   id                 BIGSERIAL   PRIMARY KEY,
@@ -473,7 +587,6 @@ CREATE TABLE IF NOT EXISTS admin_membres (
 -- A.21 — admin_messages
 -- Schéma réel prod : id, expediteur, destinataire, sujet, corps,
 --   lu, lu_le, envoye_le
--- (upgrade v2 avait contenu — incorrect ; vrais noms : sujet + corps)
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS admin_messages (
   id           BIGSERIAL   PRIMARY KEY,
@@ -488,9 +601,6 @@ CREATE TABLE IF NOT EXISTS admin_messages (
 
 -- ─────────────────────────────────────────────────────────────
 -- A.22 — support_tickets
--- Schéma réel prod : id, ref, gestionnaire, code_tontine,
---   categorie, sujet, description, statut, priorite, assigne_a,
---   cree_le, mis_a_jour, resolu_le
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS support_tickets (
   id           BIGSERIAL   PRIMARY KEY,
@@ -513,8 +623,6 @@ CREATE TABLE IF NOT EXISTS support_tickets (
 
 -- ─────────────────────────────────────────────────────────────
 -- A.23 — support_messages
--- Schéma réel prod : id, ticket_id, auteur, est_admin, corps,
---   lu_client, lu_admin, envoye_le
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS support_messages (
   id        BIGSERIAL   PRIMARY KEY,
@@ -534,11 +642,17 @@ CREATE TABLE IF NOT EXISTS support_messages (
 -- RÈGLE CRITIQUE : cette section couvre TOUTES les colonnes
 -- potentiellement absentes sur une base de production avec
 -- un ancien schéma, y compris les colonnes "de base" qui
--- n'étaient pas encore ajoutées via ALTER TABLE dans les
--- versions précédentes de ce script.
+-- n'étaient pas encore ajoutées.
 --
 -- ORDRE OBLIGATOIRE : Section B doit précéder Section C
 -- (les index référencent des colonnes qui doivent exister).
+--
+-- CORRECTIONS v4 (par rapport à v3) :
+--   B.2  — audit         : + quand (absent si très ancien schéma)
+--   B.4  — scores_hist   : + quand (absent si très ancien schéma)
+--   B.6  — journal_audit : + quand (absent si très ancien schéma)
+--   B.7  — subscriptions : + statut ← CORRECTION PRINCIPALE v4
+--   B.10 — sycapay       : + statut ← CORRECTION PRINCIPALE v4
 --
 -- Règle stricte : toute colonne NOT NULL a un DEFAULT.
 -- → Aucun risque sur les lignes existantes.
@@ -563,65 +677,82 @@ ALTER TABLE tontines ADD COLUMN IF NOT EXISTS created_at             TIMESTAMPTZ
 
 -- ─────────────────────────────────────────────────────────────
 -- B.2 — audit : colonnes réelles prod
--- (l'ancienne version avait peut-être action/data au lieu de gestionnaire/empreinte)
+-- CORRECTION v4 : ajout de quand (absent si très ancien schéma
+-- où audit avait seulement id, code, action, data)
 -- ─────────────────────────────────────────────────────────────
-ALTER TABLE audit ADD COLUMN IF NOT EXISTS gestionnaire TEXT NOT NULL DEFAULT '';
-ALTER TABLE audit ADD COLUMN IF NOT EXISTS empreinte    TEXT NOT NULL DEFAULT '';
+ALTER TABLE audit ADD COLUMN IF NOT EXISTS gestionnaire TEXT        NOT NULL DEFAULT '';
+ALTER TABLE audit ADD COLUMN IF NOT EXISTS empreinte    TEXT        NOT NULL DEFAULT '';
+ALTER TABLE audit ADD COLUMN IF NOT EXISTS quand        TIMESTAMPTZ NOT NULL DEFAULT NOW();
+-- Note : code est une colonne fondatrice (présente dans tous les schémas).
+--        Si absent (cas extrême), la contrainte NOT NULL en empêcherait
+--        l'ajout silencieux — laisser la colonne telle quelle.
 
 -- ─────────────────────────────────────────────────────────────
 -- B.3 — demandes_premium : colonnes réelles prod
 -- ─────────────────────────────────────────────────────────────
-ALTER TABLE demandes_premium ADD COLUMN IF NOT EXISTS gestionnaire TEXT;
+ALTER TABLE demandes_premium ADD COLUMN IF NOT EXISTS gestionnaire TEXT        NOT NULL DEFAULT '';
 ALTER TABLE demandes_premium ADD COLUMN IF NOT EXISTS nom          TEXT;
 ALTER TABLE demandes_premium ADD COLUMN IF NOT EXISTS contact      TEXT;
-ALTER TABLE demandes_premium ADD COLUMN IF NOT EXISTS formule      TEXT NOT NULL DEFAULT 'mensuel';
-ALTER TABLE demandes_premium ADD COLUMN IF NOT EXISTS statut       TEXT NOT NULL DEFAULT 'en_attente';
+ALTER TABLE demandes_premium ADD COLUMN IF NOT EXISTS formule      TEXT        NOT NULL DEFAULT 'mensuel';
+ALTER TABLE demandes_premium ADD COLUMN IF NOT EXISTS statut       TEXT        NOT NULL DEFAULT 'en_attente';
 ALTER TABLE demandes_premium ADD COLUMN IF NOT EXISTS quand        TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 -- ─────────────────────────────────────────────────────────────
 -- B.4 — scores_historique : colonnes réelles prod
--- (l'ancienne version avait type/delta/raison — incorrects)
+-- CORRECTION v4 : ajout de quand (absent si très ancien schéma
+-- avec type/delta/raison seulement)
 -- ─────────────────────────────────────────────────────────────
-ALTER TABLE scores_historique ADD COLUMN IF NOT EXISTS score        INT  NOT NULL DEFAULT 0;
-ALTER TABLE scores_historique ADD COLUMN IF NOT EXISTS score_prec   INT  NOT NULL DEFAULT 0;
-ALTER TABLE scores_historique ADD COLUMN IF NOT EXISTS evenement    TEXT NOT NULL DEFAULT '';
-ALTER TABLE scores_historique ADD COLUMN IF NOT EXISTS description  TEXT NOT NULL DEFAULT '';
+ALTER TABLE scores_historique ADD COLUMN IF NOT EXISTS score        INT         NOT NULL DEFAULT 0;
+ALTER TABLE scores_historique ADD COLUMN IF NOT EXISTS score_prec   INT         NOT NULL DEFAULT 0;
+ALTER TABLE scores_historique ADD COLUMN IF NOT EXISTS evenement    TEXT        NOT NULL DEFAULT '';
+ALTER TABLE scores_historique ADD COLUMN IF NOT EXISTS description  TEXT        NOT NULL DEFAULT '';
 ALTER TABLE scores_historique ADD COLUMN IF NOT EXISTS gestionnaire TEXT;
+ALTER TABLE scores_historique ADD COLUMN IF NOT EXISTS quand        TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 -- ─────────────────────────────────────────────────────────────
 -- B.5 — propositions_retrait : colonnes réelles prod
 -- ─────────────────────────────────────────────────────────────
-ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS membre_nom   TEXT NOT NULL DEFAULT '';
-ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS score_moment INT  NOT NULL DEFAULT 0;
-ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS propose_par  TEXT NOT NULL DEFAULT '';
+ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS membre_nom   TEXT        NOT NULL DEFAULT '';
+ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS score_moment INT         NOT NULL DEFAULT 0;
+ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS motif        TEXT        NOT NULL DEFAULT '';
+ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS propose_par  TEXT        NOT NULL DEFAULT '';
 ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS vote_id      TEXT;
-ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS quorum       INT  NOT NULL DEFAULT 50;
-ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS majorite     INT  NOT NULL DEFAULT 67;
+ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS quorum       INT         NOT NULL DEFAULT 50;
+ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS majorite     INT         NOT NULL DEFAULT 67;
+ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS statut       TEXT        NOT NULL DEFAULT 'en_attente';
+ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS quand        TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS clos_le      TIMESTAMPTZ;
-ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS resultat_oui INT  DEFAULT 0;
-ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS resultat_non INT  DEFAULT 0;
-ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS resultat_abs INT  DEFAULT 0;
+ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS resultat_oui INT         DEFAULT 0;
+ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS resultat_non INT         DEFAULT 0;
+ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS resultat_abs INT         DEFAULT 0;
 
 -- ─────────────────────────────────────────────────────────────
 -- B.6 — journal_audit : colonnes réelles prod
--- (l'ancienne version avait acteur/details — incorrects)
+-- CORRECTION v4 : ajout de quand (absent si très ancien schéma
+-- avec acteur/action/details seulement, sans quand)
 -- ─────────────────────────────────────────────────────────────
-ALTER TABLE journal_audit ADD COLUMN IF NOT EXISTS gestionnaire TEXT NOT NULL DEFAULT '';
-ALTER TABLE journal_audit ADD COLUMN IF NOT EXISTS action       TEXT NOT NULL DEFAULT '';
+ALTER TABLE journal_audit ADD COLUMN IF NOT EXISTS gestionnaire TEXT        NOT NULL DEFAULT '';
+ALTER TABLE journal_audit ADD COLUMN IF NOT EXISTS action       TEXT        NOT NULL DEFAULT '';
 ALTER TABLE journal_audit ADD COLUMN IF NOT EXISTS detail       TEXT;
 ALTER TABLE journal_audit ADD COLUMN IF NOT EXISTS membre_id    TEXT;
 ALTER TABLE journal_audit ADD COLUMN IF NOT EXISTS ancien_val   TEXT;
 ALTER TABLE journal_audit ADD COLUMN IF NOT EXISTS nouveau_val  TEXT;
+ALTER TABLE journal_audit ADD COLUMN IF NOT EXISTS quand        TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 -- ─────────────────────────────────────────────────────────────
 -- B.7 — subscriptions : colonnes réelles prod
--- (l'ancienne version avait debut/fin — incorrects)
--- vrais noms : date_debut / date_fin / stripe_id
+-- ▶▶ CORRECTION PRINCIPALE v4 ◀◀
+-- v3 ajoutait date_debut/date_fin/stripe_id/modifie_le
+-- mais OUBLIAIT statut — or idx_subscriptions_statut en Section C
+-- référence subscriptions.statut → ERROR 42703 sur prod réelle.
+-- Le schéma prod originel avait : id, code, plan, debut, fin, stripe_id
+-- (sans statut, sans date_debut, sans date_fin, sans modifie_le)
 -- ─────────────────────────────────────────────────────────────
-ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS date_debut TIMESTAMPTZ NOT NULL DEFAULT NOW();
-ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS date_fin   TIMESTAMPTZ;
-ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS stripe_id  TEXT;
-ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS modifie_le TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS statut      TEXT        NOT NULL DEFAULT 'actif';
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS date_debut  TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS date_fin    TIMESTAMPTZ;
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS stripe_id   TEXT;
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS modifie_le  TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 -- ─────────────────────────────────────────────────────────────
 -- B.8 — abonnements : colonnes réelles prod
@@ -629,6 +760,7 @@ ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS modifie_le TIMESTAMPTZ NOT NU
 ALTER TABLE abonnements ADD COLUMN IF NOT EXISTS gestionnaire TEXT;
 ALTER TABLE abonnements ADD COLUMN IF NOT EXISTS contact      TEXT;
 ALTER TABLE abonnements ADD COLUMN IF NOT EXISTS formule      TEXT          NOT NULL DEFAULT 'mensuel';
+ALTER TABLE abonnements ADD COLUMN IF NOT EXISTS statut       TEXT          NOT NULL DEFAULT 'actif';
 ALTER TABLE abonnements ADD COLUMN IF NOT EXISTS debut        TIMESTAMPTZ   NOT NULL DEFAULT NOW();
 ALTER TABLE abonnements ADD COLUMN IF NOT EXISTS fin          TIMESTAMPTZ;
 ALTER TABLE abonnements ADD COLUMN IF NOT EXISTS montant      NUMERIC(12,2) DEFAULT 0;
@@ -638,7 +770,7 @@ ALTER TABLE abonnements ADD COLUMN IF NOT EXISTS cree_le      TIMESTAMPTZ   NOT 
 
 -- ─────────────────────────────────────────────────────────────
 -- B.9 — admin_actions : colonnes réelles prod
--- (l'ancienne version avait admin_id/action/cible/details/fait_le — incorrect)
+-- (l'ancienne version avait admin_id/action/cible/details/fait_le)
 -- vrais noms : type, code, detail, admin, quand
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE admin_actions ADD COLUMN IF NOT EXISTS type   TEXT        NOT NULL DEFAULT '';
@@ -649,34 +781,37 @@ ALTER TABLE admin_actions ADD COLUMN IF NOT EXISTS quand  TIMESTAMPTZ NOT NULL D
 
 -- ─────────────────────────────────────────────────────────────
 -- B.10 — sycapay_transactions : TOUTES les colonnes potentiellement
--- absentes sur une production avec l'ancien schéma ~10 colonnes.
+-- absentes sur une production avec l'ancien schéma ~7 colonnes.
 --
--- COLONNE PAR COLONNE :
---   code             → colonne qui causait ERROR 42703 en prod
---   membre_nom       → absente dans ancien schéma
---   devise           → absente dans ancien schéma
---   numero_telephone → absente dans ancien schéma
---   gestionnaire     → absente dans ancien schéma
---   metadata         → absente dans ancien schéma
---   created_at       → absente dans ancien schéma (alias de cree_le)
---   updated_at       → absente dans ancien schéma
---   + toutes les colonnes v2 (internal_reference, idempotency_key, etc.)
+-- ▶▶ CORRECTION PRINCIPALE v4 ◀◀
+-- v3 ajoutait statut_traitement (traitement interne) et status (anglais)
+-- mais OUBLIAIT statut (français) — or idx_sycapay_statut en Section C
+-- référence sycapay_transactions.statut → ERROR 42703 sur prod réelle.
+--
+-- L'ancien schéma prod avait approximativement :
+--   id, type, membre_id, montant, sycapay_ref, status, created_at
+-- (7-10 colonnes, SANS statut en français, SANS code, etc.)
+--
+-- ORDRE DANS CE BLOC : statut EN PREMIER pour garantir sa présence
+-- avant tout autre traitement.
 -- ─────────────────────────────────────────────────────────────
 
+-- ▶ statut (français) — CORRECTION PRINCIPALE — doit être en premier
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS statut               TEXT          NOT NULL DEFAULT 'pending';
+
 -- Colonnes de base potentiellement absentes (ancien schéma prod)
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS code             TEXT          NOT NULL DEFAULT '';
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS membre_nom       TEXT;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS devise           TEXT          NOT NULL DEFAULT 'XOF';
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS numero_telephone TEXT;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS gestionnaire     TEXT;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS metadata         JSONB         DEFAULT '{}';
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS created_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW();
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS updated_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW();
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS code                 TEXT          NOT NULL DEFAULT '';
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS membre_nom           TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS devise               TEXT          NOT NULL DEFAULT 'XOF';
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS numero_telephone     TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS gestionnaire         TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS metadata             JSONB         DEFAULT '{}';
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS updated_at           TIMESTAMPTZ   NOT NULL DEFAULT NOW();
 
 -- Colonnes v2 : idempotence et suivi avancé
 ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS internal_reference      TEXT UNIQUE;
 ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS idempotency_key         TEXT UNIQUE;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS statut_traitement       TEXT NOT NULL DEFAULT 'non_traite';
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS statut_traitement       TEXT        NOT NULL DEFAULT 'non_traite';
 ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS user_id                 TEXT;
 ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS tontine_code            TEXT;
 ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS type_operation          TEXT;
@@ -685,14 +820,14 @@ ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS emprunteur_id         
 ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS provider_transaction_id TEXT;
 ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS sycapay_reference       TEXT;
 
--- Colonnes convention SycaPay API
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS amount             INTEGER DEFAULT 0;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS currency           TEXT;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS operator           TEXT;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS phone_number_masked TEXT;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS description        TEXT;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS status             TEXT    DEFAULT 'pending';
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS polling_attempts   INTEGER DEFAULT 0;
+-- Colonnes convention SycaPay API (anglais)
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS amount               INTEGER       DEFAULT 0;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS currency             TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS operator             TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS phone_number_masked  TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS description          TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS status               TEXT          DEFAULT 'pending';
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS polling_attempts     INTEGER       DEFAULT 0;
 
 -- ─────────────────────────────────────────────────────────────
 -- B.11 — prets_pending : colonnes réelles prod
@@ -719,7 +854,6 @@ ALTER TABLE decaissements_pending ADD COLUMN IF NOT EXISTS motif        TEXT;
 ALTER TABLE decaissements_pending ADD COLUMN IF NOT EXISTS statut       TEXT          NOT NULL DEFAULT 'pending';
 ALTER TABLE decaissements_pending ADD COLUMN IF NOT EXISTS motif_rejet  TEXT;
 ALTER TABLE decaissements_pending ADD COLUMN IF NOT EXISTS gestionnaire TEXT;
-ALTER TABLE decaissements_pending ADD COLUMN IF NOT EXISTS cree_le      TIMESTAMPTZ   NOT NULL DEFAULT NOW();
 ALTER TABLE decaissements_pending ADD COLUMN IF NOT EXISTS traite_le    TIMESTAMPTZ;
 
 -- ─────────────────────────────────────────────────────────────
@@ -731,7 +865,6 @@ ALTER TABLE depenses_pending ADD COLUMN IF NOT EXISTS categorie    TEXT         
 ALTER TABLE depenses_pending ADD COLUMN IF NOT EXISTS statut       TEXT          NOT NULL DEFAULT 'pending';
 ALTER TABLE depenses_pending ADD COLUMN IF NOT EXISTS motif_rejet  TEXT;
 ALTER TABLE depenses_pending ADD COLUMN IF NOT EXISTS gestionnaire TEXT;
-ALTER TABLE depenses_pending ADD COLUMN IF NOT EXISTS cree_le      TIMESTAMPTZ   NOT NULL DEFAULT NOW();
 ALTER TABLE depenses_pending ADD COLUMN IF NOT EXISTS traite_le    TIMESTAMPTZ;
 
 -- ─────────────────────────────────────────────────────────────
@@ -763,7 +896,7 @@ ALTER TABLE public.kyc_submissions ADD COLUMN IF NOT EXISTS traite_le         TI
 
 -- ─────────────────────────────────────────────────────────────
 -- B.16 — fcm_tokens : colonnes réelles prod
--- (l'ancienne version avait appareil — incorrect ; vrai nom : platform)
+-- (l'ancienne version avait appareil — vrai nom : platform)
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE public.fcm_tokens ADD COLUMN IF NOT EXISTS tontine    TEXT;
 ALTER TABLE public.fcm_tokens ADD COLUMN IF NOT EXISTS membre_id  TEXT;
@@ -774,7 +907,7 @@ ALTER TABLE public.fcm_tokens ADD COLUMN IF NOT EXISTS langue     TEXT;
 
 -- ─────────────────────────────────────────────────────────────
 -- B.17 — admin_membres : colonnes réelles prod
--- (l'ancienne version avait cle_perso — incorrect ; vrai nom : cle_hash)
+-- (l'ancienne version avait cle_perso — vrai nom : cle_hash)
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE admin_membres ADD COLUMN IF NOT EXISTS nom                TEXT        NOT NULL DEFAULT '';
 ALTER TABLE admin_membres ADD COLUMN IF NOT EXISTS cle_hash           TEXT        NOT NULL DEFAULT '';
@@ -786,7 +919,7 @@ ALTER TABLE admin_membres ADD COLUMN IF NOT EXISTS derniere_connexion TIMESTAMPT
 
 -- ─────────────────────────────────────────────────────────────
 -- B.18 — admin_messages : colonnes réelles prod
--- (l'ancienne version avait contenu — incorrect ; vrais noms : sujet + corps)
+-- (l'ancienne version avait contenu — vrais noms : sujet + corps)
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE admin_messages ADD COLUMN IF NOT EXISTS sujet        TEXT        NOT NULL DEFAULT '';
 ALTER TABLE admin_messages ADD COLUMN IF NOT EXISTS corps        TEXT        NOT NULL DEFAULT '';
@@ -811,6 +944,7 @@ ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS resolu_le    TIMESTAMPTZ;
 
 -- ─────────────────────────────────────────────────────────────
 -- B.20 — support_messages : colonnes réelles prod
+-- (l'ancienne version avait role_auteur/contenu)
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS auteur    TEXT        NOT NULL DEFAULT '';
 ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS est_admin BOOLEAN     NOT NULL DEFAULT FALSE;
@@ -823,9 +957,22 @@ ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS envoye_le TIMESTAMPTZ NOT 
 -- ============================================================
 -- SECTION C : INDEX (no-op si déjà présents)
 -- ============================================================
--- IMPORTANT : Section C doit toujours venir APRÈS Section B.
--- Tous les index référencent des colonnes déjà garanties
--- présentes par la Section B ci-dessus.
+-- IMPORTANT : Section C vient APRÈS Section B.
+-- Chaque colonne référencée ici est garantie présente par B.
+--
+-- AUDIT COMPLET v4 (colonne → table → ajoutée en Section B) :
+--   tontines.status           → B.1  ✓
+--   subscriptions.statut      → B.7  ✓ (FIX v4)
+--   sycapay_transactions.statut → B.10 ✓ (FIX v4)
+--   prets_pending.statut      → B.11 ✓
+--   decaissements_pending.statut → B.12 ✓
+--   depenses_pending.statut   → B.13 ✓
+--   premium_requests.statut   → B.14 ✓
+--   kyc_submissions.statut    → B.15 ✓
+--   support_tickets.statut    → B.19 ✓
+--   audit.quand               → B.2  ✓ (FIX v4)
+--   scores_historique.quand   → B.4  ✓ (FIX v4)
+--   journal_audit.quand       → B.6  ✓ (FIX v4)
 -- ============================================================
 
 -- tontines
@@ -839,12 +986,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS voix_code_vote_id_membre_id_key
   ON voix(code, vote_id, membre_id);
 
 -- audit
+-- quand garanti présent par B.2 ADD COLUMN IF NOT EXISTS
 CREATE INDEX IF NOT EXISTS idx_audit_code ON audit(code, quand DESC);
 
 -- demandes_premium
 CREATE UNIQUE INDEX IF NOT EXISTS idx_demandes_premium_code ON demandes_premium(code);
 
 -- scores_historique
+-- quand garanti présent par B.4 ADD COLUMN IF NOT EXISTS
 CREATE INDEX IF NOT EXISTS idx_scores_hist_code_membre ON scores_historique(code, membre_id);
 CREATE INDEX IF NOT EXISTS idx_scores_hist_code_quand  ON scores_historique(code, quand DESC);
 
@@ -853,9 +1002,11 @@ CREATE INDEX IF NOT EXISTS idx_prop_retrait_code   ON propositions_retrait(code)
 CREATE INDEX IF NOT EXISTS idx_prop_retrait_membre ON propositions_retrait(code, membre_id);
 
 -- journal_audit
+-- quand garanti présent par B.6 ADD COLUMN IF NOT EXISTS
 CREATE INDEX IF NOT EXISTS idx_journal_audit_code ON journal_audit(code, quand DESC);
 
 -- subscriptions
+-- statut garanti présent par B.7 ADD COLUMN IF NOT EXISTS ← FIX v4
 CREATE INDEX IF NOT EXISTS idx_subscriptions_code   ON subscriptions(code);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_statut ON subscriptions(statut);
 CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_code_key ON subscriptions(code);
@@ -864,7 +1015,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_code_key ON subscriptions(code);
 CREATE INDEX IF NOT EXISTS idx_abonnements_code ON abonnements(code);
 
 -- sycapay_transactions
--- (code et statut et type garantis présents par B.10 avant ces CREATE INDEX)
+-- statut garanti présent par B.10 ADD COLUMN IF NOT EXISTS ← FIX v4
+-- (premier ADD dans B.10, explicitement libellé "CORRECTION PRINCIPALE")
 CREATE INDEX IF NOT EXISTS idx_sycapay_code   ON sycapay_transactions(code);
 CREATE INDEX IF NOT EXISTS idx_sycapay_statut ON sycapay_transactions(statut);
 CREATE INDEX IF NOT EXISTS idx_sycapay_type   ON sycapay_transactions(type);
@@ -939,8 +1091,12 @@ CREATE INDEX IF NOT EXISTS idx_support_msg_date   ON support_messages(envoye_le 
 -- ============================================================
 -- SECTION D : TRIGGERS (DROP IF EXISTS + recréation — safe)
 -- ============================================================
+-- Les colonnes updated_at (tontines) et modifie_le (subscriptions)
+-- sont garanties présentes par Section B avant ce bloc.
+-- ============================================================
 
 -- D.1 — tontines : updated_at automatique
+-- updated_at garanti par B.1
 CREATE OR REPLACE FUNCTION tontines_set_updated_at()
 RETURNS TRIGGER LANGUAGE plpgsql
 SECURITY DEFINER SET search_path = public
@@ -954,6 +1110,7 @@ CREATE TRIGGER trg_tontines_updated_at
   FOR EACH ROW EXECUTE FUNCTION tontines_set_updated_at();
 
 -- D.2 — subscriptions : modifie_le automatique
+-- modifie_le garanti par B.7
 CREATE OR REPLACE FUNCTION _sub_update_modifie_le()
 RETURNS TRIGGER LANGUAGE plpgsql
 SECURITY DEFINER SET search_path = public
@@ -1151,6 +1308,8 @@ CREATE POLICY "support_messages_service" ON support_messages
 -- (aucune destruction de données) — il est également safe à rejouer.
 -- ============================================================
 
+COMMIT;
+
 
 -- ============================================================
 -- VÉRIFICATION POST-EXÉCUTION (copier séparément après Run)
@@ -1180,6 +1339,16 @@ CREATE POLICY "support_messages_service" ON support_messages
 -- WHERE table_schema = 'public' AND table_name = 'sycapay_transactions'
 -- ORDER BY ordinal_position;
 --
+-- -- Colonnes subscriptions (attendu : 8)
+-- SELECT column_name FROM information_schema.columns
+-- WHERE table_schema = 'public' AND table_name = 'subscriptions'
+-- ORDER BY ordinal_position;
+--
+-- -- Vérifier données préservées
+-- SELECT count(*) FROM tontines;
+-- SELECT count(*) FROM sycapay_transactions;
+-- SELECT count(*) FROM subscriptions;
+--
 -- ============================================================
--- FIN upgrade.sql  v3
+-- FIN upgrade.sql  v4
 -- ============================================================
