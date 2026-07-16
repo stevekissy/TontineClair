@@ -164,6 +164,45 @@ class SycaPayService {
     }
   }
 
+  // ── Confirmer et créditer côté serveur ───────────────────────────────────
+
+  /// Demande à l'Edge Function de poller SycaPay pendant 150s CÔTÉ SERVEUR
+  /// et de créditer la caisse/cotisation automatiquement dès confirmation.
+  ///
+  /// Flutter n'a qu'à attendre la réponse (watchdog Flutter 180s).
+  /// Si l'app se ferme pendant ce temps, le webhook crédite automatiquement.
+  ///
+  /// Retourne un [SycaPayResultat] avec :
+  ///   - estSucces = true si confirmé ET crédité
+  ///   - estEnAttente = true si timeout (bouton Vérifier à afficher)
+  ///   - estEchec = true si refus définitif (solde insuf, etc.)
+  ///   - timeout = true si Edge Fn a atteint sa limite 150s
+  static Future<SycaPayResultat> confirmerEtCrediter({
+    required String numCommande,
+    required String tontineCode,
+    required String typeOperation, // 'caisse' | 'cotisation'
+    String?  transactionId,
+    int?     montant,
+    String?  operateur,
+    String?  membreId,
+    String?  description,
+  }) async {
+    final rep = await _appelerEdge({
+      'action':         'confirmer_et_crediter',
+      'numcommande':    numCommande,
+      'tontine_code':   tontineCode,
+      'type_operation': typeOperation,
+      if (transactionId != null) 'transactionId': transactionId,
+      if (montant       != null) 'montant':        montant,
+      if (operateur     != null) 'operateur':      operateur,
+      if (membreId      != null) 'membre_id':      membreId,
+      if (description   != null) 'description':    description,
+    // Timeout 170s : légèrement > 150s polling serveur, < 180s watchdog Flutter
+    }, timeout: const Duration(seconds: 170));
+
+    return _SycaPayResultatEtendu.fromJsonV4(rep, numCommande: numCommande);
+  }
+
   // ── Marquer la transaction comme créditée (anti double-crédit) ───────────
 
   /// Appelle l'Edge Function pour marquer la transaction 'credited'.
@@ -211,6 +250,8 @@ class SycaPayResultat {
   final String  statusNormalise; // 'confirmed'|'pending'|'failed'|'expired'|'unknown'
   final bool    fromCache;       // true si réponse vient de Supabase (pas SycaPay direct)
   final bool    dejaConfirme;    // true si idempotent (déjà traité)
+  final bool    _ok;             // true si confirmer_et_crediter réussi
+  final bool    _timeout;        // true si Edge Fn a timeout
 
   const SycaPayResultat({
     required this.code,
@@ -224,17 +265,26 @@ class SycaPayResultat {
     this.statusNormalise = 'unknown',
     this.fromCache       = false,
     this.dejaConfirme    = false,
-  });
+    bool ok              = false,
+    bool timeout         = false,
+  })  : _ok      = ok,
+        _timeout  = timeout;
 
   // ── Getters sémantiques ───────────────────────────────────────────────────
 
-  bool get estSucces    => statusNormalise == 'confirmed' || code == 0;
+  bool get estSucces    => (statusNormalise == 'confirmed' || code == 0) && ok;
   bool get estEnAttente => statusNormalise == 'pending'
                         || code == -200
-                        || code == -9;
+                        || code == -9
+                        || timeout;
   bool get estEchec     => statusNormalise == 'failed'
                         || (statusNormalise == 'unknown' && !estEnAttente && !estSucces);
   bool get estExpire    => statusNormalise == 'expired' || code == -8;
+
+  // true si c'est la réponse de confirmer_et_crediter avec ok:true
+  bool get ok      => _ok;
+  // true si l'Edge Function a dépassé son timeout de polling (150s)
+  bool get timeout => _timeout;
 
   // ── Constructeur depuis JSON Edge Function ────────────────────────────────
 
@@ -315,12 +365,61 @@ class SycaPayResultat {
       'SycaPayResultat(code=$code, status=$statusNormalise, ref=$numCommande, txId=$transactionId)';
 }
 
-// ── Résultat de polling complet ───────────────────────────────────────────────
+// ── Parser résultat confirmer_et_crediter ─────────────────────────────────────
+
+class _SycaPayResultatEtendu {
+  static SycaPayResultat fromJsonV4(
+    Map<String, dynamic> j, {
+    String? numCommande,
+  }) {
+    if (j['erreur'] == true) {
+      return SycaPayResultat(
+        code:            (j['code'] as num?)?.toInt() ?? -999,
+        message:         j['message'] as String? ?? 'Erreur inconnue',
+        numCommande:     numCommande,
+        erreurReseau:    true,
+        statusNormalise: 'failed',
+        ok:              false,
+        timeout:         false,
+      );
+    }
+
+    final code     = (j['code'] as num?)?.toInt() ?? -999;
+    final rawStatus = j['statusNormalise'] as String?;
+    final isOk     = j['ok'] == true || code == 0;
+    final isTimeout = j['timeout'] == true;
+    final isPending = j['pending'] == true
+                   || rawStatus == 'pending'
+                   || code == -200;
+
+    final String status;
+    if (rawStatus != null && rawStatus.isNotEmpty) {
+      status = rawStatus;
+    } else if (isOk)       { status = 'confirmed'; }
+    else if (isPending)    { status = 'pending'; }
+    else if (code == -8)   { status = 'expired'; }
+    else                   { status = 'failed'; }
+
+    return SycaPayResultat(
+      code:            code,
+      message:         j['message'] as String? ?? '',
+      transactionId:   j['transactionId'] as String?,
+      numCommande:     j['numcommande'] as String? ?? numCommande,
+      statusNormalise: status,
+      fromCache:       j['fromCache']  == true || j['fromWebhook'] == true,
+      dejaConfirme:    j['idempotent'] == true,
+      ok:              isOk,
+      timeout:         isTimeout,
+    );
+  }
+}
+
+// ── Résultat de polling complet (enum conservé pour compatibilité) ─────────────
 
 enum PollingStatus {
-  confirmed,  // paiement confirmé → créditer
-  failed,     // paiement échoué → afficher erreur
-  expired,    // délai de polling dépassé → proposer vérification manuelle
-  timeout,    // watchdog déclenché (60s sans réponse de l'Edge Function)
+  confirmed,  // paiement confirmé → crédité côté serveur
+  failed,     // paiement échoué définitivement
+  expired,    // session expirée
+  timeout,    // watchdog déclenché
   cancelled,  // annulé par l'utilisateur
 }

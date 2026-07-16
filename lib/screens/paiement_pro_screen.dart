@@ -13,13 +13,14 @@ import '../utils/formatters.dart';
 
 /// Écran de paiement Mobile Money pour une cotisation Premium.
 ///
-/// Workflow robuste (identique à PaiementCaisseProScreen) :
-///   1. Génère numCommande unique (référence pivot) — jamais réutilisée
-///   2. Edge Function : login + checkoutpay + persistance Supabase
-///   3. Succès immédiat (Orange OTP) → crédit direct
-///   4. Pending → polling GetStatus/5s + webhook SycaPay en parallèle
-///   5. Confirmation → ecrireTontineSansPIN → marquerCredite (anti double)
-///   6. Timeout → bouton "Vérifier le paiement" (jamais de loader infini)
+/// Workflow v4 — CRÉDIT SERVEUR-SIDE (identique à PaiementCaisseProScreen) :
+///   1.  Génère numCommande unique (TC_...)
+///   2.  [payer]                 : Edge Fn → login + checkoutpay + pending Supabase
+///   3.  [confirmer_et_crediter] : Edge Fn polle SycaPay 150s côté SERVEUR
+///       → dès confirmation, crédite la cotisation via crediter_cotisation_sycapay
+///   4.  Flutter affiche « Paiement reçu avec succès. »
+///   5.  Watchdog 180s côté Flutter
+///   6.  « Vérifier mon paiement » disponible après timeout
 class PaiementProScreen extends StatefulWidget {
   final String code;
   final Membre membre;
@@ -37,31 +38,26 @@ class PaiementProScreen extends StatefulWidget {
 class _PaiementProScreenState extends State<PaiementProScreen> {
   static const _couleurPro = Color(0xFF1A6B3C);
 
-  // ── État ──────────────────────────────────────────────────────────────────
   String _operateur = 'moov';
   final _telCtrl    = TextEditingController();
   final _otpCtrl    = TextEditingController();
 
   _Etape  _etape                    = _Etape.saisie;
-  String? _numCommande;              // référence pivot TC_...
+  String? _numCommande;
   String? _transactionId;
   String? _messageErreur;
   String? _messageInfo;
   bool    _peutVerifierManuellement = false;
-  int     _pollingSecondes          = 0;
-  Timer?  _pollingTimer;
+  bool    _enTraitement             = false;
   Timer?  _watchdogTimer;
 
   @override
   void dispose() {
     _telCtrl.dispose();
     _otpCtrl.dispose();
-    _pollingTimer?.cancel();
     _watchdogTimer?.cancel();
     super.dispose();
   }
-
-  // ── Validation ────────────────────────────────────────────────────────────
 
   bool get _saisieValide {
     final tel = _telCtrl.text.trim();
@@ -73,17 +69,14 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
   // ── Initier le paiement ───────────────────────────────────────────────────
 
   Future<void> _initierPaiement() async {
-    if (!_saisieValide) return;
+    if (!_saisieValide || _enTraitement) return;
+    _enTraitement = true;
 
     final provider = context.read<TontineProvider>();
     final data     = provider.courante!.data;
     final montant  = data.montant;
 
-    // Générer la référence pivot (safe suffix = id membre alphanumerique)
-    final numCmd = SycaPayService.genererNumCommande(
-      widget.code,
-      widget.membre.id,
-    );
+    final numCmd = SycaPayService.genererNumCommande(widget.code, widget.membre.id);
     _numCommande = numCmd;
 
     setState(() {
@@ -93,24 +86,23 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
       _peutVerifierManuellement = false;
     });
 
-    // ── Watchdog 65s anti-gel absolu ────────────────────────────────────────
+    // Watchdog Flutter 180s (Edge Fn peut prendre jusqu'à 150s)
     _watchdogTimer?.cancel();
-    _watchdogTimer = Timer(const Duration(seconds: 65), () {
+    _watchdogTimer = Timer(const Duration(seconds: 180), () {
       if (!mounted || _etape != _Etape.enCours) return;
-      if (kDebugMode) debugPrint('[PaiementPro] WATCHDOG 65s → $numCmd');
+      _enTraitement = false;
       setState(() {
         _etape                    = _Etape.saisie;
         _peutVerifierManuellement = true;
-        _messageErreur =
-            '⏱ La connexion à SycaPay prend trop de temps.\n'
-            'Réf. : $numCmd';
-        _messageInfo =
-            'Si votre argent a été débité, utilisez '
-            '"Vérifier le paiement" sans relancer.';
+        _messageErreur = '⏱ Vérification trop longue.\nRéf. : $numCmd';
+        _messageInfo   = 'Si votre argent a été débité, utilisez '
+                         '« Vérifier mon paiement ». Ne relancez pas.';
       });
     });
 
     try {
+      // Étape 1 : checkoutpay
+      if (kDebugMode) debugPrint('[PaiementPro] Étape 1 — initierPaiement $numCmd');
       final resultat = await SycaPayService.initierPaiement(
         telephone:     _telCtrl.text.trim(),
         montant:       montant,
@@ -124,31 +116,33 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
         membreId:      widget.membre.id,
       );
 
-      _watchdogTimer?.cancel();
+      if (kDebugMode) debugPrint('[PaiementPro] initierPaiement → $resultat');
       _transactionId = resultat.transactionId;
-
       if (!mounted) return;
 
-      if (kDebugMode) debugPrint('[PaiementPro] initierPaiement → $resultat');
-
-      // Idempotent : déjà traité
       if (resultat.dejaConfirme) {
+        _watchdogTimer?.cancel();
+        _enTraitement = false;
         setState(() => _etape = _Etape.enregistrement);
-        await _validerCotisation(provider, montant);
+        await _rechargerEtSucces(montant);
         return;
       }
 
       if (resultat.erreurReseau) {
+        _watchdogTimer?.cancel();
+        _enTraitement = false;
         setState(() {
           _etape                    = _Etape.saisie;
           _messageErreur            = resultat.messageFr;
           _peutVerifierManuellement = true;
-          _messageInfo = 'Si votre argent a été débité, utilisez "Vérifier le paiement".';
+          _messageInfo = 'Si votre argent a été débité, utilisez « Vérifier mon paiement ».';
         });
         return;
       }
 
-      if (resultat.estEchec) {
+      if (resultat.estEchec && !resultat.estEnAttente) {
+        _watchdogTimer?.cancel();
+        _enTraitement = false;
         setState(() {
           _etape         = _Etape.saisie;
           _messageErreur = resultat.messageFr;
@@ -156,103 +150,66 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
         return;
       }
 
-      if (resultat.estSucces) {
-        setState(() => _etape = _Etape.enregistrement);
-        await _validerCotisation(provider, montant);
-        return;
-      }
-
-      // Pending → polling
+      // Étape 2 : polling + crédit serveur-side
+      if (!mounted) return;
       setState(() => _etape = _Etape.attente);
-      _lancerPolling(provider, montant);
+
+      if (kDebugMode) debugPrint('[PaiementPro] Étape 2 — confirmer_et_crediter');
+      final confirmation = await SycaPayService.confirmerEtCrediter(
+        numCommande:   numCmd,
+        transactionId: _transactionId,
+        tontineCode:   widget.code,
+        typeOperation: 'cotisation',
+        montant:       montant,
+        operateur:     _operateur,
+        membreId:      widget.membre.id,
+      );
+
+      _watchdogTimer?.cancel();
+      _enTraitement = false;
+      if (!mounted) return;
+
+      if (kDebugMode) debugPrint('[PaiementPro] confirmer_et_crediter → $confirmation');
+
+      if (confirmation.ok) {
+        setState(() => _etape = _Etape.enregistrement);
+        await _rechargerEtSucces(montant);
+      } else if (confirmation.estEnAttente || confirmation.timeout) {
+        setState(() {
+          _etape                    = _Etape.saisie;
+          _peutVerifierManuellement = true;
+          _messageErreur = '⏳ Confirmation en attente.\nRéf. : $numCmd';
+          _messageInfo   = 'Si Orange Money vous a débité, utilisez '
+                           '« Vérifier mon paiement ». Ne relancez pas.';
+        });
+      } else {
+        setState(() {
+          _etape         = _Etape.saisie;
+          _messageErreur = confirmation.messageFr;
+          _peutVerifierManuellement = confirmation.statusNormalise == 'unknown';
+        });
+      }
 
     } catch (e) {
       _watchdogTimer?.cancel();
-      if (kDebugMode) debugPrint('[PaiementPro] _initierPaiement EXCEPTION: $e');
+      _enTraitement = false;
+      if (kDebugMode) debugPrint('[PaiementPro] EXCEPTION: $e');
       if (!mounted) return;
       setState(() {
         _etape                    = _Etape.saisie;
         _peutVerifierManuellement = true;
-        _messageErreur =
-            '⚠️ Erreur de connexion à SycaPay.\n'
-            'Réf. : ${_numCommande ?? "—"}';
-        _messageInfo =
-            'Si votre argent a été débité, utilisez "Vérifier le paiement".';
+        _messageErreur = '⚠️ Erreur de connexion.\nRéf. : ${_numCommande ?? "—"}';
+        _messageInfo   = 'Si votre argent a été débité, utilisez '
+                         '« Vérifier mon paiement » avant de réessayer.';
       });
     }
-  }
-
-  // ── Polling ────────────────────────────────────────────────────────────────
-
-  void _lancerPolling(TontineProvider provider, int montant) {
-    _pollingSecondes = 0;
-    _pollingTimer?.cancel();
-
-    _pollingTimer = Timer.periodic(const Duration(seconds: 5), (t) async {
-      _pollingSecondes += 5;
-
-      if (_pollingSecondes >= 120) {
-        t.cancel();
-        _watchdogTimer?.cancel();
-        if (!mounted) return;
-        setState(() {
-          _etape                    = _Etape.saisie;
-          _peutVerifierManuellement = true;
-          _messageErreur =
-              '⏱ Délai de confirmation dépassé (2 min).\n'
-              'Réf. : ${_numCommande ?? "—"}';
-          _messageInfo =
-              'Le paiement a peut-être été effectué. '
-              'Vérifiez votre SMS, puis utilisez "Vérifier le paiement".';
-        });
-        return;
-      }
-
-      if (_numCommande == null) return;
-
-      try {
-        final statut = await SycaPayService.verifierStatut(
-          _numCommande!,
-          transactionId: _transactionId,
-          tontineCode:   widget.code,
-        );
-
-        if (!mounted) return;
-        if (kDebugMode) debugPrint('[PaiementPro] Polling ${_pollingSecondes}s → $statut');
-
-        if (statut.estSucces) {
-          t.cancel();
-          _watchdogTimer?.cancel();
-          setState(() => _etape = _Etape.enregistrement);
-          await _validerCotisation(provider, montant);
-
-        } else if (statut.estEchec) {
-          t.cancel();
-          _watchdogTimer?.cancel();
-          setState(() {
-            _etape         = _Etape.saisie;
-            _messageErreur = statut.messageFr;
-          });
-
-        } else if (statut.estExpire) {
-          t.cancel();
-          _watchdogTimer?.cancel();
-          setState(() {
-            _etape         = _Etape.saisie;
-            _messageErreur = 'Session SycaPay expirée. Veuillez réessayer.';
-          });
-        }
-      } catch (e) {
-        if (kDebugMode) debugPrint('[PaiementPro] Polling erreur: $e');
-      }
-    });
   }
 
   // ── Vérification manuelle ─────────────────────────────────────────────────
 
   Future<void> _verifierPaiementManuellement() async {
-    if (_numCommande == null) return;
-
+    if (_numCommande == null || _enTraitement) return;
+    _enTraitement = true;
     final provider = context.read<TontineProvider>();
     final montant  = provider.courante?.data.montant ?? 0;
 
@@ -263,54 +220,50 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
     });
 
     _watchdogTimer?.cancel();
-    _watchdogTimer = Timer(const Duration(seconds: 30), () {
+    _watchdogTimer = Timer(const Duration(seconds: 45), () {
       if (!mounted || _etape != _Etape.enCours) return;
+      _enTraitement = false;
       setState(() {
         _etape                    = _Etape.saisie;
-        _messageErreur            = 'Vérification impossible. Réseau lent.';
+        _messageErreur            = '⏱ Vérification impossible. Réseau lent.';
         _peutVerifierManuellement = true;
       });
     });
 
     try {
-      // Chercher dans Supabase en premier
-      final refSupa = await SycaPayService.verifierReferenceSupabase(_numCommande!);
-      _watchdogTimer?.cancel();
-
-      if (!mounted) return;
-
-      if (refSupa != null && refSupa.estSucces) {
-        setState(() => _etape = _Etape.enregistrement);
-        await _validerCotisation(provider, montant);
-        return;
-      }
-
-      // Sinon vérifier SycaPay directement
       final statut = await SycaPayService.verifierStatut(
         _numCommande!,
         transactionId: _transactionId,
         tontineCode:   widget.code,
       );
+
+      _watchdogTimer?.cancel();
+      _enTraitement = false;
       if (!mounted) return;
 
-      if (statut.estSucces) {
+      if (kDebugMode) debugPrint('[PaiementPro] verif manuelle → $statut');
+
+      if (statut.estSucces || statut.statusNormalise == 'credited') {
         setState(() => _etape = _Etape.enregistrement);
-        await _validerCotisation(provider, montant);
+        _transactionId ??= statut.transactionId;
+        await _rechargerEtSucces(montant);
       } else if (statut.estEnAttente) {
         setState(() {
-          _etape       = _Etape.attente;
-          _messageInfo = 'Toujours en attente. Nouvelle vérification en cours…';
+          _etape                    = _Etape.saisie;
+          _peutVerifierManuellement = true;
+          _messageInfo  = '⏳ Paiement toujours en attente. Réessayez dans quelques instants.';
+          _messageErreur = null;
         });
-        _lancerPolling(provider, montant);
       } else {
         setState(() {
           _etape                    = _Etape.saisie;
           _messageErreur            = statut.messageFr;
-          _peutVerifierManuellement = statut.estExpire;
+          _peutVerifierManuellement = statut.estExpire || statut.statusNormalise == 'unknown';
         });
       }
     } catch (e) {
       _watchdogTimer?.cancel();
+      _enTraitement = false;
       if (!mounted) return;
       setState(() {
         _etape                    = _Etape.saisie;
@@ -320,140 +273,38 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
     }
   }
 
-  // ── Valider la cotisation (écriture Supabase + anti double-crédit) ─────────
+  // ── Recharger et afficher succès ──────────────────────────────────────────
 
-  Future<void> _validerCotisation(TontineProvider provider, int montant) async {
-    _pollingTimer?.cancel();
-    _watchdogTimer?.cancel();
-
-    // Garde anti-double-crédit
-    if (_numCommande != null) {
-      try {
-        final refSupa = await SycaPayService.verifierReferenceSupabase(_numCommande!);
-        if (refSupa != null && refSupa.statusNormalise == 'credited') {
-          if (!mounted) return;
-          if (kDebugMode) debugPrint('[PaiementPro] Déjà crédité → succes');
-          setState(() => _etape = _Etape.succes);
-          return;
-        }
-      } catch (_) {}
-    }
-
-    final data    = provider.courante!.data;
-    final newData = data.toJson();
-    final ref     = _transactionId ?? _numCommande ?? Formatters.genererReference();
-
-    // Mettre à jour paiements{}
-    final paiements = Map<String, dynamic>.from(
-      (newData['paiements'] as Map<String, dynamic>?) ?? {},
-    );
-    paiements[widget.membre.id] = {
-      'montant':        montant,
-      'date':           DateTime.now().toIso8601String(),
-      'methode':        'sycapay',
-      'transactionId':  _transactionId,
-      'numCommande':    _numCommande,
-      'operateur':      _operateur,
-      'statut':         'confirmed',
-    };
-    newData['paiements'] = paiements;
-
-    // membres[].paye = true
-    final membres = List<Map<String, dynamic>>.from(
-      (newData['membres'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
-    );
-    final idx = membres.indexWhere((m) => m['id'] == widget.membre.id);
-    if (idx != -1) membres[idx]['paye'] = true;
-    newData['membres'] = membres;
-
-    // Journal
-    final journal = List<Map<String, dynamic>>.from(
-      (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
-    );
-    journal.insert(0, {
-      'quoi': 'Cotisation Premium payée via SycaPay (${_operateur.toUpperCase()}) — '
-              '${Formatters.montant(montant, devise: data.devise)} — '
-              '${widget.membre.nom}',
-      'par':  widget.membre.nom,
-      'le':   DateTime.now().millisecondsSinceEpoch,
-      'ref':  ref,
-    });
-    newData['journal'] = journal;
-
-    bool    ok           = false;
-    String? erreurDetail;
-
+  Future<void> _rechargerEtSucces(int montant) async {
+    final provider = context.read<TontineProvider>();
     try {
-      ok = await SupabaseService.ecrireTontineSansPIN(
-        code: widget.code,
-        data: newData,
-      ).timeout(const Duration(seconds: 30), onTimeout: () => false);
-    } catch (e) {
-      ok           = false;
-      erreurDetail = e.toString();
-      if (kDebugMode) debugPrint('[PaiementPro] ecrireTontineSansPIN ERREUR: $e');
-    }
-
+      await provider.chargerTontine(widget.code).timeout(const Duration(seconds: 15));
+    } catch (_) {}
     if (!mounted) return;
 
-    if (ok) {
-      // Marquer crédité (non bloquant)
-      if (_numCommande != null) {
-        SycaPayService.marquerCredite(_numCommande!).catchError((e) {
-          if (kDebugMode) debugPrint('[PaiementPro] marquerCredite: $e');
-          return false;
-        });
-      }
-
-      // Recharger (non bloquant)
-      try {
-        await provider
-            .chargerTontine(widget.code)
-            .timeout(const Duration(seconds: 15));
-      } catch (_) {}
-      if (!mounted) return;
-
-      // Notification (non bloquante)
-      try {
-        final lang   = Provider.of<LocaleService>(context, listen: false).langue.code;
-        final tNotif = SupabaseService.notifTexte(
-          'cotisation_pro_confirmee', lang,
-          vars: {
-            'nom':  widget.membre.nom,
-            'tour': provider.courante!.data.numerTour.toString(),
-          },
-        );
-        SupabaseService.envoyerNotification(
-          code:    widget.code,
-          type:    'cotisation_pro_confirmee',
-          titre:   tNotif['titre']!,
-          message: tNotif['message']!,
-          donneesExtra: {
-            'membre':        widget.membre.nom,
-            'transactionId': _transactionId ?? '',
-          },
-        );
-      } catch (_) {}
-
-      setState(() => _etape = _Etape.succes);
-
-    } else {
-      final estErreurFonction = erreurDetail != null &&
-          (erreurDetail!.contains('introuvable') || erreurDetail!.contains('404') ||
-           erreurDetail!.contains('PGRST'));
-
-      setState(() {
-        _etape                    = _Etape.saisie;
-        _peutVerifierManuellement = true;
-        _messageErreur = estErreurFonction
-            ? '⚠️ Configuration Supabase incomplète.\n'
-              'Exécutez les SQL manquants dans Supabase SQL Editor.\n'
-              'Réf. paiement : ${_numCommande ?? ref}'
-            : '⚠️ Paiement SycaPay confirmé mais enregistrement échoué.\n'
-              'Réf. : ${_numCommande ?? ref}';
-        _messageInfo = 'Notez la référence et contactez le gestionnaire.';
+    try {
+      final data  = provider.courante?.data;
+      final devise = data?.devise ?? 'XOF';
+      final lang   = Provider.of<LocaleService>(context, listen: false).langue.code; // ignore: use_build_context_synchronously
+      final t      = SupabaseService.notifTexte('cotisation', lang, vars: {
+        'montant': Formatters.montant(montant, devise: devise),
+        'nom':     widget.membre.nom,
+        'libelle': 'Cotisation Premium SycaPay',
+        'desc':    '',
       });
-    }
+      SupabaseService.envoyerNotification(
+        code:    widget.code,
+        type:    'cotisation_pro_confirmee',
+        titre:   t['titre']!,
+        message: t['message']!,
+        donneesExtra: {
+          'membre':        widget.membre.nom,
+          'transactionId': _transactionId ?? '',
+        },
+      );
+    } catch (_) {}
+
+    setState(() => _etape = _Etape.succes);
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
@@ -474,8 +325,8 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
           'Cotisation Premium — ${widget.membre.nom}',
           style: const TextStyle(
               fontWeight: FontWeight.w700,
-              color: AppColors.encre,
-              fontSize: 16),
+              color:      AppColors.encre,
+              fontSize:   16),
         ),
         iconTheme: const IconThemeData(color: AppColors.encre),
       ),
@@ -525,10 +376,10 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             onChanged:       (_) => setState(() {}),
             decoration: const InputDecoration(
-              hintText:   '07 XX XX XX XX',
+              hintText:    '07 XX XX XX XX',
               counterText: '',
-              prefixIcon: Icon(Icons.phone_rounded),
-              border:     OutlineInputBorder(),
+              prefixIcon:  Icon(Icons.phone_rounded),
+              border:      OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 16),
@@ -544,8 +395,7 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
               child: const Text(
                 'Orange Money requiert un code OTP.\n'
                 'Composez  #144*8*2#  sur votre téléphone pour le générer.',
-                style: TextStyle(
-                    fontSize: 13, color: Colors.deepOrange, height: 1.5),
+                style: TextStyle(fontSize: 13, color: Colors.deepOrange, height: 1.5),
               ),
             ),
             const SizedBox(height: 12),
@@ -562,44 +412,48 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               onChanged:       (_) => setState(() {}),
               decoration: const InputDecoration(
-                hintText:   'Code OTP (ex: 7908)',
+                hintText:    'Code OTP (ex: 7908)',
                 counterText: '',
-                prefixIcon: Icon(Icons.lock_outline_rounded),
-                border:     OutlineInputBorder(),
+                prefixIcon:  Icon(Icons.lock_outline_rounded),
+                border:      OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 16),
           ],
 
-          // Message erreur + info
-          if (_messageErreur != null) ...[
+          if (_messageErreur != null || _messageInfo != null) ...[
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color:        AppColors.alerteFond,
+                color: _messageErreur != null
+                    ? AppColors.alerteFond
+                    : const Color(0xFFE8F5E9),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.error_outline_rounded,
-                          color: AppColors.alerte, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(_messageErreur!,
-                            style: const TextStyle(
-                                color: AppColors.alerte, fontSize: 13)),
-                      ),
-                    ],
-                  ),
+                  if (_messageErreur != null)
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.error_outline_rounded,
+                            color: AppColors.alerte, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(_messageErreur!,
+                              style: const TextStyle(
+                                  color: AppColors.alerte, fontSize: 13)),
+                        ),
+                      ],
+                    ),
                   if (_messageInfo != null) ...[
-                    const SizedBox(height: 6),
+                    if (_messageErreur != null) const SizedBox(height: 6),
                     Text(_messageInfo!,
-                        style: const TextStyle(
-                            color: AppColors.alerte,
+                        style: TextStyle(
+                            color: _messageErreur != null
+                                ? AppColors.alerte
+                                : _couleurPro,
                             fontSize: 12,
                             fontStyle: FontStyle.italic)),
                   ],
@@ -609,9 +463,8 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
             const SizedBox(height: 12),
           ],
 
-          // Bouton principal
           FilledButton.icon(
-            onPressed: _saisieValide ? _initierPaiement : null,
+            onPressed: (_saisieValide && !_enTraitement) ? _initierPaiement : null,
             icon:  const Icon(Icons.payments_rounded),
             label: Text(
               'Payer ${Formatters.montant(montant, devise: devise)}',
@@ -626,15 +479,13 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
             ),
           ),
 
-          // Bouton vérification manuelle
           if (_peutVerifierManuellement && _numCommande != null) ...[
             const SizedBox(height: 12),
             OutlinedButton.icon(
-              onPressed: _verifierPaiementManuellement,
+              onPressed: _enTraitement ? null : _verifierPaiementManuellement,
               icon:  const Icon(Icons.search_rounded, color: _couleurPro),
-              label: const Text('Vérifier le paiement',
-                  style: TextStyle(
-                      color: _couleurPro, fontWeight: FontWeight.w600)),
+              label: const Text('Vérifier mon paiement',
+                  style: TextStyle(color: _couleurPro, fontWeight: FontWeight.w600)),
               style: OutlinedButton.styleFrom(
                 side:    const BorderSide(color: _couleurPro),
                 padding: const EdgeInsets.symmetric(vertical: 14),
@@ -645,8 +496,7 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
             const SizedBox(height: 4),
             Text('Réf. : $_numCommande',
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontSize: 10, color: AppColors.texteDoux)),
+                style: const TextStyle(fontSize: 10, color: AppColors.texteDoux)),
           ],
         ],
       ),
@@ -668,11 +518,47 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
             const Text(
               'Paiement en cours.\nNe fermez pas l\'application.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                  fontSize: 12,
-                  color: AppColors.texteDoux,
-                  height: 1.5),
+              style: TextStyle(fontSize: 12, color: AppColors.texteDoux, height: 1.5),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _vueAttente() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(color: _couleurPro),
+            const SizedBox(height: 24),
+            const Icon(Icons.phone_android_rounded,
+                size: 48, color: AppColors.texteDoux),
+            const SizedBox(height: 16),
+            const Text(
+              'Vérification du paiement…',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.encre),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Confirmez sur votre téléphone si demandé.\n'
+              'Vérification automatique (jusqu\'à 2 min).\n'
+              'Ne fermez pas l\'application.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: AppColors.texteDoux, height: 1.5),
+            ),
+            const SizedBox(height: 32),
+            if (_numCommande != null)
+              Text('Réf. : $_numCommande',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 10, color: AppColors.texteDoux)),
           ],
         ),
       ),
@@ -703,64 +589,14 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
                     color: AppColors.encre)),
             const SizedBox(height: 8),
             const Text(
-              'Enregistrement de la cotisation en cours…',
+              'Enregistrement de la cotisation…',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 14, color: AppColors.texteDoux),
             ),
             const SizedBox(height: 24),
             const SizedBox(
               width: 28, height: 28,
-              child: CircularProgressIndicator(
-                  strokeWidth: 3, color: _couleurPro),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _vueAttente() {
-    final restant = 120 - _pollingSecondes;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const CircularProgressIndicator(color: _couleurPro),
-            const SizedBox(height: 24),
-            const Icon(Icons.phone_android_rounded,
-                size: 48, color: AppColors.texteDoux),
-            const SizedBox(height: 16),
-            const Text(
-              'Confirmez le paiement\nsur votre téléphone',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.encre),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Vérification toutes les 5 secondes…\nExpire dans ${restant > 0 ? restant : 0} s.',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                  fontSize: 13, color: AppColors.texteDoux, height: 1.5),
-            ),
-            const SizedBox(height: 32),
-            OutlinedButton(
-              onPressed: () {
-                _pollingTimer?.cancel();
-                _watchdogTimer?.cancel();
-                setState(() {
-                  _etape                    = _Etape.saisie;
-                  _peutVerifierManuellement = true;
-                  _messageErreur            = 'Annulé par l\'utilisateur.';
-                  _messageInfo              =
-                      'Si votre argent a été débité, utilisez "Vérifier le paiement".';
-                });
-              },
-              child: const Text('Annuler'),
+              child: CircularProgressIndicator(strokeWidth: 3, color: _couleurPro),
             ),
           ],
         ),
@@ -785,43 +621,40 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
                   size: 50, color: _couleurPro),
             ),
             const SizedBox(height: 24),
-            const Text('Paiement confirmé !',
+            const Text('Paiement reçu avec succès.',
+                textAlign: TextAlign.center,
                 style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
                     color: AppColors.encre)),
             const SizedBox(height: 8),
             Text(
-              '${widget.membre.nom} a payé\n${Formatters.montant(montant, devise: devise)}',
+              'Votre apport de caisse a été enregistré.\n'
+              '${widget.membre.nom} — ${Formatters.montant(montant, devise: devise)}',
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                  fontSize: 15, color: AppColors.texte, height: 1.5),
+              style: const TextStyle(fontSize: 15, color: AppColors.texte, height: 1.5),
             ),
             if (_transactionId != null) ...[
               const SizedBox(height: 8),
               Text('Réf. SycaPay : $_transactionId',
-                  style: const TextStyle(
-                      fontSize: 11, color: AppColors.texteDoux)),
+                  style: const TextStyle(fontSize: 11, color: AppColors.texteDoux)),
             ],
             if (_numCommande != null) ...[
               const SizedBox(height: 4),
               Text('Réf. interne : $_numCommande',
-                  style: const TextStyle(
-                      fontSize: 10, color: AppColors.texteDoux)),
+                  style: const TextStyle(fontSize: 10, color: AppColors.texteDoux)),
             ],
             const SizedBox(height: 40),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
               style: FilledButton.styleFrom(
                 backgroundColor: _couleurPro,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 32, vertical: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14)),
               ),
               child: const Text('Retour',
-                  style: TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w700)),
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
             ),
           ],
         ),
@@ -830,16 +663,15 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
   }
 }
 
-// ── Enum étapes ───────────────────────────────────────────────────────────────
+// ── Enum ──────────────────────────────────────────────────────────────────────
 
 enum _Etape { saisie, enCours, enregistrement, attente, succes }
 
-// ── Widget : carte montant ────────────────────────────────────────────────────
+// ── Widgets partagés ─────────────────────────────────────────────────────────
 
 class _CarteMontant extends StatelessWidget {
   final int    montant;
   final String devise;
-
   const _CarteMontant({required this.montant, required this.devise});
 
   @override
@@ -849,8 +681,7 @@ class _CarteMontant extends StatelessWidget {
       decoration: BoxDecoration(
         color:        const Color(0xFFEAF4EE),
         borderRadius: BorderRadius.circular(16),
-        border:
-            Border.all(color: const Color(0xFF1A6B3C).withValues(alpha: 0.2)),
+        border:       Border.all(color: const Color(0xFF1A6B3C).withValues(alpha: 0.2)),
       ),
       child: Column(
         children: [
@@ -860,9 +691,7 @@ class _CarteMontant extends StatelessWidget {
           Text(
             Formatters.montant(montant, devise: devise),
             style: const TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF1A6B3C)),
+                fontSize: 28, fontWeight: FontWeight.w800, color: Color(0xFF1A6B3C)),
           ),
           const SizedBox(height: 4),
           const Text('Paiement sécurisé via SycaPay',
@@ -873,19 +702,15 @@ class _CarteMontant extends StatelessWidget {
   }
 }
 
-// ── Widget : sélecteur d'opérateur ───────────────────────────────────────────
-
 class _SelecteurOperateur extends StatelessWidget {
   final String               operateur;
   final ValueChanged<String> onChange;
-
   static const _operateurs = [
     ('orange', 'Orange Money', Colors.deepOrange),
     ('moov',   'Moov Money',   Colors.blue),
     ('mtn',    'MTN MoMo',     Colors.yellow),
     ('wave',   'Wave',         Colors.lightBlue),
   ];
-
   const _SelecteurOperateur({required this.operateur, required this.onChange});
 
   @override

@@ -1,31 +1,40 @@
 /**
- * Supabase Edge Function : sycapay-payment  (v3 — workflow robuste)
+ * Supabase Edge Function : sycapay-payment  (v4 — crédit serveur-side)
  *
- * Architecture sécurisée :
- *   Flutter → Edge Function → SycaPay API  (clés jamais exposées côté client)
+ * CORRECTIONS v4 vs v3 :
+ *   1. GetStatus -1 traité comme TEMPORAIRE (pas échec définitif) pendant 3min
+ *   2. ACTION "confirmer_et_crediter" : polling serveur-side + crédit DB-side
+ *      → Flutter peut se fermer, le serveur finit le travail
+ *   3. Webhook : crédite automatiquement la caisse/cotisation dans Supabase
+ *   4. Meilleure extraction du transactionId (différents noms de champs SycaPay)
+ *   5. Retry automatique sur erreurs réseau transitoires
+ *
+ * Architecture :
+ *   Flutter → Edge Function → SycaPay API
+ *                          → Supabase DB (sycapay_transactions)
+ *                          → ecrire_tontine_sans_pin (RPC → crédit caisse)
  *
  * Actions :
- *   "payer"          : login + checkoutpay + persistance transaction pending
- *   "statut"         : GetStatus par numcommande (pas transactionId) + mise à jour DB
- *   "verifier_ref"   : cherche une transaction par référence interne dans Supabase
- *   "webhook"        : reçoit callback SycaPay → crédite la tontine (idempotent)
+ *   "payer"                  : login + checkoutpay + persistance pending
+ *   "statut"                 : GetStatus multi-stratégie (numcommande + transactionId)
+ *   "confirmer_et_crediter"  : polling serveur 3min → crédit DB → retour Flutter
+ *   "verifier_ref"           : lookup Supabase par référence interne
+ *   "marquer_credite"        : mark credited (anti double-crédit)
+ *   webhook (GET/POST)       : callback SycaPay → update DB + crédit auto
  *
- * Variables d'environnement Supabase :
- *   SYCAPAY_MARCHAND_ID  = C_6920BF93D3B14
- *   SYCAPAY_API_KEY      = pk_syca_d070448b386b84b1fffec1f925419278f41be0f7
- *   SYCAPAY_SECRET_KEY   = sk_syca_1915bd8a6c91b6d3c39edd35b26f68dce4caa7f8
- *   SUPABASE_URL         = (auto-injecté par Supabase)
- *   SUPABASE_SERVICE_ROLE_KEY = (auto-injecté par Supabase)
+ * Variables d'environnement :
+ *   SYCAPAY_MARCHAND_ID  SYCAPAY_API_KEY  SYCAPAY_SECRET_KEY
+ *   SUPABASE_URL  SUPABASE_SERVICE_ROLE_KEY  (auto-injectés)
  */
 
-const SYCAPAY_BASE  = "https://dev.sycapay.com/";
-const MARCHAND_ID   = Deno.env.get("SYCAPAY_MARCHAND_ID")  ?? "";
-const API_KEY       = Deno.env.get("SYCAPAY_API_KEY")      ?? "";
-const SECRET_KEY    = Deno.env.get("SYCAPAY_SECRET_KEY")   ?? "";
-const SUPABASE_URL  = Deno.env.get("SUPABASE_URL")         ?? "";
-const SERVICE_KEY   = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const SYCAPAY_BASE = "https://dev.sycapay.com/";
+const MARCHAND_ID  = Deno.env.get("SYCAPAY_MARCHAND_ID")       ?? "";
+const API_KEY      = Deno.env.get("SYCAPAY_API_KEY")           ?? "";
+const _SECRET_KEY  = Deno.env.get("SYCAPAY_SECRET_KEY")        ?? ""; // gardé pour signature future
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")              ?? "";
+const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
-// CORS pour Flutter Web
+// CORS Flutter Web
 const CORS = {
   "Access-Control-Allow-Origin":  "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -39,13 +48,11 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-// ── Client Supabase (service role — accès complet sans RLS) ──────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Client Supabase (service role — bypass RLS)
+// ─────────────────────────────────────────────────────────────────────────────
 
-async function supabaseFetch(
-  path: string,
-  method: string,
-  body?: unknown,
-): Promise<unknown> {
+async function sbFetch(path: string, method: string, body?: unknown): Promise<unknown> {
   const res = await fetch(`${SUPABASE_URL}${path}`, {
     method,
     headers: {
@@ -64,11 +71,11 @@ async function supabaseFetch(
   return res.json();
 }
 
-async function supabaseRpc(fn: string, params: Record<string, unknown>): Promise<unknown> {
-  return supabaseFetch(`/rest/v1/rpc/${fn}`, "POST", params);
+async function sbRpc(fn: string, params: Record<string, unknown>): Promise<unknown> {
+  return sbFetch(`/rest/v1/rpc/${fn}`, "POST", params);
 }
 
-async function supabaseSelect(table: string, filter: string): Promise<unknown[]> {
+async function sbSelect(table: string, filter: string): Promise<Array<Record<string, unknown>>> {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
     headers: {
       "apikey":        SERVICE_KEY,
@@ -77,14 +84,10 @@ async function supabaseSelect(table: string, filter: string): Promise<unknown[]>
     signal: AbortSignal.timeout(10_000),
   });
   if (!res.ok) return [];
-  return res.json() as Promise<unknown[]>;
+  return res.json() as Promise<Array<Record<string, unknown>>>;
 }
 
-async function supabaseUpdate(
-  table: string,
-  filter: string,
-  data: Record<string, unknown>,
-): Promise<void> {
+async function sbPatch(table: string, filter: string, data: Record<string, unknown>): Promise<void> {
   await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
     method: "PATCH",
     headers: {
@@ -98,11 +101,13 @@ async function supabaseUpdate(
   });
 }
 
-// ── Auth SycaPay (token valide ~40s) ─────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers SycaPay
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function obtenirToken(montant: string): Promise<string> {
   const res = await fetch(`${SYCAPAY_BASE}login.php`, {
-    method: "POST",
+    method:  "POST",
     headers: {
       "X-SYCA-MERCHANDID":           MARCHAND_ID,
       "X-SYCA-APIKEY":               API_KEY,
@@ -113,7 +118,6 @@ async function obtenirToken(montant: string): Promise<string> {
     body:   JSON.stringify({ montant, currency: "XOF" }),
     signal: AbortSignal.timeout(15_000),
   });
-
   if (!res.ok) throw new Error(`Auth SycaPay HTTP ${res.status}`);
   const data = await res.json() as { code: number; token?: string; desc?: string };
   if (data.code !== 0 || !data.token) {
@@ -121,8 +125,6 @@ async function obtenirToken(montant: string): Promise<string> {
   }
   return data.token;
 }
-
-// ── Appel checkoutpay.php ─────────────────────────────────────────────────────
 
 async function checkoutPay(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
   const res = await fetch(`${SYCAPAY_BASE}checkoutpay.php`, {
@@ -135,52 +137,113 @@ async function checkoutPay(payload: Record<string, unknown>): Promise<Record<str
   return res.json() as Promise<Record<string, unknown>>;
 }
 
-// ── Appel GetStatus.php ───────────────────────────────────────────────────────
-// SycaPay GetStatus accepte le numcommande OU le transactionId selon les cas.
-// On essaie les deux pour maximiser les chances de retrouver la transaction.
+/**
+ * GetStatus — essaie TOUJOURS les deux refs pour maximiser les chances.
+ * SycaPay peut indexer par l'une ou l'autre selon l'opérateur.
+ */
+async function getStatusMulti(
+  numcommande: string | undefined,
+  transId: string | undefined,
+): Promise<{ code: number; result: Record<string, unknown>; usedRef: string }> {
+  // Essai 1 : par numcommande
+  if (numcommande) {
+    try {
+      const res = await fetch(`${SYCAPAY_BASE}GetStatus.php`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ ref: numcommande }),
+        signal:  AbortSignal.timeout(20_000),
+      });
+      if (res.ok) {
+        const r = await res.json() as Record<string, unknown>;
+        const c = (r["code"] as number) ?? -999;
+        console.log(`[GetStatus] numcommande=${numcommande} → code=${c}`);
+        // -250 = ref introuvable → essayer transId. -1 peut être transitoire.
+        if (c !== -250) return { code: c, result: r, usedRef: numcommande };
+      }
+    } catch (e) {
+      console.error("[GetStatus] par numcommande échoué:", e);
+    }
+  }
 
-async function getStatus(ref: string): Promise<Record<string, unknown>> {
-  const res = await fetch(`${SYCAPAY_BASE}GetStatus.php`, {
-    method:  "POST",
-    headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify({ ref }),
-    signal:  AbortSignal.timeout(20_000),
-  });
-  if (!res.ok) throw new Error(`GetStatus HTTP ${res.status}`);
-  return res.json() as Promise<Record<string, unknown>>;
+  // Essai 2 : par transactionId
+  if (transId) {
+    try {
+      const res = await fetch(`${SYCAPAY_BASE}GetStatus.php`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ ref: transId }),
+        signal:  AbortSignal.timeout(20_000),
+      });
+      if (res.ok) {
+        const r = await res.json() as Record<string, unknown>;
+        const c = (r["code"] as number) ?? -999;
+        console.log(`[GetStatus] transId=${transId} → code=${c}`);
+        return { code: c, result: r, usedRef: transId };
+      }
+    } catch (e) {
+      console.error("[GetStatus] par transId échoué:", e);
+    }
+  }
+
+  return { code: -999, result: {}, usedRef: numcommande ?? transId ?? "" };
 }
 
-// ── Normaliser le code SycaPay en statut lisible ──────────────────────────────
-// Codes confirmés de l'API SycaPay :
-//   0    = succès (paiement initié ou confirmé)
-//   -1   = échec général
-//   -3   = solde insuffisant
-//   -4   = service indisponible
-//   -5   = OTP incorrect
-//   -7   = numéro invalide
-//   -8   = session expirée
-//   -9   = statut pas encore disponible (retry)
-//   -14  = erreur auth
-//   -200 = en attente (pending)
-//   -250 = référence introuvable
-//   -400 = paramètre manquant
-//   -500 = accès refusé
+// ─────────────────────────────────────────────────────────────────────────────
+// Normalisation des codes SycaPay
+// ─────────────────────────────────────────────────────────────────────────────
+// CODES CONFIRMÉS (production) :
+//   0    = succès confirmé
+//  -1    = échec — ATTENTION : peut être TEMPORAIRE juste après checkoutpay
+//           Orange Money prend 10-60s avant que GetStatus renvoie -1 définitif
+//           vs 0. On traite -1 comme pending si < 3min après création.
+//  -3    = solde insuffisant (définitif)
+//  -4    = service indisponible
+//  -5    = OTP incorrect
+//  -7    = numéro invalide
+//  -8    = session expirée
+//  -9    = statut pas encore disponible (retry)
+//  -14   = erreur auth
+//  -200  = en attente (pending — confirmation USSD en cours)
+//  -250  = référence introuvable (retry avec autre ref)
+//  -400  = paramètre manquant
+//  -500  = accès refusé
 
-type NormalizedStatus = "confirmed" | "pending" | "failed" | "expired" | "unknown";
+type NStatus = "confirmed" | "pending" | "failed" | "expired" | "unknown";
 
-function normaliserStatut(code: number): NormalizedStatus {
+/**
+ * Normaliser le code SycaPay.
+ * @param code          Code SycaPay retourné
+ * @param createdAt     Timestamp de création de la transaction (pour traiter -1 temporaire)
+ */
+function normaliserStatut(code: number, createdAt?: string): NStatus {
   if (code === 0)    return "confirmed";
   if (code === -200) return "pending";
-  if (code === -9)   return "pending";   // statut pas encore dispo → retry
-  if (code === -8)   return "expired";   // session expirée
-  if (code === -250) return "unknown";   // référence introuvable (retry avec autre ref)
-  return "failed";
+  if (code === -9)   return "pending";
+  if (code === -8)   return "expired";
+  if (code === -250) return "unknown"; // ref introuvable → retry
+  if (code === -999) return "unknown"; // erreur réseau → retry
+
+  // -1 : peut être temporaire (Orange Money prend du temps à enregistrer)
+  // Si la transaction a moins de 3 minutes → traiter comme pending
+  if (code === -1 && createdAt) {
+    const ageMs = Date.now() - new Date(createdAt).getTime();
+    if (ageMs < 3 * 60 * 1000) {
+      console.log(`[normaliser] code=-1 mais transaction a ${Math.round(ageMs/1000)}s → pending`);
+      return "pending";
+    }
+  }
+
+  // Codes définitivement échec
+  if ([-3, -4, -5, -7, -14, -400, -500].includes(code)) return "failed";
+
+  return "failed"; // par défaut
 }
 
 function messageFr(code: number): string {
   switch (code) {
     case 0:    return "Paiement confirmé.";
-    case -1:   return "Paiement échoué. Réessayez.";
+    case -1:   return "En attente de confirmation SycaPay.";
     case -3:   return "Solde insuffisant.";
     case -4:   return "Service momentanément indisponible.";
     case -5:   return "Code OTP incorrect ou expiré.";
@@ -192,20 +255,112 @@ function messageFr(code: number): string {
     case -250: return "Référence de paiement introuvable.";
     case -400: return "Paramètre manquant.";
     case -500: return "Accès non autorisé.";
-    default:   return `Erreur SycaPay (code ${code}).`;
+    default:   return `Statut en cours de vérification (code ${code}).`;
   }
 }
 
-// ── Handler principal ─────────────────────────────────────────────────────────
+/** Extraire le transactionId depuis la réponse SycaPay (plusieurs noms possibles) */
+function extractTxId(r: Record<string, unknown>): string | undefined {
+  return (r["transactionId"] as string)
+      ?? (r["transactionID"] as string)
+      ?? (r["transaction_id"] as string)
+      ?? (r["orderId"] as string)
+      ?? (r["order_id"] as string)
+      ?? (r["ref"] as string)
+      ?? undefined;
+}
 
-Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: CORS });
+// ─────────────────────────────────────────────────────────────────────────────
+// Crédit caisse/cotisation côté serveur (via RPC ecrire_tontine_sans_pin)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Crédite la caisse ou la cotisation côté Supabase.
+ * Appelé depuis le webhook ET depuis confirmer_et_crediter.
+ * IDEMPOTENT : vérifie le statut 'credited' avant d'agir.
+ */
+async function crediterCoteServeur(tx: Record<string, unknown>): Promise<{ ok: boolean; message: string }> {
+  const numcommande   = tx["internal_reference"] as string;
+  const tontineCode   = tx["tontine_code"] as string;
+  const amount        = tx["amount"] as number;
+  const typeOp        = tx["type_operation"] as string;
+  const operator      = tx["operator"] as string ?? "";
+  const description   = tx["description"] as string ?? "";
+  const membreId      = tx["membre_id"] as string ?? null;
+  const providerTxId  = tx["provider_transaction_id"] as string ?? numcommande;
+
+  // Guard : déjà crédité ?
+  if (tx["status"] === "credited") {
+    console.log(`[crediter] ${numcommande} déjà crédité → skip`);
+    return { ok: true, message: "déjà crédité" };
   }
 
-  // ── Webhook SycaPay (GET ou POST depuis SycaPay) ──────────────────────────
-  // SycaPay appelle urlnotif avec les données de confirmation
+  const now = new Date().toISOString();
+  const ref = providerTxId ?? numcommande;
+
+  // Construire le mouvement à injecter dans le JSON de la tontine
+  // On passe par ecrire_tontine_sans_pin qui reçoit le JSON complet.
+  // Pour créditer côté serveur, on appelle une RPC spécialisée.
+  try {
+    if (typeOp === "caisse") {
+      // Créditer la caisse via RPC
+      await sbRpc("crediter_caisse_sycapay", {
+        p_code:          tontineCode.toUpperCase(),
+        p_montant:       amount,
+        p_reference:     ref,
+        p_num_commande:  numcommande,
+        p_operateur:     operator,
+        p_description:   description.length > 0 ? description : `Apport caisse SycaPay (${operator.toUpperCase()})`,
+        p_now:           now,
+      });
+    } else {
+      // Créditer la cotisation via RPC
+      await sbRpc("crediter_cotisation_sycapay", {
+        p_code:          tontineCode.toUpperCase(),
+        p_membre_id:     membreId,
+        p_montant:       amount,
+        p_reference:     ref,
+        p_num_commande:  numcommande,
+        p_operateur:     operator,
+        p_now:           now,
+      });
+    }
+
+    // Marquer credited dans sycapay_transactions
+    await sbPatch(
+      "sycapay_transactions",
+      `internal_reference=eq.${encodeURIComponent(numcommande)}`,
+      { status: "credited", credited_at: now },
+    );
+
+    console.log(`[crediter] ✅ ${typeOp} ${numcommande} crédité OK`);
+    return { ok: true, message: "crédité" };
+
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[crediter] ❌ Erreur crédit ${numcommande}:`, msg);
+
+    // Marquer l'erreur dans la DB (pas le statut — sera retenté)
+    await sbPatch(
+      "sycapay_transactions",
+      `internal_reference=eq.${encodeURIComponent(numcommande)}`,
+      { error_message: `credit_error: ${msg}` },
+    ).catch(() => {});
+
+    return { ok: false, message: msg };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Handler principal
+// ─────────────────────────────────────────────────────────────────────────────
+
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
+
   const url = new URL(req.url);
+
+  // ── Webhook SycaPay (GET ou POST depuis SycaPay serveurs) ─────────────────
   if (url.searchParams.get("action") === "webhook" || url.pathname.endsWith("/webhook")) {
     return handleWebhook(req);
   }
@@ -224,57 +379,67 @@ Deno.serve(async (req: Request) => {
   const action = body["action"] as string | undefined;
 
   try {
-    // ────────────────────────────────────────────────────────────────────────
+
+    // ══════════════════════════════════════════════════════════════════════════
     // ACTION : payer
-    // ────────────────────────────────────────────────────────────────────────
+    // Initie le paiement + persistance immédiate en pending
+    // ══════════════════════════════════════════════════════════════════════════
     if (action === "payer") {
-      const telephone   = body["telephone"]   as string;
-      const montant     = body["montant"]     as string;
-      const numcommande = body["numcommande"] as string;
-      const operateur   = (body["operateur"]  as string) ?? "";
+      const telephone   = body["telephone"]    as string;
+      const montant     = body["montant"]      as string;
+      const numcommande = body["numcommande"]  as string;
+      const operateur   = (body["operateur"]   as string) ?? "";
       const tontineCode = (body["tontine_code"] as string) ?? "";
       const typeOp      = (body["type_operation"] as string) ?? "cotisation";
-      const membreId    = (body["membre_id"] as string | undefined);
-      const description = (body["description"] as string | undefined);
+      const membreId    = body["membre_id"]    as string | undefined;
+      const description = body["description"] as string | undefined;
 
       if (!telephone || !montant || !numcommande) {
         return json({ erreur: true, code: -400, message: "Paramètres manquants" }, 400);
       }
 
-      // 0. Vérifier idempotence : si déjà confirmed/credited → refuser
-      if (tontineCode && numcommande) {
-        const existing = await supabaseSelect(
+      // 0. Idempotence : déjà confirmed/credited → retourner immédiatement
+      if (tontineCode) {
+        const existing = await sbSelect(
           "sycapay_transactions",
-          `internal_reference=eq.${encodeURIComponent(numcommande)}&select=id,status`,
-        ) as Array<{ id: string; status: string }>;
-
+          `internal_reference=eq.${encodeURIComponent(numcommande)}&select=id,status,provider_transaction_id`,
+        );
         if (existing.length > 0) {
           const tx = existing[0];
-          if (tx.status === "credited" || tx.status === "confirmed") {
-            console.log(`[payer] Idempotence: ref ${numcommande} déjà ${tx.status}`);
+          if (tx["status"] === "credited" || tx["status"] === "confirmed") {
             return json({
-              code: 0,
-              message: "Transaction déjà confirmée",
-              idempotent: true,
-              transactionId: tx.id,
-              status: tx.status,
+              code:            0,
+              message:         "Transaction déjà confirmée",
+              idempotent:      true,
+              transactionId:   tx["provider_transaction_id"],
+              status:          tx["status"],
+              statusNormalise: "confirmed",
+              numcommande,
             });
           }
-          // pending → on peut vérifier son statut mais pas relancer le paiement
-          if (tx.status === "pending") {
-            console.log(`[payer] Ref ${numcommande} déjà pending — vérification statut`);
-            // On continue pour relancer le checkout si nécessaire
+          if (tx["status"] === "pending") {
+            console.log(`[payer] ref ${numcommande} déjà pending`);
+            // Ne pas relancer checkoutpay — retourner pending pour que Flutter polle
+            return json({
+              code:            -200,
+              message:         "Transaction déjà en attente",
+              idempotent:      true,
+              transactionId:   tx["provider_transaction_id"],
+              status:          "pending",
+              statusNormalise: "pending",
+              numcommande,
+            });
           }
         }
       }
 
-      // 1. Obtenir le token SycaPay
+      // 1. Token SycaPay
       const token = await obtenirToken(montant);
 
-      // 2. URL de webhook
+      // 2. URL webhook
       const webhookUrl = `${SUPABASE_URL}/functions/v1/sycapay-payment?action=webhook&ref=${encodeURIComponent(numcommande)}`;
 
-      // 3. Payload checkout
+      // 3. Payload checkoutpay
       const payPayload: Record<string, unknown> = {
         marchandid:  MARCHAND_ID,
         token,
@@ -282,9 +447,10 @@ Deno.serve(async (req: Request) => {
         montant,
         currency:    "XOF",
         numcommande,
-        name:        body["name"]  ?? "",
-        pname:       body["pname"] ?? "",
+        name:        body["name"]  ?? "Membre",
+        pname:       body["pname"] ?? "TC",
         urlnotif:    webhookUrl,
+        urlretour:   webhookUrl, // aussi sur urlretour pour certains opérateurs
       };
 
       const otp = body["otp"] as string | undefined;
@@ -295,78 +461,317 @@ Deno.serve(async (req: Request) => {
         payPayload["operateurs"] = "WaveSN";
       }
 
-      // 4. Appel checkoutpay.php
-      const resultat = await checkoutPay(payPayload) as Record<string, unknown>;
+      // 4. Checkoutpay
+      const resultat = await checkoutPay(payPayload);
       const code     = (resultat["code"] as number) ?? -999;
+      const txId     = extractTxId(resultat);
 
-      console.log(`[payer] checkoutpay → code=${code} ref=${numcommande}`, JSON.stringify(resultat));
+      console.log(`[payer] checkoutpay → code=${code} ref=${numcommande} txId=${txId ?? "n/a"}`, JSON.stringify(resultat).substring(0, 200));
 
-      // 5. Persister la transaction dans Supabase (si tontineCode fourni)
+      // 5. Persister dans Supabase (async — non bloquant pour la réponse Flutter)
       if (tontineCode) {
         const phoneMasked = telephone.length >= 4
           ? telephone.substring(0, 2) + "****" + telephone.slice(-4)
           : telephone;
 
-        try {
-          const txId = resultat["transactionId"] as string
-                    ?? resultat["transactionID"] as string
-                    ?? resultat["orderId"] as string
-                    ?? null;
+        const txStatus = code === 0 ? "confirmed" : (code === -200 ? "pending" : "pending");
+        // Note : on persiste même les "failed" comme pending initialement
+        // car -1 peut être temporaire (Orange Money). Le polling serveur rectifiera.
 
-          // Créer ou récupérer la transaction
-          await supabaseFetch("/rest/v1/sycapay_transactions", "POST", {
-            tontine_code:           tontineCode,
-            type_operation:         typeOp,
-            internal_reference:     numcommande,
-            provider_transaction_id: txId,
-            phone_number_masked:    phoneMasked,
-            amount:                 parseInt(montant, 10),
-            currency:               "XOF",
-            operator:               operateur,
-            status:                 code === 0 ? "confirmed" : (code === -200 ? "pending" : "failed"),
-            membre_id:              membreId ?? null,
-            description:            description ?? null,
-            confirmed_at:           code === 0 ? new Date().toISOString() : null,
-          }).catch(async (e: Error) => {
-            // Si conflit unique → update
-            if (e.message.includes("23505") || e.message.includes("duplicate")) {
-              await supabaseUpdate(
-                "sycapay_transactions",
-                `internal_reference=eq.${encodeURIComponent(numcommande)}`,
-                {
-                  provider_transaction_id: txId,
-                  status: code === 0 ? "confirmed" : (code === -200 ? "pending" : "failed"),
-                  confirmed_at: code === 0 ? new Date().toISOString() : null,
-                },
-              );
-            } else {
-              console.error("[payer] Erreur persistance:", e.message);
-            }
-          });
-        } catch (pe) {
-          console.error("[payer] Persistance non critique:", pe);
-          // Ne pas bloquer le retour Flutter
-        }
+        sbFetch("/rest/v1/sycapay_transactions", "POST", {
+          tontine_code:            tontineCode,
+          type_operation:          typeOp,
+          internal_reference:      numcommande,
+          sycapay_reference:       numcommande, // même chose côté nous
+          provider_transaction_id: txId ?? null,
+          phone_number_masked:     phoneMasked,
+          amount:                  parseInt(montant, 10),
+          currency:                "XOF",
+          operator:                operateur,
+          status:                  txStatus,
+          membre_id:               membreId ?? null,
+          description:             description ?? null,
+          confirmed_at:            code === 0 ? new Date().toISOString() : null,
+        }).catch(async (e: Error) => {
+          if (e.message.includes("23505") || e.message.includes("duplicate")) {
+            // Conflit unique → update
+            await sbPatch(
+              "sycapay_transactions",
+              `internal_reference=eq.${encodeURIComponent(numcommande)}`,
+              {
+                provider_transaction_id: txId ?? null,
+                status:                  txStatus,
+                confirmed_at:            code === 0 ? new Date().toISOString() : null,
+              },
+            ).catch(e2 => console.error("[payer] update fallback:", e2));
+          } else {
+            console.error("[payer] persistance:", e.message);
+          }
+        });
       }
 
-      // 6. Retourner le résultat SycaPay enrichi
       return json({
         ...resultat,
         code,
         message:         resultat["message"] ?? messageFr(code),
         messageFr:       messageFr(code),
-        statusNormalise: normaliserStatut(code),
-        numcommande,      // ← CRITIQUE : Flutter doit garder cette ref pour le polling
+        statusNormalise: code === 0 ? "confirmed" : "pending",
+        numcommande,
+        transactionId:   txId,
+        urlWebhook:      tontineCode
+          ? `${SUPABASE_URL}/functions/v1/sycapay-payment?action=webhook&ref=${encodeURIComponent(numcommande)}`
+          : undefined,
       });
     }
 
-    // ────────────────────────────────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════════
+    // ACTION : confirmer_et_crediter
+    // Polling serveur-side jusqu'à confirmation, puis crédit DB.
+    // Flutter envoie cette action après initierPaiement et attend le résultat.
+    // Timeout serveur : 170s (≤ 180s max Supabase Edge Function)
+    // ══════════════════════════════════════════════════════════════════════════
+    if (action === "confirmer_et_crediter") {
+      const numcommande  = body["numcommande"]  as string;
+      const transId      = body["transactionId"] as string | undefined;
+      const tontineCode  = body["tontine_code"] as string;
+      const typeOp       = (body["type_operation"] as string) ?? "cotisation";
+
+      if (!numcommande || !tontineCode) {
+        return json({ erreur: true, message: "numcommande et tontine_code requis" }, 400);
+      }
+
+      // Récupérer la transaction depuis DB
+      let rows = await sbSelect(
+        "sycapay_transactions",
+        `internal_reference=eq.${encodeURIComponent(numcommande)}&select=*`,
+      );
+
+      // Si pas en DB → créer une ligne pending minimale
+      if (rows.length === 0 && transId) {
+        console.log(`[confirmer] Transaction ${numcommande} absente DB → création minimale`);
+        await sbFetch("/rest/v1/sycapay_transactions", "POST", {
+          tontine_code:            tontineCode,
+          type_operation:          typeOp,
+          internal_reference:      numcommande,
+          sycapay_reference:       numcommande,
+          provider_transaction_id: transId,
+          amount:                  (body["montant"] as number) ?? 0,
+          currency:                "XOF",
+          operator:                body["operateur"] as string ?? "",
+          status:                  "pending",
+          membre_id:               body["membre_id"] as string ?? null,
+          description:             body["description"] as string ?? null,
+        }).catch(e => console.error("[confirmer] création minimale:", e));
+
+        rows = await sbSelect(
+          "sycapay_transactions",
+          `internal_reference=eq.${encodeURIComponent(numcommande)}&select=*`,
+        );
+      }
+
+      // Si déjà credited → retourner succès immédiat
+      if (rows.length > 0 && (rows[0]["status"] === "credited" || rows[0]["status"] === "confirmed")) {
+        const tx = rows[0];
+        if (tx["status"] === "credited") {
+          return json({
+            ok:              true,
+            code:            0,
+            statusNormalise: "confirmed",
+            message:         "Paiement reçu avec succès. Votre apport a été enregistré.",
+            numcommande,
+            fromCache:       true,
+          });
+        }
+        // confirmed mais pas credited → créditer maintenant
+        const creditResult = await crediterCoteServeur(tx);
+        return json({
+          ok:              creditResult.ok,
+          code:            creditResult.ok ? 0 : -1,
+          statusNormalise: creditResult.ok ? "confirmed" : "failed",
+          message:         creditResult.ok
+            ? "Paiement reçu avec succès. Votre apport a été enregistré."
+            : `Paiement confirmé mais crédit échoué : ${creditResult.message}`,
+          numcommande,
+        });
+      }
+
+      const createdAt = rows.length > 0 ? (rows[0]["created_at"] as string) : new Date().toISOString();
+      const dbTransId = rows.length > 0 ? (rows[0]["provider_transaction_id"] as string | undefined) : transId;
+
+      // ── Polling serveur (30 tentatives × 5s = 150s max) ──────────────────
+      const MAX_ATTEMPTS  = 30;
+      const POLL_INTERVAL = 5_000; // 5 secondes
+
+      let attempts        = 0;
+      let lastCode        = -999;
+      let lastStatus: NStatus = "unknown";
+      let confirmedTxId   = dbTransId ?? transId;
+
+      while (attempts < MAX_ATTEMPTS) {
+        attempts++;
+        await new Promise(r => setTimeout(r, POLL_INTERVAL));
+
+        // Vérifier DB d'abord (webhook peut avoir mis à jour entre-temps)
+        const fresh = await sbSelect(
+          "sycapay_transactions",
+          `internal_reference=eq.${encodeURIComponent(numcommande)}&select=status,confirmed_at,provider_transaction_id,credited_at`,
+        );
+
+        if (fresh.length > 0) {
+          const dbStatus = fresh[0]["status"] as string;
+          if (fresh[0]["provider_transaction_id"]) confirmedTxId = fresh[0]["provider_transaction_id"] as string;
+
+          if (dbStatus === "credited") {
+            return json({
+              ok:              true,
+              code:            0,
+              statusNormalise: "confirmed",
+              message:         "Paiement reçu avec succès. Votre apport a été enregistré.",
+              numcommande,
+              transactionId:   confirmedTxId,
+              fromWebhook:     true,
+            });
+          }
+          if (dbStatus === "confirmed") {
+            // Le webhook a confirmé → créditer maintenant
+            const fullTx = await sbSelect(
+              "sycapay_transactions",
+              `internal_reference=eq.${encodeURIComponent(numcommande)}&select=*`,
+            );
+            if (fullTx.length > 0) {
+              const creditResult = await crediterCoteServeur(fullTx[0]);
+              return json({
+                ok:              creditResult.ok,
+                code:            creditResult.ok ? 0 : -1,
+                statusNormalise: "confirmed",
+                message:         creditResult.ok
+                  ? "Paiement reçu avec succès. Votre apport a été enregistré."
+                  : `Confirmé SycaPay mais enregistrement échoué: ${creditResult.message}`,
+                numcommande,
+                transactionId:   confirmedTxId,
+              });
+            }
+          }
+          if (dbStatus === "failed" || dbStatus === "expired") {
+            return json({
+              ok:              false,
+              code:            -1,
+              statusNormalise: dbStatus as NStatus,
+              message:         dbStatus === "expired"
+                ? "Session SycaPay expirée. Veuillez réessayer."
+                : "Paiement échoué.",
+              numcommande,
+            });
+          }
+        }
+
+        // Appeler GetStatus SycaPay
+        try {
+          const gs = await getStatusMulti(numcommande, confirmedTxId);
+          lastCode   = gs.code;
+          lastStatus = normaliserStatut(gs.code, createdAt);
+          if (gs.result["transactionId"]) confirmedTxId = extractTxId(gs.result);
+
+          console.log(`[confirmer] Tentative ${attempts}/${MAX_ATTEMPTS} → code=${lastCode} status=${lastStatus}`);
+
+          // Mettre à jour polling_attempts en DB
+          await sbPatch(
+            "sycapay_transactions",
+            `internal_reference=eq.${encodeURIComponent(numcommande)}`,
+            {
+              polling_attempts:        attempts,
+              provider_transaction_id: confirmedTxId ?? dbTransId ?? null,
+            },
+          ).catch(() => {});
+
+          if (lastStatus === "confirmed") {
+            // Confirmer dans DB
+            await sbPatch(
+              "sycapay_transactions",
+              `internal_reference=eq.${encodeURIComponent(numcommande)}`,
+              {
+                status:                  "confirmed",
+                confirmed_at:            new Date().toISOString(),
+                provider_transaction_id: confirmedTxId ?? null,
+              },
+            ).catch(() => {});
+
+            // Récupérer la transaction complète pour crédit
+            const fullTx = await sbSelect(
+              "sycapay_transactions",
+              `internal_reference=eq.${encodeURIComponent(numcommande)}&select=*`,
+            );
+            if (fullTx.length > 0) {
+              const creditResult = await crediterCoteServeur(fullTx[0]);
+              return json({
+                ok:              creditResult.ok,
+                code:            creditResult.ok ? 0 : -1,
+                statusNormalise: "confirmed",
+                message:         creditResult.ok
+                  ? "Paiement reçu avec succès. Votre apport a été enregistré."
+                  : `Confirmé SycaPay mais enregistrement échoué: ${creditResult.message}`,
+                numcommande,
+                transactionId:   confirmedTxId,
+              });
+            }
+          }
+
+          if (lastStatus === "expired") {
+            await sbPatch(
+              "sycapay_transactions",
+              `internal_reference=eq.${encodeURIComponent(numcommande)}`,
+              { status: "expired" },
+            ).catch(() => {});
+            return json({
+              ok:              false,
+              code:            -8,
+              statusNormalise: "expired",
+              message:         "Session SycaPay expirée. Veuillez réessayer.",
+              numcommande,
+            });
+          }
+
+          // "failed" DÉFINITIF (solde insuf, OTP incorrect) — pas les -1 transitoires
+          if (lastStatus === "failed" && [-3, -5, -7, -14].includes(lastCode)) {
+            await sbPatch(
+              "sycapay_transactions",
+              `internal_reference=eq.${encodeURIComponent(numcommande)}`,
+              { status: "failed", error_message: messageFr(lastCode) },
+            ).catch(() => {});
+            return json({
+              ok:              false,
+              code:            lastCode,
+              statusNormalise: "failed",
+              message:         messageFr(lastCode),
+              numcommande,
+            });
+          }
+          // -1, -200, -9, unknown → continuer à poller
+
+        } catch (e) {
+          console.error(`[confirmer] Tentative ${attempts} erreur GetStatus:`, e);
+          // Erreur réseau transitoire → continuer
+        }
+      }
+
+      // Timeout 150s atteint → retourner pending (Flutter affichera le bouton Vérifier)
+      return json({
+        ok:              false,
+        code:            -200,
+        statusNormalise: "pending",
+        message:         "Délai de confirmation dépassé. Utilisez le bouton \"Vérifier mon paiement\".",
+        numcommande,
+        transactionId:   confirmedTxId,
+        timeout:         true,
+      });
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
     // ACTION : statut
-    // Vérifie le statut par numcommande (interne) ET transactionId (SycaPay)
-    // Met à jour la DB et retourne le résultat normalisé
-    // ────────────────────────────────────────────────────────────────────────
+    // Vérification ponctuelle (utilisé par le bouton "Vérifier mon paiement")
+    // ══════════════════════════════════════════════════════════════════════════
     if (action === "statut") {
-      const numcommande = body["numcommande"] as string | undefined;
+      const numcommande = body["numcommande"]  as string | undefined;
       const transId     = body["transactionId"] as string | undefined;
       const tontineCode = body["tontine_code"] as string | undefined;
 
@@ -374,120 +779,115 @@ Deno.serve(async (req: Request) => {
         return json({ erreur: true, code: -400, message: "numcommande ou transactionId requis" }, 400);
       }
 
-      // 1. Chercher dans Supabase d'abord (source de vérité)
+      // 1. Chercher dans Supabase
       let dbTx: Record<string, unknown> | null = null;
-      if (numcommande && tontineCode) {
-        const rows = await supabaseSelect(
+      if (numcommande) {
+        const rows = await sbSelect(
           "sycapay_transactions",
           `internal_reference=eq.${encodeURIComponent(numcommande)}&select=*`,
-        ) as Array<Record<string, unknown>>;
+        );
         if (rows.length > 0) dbTx = rows[0];
       }
 
-      // Si déjà crédité dans notre DB → retourner directement sans appeler SycaPay
+      // Cache hit : déjà credited/confirmed
       if (dbTx && (dbTx["status"] === "credited" || dbTx["status"] === "confirmed")) {
+        const shouldCredit = dbTx["status"] === "confirmed";
+        if (shouldCredit) {
+          const creditResult = await crediterCoteServeur(dbTx);
+          return json({
+            code:            0,
+            statusNormalise: "confirmed",
+            message:         creditResult.ok
+              ? "Paiement reçu avec succès. Votre apport a été enregistré."
+              : "Paiement confirmé. Enregistrement en cours.",
+            numcommande,
+            fromCache:       true,
+          });
+        }
         return json({
           code:            0,
           message:         "Paiement confirmé",
-          messageFr:       "Paiement confirmé.",
-          statusNormalise: dbTx["status"] === "credited" ? "credited" : "confirmed",
-          transactionId:   dbTx["provider_transaction_id"],
+          statusNormalise: "confirmed",
           numcommande,
           fromCache:       true,
         });
       }
 
-      // 2. Appeler GetStatus avec numcommande (ref principale)
-      let sycaresult: Record<string, unknown> = {};
-      let sycastatus: NormalizedStatus = "unknown";
-      let syscacode = -999;
+      const createdAt = dbTx ? (dbTx["created_at"] as string) : undefined;
+      const dbTransId = dbTx ? (dbTx["provider_transaction_id"] as string | undefined) : transId;
 
-      // Essai 1 : avec numcommande
-      if (numcommande) {
-        try {
-          const r = await getStatus(numcommande);
-          syscacode  = (r["code"] as number) ?? -999;
-          sycastatus = normaliserStatut(syscacode);
-          sycaresult = r;
-          console.log(`[statut] GetStatus(numcommande=${numcommande}) → code=${syscacode}`);
-        } catch (e) {
-          console.error("[statut] GetStatus par numcommande échoué:", e);
-        }
-      }
+      // 2. GetStatus SycaPay multi-stratégie
+      const gs = await getStatusMulti(numcommande, dbTransId ?? transId);
+      const lastStatus = normaliserStatut(gs.code, createdAt);
+      const newTxId    = extractTxId(gs.result) ?? dbTransId ?? transId;
 
-      // Essai 2 : avec transactionId si numcommande a retourné unknown/-250
-      if ((sycastatus === "unknown" || syscacode === -250) && transId) {
-        try {
-          const r = await getStatus(transId);
-          syscacode  = (r["code"] as number) ?? syscacode;
-          sycastatus = normaliserStatut(syscacode);
-          sycaresult = r;
-          console.log(`[statut] GetStatus(transId=${transId}) → code=${syscacode}`);
-        } catch (e) {
-          console.error("[statut] GetStatus par transId échoué:", e);
-        }
-      }
-
-      // 3. Mettre à jour la DB avec le nouveau statut
+      // 3. Mettre à jour DB
       if (dbTx && numcommande) {
         const updateData: Record<string, unknown> = {
           polling_attempts: ((dbTx["polling_attempts"] as number) ?? 0) + 1,
         };
-        if (sycastatus === "confirmed") {
+        if (newTxId) updateData["provider_transaction_id"] = newTxId;
+
+        if (lastStatus === "confirmed") {
           updateData["status"]       = "confirmed";
           updateData["confirmed_at"] = new Date().toISOString();
-          const tid = sycaresult["transactionId"] as string
-                   ?? sycaresult["transactionID"] as string;
-          if (tid) updateData["provider_transaction_id"] = tid;
-        } else if (sycastatus === "failed") {
+        } else if (lastStatus === "failed" && ![-1, -9, -200, -250, -999].includes(gs.code)) {
           updateData["status"]        = "failed";
-          updateData["error_message"] = messageFr(syscacode);
-        } else if (sycastatus === "expired") {
+          updateData["error_message"] = messageFr(gs.code);
+        } else if (lastStatus === "expired") {
           updateData["status"] = "expired";
         }
 
-        await supabaseUpdate(
+        await sbPatch(
           "sycapay_transactions",
           `internal_reference=eq.${encodeURIComponent(numcommande)}`,
           updateData,
-        ).catch(e => console.error("[statut] Update DB:", e));
+        ).catch(e => console.error("[statut] update:", e));
+      }
+
+      // 4. Si confirmé → créditer
+      if (lastStatus === "confirmed" && dbTx) {
+        const freshTx = { ...dbTx, status: "confirmed", provider_transaction_id: newTxId };
+        const creditResult = await crediterCoteServeur(freshTx);
+        return json({
+          code:            0,
+          statusNormalise: "confirmed",
+          message:         creditResult.ok
+            ? "Paiement reçu avec succès. Votre apport a été enregistré."
+            : "Paiement confirmé. Enregistrement en cours.",
+          numcommande,
+          transactionId:   newTxId,
+        });
       }
 
       return json({
-        ...sycaresult,
-        code:            syscacode,
-        message:         sycaresult["message"] ?? messageFr(syscacode),
-        messageFr:       messageFr(syscacode),
-        statusNormalise: sycastatus,
+        code:            gs.code,
+        message:         messageFr(gs.code),
+        statusNormalise: lastStatus,
         numcommande,
+        transactionId:   newTxId,
       });
     }
 
-    // ────────────────────────────────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════════
     // ACTION : verifier_ref
-    // Cherche une transaction par référence interne dans Supabase
-    // Utilisé au redémarrage de l'app pour retrouver les pending
-    // ────────────────────────────────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════════
     if (action === "verifier_ref") {
       const numcommande = body["numcommande"] as string;
-      if (!numcommande) {
-        return json({ erreur: true, message: "numcommande requis" }, 400);
-      }
+      if (!numcommande) return json({ erreur: true, message: "numcommande requis" }, 400);
 
-      const rows = await supabaseSelect(
+      const rows = await sbSelect(
         "sycapay_transactions",
         `internal_reference=eq.${encodeURIComponent(numcommande)}&select=*`,
-      ) as Array<Record<string, unknown>>;
+      );
 
-      if (rows.length === 0) {
-        return json({ trouve: false, status: "inexistant" });
-      }
+      if (rows.length === 0) return json({ trouve: false, status: "inexistant" });
 
       const tx = rows[0];
       return json({
         trouve:          true,
         status:          tx["status"],
-        statusNormalise: tx["status"] === "credited" || tx["status"] === "confirmed"
+        statusNormalise: (tx["status"] === "credited" || tx["status"] === "confirmed")
                          ? "confirmed" : (tx["status"] as string),
         amount:          tx["amount"],
         operator:        tx["operator"],
@@ -500,47 +900,30 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // ────────────────────────────────────────────────────────────────────────
-    // ACTION : marquer_credite
-    // Appelé par Flutter après avoir réussi l'écriture Supabase (ecrireTontineSansPIN)
-    // Marque la transaction comme 'credited' pour éviter le double crédit
-    // ────────────────────────────────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════════
+    // ACTION : marquer_credite (appelé par Flutter après écriture locale réussie)
+    // ══════════════════════════════════════════════════════════════════════════
     if (action === "marquer_credite") {
       const numcommande = body["numcommande"] as string;
-      if (!numcommande) {
-        return json({ erreur: true, message: "numcommande requis" }, 400);
-      }
+      if (!numcommande) return json({ erreur: true, message: "numcommande requis" }, 400);
 
-      // Vérifier que la transaction n'est pas déjà créditée
-      const rows = await supabaseSelect(
+      const rows = await sbSelect(
         "sycapay_transactions",
         `internal_reference=eq.${encodeURIComponent(numcommande)}&select=id,status`,
-      ) as Array<{ id: string; status: string }>;
-
-      if (rows.length === 0) {
-        return json({ ok: false, message: "Transaction introuvable" });
-      }
-
-      const tx = rows[0];
-      if (tx.status === "credited") {
-        return json({ ok: false, dejaCredite: true, message: "Déjà crédité" });
-      }
-
-      await supabaseUpdate(
-        "sycapay_transactions",
-        `internal_reference=eq.${encodeURIComponent(numcommande)}`,
-        {
-          status:     "credited",
-          credited_at: new Date().toISOString(),
-        },
       );
 
+      if (rows.length === 0) return json({ ok: false, message: "Transaction introuvable" });
+      const tx = rows[0];
+      if (tx["status"] === "credited") return json({ ok: false, dejaCredite: true, message: "Déjà crédité" });
+
+      await sbPatch(
+        "sycapay_transactions",
+        `internal_reference=eq.${encodeURIComponent(numcommande)}`,
+        { status: "credited", credited_at: new Date().toISOString() },
+      );
       return json({ ok: true, message: "Transaction marquée comme créditée" });
     }
 
-    // ────────────────────────────────────────────────────────────────────────
-    // ACTION inconnue
-    // ────────────────────────────────────────────────────────────────────────
     return json({ erreur: true, message: `Action inconnue: ${action}` }, 400);
 
   } catch (err: unknown) {
@@ -550,9 +933,10 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-// ── Handler Webhook SycaPay ───────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Handler Webhook SycaPay
 // SycaPay POSTe sur urlnotif={SUPABASE_URL}/functions/v1/sycapay-payment?action=webhook&ref={numcommande}
-// avec le payload de confirmation.
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function handleWebhook(req: Request): Promise<Response> {
   const url         = new URL(req.url);
@@ -561,61 +945,56 @@ async function handleWebhook(req: Request): Promise<Response> {
   let payload: Record<string, unknown> = {};
   try {
     if (req.method === "POST") {
-      payload = await req.json();
+      payload = await req.json().catch(() => ({}));
     } else {
-      // Certains providers envoient en GET avec query params
       url.searchParams.forEach((v, k) => { payload[k] = v; });
     }
-  } catch {
-    // payload vide — on continue avec numcommande depuis query string
-  }
+  } catch { /* payload vide */ }
 
-  console.log(`[webhook] Reçu pour ref=${numcommande}`, JSON.stringify(payload));
+  console.log(`[webhook] Reçu ref=${numcommande}`, JSON.stringify(payload).substring(0, 300));
 
   if (!numcommande) {
     console.warn("[webhook] Pas de numcommande dans l'URL");
-    return new Response("OK", { status: 200 }); // Toujours 200 pour SycaPay
+    return new Response("OK", { status: 200 });
   }
 
-  // Récupérer la transaction dans Supabase
-  const rows = await supabaseSelect(
+  // Récupérer la transaction
+  const rows = await sbSelect(
     "sycapay_transactions",
     `internal_reference=eq.${encodeURIComponent(numcommande)}&select=*`,
-  ).catch(() => [] as unknown[]) as Array<Record<string, unknown>>;
+  ).catch(() => [] as Array<Record<string, unknown>>);
 
   if (rows.length === 0) {
-    console.warn(`[webhook] Transaction introuvable pour ref=${numcommande}`);
+    console.warn(`[webhook] Transaction introuvable: ${numcommande}`);
     return new Response("OK", { status: 200 });
   }
 
   const tx = rows[0];
 
-  // Idempotence : si déjà crédité → ignorer
+  // Idempotence
   if (tx["status"] === "credited") {
-    console.log(`[webhook] Transaction ${numcommande} déjà créditée → ignoré`);
+    console.log(`[webhook] ${numcommande} déjà crédité → skip`);
     return new Response("OK", { status: 200 });
   }
 
-  // Extraire le code du payload webhook
-  const webhookCode = (payload["code"] as number)
-                   ?? (payload["statut"] === "success" ? 0 : -1);
-  const webhookStatus = normaliserStatut(webhookCode);
-  const transId = payload["transactionId"] as string
-               ?? payload["transactionID"] as string
-               ?? payload["ref"] as string;
+  // Extraire le code du payload
+  const webhookCode: number = (payload["code"] as number)
+    ?? (payload["statut"] === "success" || payload["status"] === "success" ? 0 : -1);
+  const webhookStatus = normaliserStatut(webhookCode, tx["created_at"] as string);
+  const txId          = extractTxId(payload) ?? (tx["provider_transaction_id"] as string | undefined);
 
-  console.log(`[webhook] code=${webhookCode} status=${webhookStatus} transId=${transId}`);
+  console.log(`[webhook] code=${webhookCode} status=${webhookStatus} txId=${txId ?? "n/a"}`);
 
-  // Mettre à jour la DB
+  // Mettre à jour DB avec infos webhook
   const updateData: Record<string, unknown> = {
     webhook_received_at: new Date().toISOString(),
     webhook_payload:     payload,
   };
+  if (txId) updateData["provider_transaction_id"] = txId;
 
   if (webhookStatus === "confirmed") {
     updateData["status"]       = "confirmed";
     updateData["confirmed_at"] = new Date().toISOString();
-    if (transId) updateData["provider_transaction_id"] = transId;
   } else if (webhookStatus === "failed") {
     updateData["status"]        = "failed";
     updateData["error_message"] = messageFr(webhookCode);
@@ -623,16 +1002,18 @@ async function handleWebhook(req: Request): Promise<Response> {
     updateData["status"] = "expired";
   }
 
-  await supabaseUpdate(
+  await sbPatch(
     "sycapay_transactions",
     `internal_reference=eq.${encodeURIComponent(numcommande)}`,
     updateData,
-  ).catch(e => console.error("[webhook] Update DB:", e));
+  ).catch(e => console.error("[webhook] update DB:", e));
 
-  // Note : Le crédit réel de la tontine se fait côté Flutter lors du polling.
-  // Le webhook sert uniquement à mettre à jour le statut dans la DB,
-  // que Flutter détectera lors de son prochain polling.
-  // Cela évite de dupliquer la logique de crédit dans l'Edge Function.
+  // Si confirmé → créditer côté serveur immédiatement
+  if (webhookStatus === "confirmed") {
+    const freshTx = { ...tx, ...updateData };
+    const creditResult = await crediterCoteServeur(freshTx);
+    console.log(`[webhook] Crédit résultat: ${creditResult.message}`);
+  }
 
   return new Response("OK", { status: 200 });
 }
