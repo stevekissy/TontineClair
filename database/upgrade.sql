@@ -1,5 +1,5 @@
 -- ============================================================
--- TontineClair — upgrade.sql  v6
+-- TontineClair — upgrade.sql  v7
 -- Mise à jour schéma (tables, colonnes, index, triggers, RLS)
 -- sans aucune perte de données
 -- ============================================================
@@ -8,7 +8,7 @@
 --   ✅ Bloc 0  — Inventaire informatif des tables existantes
 --   ✅ Section A — Nouvelles tables      (IF NOT EXISTS — no-op si présentes)
 --   ✅ Section B — Nouvelles colonnes    (ADD COLUMN IF NOT EXISTS — exhaustif)
---   ✅ Bloc 0b  — Post-validation BLOQUANTE v6 améliorée :
+--   ✅ Bloc 0b  — Post-validation BLOQUANTE (colonnes indexées) :
 --                  • Ignore les tables entièrement absentes
 --                    (créées par Section A, donc Section C est safe)
 --                  • RAISE EXCEPTION uniquement si table EXISTAIT
@@ -50,7 +50,7 @@
 --     • subscriptions / trg_sub_modifie_le → ABSENT en prod
 --
 -- ────────────────────────────────────────────────────────────
--- MATRICE COMPLÈTE v6 (table · colonne · couvert par)
+-- MATRICE COMPLÈTE v7 (table · colonne · couvert par)
 -- ────────────────────────────────────────────────────────────
 --   ┌─────────────────────────────────┬──────────────────────────┬────────┐
 --   │ Table                           │ Colonne(s) indexée(s)    │ Bloc B │
@@ -101,7 +101,7 @@
 --   Supabase SQL Editor → New query → Coller upgrade.sql → Run
 --   Puis : Supabase SQL Editor → New query → Coller init_inline.sql → Run
 --
--- VERSION : migrations 001→011 — 2025-07-17  (v6)
+-- VERSION : migrations 001→011 — 2025-07-17  (v7)
 -- ============================================================
 
 BEGIN;
@@ -119,7 +119,7 @@ DECLARE
   v_tbl  TEXT;
   v_cnt  INT;
 BEGIN
-  RAISE NOTICE 'upgrade.sql v6 — Démarrage. Inventaire des tables existantes...';
+  RAISE NOTICE 'upgrade.sql v7 — Démarrage. Inventaire des tables existantes...';
   FOR v_tbl IN SELECT unnest(ARRAY[
     'tontines','audit','demandes_premium','scores_historique',
     'propositions_retrait','journal_audit','subscriptions','abonnements',
@@ -133,12 +133,12 @@ BEGIN
     FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = v_tbl;
     IF v_cnt = 0 THEN
-      RAISE NOTICE 'v6 PRÉ-INFO: table "%" absente → sera créée par Section A', v_tbl;
+      RAISE NOTICE 'v7 PRÉ-INFO: table "%" absente → sera créée par Section A', v_tbl;
     ELSE
-      RAISE NOTICE 'v6 PRÉ-INFO: table "%" présente avec % colonnes', v_tbl, v_cnt;
+      RAISE NOTICE 'v7 PRÉ-INFO: table "%" présente avec % colonnes', v_tbl, v_cnt;
     END IF;
   END LOOP;
-  RAISE NOTICE 'v6 PRÉ-INFO: fin inventaire. Début Section A...';
+  RAISE NOTICE 'v7 PRÉ-INFO: fin inventaire. Début Section A...';
 END;
 $$;
 
@@ -550,7 +550,7 @@ CREATE TABLE IF NOT EXISTS support_messages (
 -- ============================================================
 -- SECTION B : NOUVELLES COLONNES (ADD COLUMN IF NOT EXISTS)
 -- ============================================================
--- RÈGLE ABSOLUE v6 :
+-- RÈGLE ABSOLUE v7 :
 --   CHAQUE colonne référencée dans Section C (CREATE INDEX),
 --   Section D (triggers) et Section E (RLS) doit apparaître
 --   dans ce bloc pour la table correspondante.
@@ -878,9 +878,155 @@ ALTER TABLE voix ADD COLUMN IF NOT EXISTS vote_le   TIMESTAMPTZ NOT NULL DEFAULT
 
 
 -- ============================================================
--- BLOC 0b : POST-VALIDATION BLOQUANTE v6
+-- BLOC 0c : DÉDUPLICATION PRÉVENTIVE v7
 -- ============================================================
--- Vérification APRÈS Section A + Section B.
+-- Exécuté APRÈS Section B (colonnes présentes) et AVANT Bloc 0b
+-- (validation) et Section C (création des index UNIQUE).
+--
+-- POURQUOI :
+--   ERROR 23505 en prod sur fcm_tokens.token — la table contenait
+--   des tokens dupliqués ; CREATE UNIQUE INDEX échoue si des
+--   doublons existent déjà dans les données.
+--
+-- STRATÉGIE DE CONSERVATION :
+--   Pour chaque groupe de doublons, on conserve la ligne dont le
+--   timestamp est le plus récent, selon la priorité :
+--     1. Colonne timestamp la plus pertinente (updated_at / mis_a_jour
+--        / modifie_le / cree_le / date_debut / vote_le selon la table)
+--     2. MAX(id) en tiebreak universel
+--   Les autres lignes du groupe sont supprimées (DELETE).
+--
+-- IDEMPOTENCE :
+--   • Si aucun doublon → DELETE 0 lignes → RAISE NOTICE "0 supprimé"
+--   • Si relancé après un premier passage → idem, 0 doublon restant
+--
+-- TABLES COUVERTES (toutes celles ayant un CREATE UNIQUE INDEX
+-- dans Section C sur une colonne pouvant contenir des doublons) :
+--   1. fcm_tokens          → UNIQUE(token)
+--   2. rappels_envoyes     → UNIQUE(code, membre_id, type)
+--   3. voix                → UNIQUE(code, vote_id, membre_id)
+--   4. subscriptions       → UNIQUE(code)
+--   5. admin_membres       → UNIQUE(pseudo)
+--   6. support_tickets     → UNIQUE(ref)
+-- ============================================================
+DO $$
+DECLARE
+  v_deleted  BIGINT;
+BEGIN
+  RAISE NOTICE 'v7 DÉDUPLICATION: démarrage Bloc 0c...';
+
+  -- ──────────────────────────────────────────────────────────────
+  -- 1. fcm_tokens — UNIQUE(token)
+  --    Conserver : ligne avec mis_a_jour MAX, puis cree_le, puis
+  --    MAX(id) comme tiebreak.
+  --    Note : NULL tokens ignorés (pas concernés par la contrainte).
+  -- ──────────────────────────────────────────────────────────────
+  DELETE FROM public.fcm_tokens
+  WHERE id NOT IN (
+    SELECT DISTINCT ON (token)
+           id
+    FROM   public.fcm_tokens
+    WHERE  token IS NOT NULL
+    ORDER  BY token,
+              COALESCE(mis_a_jour, cree_le, NOW()) DESC,
+              id DESC
+  )
+  AND token IS NOT NULL;
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RAISE NOTICE 'v7 DÉDUPLICATION: fcm_tokens.token — % doublon(s) supprimé(s)', v_deleted;
+
+  -- ──────────────────────────────────────────────────────────────
+  -- 2. rappels_envoyes — UNIQUE(code, membre_id, type)
+  --    Conserver : ligne avec envoye_le MAX, puis MAX(id).
+  -- ──────────────────────────────────────────────────────────────
+  DELETE FROM rappels_envoyes
+  WHERE id NOT IN (
+    SELECT DISTINCT ON (code, membre_id, type)
+           id
+    FROM   rappels_envoyes
+    ORDER  BY code, membre_id, type,
+              COALESCE(envoye_le, NOW()) DESC,
+              id DESC
+  );
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RAISE NOTICE 'v7 DÉDUPLICATION: rappels_envoyes(code,membre_id,type) — % doublon(s) supprimé(s)', v_deleted;
+
+  -- ──────────────────────────────────────────────────────────────
+  -- 3. voix — UNIQUE(code, vote_id, membre_id)
+  --    Conserver : ligne avec vote_le MAX, puis MAX(id).
+  -- ──────────────────────────────────────────────────────────────
+  DELETE FROM voix
+  WHERE id NOT IN (
+    SELECT DISTINCT ON (code, vote_id, membre_id)
+           id
+    FROM   voix
+    ORDER  BY code, vote_id, membre_id,
+              COALESCE(vote_le, NOW()) DESC,
+              id DESC
+  );
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RAISE NOTICE 'v7 DÉDUPLICATION: voix(code,vote_id,membre_id) — % doublon(s) supprimé(s)', v_deleted;
+
+  -- ──────────────────────────────────────────────────────────────
+  -- 4. subscriptions — UNIQUE(code)
+  --    Conserver : ligne avec modifie_le MAX, puis date_debut,
+  --    puis MAX(id).
+  -- ──────────────────────────────────────────────────────────────
+  DELETE FROM subscriptions
+  WHERE id NOT IN (
+    SELECT DISTINCT ON (code)
+           id
+    FROM   subscriptions
+    ORDER  BY code,
+              COALESCE(modifie_le, date_debut, NOW()) DESC,
+              id DESC
+  );
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RAISE NOTICE 'v7 DÉDUPLICATION: subscriptions.code — % doublon(s) supprimé(s)', v_deleted;
+
+  -- ──────────────────────────────────────────────────────────────
+  -- 5. admin_membres — UNIQUE(pseudo)
+  --    Conserver : ligne avec derniere_connexion MAX, puis cree_le,
+  --    puis MAX(id).
+  -- ──────────────────────────────────────────────────────────────
+  DELETE FROM admin_membres
+  WHERE id NOT IN (
+    SELECT DISTINCT ON (pseudo)
+           id
+    FROM   admin_membres
+    ORDER  BY pseudo,
+              COALESCE(derniere_connexion, cree_le, NOW()) DESC,
+              id DESC
+  );
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RAISE NOTICE 'v7 DÉDUPLICATION: admin_membres.pseudo — % doublon(s) supprimé(s)', v_deleted;
+
+  -- ──────────────────────────────────────────────────────────────
+  -- 6. support_tickets — UNIQUE(ref)
+  --    Conserver : ligne avec mis_a_jour MAX, puis cree_le,
+  --    puis MAX(id).
+  -- ──────────────────────────────────────────────────────────────
+  DELETE FROM support_tickets
+  WHERE id NOT IN (
+    SELECT DISTINCT ON (ref)
+           id
+    FROM   support_tickets
+    ORDER  BY ref,
+              COALESCE(mis_a_jour, cree_le, NOW()) DESC,
+              id DESC
+  );
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RAISE NOTICE 'v7 DÉDUPLICATION: support_tickets.ref — % doublon(s) supprimé(s)', v_deleted;
+
+  RAISE NOTICE 'v7 DÉDUPLICATION: Bloc 0c terminé. Début Bloc 0b (validation colonnes)...';
+END;
+$$;
+
+
+-- ============================================================
+-- BLOC 0b : POST-VALIDATION BLOQUANTE v7
+-- ============================================================
+-- Vérification APRÈS Section A + Section B + Bloc 0c.
 --
 -- AMÉLIORATION v6 vs v5 :
 --   v5 levait EXCEPTION même si la table n'existait PAS avant
@@ -903,7 +1049,7 @@ DECLARE
   v_missing   TEXT := '';
   v_count     INT  := 0;
 BEGIN
-  RAISE NOTICE 'v6 POST-VALIDATION: vérification de toutes les colonnes indexées...';
+  RAISE NOTICE 'v7 POST-VALIDATION: vérification de toutes les colonnes indexées...';
 
   FOR rec IN
     SELECT t.tbl, t.col, t.idx
@@ -1001,7 +1147,7 @@ BEGIN
 
   IF v_count > 0 THEN
     RAISE EXCEPTION
-      E'upgrade.sql v6 — POST-VALIDATION ÉCHOUÉE\n'
+      E'upgrade.sql v7 — POST-VALIDATION ÉCHOUÉE\n'
       'Section B n''a pas pu créer % colonne(s) :\n%\n\n'
       'CAUSES POSSIBLES :\n'
       '  1. La table existait avec une contrainte NOT NULL sans DEFAULT\n'
@@ -1012,8 +1158,8 @@ BEGIN
       'Copiez le message complet et transmettez-le à l''agent.',
       v_count, v_missing;
   ELSE
-    RAISE NOTICE 'v6 POST-VALIDATION: OK — toutes les % colonnes indexées sont présentes.', 57;
-    RAISE NOTICE 'v6 POST-VALIDATION: Début Section C (index)...';
+    RAISE NOTICE 'v7 POST-VALIDATION: OK — toutes les % colonnes indexées sont présentes.', 57;
+    RAISE NOTICE 'v7 POST-VALIDATION: Début Section C (index)...';
   END IF;
 END;
 $$;
@@ -1411,5 +1557,5 @@ COMMIT;
 -- --     (utiliser audit_schema_prod_v2.sql pour exporter en un CSV)
 --
 -- ============================================================
--- FIN upgrade.sql  v6
+-- FIN upgrade.sql  v7
 -- ============================================================
