@@ -143,6 +143,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       _erreur  = null;
     });
 
+    void logOk(String nom, dynamic val) {
+      debugPrint('ADMIN_DEBUG — $nom — succès (${val is List ? val.length : val is Map ? val.keys.length : val} éléments)');
+    }
+    void logErr(String nom, Object e) {
+      debugPrint('ADMIN_DEBUG — $nom — ERREUR: $e');
+    }
+
     // Erreurs collectées par RPC (affichage en console, pas écran blanc)
     final erreurs = <String>[];
 
@@ -150,7 +157,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     Map<String, dynamic> statsJson = {};
     try {
       statsJson = await SupabaseService.adminStatsGlobales(widget.cle);
+      logOk('admin_stats_globales', statsJson);
     } catch (e) {
+      logErr('admin_stats_globales', e);
       erreurs.add('stats_globales: $e');
     }
 
@@ -160,7 +169,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       tontines = await SupabaseService.adminDashboardTontines(
         widget.cle, filtre: 'toutes', limit: 200,
       );
+      logOk('admin_dashboard_tontines', tontines);
     } catch (e) {
+      logErr('admin_dashboard_tontines', e);
       erreurs.add('dashboard_tontines: $e');
     }
 
@@ -170,15 +181,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       abos = await SupabaseService.adminListerAbonnements(
         widget.cle, statut: 'tous', limit: 100,
       );
+      logOk('admin_lister_abonnements', abos);
     } catch (e) {
+      logErr('admin_lister_abonnements', e);
       erreurs.add('lister_abonnements: $e');
     }
 
-    // ── RPC 4 : alertes (était le RPC qui faisait tout échouer) ──────────
+    // ── RPC 4 : alertes ──────────────────────────────────────────────────
     List<Map<String, dynamic>> alertes = [];
     try {
       alertes = await SupabaseService.adminAlertes(widget.cle);
+      logOk('admin_alertes', alertes);
     } catch (e) {
+      logErr('admin_alertes', e);
       // Échec toléré — alertes affichées vides, dashboard reste accessible
       erreurs.add('admin_alertes: $e');
     }
@@ -187,7 +202,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     List<Map<String, dynamic>> mensuel = [];
     try {
       mensuel = await SupabaseService.adminStatsMensuelles(widget.cle);
+      logOk('admin_stats_mensuelles', mensuel);
     } catch (e) {
+      logErr('admin_stats_mensuelles', e);
       erreurs.add('stats_mensuelles: $e');
     }
 
@@ -195,16 +212,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     List<Map<String, dynamic>> top10 = [];
     try {
       top10 = await SupabaseService.adminTopTontines(widget.cle);
+      logOk('admin_top_tontines', top10);
     } catch (e) {
+      logErr('admin_top_tontines', e);
       erreurs.add('top_tontines: $e');
     }
 
-    // Logger les erreurs partielles en console (sans bloquer l'UI)
-    if (erreurs.isNotEmpty) {
-      for (final err in erreurs) {
-        debugPrint('[AdminDashboard] RPC partiel: $err');
-      }
-    }
+    debugPrint('ADMIN_DEBUG — _charger terminé — erreurs: ${erreurs.length}, '
+        'stats=${statsJson.isNotEmpty}, tontines=${tontines.length}, '
+        'abos=${abos.length}, alertes=${alertes.length}, '
+        'mensuel=${mensuel.length}, top10=${top10.length}');
 
     // Si TOUS les RPCs ont échoué et que statsJson est vide → erreur totale
     final echecTotal = statsJson.isEmpty && tontines.isEmpty &&
