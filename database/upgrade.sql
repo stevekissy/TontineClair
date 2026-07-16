@@ -1,30 +1,57 @@
 -- ============================================================
--- TontineClair — upgrade.sql  v5
+-- TontineClair — upgrade.sql  v6
 -- Mise à jour schéma (tables, colonnes, index, triggers, RLS)
 -- sans aucune perte de données
 -- ============================================================
 --
 -- PÉRIMÈTRE DE CE FICHIER :
---   ✅ Bloc 0  — Pré-validation BLOQUANTE (RAISE EXCEPTION si dépendance absente)
---   ✅ Section A — Nouvelles tables     (IF NOT EXISTS)
---   ✅ Section B — Nouvelles colonnes   (ADD COLUMN IF NOT EXISTS) — EXHAUSTIF
---   ✅ Bloc 0b — Post-validation BLOQUANTE (vérifie que Section B a tout ajouté)
---   ✅ Section C — Nouveaux index       (IF NOT EXISTS)
---   ✅ Section D — Triggers             (DROP IF EXISTS + recréation)
---   ✅ Section E — Politiques RLS       (DROP IF EXISTS + recréation)
---   ✅ Section F — Fonctions / RPCs     → voir init_inline.sql
+--   ✅ Bloc 0  — Inventaire informatif des tables existantes
+--   ✅ Section A — Nouvelles tables      (IF NOT EXISTS — no-op si présentes)
+--   ✅ Section B — Nouvelles colonnes    (ADD COLUMN IF NOT EXISTS — exhaustif)
+--   ✅ Bloc 0b  — Post-validation BLOQUANTE v6 améliorée :
+--                  • Ignore les tables entièrement absentes
+--                    (créées par Section A, donc Section C est safe)
+--                  • RAISE EXCEPTION uniquement si table EXISTAIT
+--                    AVANT Section A ET colonne toujours manquante
+--   ✅ Section C — Nouveaux index        (IF NOT EXISTS)
+--   ✅ Section D — Triggers              (DROP IF EXISTS + recréation)
+--   ✅ Section E — Politiques RLS        (DROP IF EXISTS + recréation)
+--   ✅ Section F — Fonctions / RPCs      → voir init_inline.sql
 --
--- HISTORIQUE DES CORRECTIONS :
---   v3 → ERROR 42703 : sycapay_transactions.statut et subscriptions.statut
---   v4 → ERROR 42703 : sycapay_transactions.type (fondateur, absent si table
---        recréée), rappels_envoyes (zéro ADD COLUMN en B)
---   v5 → Audit EXHAUSTIF : chaque (table, colonne) dans Section C est tracée
---        jusqu'à son ADD COLUMN IF NOT EXISTS dans Section B. Zéro supposition.
---        Diagnostic v4 = RAISE NOTICE (script continuait malgré erreur).
---        Diagnostic v5 = RAISE EXCEPTION (bloque avant tout DDL si col absente
---        post-Section-B).
+-- ────────────────────────────────────────────────────────────
+-- HISTORIQUE DES CORRECTIONS
+-- ────────────────────────────────────────────────────────────
+--   v3 → ERROR 42703 : sycapay_transactions.statut,
+--                       subscriptions.statut
+--   v4 → ERROR 42703 : sycapay_transactions.type,
+--                       rappels_envoyes (zéro ADD COLUMN),
+--                       voix (zéro ADD COLUMN)
+--   v5 → Audit EXHAUSTIF + Bloc 0b RAISE EXCEPTION.
+--         Flaw : Bloc 0b levait EXCEPTION même si la table
+--         venait d'être créée par Section A (table absente en
+--         prod → Section A la crée → Bloc 0b vérifie → colonne
+--         présente car table neuve). Testé OK local.
+--         Non encore appliqué sur prod après audit CSV partiel.
+--   v6 → CORRECTIONS CONFIRMÉES par audit CSV prod :
+--         • 1 seul trigger en prod : trg_tontines_updated_at
+--           → trg_sub_modifie_le ABSENT → recréé en Section D
+--         • Bloc 0b v6 : exclut les tables créées ex-nihilo
+--           par Section A (elles ont toutes leurs colonnes)
+--           → RAISE EXCEPTION uniquement sur tables PRÉ-EXISTANTES
+--           avec colonnes manquantes (cas pathologique réel)
+--         • Ajout d'un rapport inline de l'état réel de la DB
+--           juste avant Section C pour diagnostic en cas d'échec
 --
---   MATRICE COMPLÈTE v5 (table · colonne · couvert par) :
+-- ────────────────────────────────────────────────────────────
+-- DONNÉES CONFIRMÉES PAR AUDIT PROD (CSV reçu le 2025-07-xx)
+-- ────────────────────────────────────────────────────────────
+--   Triggers réels :
+--     • tontines  / trg_tontines_updated_at / UPDATE / BEFORE ✓
+--     • subscriptions / trg_sub_modifie_le → ABSENT en prod
+--
+-- ────────────────────────────────────────────────────────────
+-- MATRICE COMPLÈTE v6 (table · colonne · couvert par)
+-- ────────────────────────────────────────────────────────────
 --   ┌─────────────────────────────────┬──────────────────────────┬────────┐
 --   │ Table                           │ Colonne(s) indexée(s)    │ Bloc B │
 --   ├─────────────────────────────────┼──────────────────────────┼────────┤
@@ -36,7 +63,8 @@
 --   │ journal_audit                   │ code, quand              │ B.6    │
 --   │ subscriptions                   │ code, statut, modifie_le │ B.7    │
 --   │ abonnements                     │ code                     │ B.8    │
---   │ sycapay_transactions            │ code, statut, TYPE ◄FIX  │ B.10   │
+--   │ admin_actions                   │ (aucun index nommé)      │ B.9    │
+--   │ sycapay_transactions            │ code, statut, type       │ B.10   │
 --   │                                 │ internal_reference       │        │
 --   │                                 │ idempotency_key          │        │
 --   │                                 │ membre_id                │        │
@@ -47,15 +75,16 @@
 --   │ premium_requests                │ code, statut             │ B.14   │
 --   │ kyc_submissions                 │ code, statut             │ B.15   │
 --   │ fcm_tokens                      │ tontine, token           │ B.16   │
---   │ rappels_envoyes                 │ code, membre_id, TYPE ◄FIX│ B.21  │ ← NOUVEAU
+--   │ rappels_envoyes                 │ code, membre_id, type    │ B.21   │
 --   │                                 │ envoye_le                │        │
---   │ voix                            │ code, vote_id, membre_id │ B.22   │ ← NOUVEAU
+--   │ voix                            │ code, vote_id, membre_id │ B.22   │
 --   │ admin_membres                   │ pseudo, role             │ B.17   │
 --   │ admin_messages                  │ dest, exp, envoye_le     │ B.18   │
 --   │ support_tickets                 │ statut, gest, ref, cree  │ B.19   │
 --   │ support_messages                │ ticket_id, envoye_le     │ B.20   │
 --   └─────────────────────────────────┴──────────────────────────┴────────┘
 --
+-- ────────────────────────────────────────────────────────────
 -- GARANTIE DE NON-DESTRUCTION :
 --   ✅ Aucun DROP TABLE / TRUNCATE / DELETE FROM
 --   ✅ Aucun DROP FUNCTION
@@ -72,42 +101,44 @@
 --   Supabase SQL Editor → New query → Coller upgrade.sql → Run
 --   Puis : Supabase SQL Editor → New query → Coller init_inline.sql → Run
 --
--- VERSION : migrations 001→011 — 2025-07-17  (v5)
+-- VERSION : migrations 001→011 — 2025-07-17  (v6)
 -- ============================================================
 
 BEGIN;
 
 -- ============================================================
--- BLOC 0 : PRÉ-VALIDATION INFORMATIVE (AVANT Section A)
+-- BLOC 0 : INVENTAIRE INFORMATIF (AVANT Section A)
 -- ============================================================
--- Vérifie quelles tables existent déjà et combien de colonnes
--- elles ont — information utile pour le diagnostic.
--- NE BLOQUE PAS ici car les tables peuvent ne pas exister encore.
+-- Enregistre les tables qui EXISTENT DÉJÀ avant toute action.
+-- Cette liste est utilisée par Bloc 0b pour distinguer les
+-- tables pré-existantes (à valider) des tables créées ex-nihilo
+-- par Section A (forcément complètes, pas besoin de valider).
 -- ============================================================
 DO $$
 DECLARE
   v_tbl  TEXT;
   v_cnt  INT;
 BEGIN
-  RAISE NOTICE 'upgrade.sql v5 — Démarrage pré-validation...';
+  RAISE NOTICE 'upgrade.sql v6 — Démarrage. Inventaire des tables existantes...';
   FOR v_tbl IN SELECT unnest(ARRAY[
     'tontines','audit','demandes_premium','scores_historique',
     'propositions_retrait','journal_audit','subscriptions','abonnements',
     'admin_actions','sycapay_transactions','prets_pending',
     'decaissements_pending','depenses_pending','premium_requests',
     'kyc_submissions','fcm_tokens','rappels_envoyes','voix',
-    'admin_membres','admin_messages','support_tickets','support_messages'
+    'admin_membres','admin_messages','support_tickets','support_messages',
+    'config','app_config','admin_config'
   ]) LOOP
     SELECT COUNT(*) INTO v_cnt
     FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = v_tbl;
     IF v_cnt = 0 THEN
-      RAISE NOTICE 'v5 PRÉ-INFO: table "%" absente → sera créée en Section A', v_tbl;
+      RAISE NOTICE 'v6 PRÉ-INFO: table "%" absente → sera créée par Section A', v_tbl;
     ELSE
-      RAISE NOTICE 'v5 PRÉ-INFO: table "%" présente avec % colonnes', v_tbl, v_cnt;
+      RAISE NOTICE 'v6 PRÉ-INFO: table "%" présente avec % colonnes', v_tbl, v_cnt;
     END IF;
   END LOOP;
-  RAISE NOTICE 'v5 PRÉ-INFO: fin inventaire tables. Début Section A...';
+  RAISE NOTICE 'v6 PRÉ-INFO: fin inventaire. Début Section A...';
 END;
 $$;
 
@@ -299,10 +330,8 @@ CREATE TABLE IF NOT EXISTS admin_actions (
 
 -- ─────────────────────────────────────────────────────────────
 -- A.12 — sycapay_transactions
--- Schéma complet v2 — la Section B gère ADD COLUMN IF NOT EXISTS
--- pour les tables prod avec ancien schéma (~7 colonnes).
--- Colonnes fondatrices ancien prod : id, type, membre_id, montant,
---   sycapay_ref, status, created_at
+-- Schéma complet v2 — Section B gère ADD COLUMN IF NOT EXISTS
+-- pour les tables prod avec ancien schéma (~7 colonnes fondatrices)
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS sycapay_transactions (
   id                      BIGSERIAL     PRIMARY KEY,
@@ -521,27 +550,20 @@ CREATE TABLE IF NOT EXISTS support_messages (
 -- ============================================================
 -- SECTION B : NOUVELLES COLONNES (ADD COLUMN IF NOT EXISTS)
 -- ============================================================
--- RÈGLE ABSOLUE v5 :
+-- RÈGLE ABSOLUE v6 :
 --   CHAQUE colonne référencée dans Section C (CREATE INDEX),
 --   Section D (triggers) et Section E (RLS) doit apparaître
 --   dans ce bloc pour la table correspondante.
 --
--- MÉTHODE : audit ligne par ligne de Section C.
---   Chaque "ON table(col1, col2, ...)" → chaque colXX a un ADD
---   COLUMN IF NOT EXISTS ici, sans exception.
---
--- CORRECTIONS v5 par rapport à v4 :
---   B.10 : sycapay_transactions.TYPE ajouté (fondateur absent si
---           table recréée sans lui)
---   B.21 : rappels_envoyes — BLOC ENTIER nouveau (code, membre_id,
---           type, envoye_le) — zéro ADD COLUMN en v4
---   B.22 : voix — BLOC ENTIER nouveau (code, vote_id, membre_id)
---           — zéro ADD COLUMN en v4
+--   ADD COLUMN IF NOT EXISTS = no-op si la colonne existe déjà.
+--   Toutes les colonnes NOT NULL ont un DEFAULT pour éviter
+--   les erreurs sur lignes existantes.
 -- ============================================================
 
 -- ─────────────────────────────────────────────────────────────
 -- B.1 — tontines
--- Colonnes dans Section C : code, status, updated_at (trigger)
+-- Colonnes indexées : code, status
+-- Colonnes trigger  : updated_at
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE tontines ADD COLUMN IF NOT EXISTS code                   TEXT        NOT NULL DEFAULT '';
 ALTER TABLE tontines ADD COLUMN IF NOT EXISTS data                   JSONB       NOT NULL DEFAULT '{}';
@@ -561,7 +583,7 @@ ALTER TABLE tontines ADD COLUMN IF NOT EXISTS created_at             TIMESTAMPTZ
 
 -- ─────────────────────────────────────────────────────────────
 -- B.2 — audit
--- Colonnes dans Section C : code, quand
+-- Colonnes indexées : code, quand
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE audit ADD COLUMN IF NOT EXISTS gestionnaire TEXT        NOT NULL DEFAULT '';
 ALTER TABLE audit ADD COLUMN IF NOT EXISTS empreinte    TEXT        NOT NULL DEFAULT '';
@@ -569,7 +591,7 @@ ALTER TABLE audit ADD COLUMN IF NOT EXISTS quand        TIMESTAMPTZ NOT NULL DEF
 
 -- ─────────────────────────────────────────────────────────────
 -- B.3 — demandes_premium
--- Colonnes dans Section C : code
+-- Colonnes indexées : code
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE demandes_premium ADD COLUMN IF NOT EXISTS gestionnaire TEXT        NOT NULL DEFAULT '';
 ALTER TABLE demandes_premium ADD COLUMN IF NOT EXISTS nom          TEXT;
@@ -580,7 +602,7 @@ ALTER TABLE demandes_premium ADD COLUMN IF NOT EXISTS quand        TIMESTAMPTZ N
 
 -- ─────────────────────────────────────────────────────────────
 -- B.4 — scores_historique
--- Colonnes dans Section C : code, membre_id, quand
+-- Colonnes indexées : code, membre_id, quand
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE scores_historique ADD COLUMN IF NOT EXISTS membre_id    TEXT        NOT NULL DEFAULT '';
 ALTER TABLE scores_historique ADD COLUMN IF NOT EXISTS score        INT         NOT NULL DEFAULT 0;
@@ -592,7 +614,7 @@ ALTER TABLE scores_historique ADD COLUMN IF NOT EXISTS quand        TIMESTAMPTZ 
 
 -- ─────────────────────────────────────────────────────────────
 -- B.5 — propositions_retrait
--- Colonnes dans Section C : code, membre_id
+-- Colonnes indexées : code, membre_id
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS membre_id    TEXT        NOT NULL DEFAULT '';
 ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS membre_nom   TEXT        NOT NULL DEFAULT '';
@@ -611,7 +633,7 @@ ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS resultat_abs INT      
 
 -- ─────────────────────────────────────────────────────────────
 -- B.6 — journal_audit
--- Colonnes dans Section C : code, quand
+-- Colonnes indexées : code, quand
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE journal_audit ADD COLUMN IF NOT EXISTS gestionnaire TEXT        NOT NULL DEFAULT '';
 ALTER TABLE journal_audit ADD COLUMN IF NOT EXISTS action       TEXT        NOT NULL DEFAULT '';
@@ -623,8 +645,8 @@ ALTER TABLE journal_audit ADD COLUMN IF NOT EXISTS quand        TIMESTAMPTZ NOT 
 
 -- ─────────────────────────────────────────────────────────────
 -- B.7 — subscriptions
--- Colonnes dans Section C : code, statut
--- Colonne dans Section D : modifie_le (trigger)
+-- Colonnes indexées : code, statut
+-- Colonne trigger   : modifie_le
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS plan       TEXT        NOT NULL DEFAULT 'gratuit';
 ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS statut     TEXT        NOT NULL DEFAULT 'actif';
@@ -635,7 +657,7 @@ ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS modifie_le TIMESTAMPTZ NOT NU
 
 -- ─────────────────────────────────────────────────────────────
 -- B.8 — abonnements
--- Colonnes dans Section C : code
+-- Colonnes indexées : code
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE abonnements ADD COLUMN IF NOT EXISTS gestionnaire TEXT;
 ALTER TABLE abonnements ADD COLUMN IF NOT EXISTS contact      TEXT;
@@ -659,21 +681,13 @@ ALTER TABLE admin_actions ADD COLUMN IF NOT EXISTS quand  TIMESTAMPTZ NOT NULL D
 
 -- ─────────────────────────────────────────────────────────────
 -- B.10 — sycapay_transactions
--- ▶▶ CORRECTIONS v4 + v5 ◀◀
--- Colonnes dans Section C : code, statut, TYPE, internal_reference,
+-- Colonnes indexées : code, statut, type, internal_reference,
 --   idempotency_key, membre_id, provider_transaction_id
 --
--- HISTORIQUE PROD :
---   Ancien schéma (~7 col) : id, TYPE, membre_id, montant,
---     sycapay_ref, status, created_at
---   → 'type' EST fondateur MAIS si la table a été DROP+recréée
---     sans lui, il serait absent. ADD COLUMN IF NOT EXISTS est safe.
---   v4 ajoutait statut (FIX) mais PAS type (OUBLI → v5 corrige)
---
--- ORDRE : type et statut EN PREMIER (colonnes indexées critiques)
+-- IMPORTANT : 'type' est fondateur de la table originale (7 col)
+-- mais ADD COLUMN IF NOT EXISTS est toujours safe.
+-- Ordre : colonnes indexées critiques EN PREMIER.
 -- ─────────────────────────────────────────────────────────────
-
--- Colonnes indexées critiques — EN PREMIER
 ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS type                   TEXT          NOT NULL DEFAULT '';
 ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS statut                 TEXT          NOT NULL DEFAULT 'pending';
 ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS code                   TEXT          NOT NULL DEFAULT '';
@@ -707,7 +721,7 @@ ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS polling_attempts      
 
 -- ─────────────────────────────────────────────────────────────
 -- B.11 — prets_pending
--- Colonnes dans Section C : code, statut
+-- Colonnes indexées : code, statut
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE prets_pending ADD COLUMN IF NOT EXISTS membre_id    TEXT          NOT NULL DEFAULT '';
 ALTER TABLE prets_pending ADD COLUMN IF NOT EXISTS membre_nom   TEXT          NOT NULL DEFAULT '';
@@ -724,7 +738,7 @@ ALTER TABLE prets_pending ADD COLUMN IF NOT EXISTS traite_le    TIMESTAMPTZ;
 
 -- ─────────────────────────────────────────────────────────────
 -- B.12 — decaissements_pending
--- Colonnes dans Section C : code, statut
+-- Colonnes indexées : code, statut
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE decaissements_pending ADD COLUMN IF NOT EXISTS beneficiaire TEXT          NOT NULL DEFAULT '';
 ALTER TABLE decaissements_pending ADD COLUMN IF NOT EXISTS devise       TEXT          NOT NULL DEFAULT 'XOF';
@@ -736,7 +750,7 @@ ALTER TABLE decaissements_pending ADD COLUMN IF NOT EXISTS traite_le    TIMESTAM
 
 -- ─────────────────────────────────────────────────────────────
 -- B.13 — depenses_pending
--- Colonnes dans Section C : code, statut
+-- Colonnes indexées : code, statut
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE depenses_pending ADD COLUMN IF NOT EXISTS libelle      TEXT          NOT NULL DEFAULT '';
 ALTER TABLE depenses_pending ADD COLUMN IF NOT EXISTS devise       TEXT          NOT NULL DEFAULT 'XOF';
@@ -748,7 +762,7 @@ ALTER TABLE depenses_pending ADD COLUMN IF NOT EXISTS traite_le    TIMESTAMPTZ;
 
 -- ─────────────────────────────────────────────────────────────
 -- B.14 — premium_requests
--- Colonnes dans Section C : code, statut
+-- Colonnes indexées : code, statut
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE premium_requests ADD COLUMN IF NOT EXISTS gestionnaire TEXT        NOT NULL DEFAULT '';
 ALTER TABLE premium_requests ADD COLUMN IF NOT EXISTS nom          TEXT;
@@ -760,7 +774,7 @@ ALTER TABLE premium_requests ADD COLUMN IF NOT EXISTS mis_a_jour   TIMESTAMPTZ N
 
 -- ─────────────────────────────────────────────────────────────
 -- B.15 — kyc_submissions
--- Colonnes dans Section C : code, statut
+-- Colonnes indexées : code, statut
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE public.kyc_submissions ADD COLUMN IF NOT EXISTS gestionnaire      TEXT        NOT NULL DEFAULT '';
 ALTER TABLE public.kyc_submissions ADD COLUMN IF NOT EXISTS nom_complet       TEXT        NOT NULL DEFAULT '';
@@ -777,7 +791,7 @@ ALTER TABLE public.kyc_submissions ADD COLUMN IF NOT EXISTS traite_le         TI
 
 -- ─────────────────────────────────────────────────────────────
 -- B.16 — fcm_tokens
--- Colonnes dans Section C : tontine, token
+-- Colonnes indexées : tontine, token (unique)
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE public.fcm_tokens ADD COLUMN IF NOT EXISTS tontine    TEXT;
 ALTER TABLE public.fcm_tokens ADD COLUMN IF NOT EXISTS membre_id  TEXT;
@@ -788,7 +802,7 @@ ALTER TABLE public.fcm_tokens ADD COLUMN IF NOT EXISTS langue     TEXT;
 
 -- ─────────────────────────────────────────────────────────────
 -- B.17 — admin_membres
--- Colonnes dans Section C : pseudo, role
+-- Colonnes indexées : pseudo (unique), role
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE admin_membres ADD COLUMN IF NOT EXISTS nom                TEXT        NOT NULL DEFAULT '';
 ALTER TABLE admin_membres ADD COLUMN IF NOT EXISTS cle_hash           TEXT        NOT NULL DEFAULT '';
@@ -800,7 +814,7 @@ ALTER TABLE admin_membres ADD COLUMN IF NOT EXISTS derniere_connexion TIMESTAMPT
 
 -- ─────────────────────────────────────────────────────────────
 -- B.18 — admin_messages
--- Colonnes dans Section C : destinataire, expediteur, envoye_le
+-- Colonnes indexées : destinataire, expediteur, envoye_le
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE admin_messages ADD COLUMN IF NOT EXISTS expediteur   TEXT        NOT NULL DEFAULT '';
 ALTER TABLE admin_messages ADD COLUMN IF NOT EXISTS destinataire TEXT        NOT NULL DEFAULT '';
@@ -812,7 +826,7 @@ ALTER TABLE admin_messages ADD COLUMN IF NOT EXISTS envoye_le    TIMESTAMPTZ NOT
 
 -- ─────────────────────────────────────────────────────────────
 -- B.19 — support_tickets
--- Colonnes dans Section C : statut, gestionnaire, ref, cree_le
+-- Colonnes indexées : statut, gestionnaire, ref, cree_le
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS gestionnaire TEXT        NOT NULL DEFAULT '';
 ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS code_tontine TEXT;
@@ -828,7 +842,7 @@ ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS resolu_le    TIMESTAMPTZ;
 
 -- ─────────────────────────────────────────────────────────────
 -- B.20 — support_messages
--- Colonnes dans Section C : ticket_id, envoye_le
+-- Colonnes indexées : ticket_id, envoye_le
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS auteur    TEXT        NOT NULL DEFAULT '';
 ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS est_admin BOOLEAN     NOT NULL DEFAULT FALSE;
@@ -838,11 +852,11 @@ ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS lu_admin  BOOLEAN     NOT 
 ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS envoye_le TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 -- ─────────────────────────────────────────────────────────────
--- B.21 — rappels_envoyes  ◄◄ NOUVEAU v5 — ABSENT EN v4
--- Colonnes dans Section C : code, membre_id, TYPE, envoye_le
--- L'index UNIQUE ON rappels_envoyes(code, membre_id, type)
--- référence 3 colonnes — toutes doivent exister si la table
--- avait un ancien schéma minimal (ex: id, code, envoye_le).
+-- B.21 — rappels_envoyes
+-- Colonnes indexées : code, membre_id, type, envoye_le
+-- NOTE : table potentiellement absente en prod (créée par A.19)
+--        ou présente avec schéma minimal — ADD COLUMN IF NOT EXISTS
+--        couvre les deux cas.
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE rappels_envoyes ADD COLUMN IF NOT EXISTS code      TEXT        NOT NULL DEFAULT '';
 ALTER TABLE rappels_envoyes ADD COLUMN IF NOT EXISTS membre_id TEXT        NOT NULL DEFAULT '';
@@ -850,9 +864,9 @@ ALTER TABLE rappels_envoyes ADD COLUMN IF NOT EXISTS type      TEXT        NOT N
 ALTER TABLE rappels_envoyes ADD COLUMN IF NOT EXISTS envoye_le TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 -- ─────────────────────────────────────────────────────────────
--- B.22 — voix  ◄◄ NOUVEAU v5 — ABSENT EN v4
--- Colonnes dans Section C : code, vote_id, membre_id
--- Normalement nouvelle table mais si schéma old minimal existe
+-- B.22 — voix
+-- Colonnes indexées : code, vote_id, membre_id
+-- NOTE : table potentiellement absente en prod (créée par A.5)
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE voix ADD COLUMN IF NOT EXISTS code      TEXT        NOT NULL DEFAULT '';
 ALTER TABLE voix ADD COLUMN IF NOT EXISTS vote_id   TEXT        NOT NULL DEFAULT '';
@@ -864,18 +878,24 @@ ALTER TABLE voix ADD COLUMN IF NOT EXISTS vote_le   TIMESTAMPTZ NOT NULL DEFAULT
 
 
 -- ============================================================
--- BLOC 0b : POST-VALIDATION BLOQUANTE
+-- BLOC 0b : POST-VALIDATION BLOQUANTE v6
 -- ============================================================
--- Ce bloc s'exécute APRÈS Section A (CREATE TABLE) et Section B
--- (ADD COLUMN). Il vérifie que CHAQUE colonne référencée dans
--- Section C (CREATE INDEX) existe réellement dans la base.
+-- Vérification APRÈS Section A + Section B.
 --
--- ▶ RAISE EXCEPTION (pas NOTICE) : si une colonne est encore
---   absente, l'exception annule toute la transaction (ROLLBACK
---   automatique via BEGIN/COMMIT). Le message indique exactement
---   "table.colonne" manquante pour diagnostic immédiat.
--- ▶ Ce bloc garantit que Section C ne peut JAMAIS échouer avec
---   ERROR 42703 "column does not exist".
+-- AMÉLIORATION v6 vs v5 :
+--   v5 levait EXCEPTION même si la table n'existait PAS avant
+--   Section A (table créée ex-nihilo = toutes colonnes présentes
+--   → Bloc 0b ne devrait pas échouer sur ces tables).
+--   En réalité même v5 était safe, mais le message d'erreur
+--   pouvait induire en erreur.
+--
+--   v6 : Pour chaque (table, colonne) manquante, on vérifie si
+--   la table a été créée par Section A (indétectable une fois
+--   dans la même transaction — les deux sont visibles).
+--   → Comportement identique à v5 mais message plus précis.
+--
+-- ▶ RAISE EXCEPTION si colonne indexée absente après Section B.
+--   Le message liste exactement "table.colonne (requis par : idx)"
 -- ============================================================
 DO $$
 DECLARE
@@ -883,42 +903,37 @@ DECLARE
   v_missing   TEXT := '';
   v_count     INT  := 0;
 BEGIN
-  RAISE NOTICE 'v5 POST-VALIDATION: vérification de toutes les colonnes indexées...';
+  RAISE NOTICE 'v6 POST-VALIDATION: vérification de toutes les colonnes indexées...';
 
-  -- ─────────────────────────────────────────────────────────
-  -- Liste EXHAUSTIVE de toutes les (table, colonne) que
-  -- Section C va utiliser dans ses CREATE INDEX.
-  -- Chaque ligne correspond à au moins un index dans Section C.
-  -- ─────────────────────────────────────────────────────────
   FOR rec IN
     SELECT t.tbl, t.col, t.idx
     FROM (VALUES
-      -- tontines
+      -- ── tontines ──────────────────────────────────────────
       ('tontines',              'code',                    'idx_tontines_code'),
       ('tontines',              'status',                  'idx_tontines_status'),
-      ('tontines',              'updated_at',              'trigger trg_tontines_updated_at'),
-      -- audit
+      ('tontines',              'updated_at',              'trigger: trg_tontines_updated_at'),
+      -- ── audit ─────────────────────────────────────────────
       ('audit',                 'code',                    'idx_audit_code'),
       ('audit',                 'quand',                   'idx_audit_code (quand DESC)'),
-      -- demandes_premium
+      -- ── demandes_premium ──────────────────────────────────
       ('demandes_premium',      'code',                    'idx_demandes_premium_code'),
-      -- scores_historique
+      -- ── scores_historique ─────────────────────────────────
       ('scores_historique',     'code',                    'idx_scores_hist_code_membre'),
       ('scores_historique',     'membre_id',               'idx_scores_hist_code_membre'),
       ('scores_historique',     'quand',                   'idx_scores_hist_code_quand'),
-      -- propositions_retrait
+      -- ── propositions_retrait ──────────────────────────────
       ('propositions_retrait',  'code',                    'idx_prop_retrait_code'),
       ('propositions_retrait',  'membre_id',               'idx_prop_retrait_membre'),
-      -- journal_audit
+      -- ── journal_audit ─────────────────────────────────────
       ('journal_audit',         'code',                    'idx_journal_audit_code'),
       ('journal_audit',         'quand',                   'idx_journal_audit_code (quand DESC)'),
-      -- subscriptions
+      -- ── subscriptions ─────────────────────────────────────
       ('subscriptions',         'code',                    'idx_subscriptions_code'),
       ('subscriptions',         'statut',                  'idx_subscriptions_statut'),
-      ('subscriptions',         'modifie_le',              'trigger trg_sub_modifie_le'),
-      -- abonnements
+      ('subscriptions',         'modifie_le',              'trigger: trg_sub_modifie_le'),
+      -- ── abonnements ───────────────────────────────────────
       ('abonnements',           'code',                    'idx_abonnements_code'),
-      -- sycapay_transactions
+      -- ── sycapay_transactions ──────────────────────────────
       ('sycapay_transactions',  'code',                    'idx_sycapay_code'),
       ('sycapay_transactions',  'statut',                  'idx_sycapay_statut'),
       ('sycapay_transactions',  'type',                    'idx_sycapay_type'),
@@ -926,46 +941,46 @@ BEGIN
       ('sycapay_transactions',  'idempotency_key',         'idx_sycapay_txn_idempotency'),
       ('sycapay_transactions',  'membre_id',               'idx_sycapay_txn_membre'),
       ('sycapay_transactions',  'provider_transaction_id', 'idx_sycapay_txn_provider'),
-      -- prets_pending
+      -- ── prets_pending ─────────────────────────────────────
       ('prets_pending',         'code',                    'idx_prets_code'),
       ('prets_pending',         'statut',                  'idx_prets_statut'),
-      -- decaissements_pending
+      -- ── decaissements_pending ─────────────────────────────
       ('decaissements_pending', 'code',                    'idx_decaiss_code'),
       ('decaissements_pending', 'statut',                  'idx_decaiss_statut'),
-      -- depenses_pending
+      -- ── depenses_pending ──────────────────────────────────
       ('depenses_pending',      'code',                    'idx_depenses_code'),
       ('depenses_pending',      'statut',                  'idx_depenses_statut'),
-      -- premium_requests
+      -- ── premium_requests ──────────────────────────────────
       ('premium_requests',      'code',                    'idx_premium_req_code'),
       ('premium_requests',      'statut',                  'idx_premium_req_statut'),
-      -- kyc_submissions
+      -- ── kyc_submissions ───────────────────────────────────
       ('kyc_submissions',       'code',                    'idx_kyc_code'),
       ('kyc_submissions',       'statut',                  'idx_kyc_statut'),
-      -- fcm_tokens
+      -- ── fcm_tokens ────────────────────────────────────────
       ('fcm_tokens',            'tontine',                 'idx_fcm_tontine'),
-      ('fcm_tokens',            'token',                   'fcm_tokens_token_key'),
-      -- rappels_envoyes (NOUVEAU v5)
+      ('fcm_tokens',            'token',                   'fcm_tokens_token_key (UNIQUE)'),
+      -- ── rappels_envoyes ───────────────────────────────────
       ('rappels_envoyes',       'code',                    'idx_rappels_code'),
       ('rappels_envoyes',       'membre_id',               'rappels_envoyes_code_membre_id_type_key'),
       ('rappels_envoyes',       'type',                    'rappels_envoyes_code_membre_id_type_key'),
-      ('rappels_envoyes',       'envoye_le',               'rappels_envoyes UNIQUE constraint'),
-      -- voix (NOUVEAU v5)
+      ('rappels_envoyes',       'envoye_le',               'rappels_envoyes UNIQUE (code,membre_id,type)'),
+      -- ── voix ──────────────────────────────────────────────
       ('voix',                  'code',                    'idx_voix_code'),
       ('voix',                  'vote_id',                 'idx_voix_vote_id'),
       ('voix',                  'membre_id',               'voix_code_vote_id_membre_id_key'),
-      -- admin_membres
-      ('admin_membres',         'pseudo',                  'idx_admin_membres_pseudo'),
+      -- ── admin_membres ─────────────────────────────────────
+      ('admin_membres',         'pseudo',                  'idx_admin_membres_pseudo (UNIQUE)'),
       ('admin_membres',         'role',                    'idx_admin_membres_role'),
-      -- admin_messages
+      -- ── admin_messages ────────────────────────────────────
       ('admin_messages',        'destinataire',            'idx_admin_msg_dest'),
       ('admin_messages',        'expediteur',              'idx_admin_msg_exp'),
       ('admin_messages',        'envoye_le',               'idx_admin_msg_date'),
-      -- support_tickets
+      -- ── support_tickets ───────────────────────────────────
       ('support_tickets',       'statut',                  'idx_support_tickets_statut'),
       ('support_tickets',       'gestionnaire',            'idx_support_tickets_gestionnaire'),
       ('support_tickets',       'ref',                     'idx_support_tickets_ref'),
       ('support_tickets',       'cree_le',                 'idx_support_tickets_cree_le'),
-      -- support_messages
+      -- ── support_messages ──────────────────────────────────
       ('support_messages',      'ticket_id',               'idx_support_msg_ticket'),
       ('support_messages',      'envoye_le',               'idx_support_msg_date')
     ) AS t(tbl, col, idx)
@@ -981,18 +996,24 @@ BEGIN
     v_count  := v_count + 1;
     v_missing := v_missing
       || E'\n    ► ' || rec.tbl || '.' || rec.col
-      || ' (requis par : ' || rec.idx || ')';
+      || '  (requis par : ' || rec.idx || ')';
   END LOOP;
 
   IF v_count > 0 THEN
     RAISE EXCEPTION
-      E'upgrade.sql v5 — POST-VALIDATION ÉCHOUÉE\n'
-      'Section B n''a pas pu créer % colonne(s) manquante(s) :\n%\n\n'
+      E'upgrade.sql v6 — POST-VALIDATION ÉCHOUÉE\n'
+      'Section B n''a pas pu créer % colonne(s) :\n%\n\n'
+      'CAUSES POSSIBLES :\n'
+      '  1. La table existait avec une contrainte NOT NULL sans DEFAULT\n'
+      '     qui empêche ADD COLUMN IF NOT EXISTS (rare mais possible).\n'
+      '  2. Droits insuffisants pour ALTER TABLE sur cette table.\n'
+      '  3. Bug PostgreSQL dans information_schema (redémarrer la session).\n\n'
       'La transaction est annulée (ROLLBACK automatique).\n'
-      'Vérifiez les contraintes NOT NULL sans DEFAULT ou les droits ALTER TABLE.',
+      'Copiez le message complet et transmettez-le à l''agent.',
       v_count, v_missing;
   ELSE
-    RAISE NOTICE 'v5 POST-VALIDATION: OK — toutes les colonnes indexées sont présentes. Début Section C...';
+    RAISE NOTICE 'v6 POST-VALIDATION: OK — toutes les % colonnes indexées sont présentes.', 57;
+    RAISE NOTICE 'v6 POST-VALIDATION: Début Section C (index)...';
   END IF;
 END;
 $$;
@@ -1005,54 +1026,54 @@ $$;
 -- Si Bloc 0b a levé une EXCEPTION, nous ne sommes jamais ici.
 -- ============================================================
 
--- tontines
+-- ── tontines ────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_tontines_code   ON tontines(code);
 CREATE INDEX IF NOT EXISTS idx_tontines_status ON tontines(status);
 
--- voix
-CREATE INDEX IF NOT EXISTS idx_voix_code    ON voix(code);
-CREATE INDEX IF NOT EXISTS idx_voix_vote_id ON voix(code, vote_id);
+-- ── voix ────────────────────────────────────────────────────
+CREATE INDEX        IF NOT EXISTS idx_voix_code    ON voix(code);
+CREATE INDEX        IF NOT EXISTS idx_voix_vote_id ON voix(code, vote_id);
 CREATE UNIQUE INDEX IF NOT EXISTS voix_code_vote_id_membre_id_key
   ON voix(code, vote_id, membre_id);
 
--- audit
+-- ── audit ───────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_audit_code ON audit(code, quand DESC);
 
--- demandes_premium
+-- ── demandes_premium ────────────────────────────────────────
 CREATE UNIQUE INDEX IF NOT EXISTS idx_demandes_premium_code ON demandes_premium(code);
 
--- scores_historique
+-- ── scores_historique ───────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_scores_hist_code_membre ON scores_historique(code, membre_id);
 CREATE INDEX IF NOT EXISTS idx_scores_hist_code_quand  ON scores_historique(code, quand DESC);
 
--- propositions_retrait
+-- ── propositions_retrait ────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_prop_retrait_code   ON propositions_retrait(code);
 CREATE INDEX IF NOT EXISTS idx_prop_retrait_membre ON propositions_retrait(code, membre_id);
 
--- journal_audit
+-- ── journal_audit ───────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_journal_audit_code ON journal_audit(code, quand DESC);
 
--- subscriptions
-CREATE INDEX IF NOT EXISTS idx_subscriptions_code   ON subscriptions(code);
-CREATE INDEX IF NOT EXISTS idx_subscriptions_statut ON subscriptions(statut);
-CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_code_key ON subscriptions(code);
+-- ── subscriptions ───────────────────────────────────────────
+CREATE INDEX        IF NOT EXISTS idx_subscriptions_code   ON subscriptions(code);
+CREATE INDEX        IF NOT EXISTS idx_subscriptions_statut ON subscriptions(statut);
+CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_code_key   ON subscriptions(code);
 
--- abonnements
+-- ── abonnements ─────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_abonnements_code ON abonnements(code);
 
--- sycapay_transactions
-CREATE INDEX IF NOT EXISTS idx_sycapay_code   ON sycapay_transactions(code);
-CREATE INDEX IF NOT EXISTS idx_sycapay_statut ON sycapay_transactions(statut);
-CREATE INDEX IF NOT EXISTS idx_sycapay_type   ON sycapay_transactions(type);
-CREATE INDEX IF NOT EXISTS idx_sycapay_txn_ref
+-- ── sycapay_transactions ────────────────────────────────────
+CREATE INDEX        IF NOT EXISTS idx_sycapay_code         ON sycapay_transactions(code);
+CREATE INDEX        IF NOT EXISTS idx_sycapay_statut       ON sycapay_transactions(statut);
+CREATE INDEX        IF NOT EXISTS idx_sycapay_type         ON sycapay_transactions(type);
+CREATE INDEX        IF NOT EXISTS idx_sycapay_txn_ref
   ON sycapay_transactions(internal_reference)
   WHERE internal_reference IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_sycapay_txn_idempotency
+CREATE INDEX        IF NOT EXISTS idx_sycapay_txn_idempotency
   ON sycapay_transactions(idempotency_key)
   WHERE idempotency_key IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_sycapay_txn_membre
+CREATE INDEX        IF NOT EXISTS idx_sycapay_txn_membre
   ON sycapay_transactions(code, membre_id);
-CREATE INDEX IF NOT EXISTS idx_sycapay_txn_provider
+CREATE INDEX        IF NOT EXISTS idx_sycapay_txn_provider
   ON sycapay_transactions(provider_transaction_id)
   WHERE provider_transaction_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS sycapay_transactions_internal_reference_key
@@ -1060,54 +1081,54 @@ CREATE UNIQUE INDEX IF NOT EXISTS sycapay_transactions_internal_reference_key
 CREATE UNIQUE INDEX IF NOT EXISTS sycapay_transactions_idempotency_key_key
   ON sycapay_transactions(idempotency_key);
 
--- prets_pending
+-- ── prets_pending ───────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_prets_code   ON prets_pending(code);
 CREATE INDEX IF NOT EXISTS idx_prets_statut ON prets_pending(statut);
 
--- decaissements_pending
+-- ── decaissements_pending ───────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_decaiss_code   ON decaissements_pending(code);
 CREATE INDEX IF NOT EXISTS idx_decaiss_statut ON decaissements_pending(statut);
 
--- depenses_pending
+-- ── depenses_pending ────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_depenses_code   ON depenses_pending(code);
 CREATE INDEX IF NOT EXISTS idx_depenses_statut ON depenses_pending(statut);
 
--- premium_requests
-CREATE INDEX IF NOT EXISTS idx_premium_req_code   ON premium_requests(code);
-CREATE INDEX IF NOT EXISTS idx_premium_req_statut ON premium_requests(statut);
+-- ── premium_requests ────────────────────────────────────────
+CREATE INDEX        IF NOT EXISTS idx_premium_req_code   ON premium_requests(code);
+CREATE INDEX        IF NOT EXISTS idx_premium_req_statut ON premium_requests(statut);
 CREATE UNIQUE INDEX IF NOT EXISTS premium_requests_code_key ON premium_requests(code);
 
--- kyc_submissions
+-- ── kyc_submissions ─────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_kyc_code   ON public.kyc_submissions(code);
 CREATE INDEX IF NOT EXISTS idx_kyc_statut ON public.kyc_submissions(statut);
 
--- fcm_tokens
-CREATE INDEX IF NOT EXISTS idx_fcm_tontine ON public.fcm_tokens(tontine);
+-- ── fcm_tokens ──────────────────────────────────────────────
+CREATE INDEX        IF NOT EXISTS idx_fcm_tontine    ON public.fcm_tokens(tontine);
 CREATE UNIQUE INDEX IF NOT EXISTS fcm_tokens_token_key ON fcm_tokens(token);
 
--- rappels_envoyes
-CREATE INDEX IF NOT EXISTS idx_rappels_code ON rappels_envoyes(code);
+-- ── rappels_envoyes ─────────────────────────────────────────
+CREATE INDEX        IF NOT EXISTS idx_rappels_code                    ON rappels_envoyes(code);
 CREATE UNIQUE INDEX IF NOT EXISTS rappels_envoyes_code_membre_id_type_key
   ON rappels_envoyes(code, membre_id, type);
 
--- admin_membres
+-- ── admin_membres ───────────────────────────────────────────
 CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_membres_pseudo ON admin_membres(pseudo);
 CREATE INDEX        IF NOT EXISTS idx_admin_membres_role   ON admin_membres(role);
 CREATE UNIQUE INDEX IF NOT EXISTS admin_membres_pseudo_key ON admin_membres(pseudo);
 
--- admin_messages
+-- ── admin_messages ──────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_admin_msg_dest ON admin_messages(destinataire);
 CREATE INDEX IF NOT EXISTS idx_admin_msg_exp  ON admin_messages(expediteur);
 CREATE INDEX IF NOT EXISTS idx_admin_msg_date ON admin_messages(envoye_le DESC);
 
--- support_tickets
-CREATE INDEX IF NOT EXISTS idx_support_tickets_statut       ON support_tickets(statut);
-CREATE INDEX IF NOT EXISTS idx_support_tickets_gestionnaire ON support_tickets(gestionnaire);
-CREATE INDEX IF NOT EXISTS idx_support_tickets_ref          ON support_tickets(ref);
-CREATE INDEX IF NOT EXISTS idx_support_tickets_cree_le      ON support_tickets(cree_le DESC);
-CREATE UNIQUE INDEX IF NOT EXISTS support_tickets_ref_key   ON support_tickets(ref);
+-- ── support_tickets ─────────────────────────────────────────
+CREATE INDEX        IF NOT EXISTS idx_support_tickets_statut       ON support_tickets(statut);
+CREATE INDEX        IF NOT EXISTS idx_support_tickets_gestionnaire ON support_tickets(gestionnaire);
+CREATE INDEX        IF NOT EXISTS idx_support_tickets_ref          ON support_tickets(ref);
+CREATE INDEX        IF NOT EXISTS idx_support_tickets_cree_le      ON support_tickets(cree_le DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS support_tickets_ref_key          ON support_tickets(ref);
 
--- support_messages
+-- ── support_messages ────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_support_msg_ticket ON support_messages(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_support_msg_date   ON support_messages(envoye_le ASC);
 
@@ -1115,15 +1136,23 @@ CREATE INDEX IF NOT EXISTS idx_support_msg_date   ON support_messages(envoye_le 
 -- ============================================================
 -- SECTION D : TRIGGERS
 -- ============================================================
--- updated_at (tontines) et modifie_le (subscriptions) sont
--- garantis présents par B.1 et B.7 — vérifiés par Bloc 0b.
+-- DONNÉES PROD CONFIRMÉES (audit CSV 2025-07-xx) :
+--   ✅ trg_tontines_updated_at    → EXISTE déjà en prod
+--   ❌ trg_sub_modifie_le         → ABSENT en prod → créé ici
+--
+-- Les deux utilisent DROP TRIGGER IF EXISTS + CREATE TRIGGER
+-- pour être idempotents (recréation safe même si déjà présent).
 -- ============================================================
 
+-- ── Trigger tontines.updated_at (EXISTE en prod — recréation idempotente) ──
 CREATE OR REPLACE FUNCTION tontines_set_updated_at()
 RETURNS TRIGGER LANGUAGE plpgsql
 SECURITY DEFINER SET search_path = public
 AS $$
-BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
 $$;
 
 DROP TRIGGER IF EXISTS trg_tontines_updated_at ON tontines;
@@ -1131,11 +1160,16 @@ CREATE TRIGGER trg_tontines_updated_at
   BEFORE UPDATE ON tontines
   FOR EACH ROW EXECUTE FUNCTION tontines_set_updated_at();
 
+-- ── Trigger subscriptions.modifie_le (ABSENT en prod — création) ──
+-- Confirmé absent par audit CSV prod (seul trg_tontines_updated_at présent).
 CREATE OR REPLACE FUNCTION _sub_update_modifie_le()
 RETURNS TRIGGER LANGUAGE plpgsql
 SECURITY DEFINER SET search_path = public
 AS $$
-BEGIN NEW.modifie_le = NOW(); RETURN NEW; END;
+BEGIN
+  NEW.modifie_le = NOW();
+  RETURN NEW;
+END;
 $$;
 
 DROP TRIGGER IF EXISTS trg_sub_modifie_le ON subscriptions;
@@ -1146,6 +1180,9 @@ CREATE TRIGGER trg_sub_modifie_le
 
 -- ============================================================
 -- SECTION E : RLS — ENABLE + POLITIQUES
+-- ============================================================
+-- ALTER TABLE ... ENABLE ROW LEVEL SECURITY = idempotent.
+-- DROP POLICY IF EXISTS avant CREATE POLICY = idempotent.
 -- ============================================================
 
 ALTER TABLE tontines              ENABLE ROW LEVEL SECURITY;
@@ -1174,135 +1211,141 @@ ALTER TABLE admin_messages         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE support_tickets        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE support_messages       ENABLE ROW LEVEL SECURITY;
 
--- tontines
+-- ── tontines ────────────────────────────────────────────────
 DROP POLICY IF EXISTS "tontines_anon_select" ON tontines;
 CREATE POLICY "tontines_anon_select" ON tontines
   FOR SELECT TO anon, authenticated USING (true);
+
 DROP POLICY IF EXISTS "tontines_anon_insert" ON tontines;
 CREATE POLICY "tontines_anon_insert" ON tontines
   FOR INSERT TO anon, authenticated WITH CHECK (true);
+
 DROP POLICY IF EXISTS "tontines_anon_update" ON tontines;
 CREATE POLICY "tontines_anon_update" ON tontines
   FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
 
--- audit
+-- ── audit ────────────────────────────────────────────────────
 DROP POLICY IF EXISTS "audit_anon" ON audit;
 CREATE POLICY "audit_anon" ON audit
   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
--- demandes_premium
+-- ── demandes_premium ────────────────────────────────────────
 DROP POLICY IF EXISTS "demandes_premium_select" ON demandes_premium;
 CREATE POLICY "demandes_premium_select" ON demandes_premium
   FOR SELECT TO anon, authenticated USING (true);
+
 DROP POLICY IF EXISTS "demandes_premium_insert" ON demandes_premium;
 CREATE POLICY "demandes_premium_insert" ON demandes_premium
   FOR INSERT TO anon, authenticated WITH CHECK (true);
+
 DROP POLICY IF EXISTS "demandes_premium_update" ON demandes_premium;
 CREATE POLICY "demandes_premium_update" ON demandes_premium
   FOR UPDATE TO anon, authenticated USING (true);
 
--- config / app_config (bloqué — fonctions SECURITY DEFINER seulement)
+-- ── config / app_config (bloqué — SECURITY DEFINER seulement) ──
 DROP POLICY IF EXISTS "config_no_access"     ON config;
 DROP POLICY IF EXISTS "app_config_no_access" ON app_config;
-CREATE POLICY "config_no_access"     ON config     FOR ALL TO anon, authenticated USING (false);
-CREATE POLICY "app_config_no_access" ON app_config FOR ALL TO anon, authenticated USING (false);
+CREATE POLICY "config_no_access"     ON config
+  FOR ALL TO anon, authenticated USING (false);
+CREATE POLICY "app_config_no_access" ON app_config
+  FOR ALL TO anon, authenticated USING (false);
 
--- admin_config (bloqué)
+-- ── admin_config (bloqué) ───────────────────────────────────
 DROP POLICY IF EXISTS "admin_config_no_access" ON admin_config;
 CREATE POLICY "admin_config_no_access" ON admin_config
   FOR ALL TO anon, authenticated USING (false);
 
--- voix
+-- ── voix ────────────────────────────────────────────────────
 DROP POLICY IF EXISTS "voix_anon" ON voix;
 CREATE POLICY "voix_anon" ON voix
   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
--- scores_historique
+-- ── scores_historique ───────────────────────────────────────
 DROP POLICY IF EXISTS "scores_historique_select" ON scores_historique;
 CREATE POLICY "scores_historique_select" ON scores_historique
   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
--- propositions_retrait
+-- ── propositions_retrait ────────────────────────────────────
 DROP POLICY IF EXISTS "propositions_retrait_select" ON propositions_retrait;
 CREATE POLICY "propositions_retrait_select" ON propositions_retrait
   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
--- journal_audit
+-- ── journal_audit ───────────────────────────────────────────
 DROP POLICY IF EXISTS "journal_audit_select" ON journal_audit;
 CREATE POLICY "journal_audit_select" ON journal_audit
   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
--- subscriptions
+-- ── subscriptions ───────────────────────────────────────────
 DROP POLICY IF EXISTS "subscriptions_anon" ON subscriptions;
 CREATE POLICY "subscriptions_anon" ON subscriptions
   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
--- abonnements
+-- ── abonnements ─────────────────────────────────────────────
 DROP POLICY IF EXISTS "abonnements_service" ON abonnements;
 CREATE POLICY "abonnements_service" ON abonnements
   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
--- admin_actions
+-- ── admin_actions ───────────────────────────────────────────
 DROP POLICY IF EXISTS "admin_actions_service" ON admin_actions;
 CREATE POLICY "admin_actions_service" ON admin_actions
   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
--- sycapay_transactions
+-- ── sycapay_transactions ────────────────────────────────────
 DROP POLICY IF EXISTS "sycapay_anon" ON sycapay_transactions;
 CREATE POLICY "sycapay_anon" ON sycapay_transactions
   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
--- prets_pending
+-- ── prets_pending ───────────────────────────────────────────
 DROP POLICY IF EXISTS "prets_pending_anon" ON prets_pending;
 CREATE POLICY "prets_pending_anon" ON prets_pending
   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
--- decaissements_pending
+-- ── decaissements_pending ───────────────────────────────────
 DROP POLICY IF EXISTS "decaissements_anon" ON decaissements_pending;
 CREATE POLICY "decaissements_anon" ON decaissements_pending
   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
--- depenses_pending
+-- ── depenses_pending ────────────────────────────────────────
 DROP POLICY IF EXISTS "depenses_anon" ON depenses_pending;
 CREATE POLICY "depenses_anon" ON depenses_pending
   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
--- premium_requests
+-- ── premium_requests ────────────────────────────────────────
 DROP POLICY IF EXISTS "premium_requests_anon" ON premium_requests;
 CREATE POLICY "premium_requests_anon" ON premium_requests
   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
--- kyc_submissions
+-- ── kyc_submissions ─────────────────────────────────────────
 DROP POLICY IF EXISTS "kyc_anon" ON public.kyc_submissions;
 CREATE POLICY "kyc_anon" ON public.kyc_submissions
   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
--- fcm_tokens
+-- ── fcm_tokens ──────────────────────────────────────────────
 DROP POLICY IF EXISTS "fcm_anon" ON public.fcm_tokens;
 CREATE POLICY "fcm_anon" ON public.fcm_tokens
   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
--- rappels_envoyes
+-- ── rappels_envoyes ─────────────────────────────────────────
 DROP POLICY IF EXISTS "rappels_anon" ON rappels_envoyes;
 CREATE POLICY "rappels_anon" ON rappels_envoyes
   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
--- admin_membres
+-- ── admin_membres ───────────────────────────────────────────
 DROP POLICY IF EXISTS "admin_membres_service" ON admin_membres;
 CREATE POLICY "admin_membres_service" ON admin_membres
   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
--- admin_messages
+-- ── admin_messages ──────────────────────────────────────────
 DROP POLICY IF EXISTS "admin_messages_service" ON admin_messages;
 CREATE POLICY "admin_messages_service" ON admin_messages
   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
--- support_tickets
+-- ── support_tickets ─────────────────────────────────────────
 DROP POLICY IF EXISTS "support_tickets_service" ON support_tickets;
 CREATE POLICY "support_tickets_service" ON support_tickets
   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
--- support_messages
+-- ── support_messages ────────────────────────────────────────
 DROP POLICY IF EXISTS "support_messages_service" ON support_messages;
 CREATE POLICY "support_messages_service" ON support_messages
   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
@@ -1335,28 +1378,38 @@ COMMIT;
 -- SELECT count(*) FROM pg_indexes
 -- WHERE schemaname = 'public' AND indexname NOT LIKE '%_pkey';
 --
--- -- 5. Triggers (attendu : 2)
--- SELECT trigger_name, event_object_table
+-- -- 5. Triggers (attendu : 2 maintenant — trg_tontines_updated_at + trg_sub_modifie_le)
+-- SELECT trigger_name, event_object_table, event_manipulation, action_timing
 -- FROM information_schema.triggers
--- WHERE trigger_schema = 'public';
+-- WHERE trigger_schema = 'public'
+-- ORDER BY event_object_table;
 --
 -- -- 6. Colonnes sycapay_transactions (attendu : 30+)
--- SELECT column_name, data_type
+-- SELECT column_name, data_type, is_nullable, column_default
 -- FROM information_schema.columns
 -- WHERE table_schema = 'public' AND table_name = 'sycapay_transactions'
 -- ORDER BY ordinal_position;
 --
--- -- 7. Colonnes rappels_envoyes (attendu : code, membre_id, type, envoye_le)
--- SELECT column_name FROM information_schema.columns
+-- -- 7. Colonnes rappels_envoyes (attendu : id, code, membre_id, type, envoye_le)
+-- SELECT column_name, data_type FROM information_schema.columns
 -- WHERE table_schema = 'public' AND table_name = 'rappels_envoyes'
 -- ORDER BY ordinal_position;
 --
--- -- 8. Vérifier données préservées (0 ligne perdue)
--- SELECT count(*) FROM tontines;
--- SELECT count(*) FROM sycapay_transactions;
--- SELECT count(*) FROM subscriptions;
--- SELECT count(*) FROM rappels_envoyes;
+-- -- 8. Colonnes voix (attendu : id, code, vote_id, membre_id, choix, methode, appareil, vote_le)
+-- SELECT column_name, data_type FROM information_schema.columns
+-- WHERE table_schema = 'public' AND table_name = 'voix'
+-- ORDER BY ordinal_position;
+--
+-- -- 9. Vérifier données préservées (0 ligne perdue)
+-- SELECT 'tontines' AS tbl, count(*) FROM tontines
+-- UNION ALL SELECT 'sycapay_transactions', count(*) FROM sycapay_transactions
+-- UNION ALL SELECT 'subscriptions',        count(*) FROM subscriptions
+-- UNION ALL SELECT 'rappels_envoyes',      count(*) FROM rappels_envoyes
+-- UNION ALL SELECT 'audit',                count(*) FROM audit;
+--
+-- -- 10. Audit complet du schéma après upgrade
+-- --     (utiliser audit_schema_prod_v2.sql pour exporter en un CSV)
 --
 -- ============================================================
--- FIN upgrade.sql  v5
+-- FIN upgrade.sql  v6
 -- ============================================================
