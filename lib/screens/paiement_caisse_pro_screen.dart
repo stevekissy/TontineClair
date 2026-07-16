@@ -10,7 +10,7 @@ import '../services/locale_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 
-/// Écran de paiement Mobile Money pour un apport de caisse Premium.
+/// Écran de paiement Mobile Money pour un apport de caisse OU une pénalité Premium.
 ///
 /// Workflow v4 — CRÉDIT SERVEUR-SIDE :
 ///   1.  Génère numCommande unique (TC_...) → référence pivot immuable
@@ -31,12 +31,21 @@ class PaiementCaisseProScreen extends StatefulWidget {
   final String code;
   final int    montant;
   final String description;
+  /// 'caisse' (défaut) ou 'penalite'
+  final String typeOperation;
+  /// ID du membre pénalisé (uniquement si typeOperation == 'penalite')
+  final String? membreId;
+  /// Nom du membre pénalisé (uniquement si typeOperation == 'penalite')
+  final String? membreNom;
 
   const PaiementCaisseProScreen({
     super.key,
     required this.code,
     required this.montant,
     required this.description,
+    this.typeOperation = 'caisse',
+    this.membreId,
+    this.membreNom,
   });
 
   @override
@@ -84,9 +93,10 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
     _enTraitement = true;
 
     // Générer la référence pivot AVANT setState
+    final suffix = widget.typeOperation == 'penalite' ? 'PENAL' : 'CAISSE';
     final numCmd = SycaPayService.genererNumCommande(
       widget.code,
-      'CAISSE',
+      suffix,
     );
     _numCommande = numCmd;
 
@@ -127,9 +137,11 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
         operateur:     _operateur,
         tontineCode:   widget.code,
         otp:           _operateur == 'orange' ? _otpCtrl.text.trim() : null,
-        nomMembre:     'Apport',
-        prenomMembre:  'Caisse',
-        typeOperation: 'caisse',
+        nomMembre:     widget.typeOperation == 'penalite' ? (widget.membreNom ?? 'Membre') : 'Apport',
+        prenomMembre:  widget.typeOperation == 'penalite' ? 'Pénalité' : 'Caisse',
+        typeOperation: widget.typeOperation,
+        membreId:      widget.membreId,
+        membreNom:     widget.membreNom,
         description:   widget.description.isNotEmpty ? widget.description : null,
       );
 
@@ -183,9 +195,11 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
         numCommande:   numCmd,
         transactionId: _transactionId,
         tontineCode:   widget.code,
-        typeOperation: 'caisse',
+        typeOperation: widget.typeOperation,
         montant:       widget.montant,
         operateur:     _operateur,
+        membreId:      widget.membreId,
+        membreNom:     widget.membreNom,
         description:   widget.description.isNotEmpty ? widget.description : null,
       );
 
@@ -319,18 +333,23 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
 
     // Notification push (non bloquante)
     try {
-      final data  = provider.courante?.data;
+      final data   = provider.courante?.data;
       final devise = data?.devise ?? 'XOF';
       final lang   = Provider.of<LocaleService>(context, listen: false).langue.code; // ignore: use_build_context_synchronously
-      final t      = SupabaseService.notifTexte('caisse', lang, vars: {
+      final isPenalite = widget.typeOperation == 'penalite';
+      final notifType  = isPenalite ? 'penalite' : 'caisse';
+      final libelle    = isPenalite
+          ? 'Pénalité SycaPay — ${widget.membreNom ?? ''}'
+          : 'Apport caisse Premium SycaPay';
+      final t = SupabaseService.notifTexte(notifType, lang, vars: {
         'montant': Formatters.montant(widget.montant, devise: devise),
-        'libelle': 'Apport caisse Premium SycaPay',
-        'nom':     '',
+        'libelle': libelle,
+        'nom':     widget.membreNom ?? '',
         'desc':    widget.description.isNotEmpty ? ' — ${widget.description}' : '',
       });
       SupabaseService.envoyerNotification(
         code:    widget.code,
-        type:    'caisse',
+        type:    notifType,
         titre:   t['titre']!,
         message: t['message']!,
       );
@@ -360,9 +379,11 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.fondPapier,
         elevation:       0,
-        title: const Text(
-          'Apport de caisse Premium',
-          style: TextStyle(
+        title: Text(
+          widget.typeOperation == 'penalite'
+              ? 'Pénalité SycaPay Premium'
+              : 'Apport de caisse Premium',
+          style: const TextStyle(
             fontWeight: FontWeight.w700,
             color:      AppColors.encre,
             fontSize:   16,
@@ -398,8 +419,39 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
             ),
             child: Column(
               children: [
-                const Text('Montant de l\'apport',
-                    style: TextStyle(fontSize: 13, color: AppColors.texteDoux)),
+                // Badge membre pénalisé (uniquement pour pénalité)
+                if (widget.typeOperation == 'penalite' && widget.membreNom != null) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.orFonce.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AppColors.orFonce.withValues(alpha: 0.35)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.person_rounded, size: 14, color: AppColors.orFonce),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Pénalité pour : ${widget.membreNom}',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.orFonce,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                Text(
+                  widget.typeOperation == 'penalite'
+                      ? 'Montant de la pénalité'
+                      : 'Montant de l\'apport',
+                  style: const TextStyle(fontSize: 13, color: AppColors.texteDoux),
+                ),
                 const SizedBox(height: 6),
                 Text(
                   Formatters.montant(widget.montant, devise: devise),
@@ -534,7 +586,9 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
             onPressed: (_saisieValide && !_enTraitement) ? _initierPaiement : null,
             icon:  const Icon(Icons.account_balance_wallet_rounded),
             label: Text(
-              'Verser ${Formatters.montant(widget.montant, devise: 'XOF')} via Mobile Money',
+              widget.typeOperation == 'penalite'
+                  ? 'Payer pénalité ${Formatters.montant(widget.montant, devise: 'XOF')} via Mobile Money'
+                  : 'Verser ${Formatters.montant(widget.montant, devise: 'XOF')} via Mobile Money',
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
             ),
             style: FilledButton.styleFrom(
@@ -694,16 +748,23 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
                   size: 50, color: _couleurPro),
             ),
             const SizedBox(height: 24),
-            const Text('Paiement reçu avec succès.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.encre)),
+            Text(
+              widget.typeOperation == 'penalite'
+                  ? 'Pénalité enregistrée !'
+                  : 'Paiement reçu avec succès.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.encre),
+            ),
             const SizedBox(height: 8),
             Text(
-              'Votre apport de caisse a été enregistré.\n'
-              '${Formatters.montant(widget.montant, devise: devise)} versé dans la caisse.',
+              widget.typeOperation == 'penalite'
+                  ? 'La pénalité de ${Formatters.montant(widget.montant, devise: devise)}'
+                    '\na été appliquée à ${widget.membreNom ?? 'ce membre'}.'
+                  : 'Votre apport de caisse a été enregistré.\n'
+                    '${Formatters.montant(widget.montant, devise: devise)} versé dans la caisse.',
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 15, color: AppColors.texte, height: 1.5),
             ),
@@ -726,8 +787,10 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14)),
               ),
-              child: const Text('Retour à la caisse',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+              child: Text(
+                widget.typeOperation == 'penalite' ? 'Retour' : 'Retour à la caisse',
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+              ),
             ),
           ],
         ),

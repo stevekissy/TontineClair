@@ -89,8 +89,9 @@ class SycaPayService {
     String?  otp,
     String?  nomMembre,
     String?  prenomMembre,
-    String?  typeOperation, // 'cotisation' | 'caisse'
+    String?  typeOperation, // 'cotisation' | 'caisse' | 'penalite'
     String?  membreId,
+    String?  membreNom,
     String?  description,
   }) async {
     final payload = <String, dynamic>{
@@ -106,6 +107,7 @@ class SycaPayService {
       if (nomMembre    != null) 'name':        nomMembre,
       if (prenomMembre != null) 'pname':       prenomMembre,
       if (membreId     != null) 'membre_id':   membreId,
+      if (membreNom    != null) 'membre_nom':  membreNom,
       if (description  != null) 'description': description,
     };
 
@@ -180,11 +182,12 @@ class SycaPayService {
   static Future<SycaPayResultat> confirmerEtCrediter({
     required String numCommande,
     required String tontineCode,
-    required String typeOperation, // 'caisse' | 'cotisation'
+    required String typeOperation, // 'caisse' | 'cotisation' | 'penalite'
     String?  transactionId,
     int?     montant,
     String?  operateur,
     String?  membreId,
+    String?  membreNom,
     String?  description,
   }) async {
     final rep = await _appelerEdge({
@@ -196,6 +199,7 @@ class SycaPayService {
       if (montant       != null) 'montant':        montant,
       if (operateur     != null) 'operateur':      operateur,
       if (membreId      != null) 'membre_id':      membreId,
+      if (membreNom     != null) 'membre_nom':     membreNom,
       if (description   != null) 'description':    description,
     // Timeout 170s : légèrement > 150s polling serveur, < 180s watchdog Flutter
     }, timeout: const Duration(seconds: 170));

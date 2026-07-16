@@ -287,6 +287,7 @@ async function crediterCoteServeur(tx: Record<string, unknown>): Promise<{ ok: b
   const operator      = tx["operator"] as string ?? "";
   const description   = tx["description"] as string ?? "";
   const membreId      = tx["membre_id"] as string ?? null;
+  const membreNom     = tx["membre_nom"] as string ?? "";
   const providerTxId  = tx["provider_transaction_id"] as string ?? numcommande;
 
   // Guard : déjà crédité ?
@@ -303,7 +304,7 @@ async function crediterCoteServeur(tx: Record<string, unknown>): Promise<{ ok: b
   // Pour créditer côté serveur, on appelle une RPC spécialisée.
   try {
     if (typeOp === "caisse") {
-      // Créditer la caisse via RPC
+      // Créditer la caisse via RPC (apport)
       await sbRpc("crediter_caisse_sycapay", {
         p_code:          tontineCode.toUpperCase(),
         p_montant:       amount,
@@ -311,6 +312,19 @@ async function crediterCoteServeur(tx: Record<string, unknown>): Promise<{ ok: b
         p_num_commande:  numcommande,
         p_operateur:     operator,
         p_description:   description.length > 0 ? description : `Apport caisse SycaPay (${operator.toUpperCase()})`,
+        p_now:           now,
+      });
+    } else if (typeOp === "penalite") {
+      // Créditer la caisse via RPC (pénalité) — débite le payeur, enregistre penalite dans JSON
+      await sbRpc("crediter_penalite_sycapay", {
+        p_code:          tontineCode.toUpperCase(),
+        p_montant:       amount,
+        p_reference:     ref,
+        p_num_commande:  numcommande,
+        p_operateur:     operator,
+        p_membre_id:     membreId ?? "",
+        p_membre_nom:    membreNom,
+        p_description:   description.length > 0 ? description : `Pénalité SycaPay — ${membreNom || membreId}`,
         p_now:           now,
       });
     } else {
@@ -392,6 +406,7 @@ Deno.serve(async (req: Request) => {
       const tontineCode = (body["tontine_code"] as string) ?? "";
       const typeOp      = (body["type_operation"] as string) ?? "cotisation";
       const membreId    = body["membre_id"]    as string | undefined;
+      const membreNomPayer = (body["membre_nom"] as string) ?? "";
       const description = body["description"] as string | undefined;
 
       if (!telephone || !montant || !numcommande) {
@@ -490,6 +505,7 @@ Deno.serve(async (req: Request) => {
           operator:                operateur,
           status:                  txStatus,
           membre_id:               membreId ?? null,
+          membre_nom:              membreNomPayer || null,
           description:             description ?? null,
           confirmed_at:            code === 0 ? new Date().toISOString() : null,
         }).catch(async (e: Error) => {
@@ -535,6 +551,7 @@ Deno.serve(async (req: Request) => {
       const transId      = body["transactionId"] as string | undefined;
       const tontineCode  = body["tontine_code"] as string;
       const typeOp       = (body["type_operation"] as string) ?? "cotisation";
+      const membreNomIn  = (body["membre_nom"] as string) ?? "";
 
       if (!numcommande || !tontineCode) {
         return json({ erreur: true, message: "numcommande et tontine_code requis" }, 400);
@@ -560,6 +577,7 @@ Deno.serve(async (req: Request) => {
           operator:                body["operateur"] as string ?? "",
           status:                  "pending",
           membre_id:               body["membre_id"] as string ?? null,
+          membre_nom:              membreNomIn || null,
           description:             body["description"] as string ?? null,
         }).catch(e => console.error("[confirmer] création minimale:", e));
 
@@ -583,7 +601,8 @@ Deno.serve(async (req: Request) => {
           });
         }
         // confirmed mais pas credited → créditer maintenant
-        const creditResult = await crediterCoteServeur(tx);
+        const txEnriched = membreNomIn ? { ...tx, membre_nom: membreNomIn } : tx;
+        const creditResult = await crediterCoteServeur(txEnriched);
         return json({
           ok:              creditResult.ok,
           code:            creditResult.ok ? 0 : -1,
@@ -639,7 +658,7 @@ Deno.serve(async (req: Request) => {
               `internal_reference=eq.${encodeURIComponent(numcommande)}&select=*`,
             );
             if (fullTx.length > 0) {
-              const creditResult = await crediterCoteServeur(fullTx[0]);
+              const creditResult = await crediterCoteServeur(membreNomIn ? { ...fullTx[0], membre_nom: membreNomIn } : fullTx[0]);
               return json({
                 ok:              creditResult.ok,
                 code:            creditResult.ok ? 0 : -1,
@@ -702,7 +721,7 @@ Deno.serve(async (req: Request) => {
               `internal_reference=eq.${encodeURIComponent(numcommande)}&select=*`,
             );
             if (fullTx.length > 0) {
-              const creditResult = await crediterCoteServeur(fullTx[0]);
+              const creditResult = await crediterCoteServeur(membreNomIn ? { ...fullTx[0], membre_nom: membreNomIn } : fullTx[0]);
               return json({
                 ok:              creditResult.ok,
                 code:            creditResult.ok ? 0 : -1,

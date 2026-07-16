@@ -298,3 +298,9 @@ BEGIN
   RAISE NOTICE '   Tables : sycapay_transactions ✓';
   RAISE NOTICE '   RPCs   : crediter_caisse_sycapay ✓  crediter_cotisation_sycapay ✓';
 END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Ajout colonne membre_nom (pénalité Premium SycaPay)
+-- ─────────────────────────────────────────────────────────────────────────────
+ALTER TABLE public.sycapay_transactions
+  ADD COLUMN IF NOT EXISTS membre_nom text;

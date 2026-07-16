@@ -124,7 +124,9 @@ class CaisseScreen extends StatelessWidget {
                             icon: Icons.warning_amber,
                             label: context.tr('penalite'),
                             couleur: AppColors.orFonce,
-                            onTap: () => _mouvement(context, provider, data, 'penalite'),
+                            onTap: () => tontine.isPremium
+                                ? _penalitePro(context, provider, tontine, data)
+                                : _mouvement(context, provider, data, 'penalite'),
                           ),
                         ),
                       ],
@@ -526,6 +528,159 @@ class CaisseScreen extends StatelessWidget {
         afficherToast(context, 'Erreur : $e', estErreur: true);
       }
     }
+  }
+
+  // ── Pénalité Pro : sélection membre + montant → SycaPay ─────────────────────
+  Future<void> _penalitePro(
+    BuildContext context,
+    TontineProvider provider,
+    dynamic tontine,
+    TontineData data,
+  ) async {
+    final montantCtrl  = TextEditingController();
+    final descCtrl     = TextEditingController();
+    final membresOrdre = data.membresActifs;
+
+    if (membresOrdre.isEmpty) {
+      afficherToast(context, 'Aucun membre actif dans cette tontine', estErreur: true);
+      return;
+    }
+
+    String? membrePenaliteId = membresOrdre.first.id;
+
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.fondPapier,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => Padding(
+          padding: EdgeInsets.only(
+            left: 16, right: 16, top: 16,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Poignée
+                Center(
+                  child: Container(
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.lignes,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Pénalité Pro',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20, color: AppColors.encre),
+                ),
+                const SizedBox(height: 4),
+                // Badge SycaPay
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.orFonce.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.rocket_launch_rounded, size: 13, color: AppColors.orFonce),
+                      SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          'Le paiement de la pénalité sera effectué via SycaPay',
+                          style: TextStyle(fontSize: 12, color: AppColors.orFonce),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Membre à pénaliser
+                ChampLabel(label: 'Membre à pénaliser'),
+                DropdownButtonFormField<String>(
+                  value: membrePenaliteId,
+                  decoration: const InputDecoration(),
+                  items: membresOrdre.map((m) => DropdownMenuItem(
+                    value: m.id,
+                    child: Text(m.nom, overflow: TextOverflow.ellipsis),
+                  )).toList(),
+                  onChanged: (v) => setS(() => membrePenaliteId = v),
+                ),
+                const SizedBox(height: 4),
+                // Montant
+                ChampLabel(label: 'Montant (${DeviseService.parCode(data.devise).symbole})'),
+                TextField(
+                  controller: montantCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(hintText: '1 000'),
+                  autofocus: true,
+                ),
+                // Description (optionnelle)
+                ChampLabel(label: 'Motif (optionnel)'),
+                TextField(
+                  controller: descCtrl,
+                  maxLength: 100,
+                  decoration: const InputDecoration(
+                    hintText: 'Ex : Retard de cotisation',
+                    counterText: '',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                BtnPrincipal(
+                  label: 'Continuer vers SycaPay',
+                  onTap: () => Navigator.pop(ctx, true),
+                ),
+                const SizedBox(height: 8),
+                BtnSecondaire(
+                  label: 'Annuler',
+                  onTap: () => Navigator.pop(ctx, false),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    final montant = int.tryParse(montantCtrl.text.trim());
+    if (montant == null || montant <= 0) {
+      afficherToast(context, 'Montant invalide', estErreur: true);
+      return;
+    }
+    if (membrePenaliteId == null) {
+      afficherToast(context, 'Veuillez sélectionner un membre', estErreur: true);
+      return;
+    }
+
+    final membre = membresOrdre.where((m) => m.id == membrePenaliteId).firstOrNull;
+    if (!context.mounted) return;
+
+    // Ouvrir l'écran SycaPay pour pénalité
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PaiementCaisseProScreen(
+          code:          tontine.code,
+          montant:       montant,
+          description:   descCtrl.text.trim(),
+          typeOperation: 'penalite',
+          membreId:      membrePenaliteId,
+          membreNom:     membre?.nom ?? '',
+        ),
+      ),
+    );
   }
 
   Future<void> _mouvement(
