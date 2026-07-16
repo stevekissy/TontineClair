@@ -1886,6 +1886,90 @@ class SupabaseService {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SUPPORT CLIENT — Tickets et messagerie support
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Ouvrir un ticket de support (depuis l'app client).
+  static Future<Map<String, dynamic>> supportOuvrirTicket({
+    required String gestionnaire,
+    String? codeTontine,
+    required String categorie,
+    required String sujet,
+    required String description,
+    String priorite = 'normale',
+  }) async {
+    try {
+      final result = await rpc('support_ouvrir_ticket', {
+        'p_gestionnaire': gestionnaire,
+        'p_code_tontine': codeTontine,
+        'p_categorie':    categorie,
+        'p_sujet':        sujet,
+        'p_description':  description,
+        'p_priorite':     priorite,
+      });
+      if (result is Map<String, dynamic>) return result;
+      return {'ok': false, 'erreur': 'Réponse inattendue'};
+    } catch (e) {
+      return {'ok': false, 'erreur': '$e'};
+    }
+  }
+
+  /// Lister les tickets de l'utilisateur courant.
+  static Future<List<Map<String, dynamic>>> supportMesTickets(String gestionnaire) async {
+    try {
+      final result = await rpc('support_mes_tickets', {'p_gestionnaire': gestionnaire});
+      if (result == null) return [];
+      final list = result is List ? result : (result as Map)['data'] ?? [];
+      return List<Map<String, dynamic>>.from(list as List);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Récupérer les messages d'un ticket (client ou admin).
+  static Future<List<Map<String, dynamic>>> supportMessagesTicket({
+    required int ticketId,
+    bool estAdmin = false,
+    required String cleOuGest,
+  }) async {
+    try {
+      final result = await rpc('support_messages_ticket', {
+        'p_ticket_id':  ticketId,
+        'p_est_admin':  estAdmin,
+        'p_cle_ou_gest': cleOuGest,
+      });
+      if (result == null) return [];
+      final list = result is List ? result : (result as Map)['data'] ?? [];
+      return List<Map<String, dynamic>>.from(list as List);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Envoyer un message dans un ticket (client ou admin).
+  static Future<Map<String, dynamic>> supportRepondre({
+    required int ticketId,
+    required String auteur,
+    required String corps,
+    bool estAdmin = false,
+    required String cleOuGest,
+  }) async {
+    try {
+      final result = await rpc('support_repondre', {
+        'p_ticket_id':   ticketId,
+        'p_auteur':      auteur,
+        'p_corps':       corps,
+        'p_est_admin':   estAdmin,
+        'p_cle_ou_gest': cleOuGest,
+      });
+      if (result is Map<String, dynamic>) return result;
+      return {'ok': false, 'erreur': 'Réponse inattendue'};
+    } catch (e) {
+      return {'ok': false, 'erreur': '$e'};
+    }
+  }
+
   static Future<void> envoyerNotification({
     required String code,
     required String type,
