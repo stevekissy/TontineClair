@@ -619,6 +619,23 @@ class SupabaseService {
     return result == true;
   }
 
+  /// Vérifie la clé admin via la RPC Supabase _verif_admin_cle.
+  /// Retourne true uniquement si la RPC retourne explicitement true.
+  /// Tout autre résultat (false, null, erreur HTTP, exception) → false.
+  static Future<bool> verifierCleAdmin(String cle) async {
+    if (cle.isEmpty) return false;
+    try {
+      final result = await rpc('_verif_admin_cle', {'p_cle': cle});
+      debugPrint('ADMIN_AUTH — _verif_admin_cle → $result (${result.runtimeType})');
+      // La RPC retourne un booléen JSON : true ou false
+      if (result == true) return true;
+      return false;
+    } catch (e) {
+      debugPrint('ADMIN_AUTH — _verif_admin_cle — ERREUR: $e');
+      return false;
+    }
+  }
+
   /// Lire les demandes Premium en attente — liste complète pour l'admin.
   ///
   /// Retourne une liste de maps avec les champs :

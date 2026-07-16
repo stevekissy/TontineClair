@@ -65,102 +65,53 @@ class _AdminScreenState extends State<AdminScreen> {
   Future<void> _connecter() async {
     final cle = _cleCtrl.text.trim();
     if (cle.isEmpty) return;
-    setState(() {
-      _loading = true;
-      _erreur  = null;
-    });
+    setState(() { _loading = true; _erreur = null; });
 
-    // ── Helpers de log ────────────────────────────────────────────────────────
-    void logOk(String nom)         => debugPrint('ADMIN_DEBUG — $nom — succès');
-    void logErr(String nom, Object e) => debugPrint('ADMIN_DEBUG — $nom — $e');
-
-    // ── Indicateur : au moins un appel RPC a levé CLE_INVALIDE / auth error ──
-    bool cleRejetee = false;
-
-    // ── Appel 1 : admin_lister_demandes ──────────────────────────────────────
-    // C'est le seul appel qui lève EXCEPTION 'CLE_INVALIDE' si la clé est trop
-    // courte. On le teste en premier, isolément.
-    List<Map<String, dynamic>> demandes = [];
-    try {
-      demandes = await SupabaseService.adminListerDemandes(cle);
-      logOk('admin_lister_demandes');
-    } catch (e) {
-      logErr('admin_lister_demandes', e);
-      final msg = e.toString();
-      if (msg.contains('CLE_INVALIDE') ||
-          msg.contains('invalide')     ||
-          msg.contains('401')          ||
-          msg.contains('403')) {
-        cleRejetee = true;
-      }
-    }
-
-    // Si la clé est explicitement rejetée, on s'arrête immédiatement.
-    if (cleRejetee) {
+    // ── ÉTAPE 1 : vérification obligatoire de la clé via _verif_admin_cle ────
+    // Toute valeur autre que true (false, null, erreur HTTP, exception) bloque.
+    final cleValide = await SupabaseService.verifierCleAdmin(cle);
+    if (!cleValide) {
       setState(() {
         _loading = false;
-        _erreur  = 'Clé incorrecte ou erreur réseau.';
+        _erreur  = 'Clé administrateur incorrecte.';
       });
-      return;
+      return; // ← Dashboard jamais ouvert avec clé non validée
     }
 
-    // ── Appels secondaires : échec individuel = liste vide, pas de blocage ───
+    // ── ÉTAPE 2 : clé validée → charger les données ───────────────────────────
+    // Les appels suivants peuvent échouer individuellement sans bloquer l'accès.
+    // Ils ne participent PAS au contrôle d'authentification.
+    void logOk(String nom)            => debugPrint('ADMIN_DEBUG — $nom — succès');
+    void logErr(String nom, Object e) => debugPrint('ADMIN_DEBUG — $nom — $e');
 
-    // Appel 2 : admin_lister_tontines
+    List<Map<String, dynamic>> demandes = [];
+    try { demandes = await SupabaseService.adminListerDemandes(cle); logOk('admin_lister_demandes'); }
+    catch (e) { logErr('admin_lister_demandes', e); }
+
     List<Map<String, dynamic>> tontines = [];
-    try {
-      tontines = await SupabaseService.adminListerTontines(cle);
-      logOk('admin_lister_tontines');
-    } catch (e) {
-      logErr('admin_lister_tontines', e);
-    }
+    try { tontines = await SupabaseService.adminListerTontines(cle); logOk('admin_lister_tontines'); }
+    catch (e) { logErr('admin_lister_tontines', e); }
 
-    // Appel 3 : depenses_pending (REST direct — pas de clé admin)
     List<Map<String, dynamic>> depenses = [];
-    try {
-      depenses = await SupabaseService.adminListerDepensesPending(cle);
-      logOk('depenses_pending (REST)');
-    } catch (e) {
-      logErr('depenses_pending (REST)', e);
-    }
+    try { depenses = await SupabaseService.adminListerDepensesPending(cle); logOk('depenses_pending'); }
+    catch (e) { logErr('depenses_pending', e); }
 
-    // Appel 4 : prets_pending (REST direct — pas de clé admin)
     List<Map<String, dynamic>> prets = [];
-    try {
-      prets = await SupabaseService.adminListerPretsPending(cle, statut: 'tous');
-      logOk('prets_pending (REST)');
-    } catch (e) {
-      logErr('prets_pending (REST)', e);
-    }
+    try { prets = await SupabaseService.adminListerPretsPending(cle, statut: 'tous'); logOk('prets_pending'); }
+    catch (e) { logErr('prets_pending', e); }
 
-    // Appel 5 : admin_lister_decaissements
     List<Map<String, dynamic>> decaissements = [];
-    try {
-      decaissements = await SupabaseService.adminListerDecaissements(cle, statut: 'tous');
-      logOk('admin_lister_decaissements');
-    } catch (e) {
-      logErr('admin_lister_decaissements', e);
-    }
+    try { decaissements = await SupabaseService.adminListerDecaissements(cle, statut: 'tous'); logOk('admin_lister_decaissements'); }
+    catch (e) { logErr('admin_lister_decaissements', e); }
 
-    // Appel 6 : admin_lister_kyc
     List<Map<String, dynamic>> kycs = [];
-    try {
-      kycs = await SupabaseService.adminListerKyc(cle, statut: 'tous');
-      logOk('admin_lister_kyc');
-    } catch (e) {
-      logErr('admin_lister_kyc', e);
-    }
+    try { kycs = await SupabaseService.adminListerKyc(cle, statut: 'tous'); logOk('admin_lister_kyc'); }
+    catch (e) { logErr('admin_lister_kyc', e); }
 
-    // Appel 7 : admin_tontine_counts
     Map<String, dynamic> counts = {};
-    try {
-      counts = await SupabaseService.adminTontineCounts(cle);
-      logOk('admin_tontine_counts');
-    } catch (e) {
-      logErr('admin_tontine_counts', e);
-    }
+    try { counts = await SupabaseService.adminTontineCounts(cle); logOk('admin_tontine_counts'); }
+    catch (e) { logErr('admin_tontine_counts', e); }
 
-    // ── Connexion établie (les erreurs secondaires n'ont pas bloqué) ──────────
     setState(() {
       _connecte      = true;
       _loading       = false;
@@ -172,6 +123,30 @@ class _AdminScreenState extends State<AdminScreen> {
       _kycs          = kycs;
       _counts        = counts;
     });
+  }
+
+  /// Déconnexion complète : vide toutes les données et la session.
+  /// La clé n'est pas mémorisée — une reconnexion nécessite une revalidation.
+  void _deconnecter() {
+    setState(() {
+      _connecte      = false;
+      _erreur        = null;
+      _demandes      = [];
+      _tontines      = [];
+      _depenses      = [];
+      _prets         = [];
+      _decaissements = [];
+      _kycs          = [];
+      _counts        = {};
+      _roleMembre     = null;
+      _pseudoMembre   = null;
+      _clePersoMembre = null;
+      _nomMembre      = null;
+      _onglet         = 0;
+    });
+    _cleCtrl.clear();
+    _pseudoCtrl.clear();
+    _clePersoCtrl.clear();
   }
 
   // ── Connexion membre (pseudo + clePerso, role-based) ─────────────────────────
@@ -884,15 +859,7 @@ class _AdminScreenState extends State<AdminScreen> {
             ),
             const Spacer(),
             GestureDetector(
-              onTap: () => setState(() {
-                _connecte       = false;
-                _roleMembre     = null;
-                _pseudoMembre   = null;
-                _clePersoMembre = null;
-                _nomMembre      = null;
-                _pseudoCtrl.clear();
-                _clePersoCtrl.clear();
-              }),
+              onTap: _deconnecter,
               child: Text('Déconnexion', style: TextStyle(fontSize: 11, color: couleurRole, decoration: TextDecoration.underline)),
             ),
           ],
@@ -907,7 +874,7 @@ class _AdminScreenState extends State<AdminScreen> {
           totalAlertes: totalAlertes,
           recharging: _recharging,
           onRefresh: _rechargerAvecFeedback,
-          onBack: () => Navigator.of(context).pop(),
+          onBack: () { _deconnecter(); Navigator.of(context).pop(); },
         ),
         if (bandeauRole != null) bandeauRole,
         // ── Barre de navigation icônes ───────────────────────────────────────
