@@ -1665,6 +1665,110 @@ class SupabaseService {
     }
   }
 
+  // ────────────────────────────────────────────────────────────────────────────
+  // Décaissements pending (clôture de tour Premium)
+  // ────────────────────────────────────────────────────────────────────────────
+
+  /// Soumet un décaissement en attente après clôture de tour Premium.
+  /// La caisse N'EST PAS débitée — l'admin valide ensuite via adminValiderDecaissement.
+  static Future<void> soumettreDecaissementPending({
+    required String code,
+    required String beneficiaireId,
+    required String beneficiaireNom,
+    required int    montant,
+    required int    commission,
+    required int    montantNet,
+    required int    numerTour,
+    required String operateur,
+    required String numeroBenef,
+    required String gestionnaire,
+    required String reference,
+    String devise = 'XOF',
+  }) async {
+    final url = Uri.parse('$_url/rest/v1/decaissements_pending');
+    final body = {
+      'code':                code.toUpperCase(),
+      'beneficiaire_id':     beneficiaireId,
+      'beneficiaire_nom':    beneficiaireNom,
+      'montant':             montant,
+      'commission':          commission,
+      'montant_net':         montantNet,
+      'numer_tour':          numerTour,
+      'operateur':           operateur,
+      'numero_beneficiaire': numeroBenef,
+      'gestionnaire':        gestionnaire,
+      'reference':           reference,
+      'devise':              devise,
+      'statut':              'pending',
+    };
+    final resp = await http.post(
+      url,
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': 'Bearer $_key',
+        'apikey':        _key,
+        'Prefer':        'return=minimal',
+      },
+      body: jsonEncode(body),
+    );
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      throw Exception('Erreur soumission décaissement: ${resp.statusCode} ${resp.body}');
+    }
+  }
+
+  /// Retourne tous les décaissements (filtre par statut : 'tous' | 'pending' | 'validee' | 'rejetee').
+  static Future<List<Map<String, dynamic>>> adminListerDecaissements(
+    String cle, {
+    String statut = 'tous',
+  }) async {
+    try {
+      final result = await rpc('admin_lister_decaissements', {
+        'p_cle':    cle,
+        'p_statut': statut,
+      });
+      if (result is List) return List<Map<String, dynamic>>.from(result.cast<Map<String, dynamic>>());
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Valide un décaissement pending : débite la caisse via RPC.
+  static Future<Map<String, dynamic>> adminValiderDecaissement({
+    required String cle,
+    required int    id,
+  }) async {
+    try {
+      final result = await rpc('admin_valider_decaissement', {
+        'p_cle': cle,
+        'p_id':  id,
+      });
+      if (result is Map<String, dynamic>) return result;
+      return {'ok': false, 'erreur': 'Réponse inattendue'};
+    } catch (e) {
+      return {'ok': false, 'erreur': '$e'};
+    }
+  }
+
+  /// Rejette un décaissement pending avec motif.
+  static Future<Map<String, dynamic>> adminRejeterDecaissement({
+    required String cle,
+    required int    id,
+    required String motif,
+  }) async {
+    try {
+      final result = await rpc('admin_rejeter_decaissement', {
+        'p_cle':   cle,
+        'p_id':    id,
+        'p_motif': motif,
+      });
+      if (result is Map<String, dynamic>) return result;
+      return {'ok': false, 'erreur': 'Réponse inattendue'};
+    } catch (e) {
+      return {'ok': false, 'erreur': '$e'};
+    }
+  }
+
   static Future<void> envoyerNotification({
     required String code,
     required String type,

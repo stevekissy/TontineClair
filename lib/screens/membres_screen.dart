@@ -1247,6 +1247,14 @@ class _CarteMembreState extends State<_CarteMembre> {
                             ),
                           ),
                         ],
+                        // ── Mobile Money (Premium) ──────────────────────────
+                        const SizedBox(height: 12),
+                        const Divider(height: 1, color: AppColors.lignes),
+                        const SizedBox(height: 12),
+                        _SectionMobileMoney(
+                          membre: m,
+                          code: widget.code,
+                        ),
                       ],
                     ),
                   ),
@@ -1413,6 +1421,272 @@ class _ChampPin extends StatelessWidget {
             color: AppColors.texte,
           ),
         ),
+      ],
+    );
+  }
+}
+
+// ─── Section Mobile Money \u2014 coordonn\u00e9es de d\u00e9caissement d'un membre ─────────────
+const _operateurs = ['orange', 'moov', 'mtn', 'wave'];
+
+class _SectionMobileMoney extends StatefulWidget {
+  final Membre membre;
+  final String code;
+
+  const _SectionMobileMoney({required this.membre, required this.code});
+
+  @override
+  State<_SectionMobileMoney> createState() => _SectionMobileMoneyState();
+}
+
+class _SectionMobileMoneyState extends State<_SectionMobileMoney> {
+  bool _enEdition = false;
+  bool _saving = false;
+  late String? _operateur;
+  late String  _numero;
+  final _numCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _operateur = widget.membre.operateur;
+    _numero    = widget.membre.numeroBenef ?? '';
+    _numCtrl.text = _numero;
+  }
+
+  @override
+  void dispose() {
+    _numCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sauvegarder() async {
+    final num = _numCtrl.text.trim();
+    if (_operateur == null || num.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Choisissez un opérateur et saisissez le numéro.')),
+      );
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final provider = context.read<TontineProvider>();
+      final data     = provider.courante!.data;
+
+      // Mettre à jour le membre dans la liste
+      final newMembres = data.membres.map((m) {
+        if (m.id != widget.membre.id) return m;
+        return Membre(
+          id:               m.id,
+          nom:              m.nom,
+          tel:              m.tel,
+          role:             m.role,
+          paye:             m.paye,
+          score:            m.score,
+          pinVote:          m.pinVote,
+          scoreOverride:    m.scoreOverride,
+          motifOverride:    m.motifOverride,
+          dateOverride:     m.dateOverride,
+          adminOverride:    m.adminOverride,
+          operateur:        _operateur,
+          numeroBenef:      num,
+        );
+      }).toList();
+
+      final newData = data.toJson();
+      newData['membres'] = newMembres.map((m) => m.toJson()).toList();
+
+      // Écrire sans PIN (modification non-financière — coordonnées MM uniquement)
+      await SupabaseService.ecrireTontineSansPIN(code: widget.code, data: newData);
+      await provider.chargerTontine(widget.code, silencieux: true);
+
+      if (mounted) {
+        setState(() { _enEdition = false; _numero = num; });
+        afficherToast(context, '✅ Coordonnées Mobile Money sauvegardées !');
+      }
+    } catch (e) {
+      if (mounted) afficherToast(context, 'Erreur : $e', estErreur: true);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final aCoords = (_operateur != null && _numero.isNotEmpty);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.phone_android_rounded, size: 14, color: AppColors.encreDoux),
+            const SizedBox(width: 6),
+            Text(
+              'Mobile Money (décaissement)',
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                color: AppColors.encre,
+              ),
+            ),
+            const Spacer(),
+            if (!_enEdition)
+              GestureDetector(
+                onTap: () => setState(() => _enEdition = true),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.fondCode,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.lignes),
+                  ),
+                  child: Text(
+                    aCoords ? 'Modifier' : 'Ajouter',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.encreDoux,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        if (!_enEdition) ...[
+          // Affichage lecture
+          if (aCoords)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(
+                color: AppColors.succesFond,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.succes.withValues(alpha: 0.25)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle_outline, size: 15, color: AppColors.succes),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${_operateur![0].toUpperCase()}${_operateur!.substring(1)} · $_numero',
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: AppColors.succes,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(
+                color: AppColors.fondConsultation,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.orFonce.withValues(alpha: 0.25)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, size: 15, color: AppColors.orFonce),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Aucune coordonnée Mobile Money — requises pour les décaissements Premium.',
+                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.orFonce),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ] else ...[
+          // Formulaire édition
+          // Opérateur
+          Text(
+            'Opérateur',
+            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.texteDoux),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            children: _operateurs.map((op) {
+              final sel = _operateur == op;
+              return GestureDetector(
+                onTap: () => setState(() => _operateur = op),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: sel ? AppColors.encre : AppColors.fondCode,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: sel ? AppColors.encre : AppColors.lignes,
+                    ),
+                  ),
+                  child: Text(
+                    op[0].toUpperCase() + op.substring(1),
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: sel ? Colors.white : AppColors.encre,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 10),
+          // Numéro
+          Text(
+            'Numéro Mobile Money',
+            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.texteDoux),
+          ),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _numCtrl,
+            keyboardType: TextInputType.phone,
+            decoration: InputDecoration(
+              hintText: 'Ex : +225 07 00 00 00',
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: AppColors.lignes),
+              ),
+              prefixIcon: const Icon(Icons.phone_outlined, size: 18),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: BtnPrincipal(
+                  label: 'Sauvegarder',
+                  icone: Icons.save_rounded,
+                  loading: _saving,
+                  onTap: _sauvegarder,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: BtnSecondaire(
+                  label: 'Annuler',
+                  onTap: () {
+                    setState(() {
+                      _enEdition = false;
+                      _operateur = widget.membre.operateur;
+                      _numCtrl.text = widget.membre.numeroBenef ?? '';
+                    });
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }

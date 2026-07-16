@@ -1669,37 +1669,29 @@ class _BarreDetail extends StatelessWidget {
 
   void _cloturerTour(BuildContext context) async {
     final provider = context.read<TontineProvider>();
-    final tontine = provider.courante!;
-    final data = tontine.data;
-    final membres = data.membres;
+    final tontine  = provider.courante!;
+    final data     = tontine.data;
+    final membres  = data.membres;
 
-    // Vérifier que tous ont payé
+    // ── Vérifier que tous ont payé ─────────────────────────────────────────
     final nonPayes = membres.where((m) => !m.paye).toList();
-
     if (nonPayes.isNotEmpty) {
       final continuer = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: AppColors.fondPapier,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           title: const Text(
             '⚠️ Membres non payés',
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              color: AppColors.encre,
-            ),
+            style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.encre),
           ),
           content: Text(
-            '${nonPayes.length} membre(s) n\'ont pas encore payé : ${nonPayes.map((m) => m.nom).join(', ')}.\n\nConfirmer quand même la clôture ?',
+            '${nonPayes.length} membre(s) n\'ont pas encore payé : '
+            '${nonPayes.map((m) => m.nom).join(', ')}.\n\nConfirmer quand même la clôture ?',
             style: const TextStyle(color: AppColors.texte),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Annuler'),
-            ),
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
             TextButton(
               onPressed: () => Navigator.pop(ctx, true),
               child: const Text('Clôturer', style: TextStyle(color: AppColors.alerte)),
@@ -1710,176 +1702,486 @@ class _BarreDetail extends StatelessWidget {
       if (continuer != true || !context.mounted) return;
     }
 
-    // Confirmer avec PIN
-    // ── Clôture alignée sur index.html ──────────────────────────────────
-    // tourActuel est 0-based. Le bénéficiaire = membres[ ordre[tourActuel] ]
-    // Après clôture : paiements={}, tourActuel++
-    // Si tourActuel + 1 >= ordre.length → cycleTermine = true
-    final beneficiaire = data.beneficiaire;
-    final benefNom = beneficiaire?.nom ?? '—';
-    final numerTourAffiche = data.numerTour; // = tourActuel + 1
-    final ref = Formatters.genererReference();
+    // ── Données de base ────────────────────────────────────────────────────
+    final beneficiaire     = data.beneficiaire;
+    final benefId          = beneficiaire?.id ?? '';
+    final benefNom         = beneficiaire?.nom ?? '—';
+    final numerTourAffiche = data.numerTour;
+    final ref              = Formatters.genererReference();
 
-    // Calculer payesIds (IDs des membres ayant payé) pour l'historique
-    // SOURCE DE VÉRITÉ : membres[].paye (déjà réconcilié depuis paiements{} + fallback)
-    // Fallback sur paiements.keys si membres[].paye tous à false (cas rare)
     final membresPayes = data.membres.where((m) => m.paye).toList();
-    final payesIds = membresPayes.isNotEmpty
+    final payesIds     = membresPayes.isNotEmpty
         ? membresPayes.map((m) => m.id).toList()
         : data.paiements.keys.toList();
-    final nbPayesClot = payesIds.isNotEmpty
-        ? payesIds.length
-        : data.membres.length; // ultime fallback : tous membres si données incohérentes
-
-    // ── Calcul commission Pro (1 % sur le montant versé) ────────────────────
+    final nbPayesClot = payesIds.isNotEmpty ? payesIds.length : data.membres.length;
     final montantVerse = data.montant * data.membres.length;
-    final commission = isPremium ? (montantVerse * 0.01).round() : 0;
+    final commission   = isPremium ? (montantVerse * 0.01).round() : 0;
+    final montantNet   = montantVerse - commission;
 
+    // ── Branchement Premium / Lite ─────────────────────────────────────────
+    if (isPremium) {
+      await _cloturerTourPremium(
+        context:           context,
+        provider:          provider,
+        data:              data,
+        membres:           membres,
+        beneficiaire:      beneficiaire,
+        benefId:           benefId,
+        benefNom:          benefNom,
+        numerTourAffiche:  numerTourAffiche,
+        ref:               ref,
+        payesIds:          payesIds,
+        nbPayesClot:       nbPayesClot,
+        montantVerse:      montantVerse,
+        commission:        commission,
+        montantNet:        montantNet,
+      );
+    } else {
+      await _cloturerTourLite(
+        context:           context,
+        provider:          provider,
+        data:              data,
+        membres:           membres,
+        benefNom:          benefNom,
+        numerTourAffiche:  numerTourAffiche,
+        ref:               ref,
+        payesIds:          payesIds,
+        nbPayesClot:       nbPayesClot,
+        montantVerse:      montantVerse,
+      );
+    }
+  }
+
+  /// ── Clôture Lite : PIN → débite caisse → tour suivant ─────────────────────
+  Future<void> _cloturerTourLite({
+    required BuildContext              context,
+    required TontineProvider           provider,
+    required TontineData               data,
+    required List<Membre>              membres,
+    required String                    benefNom,
+    required int                       numerTourAffiche,
+    required String                    ref,
+    required List<String>              payesIds,
+    required int                       nbPayesClot,
+    required int                       montantVerse,
+  }) async {
     final ok = await afficherModalePin(
       context,
-      titre: 'Clôturer le tour $numerTourAffiche',
-      sousTitre: isPremium
-          ? 'Un décaissement sera demandé. Validation Admin requise.'
-          : 'Cette action est définitive et déclenche le versement.',
+      titre:     'Clôturer le tour $numerTourAffiche',
+      sousTitre: 'Cette action est définitive et déclenche le versement.',
       recap: [
-        (label: 'Bénéficiaire', valeur: benefNom),
-        (label: 'Montant versé', valeur: Formatters.montant(montantVerse, devise: data.devise)),
+        (label: 'Bénéficiaire',    valeur: benefNom),
+        (label: 'Montant versé',   valeur: Formatters.montant(montantVerse, devise: data.devise)),
         (label: 'Cotisants payés', valeur: '$nbPayesClot / ${data.membres.length}'),
-        if (isPremium)
-          (label: '⚠️ Commission TontineClair (1%)', valeur: Formatters.montant(commission, devise: data.devise)),
-        if (isPremium)
-          (label: '📤 Mode', valeur: 'Demande Admin — pas de virement auto'),
-        (label: 'Tour', valeur: 'N° $numerTourAffiche → N° ${numerTourAffiche + 1}'),
+        (label: 'Tour',            valeur: 'N° $numerTourAffiche → N° ${numerTourAffiche + 1}'),
       ],
       onValider: (pin) async {
-        // Préparer les nouvelles données
-        final newData = data.toJson();
-
-        // 1. Réinitialiser paiements{} (comme index.html : d.paiements = {})
-        newData['paiements'] = {};
-
-        // 2. Réinitialiser membres[].paye à false
-        final nouveauxMembres = (membres)
-            .map((m) => Membre(
-                  id: m.id,
-                  nom: m.nom,
-                  paye: false,
-                  score: m.score,
-                  pinVote: m.pinVote,
-                ))
-            .toList();
-        newData['membres'] = nouveauxMembres.map((m) => m.toJson()).toList();
-
-        // 3. Incrémenter tourActuel (index 0-based) ou marquer cycleTermine
-        //    Aligné sur : if(d.tourActuel + 1 >= d.ordre.length) d.cycleTermine = true
-        //                 else d.tourActuel++
-        final ordreLen = data.ordre.length;
-        final prochainIndex = data.tourActuel + 1;
-        final cycleTermineNow = prochainIndex >= ordreLen;
-        newData['tourActuel'] = cycleTermineNow ? data.tourActuel : prochainIndex;
-        newData['cycleTermine'] = cycleTermineNow;
-
-        // 4. Historique : ajouter l'entrée du tour clôturé
-        //    h.tour = numéro humain (tourActuel + 1 AVANT incrément = numerTourAffiche)
-        final historique = List<Map<String, dynamic>>.from(
-          (newData['historique'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
+        final newData = _preparerNouvellesDonnees(
+          data: data, membres: membres, payesIds: payesIds,
+          nbPayesClot: nbPayesClot, numerTourAffiche: numerTourAffiche,
+          ref: ref, gestNom: provider.gestActifNom ?? '',
+          debiterCaisse: true,  // Lite : caisse débitée immédiatement
+          montantVerse: montantVerse,
+          benefNom: benefNom,
         );
-        final total = nbPayesClot * data.montant;
-        historique.insert(0, {
-          'tour': numerTourAffiche,
-          'beneficiaire': benefNom,
-          'total': total,
-          'payes': nbPayesClot,
-          'surTotal': data.ordre.length,
-          'payesIds': payesIds,
-          'par': provider.gestActifNom ?? '',
-          'ref': ref,
-          'date': DateTime.now().millisecondsSinceEpoch,
-        });
-        newData['historique'] = historique;
-
-        // 5. Déduire le décaissement de la caisse ──────────────────────────
-        final caisseMapRaw = newData['caisse'];
-        final List<Map<String, dynamic>> caisseMvts;
-        if (caisseMapRaw is Map<String, dynamic>) {
-          final raw = caisseMapRaw['mouvements'];
-          caisseMvts = List<Map<String, dynamic>>.from(
-            (raw as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
-          );
-        } else if (caisseMapRaw is List) {
-          caisseMvts = List<Map<String, dynamic>>.from(
-            caisseMapRaw.cast<Map<String, dynamic>>(),
-          );
-        } else {
-          caisseMvts = [];
-        }
-        caisseMvts.insert(0, {
-          'id': '${ref}D',
-          'type': 'decaissement',
-          'montant': total,
-          'description': 'Décaissement Tour $numerTourAffiche — $benefNom',
-          'gestionnaire': provider.gestActifNom ?? '',
-          'date': DateTime.now().toIso8601String(),
-          'reference': ref,
-        });
-        newData['caisse'] = {'mouvements': caisseMvts};
-
-        // 6. Journal
-        final journal = List<Map<String, dynamic>>.from(
-          (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
-        );
-        journal.insert(0, {
-          'quoi': 'Tour $numerTourAffiche clôturé — décaissement de ${Formatters.montant(total, devise: data.devise)} remis à $benefNom',
-          'par': provider.gestActifNom ?? '',
-          'le': DateTime.now().millisecondsSinceEpoch,
-          'reference': ref,
-        });
-        newData['journal'] = journal;
-
         return provider.ecrire(newData, pin);
       },
     );
 
     if (ok == true && context.mounted) {
-      if (isPremium) {
-        // Mode Premium : clôture = demande de décaissement (pas de virement auto)
-        afficherToast(
-          context,
-          '📤 Demande de décaissement envoyée — en attente de validation Admin.',
-        );
-        final _lang = Provider.of<LocaleService>(context, listen: false).langue.code;
-        final _t = SupabaseService.notifTexte('decaissement_demande', _lang, vars: {
-          'nom': benefNom,
-          'tour': numerTourAffiche.toString(),
-          'montant': Formatters.montant(montantVerse, devise: data.devise),
-        });
-        SupabaseService.envoyerNotification(
-          code: provider.courante!.code,
-          type: 'decaissement',
-          titre: _t['titre']!,
-          message: _t['message']!,
-          donneesExtra: {'beneficiaire': benefNom, 'mode': 'pro'},
-        );
-      } else {
-        afficherToast(
-          context,
-          data.cycleTermine
-              ? 'Cycle terminé 🎊 Chaque membre a été servi !'
-              : 'Tour $numerTourAffiche clôturé avec succès.',
-        );
-        // Notification push décaissement (mode Lite classique)
-        final _lang = Provider.of<LocaleService>(context, listen: false).langue.code;
-        final _typeNotif = data.cycleTermine ? 'decaissement_cycle_fin' : 'decaissement';
-        final _t = SupabaseService.notifTexte(_typeNotif, _lang,
-            vars: {'nom': benefNom, 'tour': numerTourAffiche.toString()});
-        SupabaseService.envoyerNotification(
-          code: provider.courante!.code,
-          type: 'decaissement',
-          titre: _t['titre']!,
-          message: _t['message']!,
-          donneesExtra: {'beneficiaire': benefNom},
-        );
-      }
+      afficherToast(
+        context,
+        data.cycleTermine
+            ? 'Cycle terminé 🎊 Chaque membre a été servi !'
+            : 'Tour $numerTourAffiche clôturé avec succès.',
+      );
+      final lang      = Provider.of<LocaleService>(context, listen: false).langue.code;
+      final typeNotif = data.cycleTermine ? 'decaissement_cycle_fin' : 'decaissement';
+      final t         = SupabaseService.notifTexte(typeNotif, lang,
+          vars: {'nom': benefNom, 'tour': numerTourAffiche.toString()});
+      SupabaseService.envoyerNotification(
+        code:    provider.courante!.code,
+        type:    'decaissement',
+        titre:   t['titre']!,
+        message: t['message']!,
+        donneesExtra: {'beneficiaire': benefNom},
+      );
     }
+  }
+
+  /// ── Clôture Premium : formulaire Mobile Money → PIN → pending → admin valide ─
+  Future<void> _cloturerTourPremium({
+    required BuildContext              context,
+    required TontineProvider           provider,
+    required TontineData               data,
+    required List<Membre>              membres,
+    required Membre?                   beneficiaire,
+    required String                    benefId,
+    required String                    benefNom,
+    required int                       numerTourAffiche,
+    required String                    ref,
+    required List<String>              payesIds,
+    required int                       nbPayesClot,
+    required int                       montantVerse,
+    required int                       commission,
+    required int                       montantNet,
+  }) async {
+    // Pré-remplir depuis le profil membre (si déjà renseigné)
+    String? operateur  = beneficiaire?.operateur;
+    String  numeroBenef = beneficiaire?.numeroBenef ?? '';
+
+    // ── Étape 1 : formulaire Mobile Money ────────────────────────────────────
+    const ops = ['orange', 'moov', 'mtn', 'wave'];
+    final numCtrl = TextEditingController(text: numeroBenef);
+
+    final mmOk = await showModalBottomSheet<bool>(
+      context:         context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (sCtx, setSt) => Container(
+          decoration: const BoxDecoration(
+            color: AppColors.fondPapier,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: EdgeInsets.fromLTRB(
+            20, 20, 20,
+            20 + MediaQuery.of(sCtx).viewInsets.bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Poignée
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.lignes,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                '💸 Décaissement — Tour',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.encre),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Bénéficiaire : $benefNom · Tour $numerTourAffiche',
+                style: const TextStyle(fontSize: 13, color: AppColors.texteDoux),
+              ),
+              const SizedBox(height: 16),
+
+              // Récap montants
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.fondCode,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.lignes),
+                ),
+                child: Column(
+                  children: [
+                    _LigneRecapCloture('Montant versé',      Formatters.montant(montantVerse, devise: data.devise)),
+                    _LigneRecapCloture('Commission (1%)',     '− ${Formatters.montant(commission, devise: data.devise)}', rouge: true),
+                    const Divider(height: 12, color: AppColors.lignes),
+                    _LigneRecapCloture('Montant net à décaisser', Formatters.montant(montantNet, devise: data.devise), gras: true),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Opérateur
+              const Text('Opérateur Mobile Money *',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.texteDoux)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: ops.map((op) {
+                  final sel = operateur == op;
+                  return GestureDetector(
+                    onTap: () => setSt(() => operateur = op),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: sel ? AppColors.encre : AppColors.fondCode,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: sel ? AppColors.encre : AppColors.lignes),
+                      ),
+                      child: Text(
+                        op[0].toUpperCase() + op.substring(1),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                          color: sel ? Colors.white : AppColors.encre,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 12),
+
+              // Numéro
+              const Text('Numéro Mobile Money *',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.texteDoux)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: numCtrl,
+                keyboardType: TextInputType.phone,
+                decoration: InputDecoration(
+                  hintText: 'Ex : +225 07 00 00 00',
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: AppColors.lignes),
+                  ),
+                  prefixIcon: const Icon(Icons.phone_outlined, size: 18),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Bouton continuer
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.encre,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () {
+                    if (operateur == null || numCtrl.text.trim().isEmpty) {
+                      ScaffoldMessenger.of(sCtx).showSnackBar(
+                        const SnackBar(content: Text('Choisissez un opérateur et saisissez le numéro.')),
+                      );
+                      return;
+                    }
+                    Navigator.pop(sCtx, true);
+                  },
+                  child: const Text(
+                    'Continuer avec le PIN',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: Colors.white),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (mmOk != true || !context.mounted) return;
+    numeroBenef = numCtrl.text.trim();
+
+    // ── Étape 2 : confirmation PIN ───────────────────────────────────────────
+    // operateur est garanti non-null ici (vérifié dans le bottom sheet avant pop)
+    final String op = operateur ?? '';
+    final operateurLabel = op.isEmpty ? '' : '${op[0].toUpperCase()}${op.substring(1)}';
+
+    final ok = await afficherModalePin(
+      context,
+      titre:     'Confirmer la clôture',
+      sousTitre: 'La demande de décaissement sera envoyée à l\'Admin.',
+      recap: [
+        (label: 'Bénéficiaire',          valeur: benefNom),
+        (label: 'Opérateur',             valeur: operateurLabel),
+        (label: 'Numéro',                valeur: numeroBenef),
+        (label: 'Montant brut',          valeur: Formatters.montant(montantVerse, devise: data.devise)),
+        (label: 'Commission TontineClair (1%)', valeur: '− ${Formatters.montant(commission, devise: data.devise)}'),
+        (label: 'Montant net',           valeur: Formatters.montant(montantNet, devise: data.devise)),
+        (label: 'Tour',                  valeur: 'N° $numerTourAffiche → N° ${numerTourAffiche + 1}'),
+        (label: '📤 Mode',               valeur: 'Demande Admin — caisse non débitée'),
+      ],
+      onValider: (pin) async {
+        // ── A. Avancer le tour dans le JSON (sans débiter la caisse) ────────
+        final newData = _preparerNouvellesDonnees(
+          data: data, membres: membres, payesIds: payesIds,
+          nbPayesClot: nbPayesClot, numerTourAffiche: numerTourAffiche,
+          ref: ref, gestNom: provider.gestActifNom ?? '',
+          debiterCaisse: false,   // Premium : caisse débitée par l'admin
+          montantVerse: montantVerse,
+          benefNom: benefNom,
+        );
+        final ecrit = await provider.ecrire(newData, pin);
+        if (!ecrit) return false;
+
+        // ── B. Soumettre le décaissement en pending ─────────────────────────
+        try {
+          await SupabaseService.soumettreDecaissementPending(
+            code:             provider.courante!.code,
+            beneficiaireId:   benefId,
+            beneficiaireNom:  benefNom,
+            montant:          montantVerse,
+            commission:       commission,
+            montantNet:       montantNet,
+            numerTour:        numerTourAffiche,
+            operateur:        operateur!,
+            numeroBenef:      numeroBenef,
+            gestionnaire:     provider.gestActifNom ?? '',
+            reference:        ref,
+            devise:           data.devise,
+          );
+        } catch (e) {
+          // Non bloquant : le tour est déjà avancé. Logguer l'erreur.
+          if (kDebugMode) debugPrint('[Clôture] soumettreDecaissementPending erreur: $e');
+        }
+
+        return true;
+      },
+    );
+
+    if (ok == true && context.mounted) {
+      afficherToast(
+        context,
+        '📤 Tour $numerTourAffiche clôturé — décaissement en attente de validation Admin.',
+      );
+      final lang = Provider.of<LocaleService>(context, listen: false).langue.code;
+      final t    = SupabaseService.notifTexte('decaissement_demande', lang, vars: {
+        'nom':    benefNom,
+        'tour':   numerTourAffiche.toString(),
+        'montant': Formatters.montant(montantNet, devise: data.devise),
+      });
+      SupabaseService.envoyerNotification(
+        code:         provider.courante!.code,
+        type:         'decaissement',
+        titre:        t['titre']!,
+        message:      t['message']!,
+        donneesExtra: {'beneficiaire': benefNom, 'mode': 'pro'},
+      );
+    }
+  }
+
+  /// ── Helper : prépare le JSON du tour suivant (commun Lite & Premium) ────────
+  Map<String, dynamic> _preparerNouvellesDonnees({
+    required TontineData           data,
+    required List<Membre>          membres,
+    required List<String>          payesIds,
+    required int                   nbPayesClot,
+    required int                   numerTourAffiche,
+    required String                ref,
+    required String                gestNom,
+    required bool                  debiterCaisse,
+    required int                   montantVerse,
+    required String                benefNom,
+  }) {
+    final newData = data.toJson();
+
+    // 1. Réinitialiser paiements{}
+    newData['paiements'] = {};
+
+    // 2. Réinitialiser membres[].paye à false (en préservant tous les champs)
+    newData['membres'] = membres.map((m) => {
+      ...m.toJson(),
+      'paye': false,
+    }).toList();
+
+    // 3. Avancer tourActuel ou marquer cycleTermine
+    final prochainIndex   = data.tourActuel + 1;
+    final cycleTermineNow = prochainIndex >= data.ordre.length;
+    newData['tourActuel']   = cycleTermineNow ? data.tourActuel : prochainIndex;
+    newData['cycleTermine'] = cycleTermineNow;
+
+    // 4. Historique
+    final historique = List<Map<String, dynamic>>.from(
+      (newData['historique'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
+    );
+    final total = nbPayesClot * data.montant;
+    historique.insert(0, {
+      'tour':        numerTourAffiche,
+      'beneficiaire': benefNom,
+      'total':       total,
+      'payes':       nbPayesClot,
+      'surTotal':    data.ordre.length,
+      'payesIds':    payesIds,
+      'par':         gestNom,
+      'ref':         ref,
+      'date':        DateTime.now().millisecondsSinceEpoch,
+    });
+    newData['historique'] = historique;
+
+    // 5. Caisse : débiter seulement en mode Lite
+    if (debiterCaisse) {
+      final caisseMapRaw = newData['caisse'];
+      final List<Map<String, dynamic>> caisseMvts;
+      if (caisseMapRaw is Map<String, dynamic>) {
+        caisseMvts = List<Map<String, dynamic>>.from(
+          (caisseMapRaw['mouvements'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
+        );
+      } else if (caisseMapRaw is List) {
+        caisseMvts = List<Map<String, dynamic>>.from(caisseMapRaw.cast<Map<String, dynamic>>());
+      } else {
+        caisseMvts = [];
+      }
+      caisseMvts.insert(0, {
+        'id':          '${ref}D',
+        'type':        'decaissement',
+        'montant':     total,
+        'description': 'Décaissement Tour $numerTourAffiche — $benefNom',
+        'gestionnaire': gestNom,
+        'date':        DateTime.now().toIso8601String(),
+        'reference':   ref,
+      });
+      newData['caisse'] = {'mouvements': caisseMvts};
+    }
+
+    // 6. Journal
+    final journal = List<Map<String, dynamic>>.from(
+      (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
+    );
+    final modeStr = debiterCaisse ? 'décaissement immédiat' : 'décaissement en attente admin';
+    journal.insert(0, {
+      'quoi':      'Tour $numerTourAffiche clôturé — ${Formatters.montant(montantVerse, devise: data.devise)} pour $benefNom ($modeStr)',
+      'par':       gestNom,
+      'le':        DateTime.now().millisecondsSinceEpoch,
+      'reference': ref,
+    });
+    newData['journal'] = journal;
+
+    return newData;
+  }
+}
+
+// ── Widget récap ligne pour la modale de clôture ─────────────────────────────
+class _LigneRecapCloture extends StatelessWidget {
+  final String label;
+  final String valeur;
+  final bool rouge;
+  final bool gras;
+
+  const _LigneRecapCloture(this.label, this.valeur, {this.rouge = false, this.gras = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: rouge ? AppColors.alerte : AppColors.texteDoux,
+                fontWeight: gras ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+          ),
+          Text(
+            valeur,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: gras ? FontWeight.w800 : FontWeight.w600,
+              color: rouge ? AppColors.alerte : AppColors.encre,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

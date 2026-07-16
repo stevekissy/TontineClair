@@ -21,16 +21,19 @@ class _AdminScreenState extends State<AdminScreen> {
   List<Map<String, dynamic>> _demandes = [];
   List<Map<String, dynamic>> _tontines = [];
   List<Map<String, dynamic>> _depenses = [];
-  List<Map<String, dynamic>> _prets    = [];
+  List<Map<String, dynamic>> _prets          = [];
+  List<Map<String, dynamic>> _decaissements  = [];
   // Compteurs unifiés calculés depuis adminTontineCounts
   Map<String, dynamic> _counts = {};
   int _onglet = 0;
   // Filtre tontines : null=toutes, 'active','deleted','suspended','inactive','premium','gratuit','expire'
   String? _filtreStatut;
   // Filtre dépenses : 'tous' | 'pending' | 'validee' | 'rejetee'
-  String _filtreDepense = 'pending';
+  String _filtreDepense      = 'pending';
   // Filtre prêts : 'pending' | 'validee' | 'rejetee' | 'tous'
-  String _filtrePret    = 'pending';
+  String _filtrePret         = 'pending';
+  // Filtre décaissements : 'pending' | 'validee' | 'rejetee' | 'tous'
+  String _filtreDecaissement = 'pending';
   String get _cle => _cleCtrl.text.trim();
 
   @override
@@ -54,16 +57,18 @@ class _AdminScreenState extends State<AdminScreen> {
         SupabaseService.adminListerTontines(cle),
         SupabaseService.adminListerDepensesPending(cle),
         SupabaseService.adminListerPretsPending(cle, statut: 'tous'),
+        SupabaseService.adminListerDecaissements(cle, statut: 'tous'),
       ]);
       final counts = await SupabaseService.adminTontineCounts(cle);
 
       setState(() {
-        _connecte = true;
-        _demandes = results[0] as List<Map<String, dynamic>>;
-        _tontines = results[1] as List<Map<String, dynamic>>;
-        _depenses = results[2] as List<Map<String, dynamic>>;
-        _prets    = results[3] as List<Map<String, dynamic>>;
-        _counts   = counts;
+        _connecte       = true;
+        _demandes       = results[0] as List<Map<String, dynamic>>;
+        _tontines       = results[1] as List<Map<String, dynamic>>;
+        _depenses       = results[2] as List<Map<String, dynamic>>;
+        _prets          = results[3] as List<Map<String, dynamic>>;
+        _decaissements  = results[4] as List<Map<String, dynamic>>;
+        _counts         = counts;
       });
     } catch (e) {
       setState(() => _erreur = 'Clé incorrecte ou erreur réseau.');
@@ -222,14 +227,16 @@ class _AdminScreenState extends State<AdminScreen> {
       SupabaseService.adminListerTontines(cle),
       SupabaseService.adminListerDepensesPending(cle),
       SupabaseService.adminListerPretsPending(cle, statut: 'tous'),
+      SupabaseService.adminListerDecaissements(cle, statut: 'tous'),
     ]);
     final counts = await SupabaseService.adminTontineCounts(cle);
     setState(() {
-      _demandes = results[0] as List<Map<String, dynamic>>;
-      _tontines = results[1] as List<Map<String, dynamic>>;
-      _depenses = results[2] as List<Map<String, dynamic>>;
-      _prets    = results[3] as List<Map<String, dynamic>>;
-      _counts   = counts;
+      _demandes      = results[0] as List<Map<String, dynamic>>;
+      _tontines      = results[1] as List<Map<String, dynamic>>;
+      _depenses      = results[2] as List<Map<String, dynamic>>;
+      _prets         = results[3] as List<Map<String, dynamic>>;
+      _decaissements = results[4] as List<Map<String, dynamic>>;
+      _counts        = counts;
     });
   }
 
@@ -529,8 +536,9 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Widget _VueAdmin() {
-    final nbDepensesPending = _depenses.where((d) => (d['statut'] as String? ?? '') == 'pending').length;
-    final nbPretsPending    = _prets.where((p) => (p['statut'] as String? ?? '') == 'pending').length;
+    final nbDepensesPending      = _depenses.where((d) => (d['statut'] as String? ?? '') == 'pending').length;
+    final nbPretsPending         = _prets.where((p) => (p['statut'] as String? ?? '') == 'pending').length;
+    final nbDecaissementsPending = _decaissements.where((d) => (d['statut'] as String? ?? '') == 'pending').length;
     return Column(
       children: [
         // Onglets
@@ -623,6 +631,38 @@ class _AdminScreenState extends State<AdminScreen> {
                       ),
                   ],
                 ),
+                const SizedBox(width: 10),
+                // Onglet décaissements avec badge rouge si pending
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    _OngletBtn(
+                      label: '💰 Décaissements',
+                      selected: _onglet == 5,
+                      onTap: () => setState(() => _onglet = 5),
+                    ),
+                    if (nbDecaissementsPending > 0)
+                      Positioned(
+                        top: -4,
+                        right: -4,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: AppColors.alerte,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Text(
+                            '$nbDecaissementsPending',
+                            style: const TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -636,9 +676,309 @@ class _AdminScreenState extends State<AdminScreen> {
                       ? AdminDashboardScreen(cle: _cle)
                       : _onglet == 3
                           ? _ListeDepenses()
-                          : _ListePrets(),
+                          : _onglet == 4
+                              ? _ListePrets()
+                              : _ListeDecaissements(),
         ),
       ],
+    );
+  }
+
+  // ── Onglet 💰 Décaissements pending ─────────────────────────────────────────
+  Future<void> _validerDecaissement(
+      int id, String code, String benefNom, int montantNet, String devise) async {
+    final confirmer = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.fondPapier,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Valider le décaissement',
+            style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.encre)),
+        content: Text(
+          'Confirmer le décaissement ?\n'
+          'La caisse de $code sera débitée de ${Formatters.montant(montantNet, devise: devise)} pour $benefNom.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.succes),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Valider', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (confirmer != true || !mounted) return;
+
+    final result = await SupabaseService.adminValiderDecaissement(cle: _cle, id: id);
+    if (!mounted) return;
+    if (result['ok'] == true) {
+      afficherToast(context, '✅ Décaissement validé — caisse débitée !');
+      SupabaseService.envoyerNotification(
+        code:    code,
+        type:    'decaissement',
+        titre:   '💰 Décaissement approuvé',
+        message: '${Formatters.montant(montantNet, devise: devise)} décaissé pour $benefNom.',
+      );
+      await _recharger();
+    } else {
+      afficherToast(context, result['erreur'] as String? ?? 'Erreur validation.', estErreur: true);
+    }
+  }
+
+  Future<void> _rejeterDecaissement(int id, String code, String benefNom) async {
+    final motifCtrl = TextEditingController();
+    String? motifErreur;
+
+    final motif = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (sCtx, setSt) => AlertDialog(
+          backgroundColor: AppColors.fondPapier,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Rejeter le décaissement',
+              style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.alerte)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Décaissement pour $benefNom (tontine $code)'),
+              const SizedBox(height: 10),
+              const Text('Motif de refus :'),
+              const SizedBox(height: 8),
+              TextField(
+                controller: motifCtrl,
+                maxLines: 2,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: InputDecoration(
+                  hintText: 'Ex : Numéro incorrect, solde insuffisant...',
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  errorText: motifErreur,
+                ),
+                onChanged: (_) {
+                  if (motifErreur != null) setSt(() => motifErreur = null);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, null), child: const Text('Annuler')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.alerte),
+              onPressed: () {
+                final t = motifCtrl.text.trim();
+                if (t.length < 3) { setSt(() => motifErreur = 'Motif requis.'); return; }
+                Navigator.pop(ctx, t);
+              },
+              child: const Text('Rejeter', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (motif == null || !mounted) return;
+
+    final result = await SupabaseService.adminRejeterDecaissement(cle: _cle, id: id, motif: motif);
+    if (!mounted) return;
+    if (result['ok'] == true) {
+      afficherToast(context, 'Décaissement rejeté.');
+      SupabaseService.envoyerNotification(
+        code:    code,
+        type:    'decaissement',
+        titre:   '❌ Décaissement refusé',
+        message: 'Le décaissement pour $benefNom a été refusé. Motif : $motif',
+      );
+      await _recharger();
+    } else {
+      afficherToast(context, result['erreur'] as String? ?? 'Erreur rejet.', estErreur: true);
+    }
+  }
+
+  Widget _ListeDecaissements() {
+    final filtered = _filtreDecaissement == 'tous'
+        ? _decaissements
+        : _decaissements.where((d) => (d['statut'] as String? ?? '') == _filtreDecaissement).toList();
+
+    final nbPending = _decaissements.where((d) => d['statut'] == 'pending').length;
+    final nbValidee = _decaissements.where((d) => d['statut'] == 'validee').length;
+    final nbRejetee = _decaissements.where((d) => d['statut'] == 'rejetee').length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _FiltreChip(label: 'En attente ($nbPending)', selected: _filtreDecaissement == 'pending',
+                    onTap: () => setState(() => _filtreDecaissement = 'pending'), couleur: AppColors.orFonce),
+                const SizedBox(width: 8),
+                _FiltreChip(label: 'Validés ($nbValidee)', selected: _filtreDecaissement == 'validee',
+                    onTap: () => setState(() => _filtreDecaissement = 'validee'), couleur: AppColors.succes),
+                const SizedBox(width: 8),
+                _FiltreChip(label: 'Rejetés ($nbRejetee)', selected: _filtreDecaissement == 'rejetee',
+                    onTap: () => setState(() => _filtreDecaissement = 'rejetee'), couleur: AppColors.alerte),
+                const SizedBox(width: 8),
+                _FiltreChip(label: 'Tous (${_decaissements.length})', selected: _filtreDecaissement == 'tous',
+                    onTap: () => setState(() => _filtreDecaissement = 'tous'), couleur: AppColors.encreDoux),
+              ],
+            ),
+          ),
+        ),
+        if (filtered.isEmpty)
+          Expanded(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.account_balance_wallet_outlined, size: 48,
+                      color: AppColors.texteDoux.withValues(alpha: 0.4)),
+                  const SizedBox(height: 12),
+                  Text(
+                    _filtreDecaissement == 'pending'
+                        ? 'Aucun décaissement en attente'
+                        : 'Aucun décaissement dans cette catégorie',
+                    style: const TextStyle(color: AppColors.texteDoux, fontSize: 15),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+              itemCount: filtered.length,
+              itemBuilder: (_, i) => _CarteDecaissement(filtered[i]),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _CarteDecaissement(Map<String, dynamic> d) {
+    final id           = d['id'] as int? ?? 0;
+    final code         = d['code'] as String? ?? '—';
+    final benefNom     = d['beneficiaire_nom'] as String? ?? '—';
+    final montant      = d['montant'] as int? ?? 0;
+    final commission   = d['commission'] as int? ?? 0;
+    final montantNet   = d['montant_net'] as int? ?? 0;
+    final numerTour    = d['numer_tour'] as int? ?? 0;
+    final operateur    = d['operateur'] as String? ?? '—';
+    final numBenef     = d['numero_beneficiaire'] as String? ?? '—';
+    final gestionnaire = d['gestionnaire'] as String? ?? '—';
+    final devise       = d['devise'] as String? ?? 'XOF';
+    final statut       = d['statut'] as String? ?? 'pending';
+    final motifRejet   = d['motif_rejet'] as String?;
+    final createdAt    = DateTime.tryParse(d['created_at'] as String? ?? '');
+    final validatedAt  = d['validated_at'] != null ? DateTime.tryParse(d['validated_at'] as String) : null;
+
+    final Color statutCouleur;
+    final Color statutFond;
+    final String statutLabel;
+    switch (statut) {
+      case 'validee':
+        statutCouleur = AppColors.succes; statutFond = AppColors.succesFond; statutLabel = '✓ Validé'; break;
+      case 'rejetee':
+        statutCouleur = AppColors.alerte; statutFond = AppColors.alerteFond; statutLabel = '✗ Rejeté'; break;
+      default:
+        statutCouleur = AppColors.orFonce; statutFond = AppColors.fondConsultation; statutLabel = '⏳ En attente';
+    }
+
+    return CarteTC(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(benefNom,
+                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: AppColors.encre)),
+                    Text('Tour $numerTour · Tontine $code',
+                        style: const TextStyle(fontSize: 12, fontFamily: 'monospace', color: AppColors.encreDoux, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(color: statutFond, borderRadius: BorderRadius.circular(20)),
+                child: Text(statutLabel,
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: statutCouleur)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // Montants
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+                color: AppColors.fondCode,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.lignes)),
+            child: Column(
+              children: [
+                _InfoLigneAdmin(icone: Icons.monetization_on_outlined, label: 'Montant versé',
+                    valeur: Formatters.montant(montant, devise: devise)),
+                _InfoLigneAdmin(icone: Icons.percent_rounded, label: 'Commission (1%)',
+                    valeur: '− ${Formatters.montant(commission, devise: devise)}'),
+                _InfoLigneAdmin(icone: Icons.account_balance_wallet_rounded, label: 'Net à décaisser',
+                    valeur: Formatters.montant(montantNet, devise: devise)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          _InfoLigneAdmin(icone: Icons.phone_android_rounded, label: 'Opérateur',
+              valeur: operateur.isNotEmpty ? (operateur[0].toUpperCase() + operateur.substring(1)) : '—'),
+          _InfoLigneAdmin(icone: Icons.phone_outlined, label: 'Numéro bénéficiaire', valeur: numBenef),
+          _InfoLigneAdmin(icone: Icons.manage_accounts_outlined, label: 'Gestionnaire', valeur: gestionnaire),
+          _InfoLigneAdmin(icone: Icons.calendar_today_outlined, label: 'Soumis le',
+              valeur: Formatters.dateFormatee(createdAt)),
+          if (validatedAt != null)
+            _InfoLigneAdmin(
+              icone: Icons.check_circle_outline,
+              label: statut == 'validee' ? 'Validé le' : 'Rejeté le',
+              valeur: Formatters.dateFormatee(validatedAt),
+            ),
+          if (motifRejet != null && motifRejet.isNotEmpty)
+            _InfoLigneAdmin(icone: Icons.cancel_outlined, label: 'Motif rejet', valeur: motifRejet),
+          if (statut == 'pending') ...[
+            const SizedBox(height: 12),
+            const Divider(color: AppColors.lignes, height: 1),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: BtnPrincipal(
+                    label: 'Valider — débiter caisse',
+                    icone: Icons.check_circle_rounded,
+                    couleur: AppColors.succes,
+                    onTap: () => _validerDecaissement(id, code, benefNom, montantNet, devise),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: BtnSecondaire(
+                    label: 'Rejeter',
+                    onTap: () => _rejeterDecaissement(id, code, benefNom),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 

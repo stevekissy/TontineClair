@@ -43,6 +43,12 @@ class Membre {
   String? dateOverride;  // ISO 8601 de la modification
   String? adminOverride; // nom du gestionnaire ayant modifié
 
+  // ── Mobile Money — coordonnées de décaissement ────────────────────────────
+  // Renseignées par le gestionnaire dans la fiche membre (membres_screen).
+  // Pré-remplies automatiquement lors de la clôture de tour (decaissements_pending).
+  String? operateur;     // 'orange' | 'moov' | 'mtn' | 'wave'
+  String? numeroBenef;   // numéro Mobile Money du bénéficiaire
+
   Membre({
     required this.id,
     required this.nom,
@@ -58,6 +64,8 @@ class Membre {
     this.motifOverride,
     this.dateOverride,
     this.adminOverride,
+    this.operateur,
+    this.numeroBenef,
   });
 
   /// Score effectif : scoreOverride s'il existe, sinon score calculé.
@@ -85,6 +93,9 @@ class Membre {
       motifOverride: json['motifOverride'] as String?,
       dateOverride:  json['dateOverride']  as String?,
       adminOverride: json['adminOverride'] as String?,
+      // Mobile Money
+      operateur:   json['operateur']   as String?,
+      numeroBenef: json['numeroBenef'] as String?,
     );
   }
 
@@ -104,6 +115,9 @@ class Membre {
         if (motifOverride != null) 'motifOverride': motifOverride,
         if (dateOverride  != null) 'dateOverride':  dateOverride,
         if (adminOverride != null) 'adminOverride': adminOverride,
+        // Mobile Money
+        if (operateur   != null) 'operateur':   operateur,
+        if (numeroBenef != null) 'numeroBenef': numeroBenef,
       };
 }
 
