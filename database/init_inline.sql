@@ -4267,7 +4267,7 @@ CREATE OR REPLACE FUNCTION public.get_pending_sycapay_transactions(
   p_tontine_code text
 )
 RETURNS TABLE(
-  id                      bigint,
+  id                      uuid,
   internal_reference      text,
   provider_transaction_id text,
   amount                  integer,
