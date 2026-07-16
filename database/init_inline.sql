@@ -1,4 +1,126 @@
 -- =============================================================================
+-- TontineClair — init_inline.sql
+-- BLOC 0 : DROP IF EXISTS CASCADE — Idempotence sur bases existantes
+-- =============================================================================
+-- Ce bloc supprime toutes les fonctions avant leur (re)création.
+-- Nécessaire quand le type de retour ou la signature a changé entre versions
+-- (ERROR 42P13 : cannot change return type of existing function).
+-- Idempotent : IF EXISTS garantit l'absence d'erreur si la fonction n'existe pas.
+-- CASCADE : supprime les objets dépendants (vues, autres fonctions).
+-- =============================================================================
+
+DO $drop_all_functions$
+BEGIN
+  -- ── Migration 006 : RPCs tontines ──────────────────────────────────────────
+  DROP FUNCTION IF EXISTS public.tontines_set_updated_at() CASCADE;
+  DROP FUNCTION IF EXISTS public._tc_nom_membre(jsonb, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.lire_tontine(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.ecrire_tontine_sans_pin(text, jsonb) CASCADE;
+  DROP FUNCTION IF EXISTS public.verifier_gestionnaire(text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.check_invitation_code(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.join_tontine_by_code(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.delete_tontine(text, text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.restore_deleted_tontine(text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.maj_echeance(text, text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.lire_config_tontine(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.voter(text, text, text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.cloturer_tour(text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.proposer_nouveau_cycle(text, text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.lire_etat_cycle(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.clore_vote_redemarrage(text, text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.demarrer_nouveau_cycle(text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.demander_premium(text, text, text, text, text) CASCADE;
+
+  -- ── Migration 007 : RPCs Score & Audit ─────────────────────────────────────
+  DROP FUNCTION IF EXISTS public.enregistrer_score(text, text, int, int, text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.lire_historique_score(text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.lire_scores_tontine(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.proposer_retrait(text, text, text, text, text, int, text, text, int, int) CASCADE;
+  DROP FUNCTION IF EXISTS public.lire_propositions_retrait(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.maj_statut_retrait(text, text, text, text, text, int, int, int) CASCADE;
+  DROP FUNCTION IF EXISTS public.lire_journal_audit(text, int) CASCADE;
+  DROP FUNCTION IF EXISTS public.init_score_membre(text, text, int, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.modifier_score_membre(text, text, text, text, integer, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.lire_score_membre(text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.reinitialiser_score_override(text, text, text, text) CASCADE;
+
+  -- ── Migration 008 : RPCs Dashboard Admin ───────────────────────────────────
+  DROP FUNCTION IF EXISTS public._verif_admin_cle(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_stats_globales(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_dashboard_tontines(text, text, int, int) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_lister_abonnements(text, text, int) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_alertes(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_enregistrer_abonnement(text, text, text, int, text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_stats_mensuelles(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_top_tontines(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_tontine_counts(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_lister_tontines(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_lister_demandes(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_activer_premium(text, text, integer) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_refuser_demande(text, text, text) CASCADE;
+
+  -- ── Migration 009 : RPCs Financier, KYC & Support ──────────────────────────
+  DROP FUNCTION IF EXISTS public._sub_update_modifie_le() CASCADE;
+  DROP FUNCTION IF EXISTS public.est_premium(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.lire_abonnement_tontine(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.verif_limite_tontines(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.verif_limite_membres(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.enregistrer_abonnement_web(text, text, int, text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.expirer_abonnements_obsoletes() CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_valider_pret(text, bigint) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_rejeter_pret(text, bigint, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.crediter_remboursement_sycapay(text, integer, text, text, text, text, text, text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_lister_decaissements(text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_valider_decaissement(text, bigint) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_rejeter_decaissement(text, bigint, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_valider_depense(text, bigint) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_rejeter_depense(text, bigint, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_lister_kyc(text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_valider_kyc(text, bigint) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_rejeter_kyc(text, bigint, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.generer_ref_ticket() CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_lister_membres(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_creer_membre(text, text, text, text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_modifier_membre(text, bigint, text, boolean) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_auth_membre(text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_lister_messages(text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_envoyer_message(text, text, text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_marquer_lu(text, text, bigint) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_compter_non_lus(text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.support_ouvrir_ticket(text, text, text, text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.support_mes_tickets(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_lister_tickets(text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.support_messages_ticket(bigint, boolean, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.support_repondre(bigint, text, text, boolean, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_changer_statut_ticket(text, bigint, text, text) CASCADE;
+
+  -- ── Migration 010 : FCM + SycaPay ──────────────────────────────────────────
+  DROP FUNCTION IF EXISTS public.sauvegarder_token(text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.creer_transaction_sycapay(text, text, text, integer, text, text, text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.get_pending_sycapay_transactions(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.crediter_caisse_sycapay(text, integer, text, text, text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.crediter_cotisation_sycapay(text, text, integer, text, text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.crediter_penalite_sycapay(text, integer, text, text, text, text, text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.recalculer_echeances_expir() CASCADE;
+  DROP FUNCTION IF EXISTS public.distribuer_tour(text, text, text, text, int) CASCADE;
+
+  -- ── Migration 011 : RPCs fondamentaux v1 ───────────────────────────────────
+  DROP FUNCTION IF EXISTS public.creer_tontine(text, jsonb, jsonb) CASCADE;
+  DROP FUNCTION IF EXISTS public.ecrire_tontine(text, text, text, jsonb) CASCADE;
+  DROP FUNCTION IF EXISTS public.lire_voix_tontine(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.lire_plan(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.membres_avec_pin(text) CASCADE;
+  DROP FUNCTION IF EXISTS public.definir_pin_membre(text, text, text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.changer_pin_membre(text, text, text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.admin_desactiver_premium(text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.sauvegarder_langue_appareil(text, text) CASCADE;
+  DROP FUNCTION IF EXISTS public.charger_langue_appareil(text) CASCADE;
+
+  RAISE NOTICE 'BLOC 0 : DROP IF EXISTS CASCADE terminé — toutes les fonctions purgées.';
+END;
+$drop_all_functions$;
+
+-- =============================================================================
 -- TontineClair — Migration 001 : Tables fondamentales
 -- Ordre d'exécution : 1/11
 -- Remplace : (table tontines gérée par Supabase directement)
