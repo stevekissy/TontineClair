@@ -345,6 +345,40 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
     Vote vote,
     _ConfigNouveauCycle cfg,
   ) async {
+    final data = provider.courante?.data;
+
+    // ── Gate KYC (Premium uniquement) ────────────────────────────────────────
+    // La cagnotte du NOUVEAU cycle = nouveau montant × nbMembres actifs.
+    // Si cette cagnotte >= 200 000 XOF et KYC absent/rejeté → on bloque.
+    if (data != null && data.isPremium) {
+      final nbMembres    = data.nbMembresActifs > 0 ? data.nbMembresActifs : data.membres.length;
+      final nouvCagnotte = cfg.montant * nbMembres;
+      final kycBloquant  = nouvCagnotte >= TontineData.kSeuilKyc && data.kycStatut != 'valide';
+
+      if (kycBloquant) {
+        final soumis = data.kycStatut == 'pending';
+        if (!mounted) return;
+        await showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (_) => soumis
+              ? _KycEnAttenteSheet()
+              : ModaleKyc(
+                  code:    widget.code,
+                  gestNom: provider.gestActifNom ?? '',
+                ),
+        );
+        // Dans tous les cas on arrête ici : l'admin doit valider avant de démarrer
+        if (mounted && !soumis) {
+          afficherToast(context,
+            '⏳ Dossier KYC soumis — en attente de validation admin.');
+        }
+        return;
+      }
+    }
+    // ── Fin gate KYC ─────────────────────────────────────────────────────────
+
     final pin = await _demanderPin(
       titre: 'Démarrer le cycle ${(provider.courante?.data.cycleNumero ?? 1) + 1}',
       sousTitre: 'Confirme la configuration avec ton PIN.',
@@ -1468,6 +1502,64 @@ class _BandeauGestRequis extends StatelessWidget {
             child: Text(
               'Connectez-vous en tant que gestionnaire pour démarrer le nouveau cycle.',
               style: TextStyle(fontSize: 13, color: AppColors.texteDoux),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Sheet affiché quand KYC est déjà 'pending' (en attente validation) ─────────
+class _KycEnAttenteSheet extends StatelessWidget {
+  const _KycEnAttenteSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.fondPapier,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('⏳', style: TextStyle(fontSize: 40)),
+          const SizedBox(height: 12),
+          const Text(
+            'KYC en attente de validation',
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 17,
+              color: AppColors.encre,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Votre dossier d\'identité a été soumis et est en cours de vérification '
+            'par l\'administrateur TontineClair.\n\n'
+            'Vous pourrez démarrer le nouveau cycle une fois votre KYC validé.\n'
+            'Délai habituel : 24–48h.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13.5,
+              color: AppColors.texteDoux,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.encre,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text('Compris',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: Colors.white)),
             ),
           ),
         ],

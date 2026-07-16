@@ -1769,6 +1769,123 @@ class SupabaseService {
     }
   }
 
+  // ════════════════════════════════════════════════════════════════════════════
+  // KYC GESTIONNAIRE
+  // Requis pour les tontines Premium dont la cagnotte >= 200 000 XOF.
+  // Stocké dans data.kyc{} via ecrire_tontine_sans_pin + table kyc_submissions.
+  // ════════════════════════════════════════════════════════════════════════════
+
+  /// Soumet les données KYC du gestionnaire.
+  /// Écrit dans data.kyc{statut:'pending', nom, pieceType, pieceNumero, soumisLe}
+  /// ET insère une ligne dans kyc_submissions pour le tableau de bord admin.
+  static Future<bool> soumettreKyc({
+    required String code,
+    required String gestionnaire,
+    required String nom,
+    required String pieceType,    // 'cni' | 'passeport' | 'sejour'
+    required String pieceNumero,
+  }) async {
+    try {
+      final now = DateTime.now().toUtc().toIso8601String();
+      // 1. Mise à jour du JSON tontine (data.kyc)
+      final ok = await ecrireTontineSansPIN(
+        code: code,
+        data: {
+          'kyc': {
+            'statut':      'pending',
+            'nom':          nom,
+            'pieceType':    pieceType,
+            'pieceNumero':  pieceNumero,
+            'soumisLe':     now,
+          },
+        },
+      );
+      if (!ok) return false;
+
+      // 2. Insert dans kyc_submissions (pour le tableau de bord admin)
+      final url = Uri.parse('$_url/rest/v1/kyc_submissions');
+      final resp = await http.post(
+        url,
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': 'Bearer $_key',
+          'apikey':        _key,
+          'Prefer':        'return=minimal',
+        },
+        body: jsonEncode({
+          'code':          code.toUpperCase(),
+          'gestionnaire':  gestionnaire,
+          'nom':           nom,
+          'piece_type':    pieceType,
+          'piece_numero':  pieceNumero,
+          'soumis_le':     now,
+          'statut':        'pending',
+        }),
+      );
+      // On tolère un échec insert (la mise à jour JSON est déjà faite)
+      if (resp.statusCode >= 400) {
+        debugPrint('[KYC] insert kyc_submissions failed: ${resp.statusCode} ${resp.body}');
+      }
+      return true;
+    } catch (e) {
+      debugPrint('[KYC] soumettreKyc erreur: $e');
+      return false;
+    }
+  }
+
+  /// Retourne toutes les soumissions KYC (admin).
+  static Future<List<Map<String, dynamic>>> adminListerKyc(
+    String cle, {
+    String statut = 'tous',
+  }) async {
+    try {
+      final result = await rpc('admin_lister_kyc', {
+        'p_cle':    cle,
+        'p_statut': statut,
+      });
+      if (result is List) return List<Map<String, dynamic>>.from(result.cast<Map<String, dynamic>>());
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Valide un KYC : met data.kyc.statut='valide' dans la tontine.
+  static Future<Map<String, dynamic>> adminValiderKyc({
+    required String cle,
+    required int    id,
+  }) async {
+    try {
+      final result = await rpc('admin_valider_kyc', {
+        'p_cle': cle,
+        'p_id':  id,
+      });
+      if (result is Map<String, dynamic>) return result;
+      return {'ok': false, 'erreur': 'Réponse inattendue'};
+    } catch (e) {
+      return {'ok': false, 'erreur': '$e'};
+    }
+  }
+
+  /// Rejette un KYC avec motif.
+  static Future<Map<String, dynamic>> adminRejeterKyc({
+    required String cle,
+    required int    id,
+    required String motif,
+  }) async {
+    try {
+      final result = await rpc('admin_rejeter_kyc', {
+        'p_cle':   cle,
+        'p_id':    id,
+        'p_motif': motif,
+      });
+      if (result is Map<String, dynamic>) return result;
+      return {'ok': false, 'erreur': 'Réponse inattendue'};
+    } catch (e) {
+      return {'ok': false, 'erreur': '$e'};
+    }
+  }
+
   static Future<void> envoyerNotification({
     required String code,
     required String type,

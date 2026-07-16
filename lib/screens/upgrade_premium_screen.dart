@@ -2,27 +2,53 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../utils/app_colors.dart';
 import '../widgets/app_widgets.dart';
+import '../models/tontine.dart';
 
 /// Écran "Passer en Premium" — Gratuite → Premium IRRÉVERSIBLE.
 ///
-/// Accessible uniquement aux gestionnaires depuis _BarreDetail.
-/// Affiche la comparaison Gratuite vs Premium, les conditions,
-/// puis redirige vers Google Play pour le paiement.
+/// - Si cagnotte < 200 000 XOF : KYC optionnel (peut continuer sans).
+/// - Si cagnotte >= 200 000 XOF : KYC obligatoire avant accès Google Play.
 class UpgradePremiumScreen extends StatefulWidget {
-  final String code;
+  final String  code;
+  final int     montantCagnotte;
+  final String? kycStatut;
+  final String  gestNom;
 
-  const UpgradePremiumScreen({super.key, required this.code});
+  const UpgradePremiumScreen({
+    super.key,
+    required this.code,
+    this.montantCagnotte = 0,
+    this.kycStatut,
+    this.gestNom = '',
+  });
 
   @override
   State<UpgradePremiumScreen> createState() => _UpgradePremiumScreenState();
 }
 
 class _UpgradePremiumScreenState extends State<UpgradePremiumScreen> {
-  bool _checkboxLu = false;
+  bool    _checkboxLu  = false;
+  String? _kycStatut;   // mis à jour après soumission KYC
 
   static const _couleurPremium = Color(0xFFF59E0B);
   static const _googlePlayUrl =
       'https://play.google.com/store/apps/details?id=com.tontineclair.app';
+
+  @override
+  void initState() {
+    super.initState();
+    _kycStatut = widget.kycStatut;
+  }
+
+  bool get _kycRequis  => widget.montantCagnotte >= TontineData.kSeuilKyc;
+  bool get _kycValide  => _kycStatut == 'valide';
+  bool get _kycPending => _kycStatut == 'pending';
+  bool get _kycBloquant => _kycRequis && !_kycValide;
+
+  /// Bouton Google Play actif si :
+  ///   - checkbox cochée ET
+  ///   - KYC non bloquant (soit cagnotte < seuil, soit KYC valide)
+  bool get _peutProceder => _checkboxLu && !_kycBloquant;
 
   Future<void> _ouvrirGooglePlay() async {
     final uri = Uri.parse(_googlePlayUrl);
@@ -207,6 +233,18 @@ class _UpgradePremiumScreenState extends State<UpgradePremiumScreen> {
                   ),
                   const SizedBox(height: 16),
 
+                  // ── Bannière KYC (Premium uniquement) ─────────────────────
+                  BanniereKyc(
+                    kycStatut:       _kycStatut,
+                    montantCagnotte: widget.montantCagnotte,
+                    gestNom:         widget.gestNom,
+                    code:            widget.code,
+                    onSoumis: () async {
+                      // Recharger le statut KYC après soumission
+                      setState(() => _kycStatut = 'pending');
+                    },
+                  ),
+
                   // ── Checkbox confirmation ──────────────────────────────────
                   GestureDetector(
                     onTap: () => setState(() => _checkboxLu = !_checkboxLu),
@@ -276,7 +314,7 @@ class _UpgradePremiumScreenState extends State<UpgradePremiumScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: _checkboxLu ? _ouvrirGooglePlay : null,
+                        onPressed: _peutProceder ? _ouvrirGooglePlay : null,
                         icon: const Icon(Icons.open_in_new_rounded, size: 18),
                         label: const Text(
                           'Passer en Premium — Google Play',
@@ -286,7 +324,7 @@ class _UpgradePremiumScreenState extends State<UpgradePremiumScreen> {
                           ),
                         ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _checkboxLu
+                          backgroundColor: _peutProceder
                               ? _couleurPremium
                               : AppColors.lignes,
                           foregroundColor: Colors.white,
@@ -299,14 +337,28 @@ class _UpgradePremiumScreenState extends State<UpgradePremiumScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
-                      'Le passage en Premium sera activé après validation du paiement Google Play.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: AppColors.texteDoux,
+                    if (_kycBloquant)
+                      const Text(
+                        '🔒 Soumettez votre KYC ci-dessus avant de continuer (cagnotte ≥ 200 000 XOF).',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF991B1B),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      )
+                    else if (_kycPending)
+                      const Text(
+                        '⏳ KYC soumis — en attente de validation admin. Vous pourrez continuer après validation.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 12, color: Color(0xFF92400E)),
+                      )
+                    else
+                      const Text(
+                        'Le passage en Premium sera activé après validation du paiement Google Play.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 11.5, color: AppColors.texteDoux),
                       ),
-                    ),
                   ],
                 ),
               ),

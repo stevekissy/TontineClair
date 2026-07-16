@@ -364,6 +364,7 @@ class _DetailScreenState extends State<DetailScreen> {
                 isPremium: tontine.isPremium,
                 code: tontine.code,
                 data: data,
+                gestNom: gestNom ?? '',
               ),
             ),
           ],
@@ -1562,12 +1563,14 @@ class _BarreDetail extends StatelessWidget {
   final bool isPremium;
   final String code;
   final TontineData data;
+  final String gestNom;
 
   const _BarreDetail({
     required this.estGest,
     required this.isPremium,
     required this.code,
     required this.data,
+    this.gestNom = '',
   });
 
   @override
@@ -1620,7 +1623,12 @@ class _BarreDetail extends StatelessWidget {
                   onPressed: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => UpgradePremiumScreen(code: code),
+                      builder: (_) => UpgradePremiumScreen(
+                        code:             code,
+                        montantCagnotte:  data.montantCagnotte,
+                        kycStatut:        data.kycStatut,
+                        gestNom:          gestNom,
+                      ),
                     ),
                   ),
                   icon: const Icon(Icons.star_rounded, size: 15),

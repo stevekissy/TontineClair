@@ -567,6 +567,17 @@ class TontineData {
   Map<String, dynamic> stats;    // stats par membre
   String tier;                   // 'gratuite' | 'premium' — migration à sens unique (jamais premium→gratuite)
 
+  // ── KYC gestionnaire ─────────────────────────────────────────────────────
+  // Requis quand isPremium ET montantCagnotte >= kSeuilKyc (200 000 XOF).
+  // Stocké dans data.kyc{} côté Supabase.
+  // statut : null (jamais soumis) | 'pending' | 'valide' | 'rejete'
+  String? kycStatut;       // statut de validation KYC
+  String? kycNom;          // nom complet du gestionnaire
+  String? kycPieceType;    // 'cni' | 'passeport' | 'sejour'
+  String? kycPieceNumero;  // numéro de la pièce d'identité
+  String? kycSoumisLe;     // ISO 8601 de la soumission
+  String? kycMotifRejet;   // motif de rejet si statut='rejete'
+
   TontineData({
     required this.nom,
     required this.montant,
@@ -590,6 +601,12 @@ class TontineData {
     this.cyclesArchives = const [],
     this.stats = const {},
     this.tier = 'gratuite',
+    this.kycStatut,
+    this.kycNom,
+    this.kycPieceType,
+    this.kycPieceNumero,
+    this.kycSoumisLe,
+    this.kycMotifRejet,
   });
 
   // ── Accesseurs calculés ────────────────────────────────────────────────────
@@ -1095,6 +1112,15 @@ class TontineData {
     final echeanceRaw = json['echeance'] as String?;
     final deviseRaw = json['devise'] as String? ?? 'XOF';
 
+    // ── KYC ──────────────────────────────────────────────────────────────────
+    final kycRaw = json['kyc'] as Map<String, dynamic>?;
+    final kycStatut      = kycRaw?['statut']      as String?;
+    final kycNom         = kycRaw?['nom']          as String?;
+    final kycPieceType   = kycRaw?['pieceType']    as String?;
+    final kycPieceNumero = kycRaw?['pieceNumero']  as String?;
+    final kycSoumisLe    = kycRaw?['soumisLe']     as String?;
+    final kycMotifRejet  = kycRaw?['motifRejet']   as String?;
+
     return TontineData(
       nom: json['nom'] as String? ?? '',
       montant: (json['montant'] as num?)?.toInt() ?? 0,
@@ -1118,11 +1144,38 @@ class TontineData {
       cyclesArchives: cyclesArchives,
       stats: stats,
       tier: _parseTier(json['tier']),
+      kycStatut:      kycStatut,
+      kycNom:         kycNom,
+      kycPieceType:   kycPieceType,
+      kycPieceNumero: kycPieceNumero,
+      kycSoumisLe:    kycSoumisLe,
+      kycMotifRejet:  kycMotifRejet,
     );
   }
 
   /// Getter : true si la tontine est en mode Premium (paiements SycaPay actifs).
   bool get isPremium => tier == 'premium';
+
+  // ── KYC ──────────────────────────────────────────────────────────────────
+
+  /// Seuil de cagnotte au-delà duquel le KYC est obligatoire (en XOF).
+  static const int kSeuilKyc = 200000;
+
+  /// Montant total de la cagnotte d'un tour = cotisation × nombre de membres actifs.
+  int get montantCagnotte => montant * (nbMembresActifs > 0 ? nbMembresActifs : membres.length);
+
+  /// true si le KYC est requis pour cette tontine.
+  /// Conditions : Premium ET montantCagnotte >= 200 000 XOF.
+  bool get kycRequis => isPremium && montantCagnotte >= kSeuilKyc;
+
+  /// true si le KYC est valide (validé par l'admin).
+  bool get kycValide => kycStatut == 'valide';
+
+  /// true si le KYC a été soumis mais est en attente de validation.
+  bool get kycEnAttente => kycStatut == 'pending';
+
+  /// true si le KYC est requis ET n'est pas encore validé (bloquant).
+  bool get kycBloquant => kycRequis && !kycValide;
 
   /// Garantit que le tier ne peut jamais rétrograder de 'premium' à 'gratuite'.
   /// Rétrocompatibilité : 'pro' (ancien) → 'premium', 'lite' (ancien) → 'gratuite'.
@@ -1158,6 +1211,16 @@ class TontineData {
         'cyclesArchives': cyclesArchives,
         'stats': stats,
         'tier': tier,
+        // KYC : écrit uniquement si au moins un champ est renseigné
+        if (kycStatut != null || kycNom != null)
+          'kyc': {
+            if (kycStatut      != null) 'statut':      kycStatut,
+            if (kycNom         != null) 'nom':          kycNom,
+            if (kycPieceType   != null) 'pieceType':    kycPieceType,
+            if (kycPieceNumero != null) 'pieceNumero':  kycPieceNumero,
+            if (kycSoumisLe    != null) 'soumisLe':     kycSoumisLe,
+            if (kycMotifRejet  != null) 'motifRejet':   kycMotifRejet,
+          },
       };
 }
 

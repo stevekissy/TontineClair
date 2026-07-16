@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../utils/app_colors.dart';
 import '../services/platform_service.dart';
 import '../services/feature_gate_service.dart';
+import '../services/supabase_service.dart';
 
 // ============================================================
 // BOUTONS
@@ -1231,6 +1233,398 @@ class FeatureLock extends StatelessWidget {
                   color: AppColors.orFonce,
                 ),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// KYC — BANNIÈRE + MODALE DE SOUMISSION
+// Utilisées dans upgrade_premium_screen et nouveau_cycle_screen.
+// Réservées aux tontines Premium (kycRequis = isPremium && cagnotte >= 200 000 XOF).
+// ============================================================
+
+enum _KycStatut { absent, pending, valide, rejete }
+
+_KycStatut _parseKycStatut(String? s) {
+  switch (s) {
+    case 'pending': return _KycStatut.pending;
+    case 'valide':  return _KycStatut.valide;
+    case 'rejete':  return _KycStatut.rejete;
+    default:        return _KycStatut.absent;
+  }
+}
+
+/// Bannière d'état KYC affichée dans les écrans Premium.
+class BanniereKyc extends StatelessWidget {
+  final String? kycStatut;
+  final int     montantCagnotte;
+  final String  gestNom;
+  final String  code;
+  final Future<void> Function() onSoumis;
+
+  const BanniereKyc({
+    super.key,
+    required this.kycStatut,
+    required this.montantCagnotte,
+    required this.gestNom,
+    required this.code,
+    required this.onSoumis,
+  });
+
+  static const int _seuil = 200000;
+
+  @override
+  Widget build(BuildContext context) {
+    final statut  = _parseKycStatut(kycStatut);
+    final depasse = montantCagnotte >= _seuil;
+
+    if (!depasse && statut == _KycStatut.absent) return const SizedBox.shrink();
+
+    Color  fond, bordure, couleurTexte;
+    String emoji, titre, sousTitre;
+    bool   montrerBouton = false;
+    String labelBouton   = '';
+
+    switch (statut) {
+      case _KycStatut.valide:
+        fond          = const Color(0xFFECFDF5);
+        bordure       = const Color(0xFF34D399);
+        couleurTexte  = const Color(0xFF065F46);
+        emoji         = '✅';
+        titre         = 'KYC validé';
+        sousTitre     = 'Votre identité a été vérifiée par l\'administrateur.';
+      case _KycStatut.pending:
+        fond          = const Color(0xFFFFFBEB);
+        bordure       = const Color(0xFFF59E0B);
+        couleurTexte  = const Color(0xFF92400E);
+        emoji         = '⏳';
+        titre         = 'KYC en attente de validation';
+        sousTitre     = 'Votre dossier est en cours de vérification.';
+      case _KycStatut.rejete:
+        fond          = const Color(0xFFFEF2F2);
+        bordure       = const Color(0xFFF87171);
+        couleurTexte  = const Color(0xFF991B1B);
+        emoji         = '❌';
+        titre         = 'KYC rejeté — action requise';
+        sousTitre     = 'Votre dossier a été rejeté. Soumettez à nouveau vos documents.';
+        montrerBouton = true;
+        labelBouton   = '📋 Re-soumettre le KYC';
+      case _KycStatut.absent:
+        fond          = depasse ? const Color(0xFFFEF2F2) : const Color(0xFFFFFBEB);
+        bordure       = depasse ? const Color(0xFFF87171) : const Color(0xFFF59E0B);
+        couleurTexte  = depasse ? const Color(0xFF991B1B) : const Color(0xFF92400E);
+        emoji         = depasse ? '🚨' : '📋';
+        titre         = depasse
+            ? 'KYC obligatoire — Cagnotte ≥ 200 000 XOF'
+            : 'KYC recommandé (cagnotte < 200 000 XOF)';
+        sousTitre     = depasse
+            ? 'La cagnotte dépasse 200 000 XOF. Le KYC est requis pour continuer.'
+            : 'Le KYC sera obligatoire si la cagnotte dépasse 200 000 XOF.';
+        montrerBouton = true;
+        labelBouton   = '📋 Soumettre le KYC';
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: fond,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: bordure),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(emoji, style: const TextStyle(fontSize: 18)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(titre,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13.5,
+                          color: couleurTexte,
+                        )),
+                    const SizedBox(height: 3),
+                    Text(sousTitre,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: couleurTexte,
+                          height: 1.4,
+                        )),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (montrerBouton) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: () async {
+                  final ok = await showModalBottomSheet<bool>(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (_) => ModaleKyc(code: code, gestNom: gestNom),
+                  );
+                  if (ok == true) await onSoumis();
+                },
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: couleurTexte,
+                  side: BorderSide(color: bordure),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                child: Text(labelBouton,
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Modale de saisie KYC.  Retourne true si soumission réussie.
+class ModaleKyc extends StatefulWidget {
+  final String code;
+  final String gestNom;
+
+  const ModaleKyc({super.key, required this.code, required this.gestNom});
+
+  @override
+  State<ModaleKyc> createState() => _ModaleKycState();
+}
+
+class _ModaleKycState extends State<ModaleKyc> {
+  final _nomCtrl = TextEditingController();
+  final _numCtrl = TextEditingController();
+  String  _pieceType = 'cni';
+  bool    _loading   = false;
+  String? _erreur;
+
+  static const _pieceTypes = [
+    ('cni',       "Carte Nationale d'Identité"),
+    ('passeport', 'Passeport'),
+    ('sejour',    'Titre de séjour'),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _nomCtrl.text = widget.gestNom;
+  }
+
+  @override
+  void dispose() {
+    _nomCtrl.dispose();
+    _numCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _soumettre() async {
+    final nom    = _nomCtrl.text.trim();
+    final numero = _numCtrl.text.trim();
+    if (nom.isEmpty) {
+      setState(() => _erreur = 'Veuillez saisir votre nom complet.');
+      return;
+    }
+    if (numero.isEmpty) {
+      setState(() => _erreur = 'Veuillez saisir le numéro de la pièce.');
+      return;
+    }
+    setState(() { _loading = true; _erreur = null; });
+    final ok = await SupabaseService.soumettreKyc(
+      code:         widget.code,
+      gestionnaire: widget.gestNom,
+      nom:          nom,
+      pieceType:    _pieceType,
+      pieceNumero:  numero,
+    );
+    if (!mounted) return;
+    setState(() => _loading = false);
+    if (ok) {
+      Navigator.of(context).pop(true);
+    } else {
+      setState(() => _erreur = 'Erreur lors de la soumission. Réessayez.');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.fondPapier,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottom),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 40, height: 40,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF3C7),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Center(child: Text('🪪', style: TextStyle(fontSize: 20))),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Vérification d\'identité (KYC)',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                            color: AppColors.encre,
+                          )),
+                      Text('Tontines Premium · cagnotte ≥ 200 000 XOF',
+                          style: TextStyle(fontSize: 11.5, color: AppColors.texteDoux)),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, size: 20),
+                  onPressed: () => Navigator.of(context).pop(false),
+                  color: AppColors.texteDoux,
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            const Divider(height: 1, color: AppColors.lignes),
+            const SizedBox(height: 14),
+
+            Container(
+              padding: const EdgeInsets.all(11),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFF93C5FD)),
+              ),
+              child: const Text(
+                'ℹ️  Ces informations sont transmises à l\'administrateur TontineClair '
+                'pour vérification. Aucun document physique n\'est requis.',
+                style: TextStyle(fontSize: 12, color: Color(0xFF1E40AF), height: 1.4),
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            const Text('Nom complet du gestionnaire *',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.encre)),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _nomCtrl,
+              textCapitalization: TextCapitalization.words,
+              decoration: InputDecoration(
+                hintText: 'Ex : Kouassi Ama Bernadette',
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: AppColors.lignes),
+                ),
+                prefixIcon: const Icon(Icons.person_outline_rounded, size: 18),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            const Text('Type de pièce d\'identité *',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.encre)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: _pieceTypes.map((pt) {
+                final selected = _pieceType == pt.$1;
+                return ChoiceChip(
+                  label: Text(pt.$2,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: selected ? Colors.white : AppColors.encre,
+                      )),
+                  selected: selected,
+                  selectedColor: AppColors.encre,
+                  backgroundColor: AppColors.fondPapier,
+                  side: BorderSide(color: selected ? AppColors.encre : AppColors.lignes),
+                  onSelected: (_) => setState(() => _pieceType = pt.$1),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 12),
+
+            const Text('Numéro de la pièce *',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.encre)),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _numCtrl,
+              textCapitalization: TextCapitalization.characters,
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9\-]'))],
+              decoration: InputDecoration(
+                hintText: 'Ex : CI-AB-12345678-2024',
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: AppColors.lignes),
+                ),
+                prefixIcon: const Icon(Icons.badge_outlined, size: 18),
+              ),
+            ),
+
+            if (_erreur != null) ...[
+              const SizedBox(height: 8),
+              Text(_erreur!,
+                  style: const TextStyle(fontSize: 12.5, color: AppColors.alerte)),
+            ],
+            const SizedBox(height: 16),
+
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _loading ? null : _soumettre,
+                icon: _loading
+                    ? const SizedBox(
+                        width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.send_rounded, size: 18),
+                label: Text(
+                  _loading ? 'Envoi en cours…' : 'Soumettre le dossier KYC',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.encre,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Après soumission, l\'admin validera votre dossier sous 24–48h.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 11.5, color: AppColors.texteDoux),
             ),
           ],
         ),
