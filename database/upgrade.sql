@@ -1,5 +1,5 @@
 -- ============================================================
--- TontineClair — upgrade.sql  v2
+-- TontineClair — upgrade.sql  v3
 -- Mise à jour schéma (tables, colonnes, index, triggers, RLS)
 -- sans aucune perte de données
 -- ============================================================
@@ -10,26 +10,36 @@
 --   ✅ Section C — Nouveaux index              (IF NOT EXISTS)
 --   ✅ Section D — Triggers                    (DROP IF EXISTS + recréation)
 --   ✅ Section E — Politiques RLS              (DROP IF EXISTS + recréation)
---   ✅ Section F — Fonctions / RPCs            (init_inline.sql)
+--   ✅ Section F — Fonctions / RPCs            → voir init_inline.sql
 --
 -- POURQUOI LES FONCTIONS SONT DANS init_inline.sql ET PAS ICI :
 --   PostgreSQL refuse CREATE OR REPLACE FUNCTION si les NOMS des
 --   paramètres changent entre l'ancienne et la nouvelle version.
---   Les fonctions dans la base ont des signatures complètes (plus de
---   paramètres, noms différents) issues des migrations 006-011.
---   init_inline.sql contient les vraies signatures — il est le
---   fichier canonique pour les RPCs.
+--   init_inline.sql contient les vraies signatures — c'est le
+--   fichier canonique pour tous les RPCs.
 --
 -- GARANTIE DE NON-DESTRUCTION :
 --   ✅ Aucun DROP TABLE / TRUNCATE / DELETE FROM
 --   ✅ Aucun DROP FUNCTION
 --   ✅ CREATE TABLE         uniquement IF NOT EXISTS
 --   ✅ ALTER TABLE          uniquement ADD COLUMN IF NOT EXISTS
---   ✅ Toutes les colonnes NOT NULL ont un DEFAULT
+--   ✅ Toutes les colonnes NOT NULL ont un DEFAULT (sécurité lignes existantes)
 --   ✅ CREATE INDEX         uniquement IF NOT EXISTS
 --   ✅ DROP TRIGGER IF EXISTS avant recréation (safe)
 --   ✅ DROP POLICY IF EXISTS avant recréation (métadonnées seules)
 --   ✅ Rejouer n fois       → résultat identique
+--
+-- POURQUOI v3 CORRIGE v2 :
+--   v2 échouait sur production avec ERROR 42703 (column "code" does not exist)
+--   car la table sycapay_transactions existait avec un ANCIEN schéma à ~10
+--   colonnes. CREATE TABLE IF NOT EXISTS était no-op, mais la Section B
+--   ne couvrait que les colonnes v2 (internal_reference, idempotency_key…)
+--   en supposant que code/membre_nom/devise/metadata/created_at/updated_at
+--   étaient déjà présents. Ce n'est pas le cas sur la base de production.
+--
+--   v3 ajoute en Section B les ADD COLUMN IF NOT EXISTS pour TOUTES les
+--   colonnes potentiellement absentes, en utilisant les vrais noms de
+--   colonnes découverts par audit de la base de production réelle.
 --
 -- DONNÉES CONSERVÉES : utilisateurs, tontines, cotisations, prêts,
 --   abonnements, votes, scores, KYC, tickets support, transactions,
@@ -42,27 +52,23 @@
 --     Supabase SQL Editor → New query → Coller init_inline.sql → Run
 --   (ou psql -f upgrade.sql && psql -f init_inline.sql)
 --
--- VERSION : migrations 001→011 — 2025-07-16
+-- VERSION : migrations 001→011 — 2025-07-17  (v3)
 -- ============================================================
+
 
 -- ============================================================
 -- SECTION A : NOUVELLES TABLES (no-op si déjà présentes)
 -- ============================================================
+-- Chaque CREATE TABLE IF NOT EXISTS utilise le schéma complet
+-- et correct tel que défini dans les migrations 001-005.
+-- Si la table existe déjà, cette section est un no-op total.
+-- La Section B (ADD COLUMN IF NOT EXISTS) prend le relais
+-- pour ajouter les colonnes manquantes sur les tables existantes.
+-- ============================================================
 
--- A.1 — voix : table des votes (était absente de toutes les migrations)
-CREATE TABLE IF NOT EXISTS voix (
-  id         BIGSERIAL   PRIMARY KEY,
-  code       TEXT        NOT NULL,
-  vote_id    TEXT        NOT NULL,
-  membre_id  TEXT        NOT NULL,
-  choix      TEXT        NOT NULL CHECK (choix IN ('oui','non','abstention')),
-  methode    TEXT        NOT NULL DEFAULT 'PIN',
-  appareil   TEXT,
-  vote_le    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (code, vote_id, membre_id)
-);
-
--- A.2 — Toutes les autres tables core (no-op si présentes)
+-- ─────────────────────────────────────────────────────────────
+-- A.1 — tontines
+-- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS tontines (
   id                     BIGSERIAL   PRIMARY KEY,
   code                   TEXT        NOT NULL UNIQUE,
@@ -83,239 +89,464 @@ CREATE TABLE IF NOT EXISTS tontines (
   created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- ─────────────────────────────────────────────────────────────
+-- A.2 — audit
+-- Schéma réel prod : id, code, gestionnaire, empreinte, quand
+-- (upgrade v2 avait "action TEXT, data JSONB" — incorrect)
+-- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS audit (
-  id     BIGSERIAL   PRIMARY KEY,
-  code   TEXT        NOT NULL,
-  action TEXT        NOT NULL,
-  data   JSONB,
-  quand  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id           BIGSERIAL   PRIMARY KEY,
+  code         TEXT        NOT NULL,
+  gestionnaire TEXT        NOT NULL,
+  empreinte    TEXT        NOT NULL,
+  quand        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- ─────────────────────────────────────────────────────────────
+-- A.3 — demandes_premium
+-- Schéma réel prod : id, code, gestionnaire, nom, contact,
+--   formule, statut, quand
+-- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS demandes_premium (
-  id         BIGSERIAL   PRIMARY KEY,
-  code       TEXT        NOT NULL,
-  membre_id  TEXT        NOT NULL,
-  plan       TEXT        NOT NULL DEFAULT 'premium',
-  statut     TEXT        NOT NULL DEFAULT 'en_attente',
-  demande_le TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  traite_le  TIMESTAMPTZ,
-  traite_par TEXT
+  id           BIGSERIAL   PRIMARY KEY,
+  code         TEXT        NOT NULL,
+  gestionnaire TEXT        NOT NULL,
+  nom          TEXT,
+  contact      TEXT,
+  formule      TEXT        NOT NULL DEFAULT 'mensuel',
+  statut       TEXT        NOT NULL DEFAULT 'en attente'
+               CHECK (statut IN ('en attente','en_attente','activée','refusée','active','refuse')),
+  quand        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- ─────────────────────────────────────────────────────────────
+-- A.4 — config / app_config / admin_config
+-- Schéma réel prod : UNIQUEMENT cle (TEXT PK) + valeur (TEXT)
+-- SANS colonne id (upgrade v2 avait BIGSERIAL PRIMARY KEY — incorrect)
+-- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS config (
-  id     BIGSERIAL PRIMARY KEY,
-  cle    TEXT      NOT NULL UNIQUE,
-  valeur JSONB
+  cle    TEXT PRIMARY KEY,
+  valeur TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS app_config (
-  id     BIGSERIAL PRIMARY KEY,
-  cle    TEXT      NOT NULL UNIQUE,
-  valeur JSONB
+  cle    TEXT PRIMARY KEY,
+  valeur TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS admin_config (
-  id     BIGSERIAL PRIMARY KEY,
-  cle    TEXT      NOT NULL UNIQUE,
-  valeur JSONB
+  cle    TEXT PRIMARY KEY,
+  valeur TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS scores_historique (
+-- ─────────────────────────────────────────────────────────────
+-- A.5 — voix (nouvelle table — absente de toutes les versions prod)
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS voix (
   id        BIGSERIAL   PRIMARY KEY,
   code      TEXT        NOT NULL,
+  vote_id   TEXT        NOT NULL,
   membre_id TEXT        NOT NULL,
-  type      TEXT        NOT NULL,
-  delta     INTEGER     NOT NULL DEFAULT 0,
-  raison    TEXT,
-  quand     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  choix     TEXT        NOT NULL CHECK (choix IN ('oui','non','abstention')),
+  methode   TEXT        NOT NULL DEFAULT 'PIN',
+  appareil  TEXT,
+  vote_le   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (code, vote_id, membre_id)
 );
 
+-- ─────────────────────────────────────────────────────────────
+-- A.6 — scores_historique
+-- Schéma réel prod : id, code, membre_id, score, score_prec,
+--   evenement, description, gestionnaire, quand
+-- (upgrade v2 avait type/delta/raison — incorrect)
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS scores_historique (
+  id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  code         TEXT        NOT NULL,
+  membre_id    TEXT        NOT NULL,
+  score        INT         NOT NULL CHECK (score BETWEEN 0 AND 100),
+  score_prec   INT         NOT NULL CHECK (score_prec BETWEEN 0 AND 100),
+  evenement    TEXT        NOT NULL,
+  description  TEXT        NOT NULL,
+  gestionnaire TEXT,
+  quand        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ─────────────────────────────────────────────────────────────
+-- A.7 — propositions_retrait
+-- Schéma réel prod : id, code, membre_id, membre_nom,
+--   score_moment, motif, propose_par, vote_id, quorum, majorite,
+--   statut, quand, clos_le, resultat_oui, resultat_non, resultat_abs
+-- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS propositions_retrait (
-  id         BIGSERIAL   PRIMARY KEY,
-  code       TEXT        NOT NULL,
-  membre_id  TEXT        NOT NULL,
-  montant    INTEGER     NOT NULL,
-  motif      TEXT,
-  statut     TEXT        NOT NULL DEFAULT 'en_attente',
-  propose_le TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  traite_le  TIMESTAMPTZ,
-  traite_par TEXT
+  id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  code         TEXT        NOT NULL,
+  membre_id    TEXT        NOT NULL,
+  membre_nom   TEXT        NOT NULL,
+  score_moment INT         NOT NULL,
+  motif        TEXT        NOT NULL,
+  propose_par  TEXT        NOT NULL,
+  vote_id      TEXT,
+  quorum       INT         NOT NULL DEFAULT 50,
+  majorite     INT         NOT NULL DEFAULT 67,
+  statut       TEXT        NOT NULL DEFAULT 'en_attente'
+               CHECK (statut IN ('en_attente','vote_ouvert','accepte','refuse')),
+  quand        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  clos_le      TIMESTAMPTZ,
+  resultat_oui INT         DEFAULT 0,
+  resultat_non INT         DEFAULT 0,
+  resultat_abs INT         DEFAULT 0
 );
 
+-- ─────────────────────────────────────────────────────────────
+-- A.8 — journal_audit
+-- Schéma réel prod : id, code, gestionnaire, action, detail,
+--   membre_id, ancien_val, nouveau_val, quand
+-- (upgrade v2 avait acteur/details — incorrect)
+-- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS journal_audit (
-  id      BIGSERIAL   PRIMARY KEY,
-  code    TEXT        NOT NULL,
-  acteur  TEXT        NOT NULL,
-  action  TEXT        NOT NULL,
-  details JSONB,
-  quand   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  code         TEXT        NOT NULL,
+  gestionnaire TEXT        NOT NULL,
+  action       TEXT        NOT NULL,
+  detail       TEXT,
+  membre_id    TEXT,
+  ancien_val   TEXT,
+  nouveau_val  TEXT,
+  quand        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- ─────────────────────────────────────────────────────────────
+-- A.9 — subscriptions
+-- Schéma réel prod : id, code, plan, statut, date_debut,
+--   date_fin, stripe_id, modifie_le
+-- (upgrade v2 avait debut/fin — incorrect ; vrais noms : date_debut/date_fin)
+-- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS subscriptions (
   id         BIGSERIAL   PRIMARY KEY,
   code       TEXT        NOT NULL UNIQUE,
-  plan       TEXT        NOT NULL DEFAULT 'free',
-  statut     TEXT        NOT NULL DEFAULT 'actif',
-  debut      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  fin        TIMESTAMPTZ,
+  plan       TEXT        NOT NULL DEFAULT 'gratuit'
+             CHECK (plan IN ('gratuit','premium_mensuel','premium_annuel','pro')),
+  statut     TEXT        NOT NULL DEFAULT 'actif'
+             CHECK (statut IN ('actif','expire','annule','suspendu')),
+  date_debut TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  date_fin   TIMESTAMPTZ,
+  stripe_id  TEXT,
   modifie_le TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- ─────────────────────────────────────────────────────────────
+-- A.10 — abonnements
+-- Schéma réel prod : id, code, gestionnaire, contact, formule,
+--   statut, debut, fin, montant, devise, note, cree_le
+-- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS abonnements (
-  id        BIGSERIAL   PRIMARY KEY,
-  code      TEXT        NOT NULL,
-  plan      TEXT        NOT NULL,
-  statut    TEXT        NOT NULL DEFAULT 'actif',
-  debut     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  fin       TIMESTAMPTZ,
-  reference TEXT,
-  cree_le   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id           BIGSERIAL     PRIMARY KEY,
+  code         TEXT          NOT NULL,
+  gestionnaire TEXT,
+  contact      TEXT,
+  formule      TEXT          NOT NULL DEFAULT 'mensuel',
+  statut       TEXT          NOT NULL DEFAULT 'actif'
+               CHECK (statut IN ('actif','expire','annule')),
+  debut        TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  fin          TIMESTAMPTZ,
+  montant      NUMERIC(12,2) DEFAULT 0,
+  devise       TEXT          DEFAULT 'XOF',
+  note         TEXT,
+  cree_le      TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 
+-- ─────────────────────────────────────────────────────────────
+-- A.11 — admin_actions
+-- Schéma réel prod : id, type, code, detail, admin, quand
+-- (upgrade v2 avait admin_id/action/cible/details/fait_le — incorrect)
+-- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS admin_actions (
-  id       BIGSERIAL   PRIMARY KEY,
-  admin_id TEXT        NOT NULL,
-  action   TEXT        NOT NULL,
-  cible    TEXT,
-  details  JSONB,
-  fait_le  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id     BIGSERIAL   PRIMARY KEY,
+  type   TEXT        NOT NULL,
+  code   TEXT,
+  detail TEXT,
+  admin  TEXT        NOT NULL DEFAULT 'admin',
+  quand  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- ─────────────────────────────────────────────────────────────
+-- A.12 — sycapay_transactions
+-- Schéma réel prod (ancien) : ~10 colonnes seulement.
+-- On déclare ici le schéma complet v2.
+-- La Section B gère les ADD COLUMN IF NOT EXISTS pour la prod.
+-- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS sycapay_transactions (
-  id          BIGSERIAL   PRIMARY KEY,
-  code        TEXT        NOT NULL,
-  membre_id   TEXT        NOT NULL,
-  type        TEXT        NOT NULL,
-  montant     INTEGER     NOT NULL,
-  statut      TEXT        NOT NULL DEFAULT 'en_attente',
-  reference   TEXT,
-  sycapay_ref TEXT,
-  cree_le     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  traite_le   TIMESTAMPTZ
+  id                   BIGSERIAL     PRIMARY KEY,
+  type                 TEXT          NOT NULL,
+  code                 TEXT          NOT NULL,
+  membre_id            TEXT,
+  membre_nom           TEXT,
+  montant              NUMERIC(14,2) NOT NULL,
+  devise               TEXT          NOT NULL DEFAULT 'XOF',
+  statut               TEXT          NOT NULL DEFAULT 'pending'
+                       CHECK (statut IN ('pending','completed','failed','cancelled')),
+  sycapay_ref          TEXT,
+  numero_telephone     TEXT,
+  gestionnaire         TEXT,
+  internal_reference   TEXT          UNIQUE,
+  idempotency_key      TEXT          UNIQUE,
+  statut_traitement    TEXT          NOT NULL DEFAULT 'non_traite'
+                       CHECK (statut_traitement IN ('non_traite','en_cours','traite','erreur')),
+  user_id              TEXT,
+  tontine_code         TEXT,
+  type_operation       TEXT,
+  pret_id              TEXT,
+  emprunteur_id        TEXT,
+  metadata             JSONB         DEFAULT '{}',
+  created_at           TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  provider_transaction_id TEXT,
+  sycapay_reference    TEXT,
+  amount               INTEGER,
+  currency             TEXT,
+  operator             TEXT,
+  phone_number_masked  TEXT,
+  description          TEXT,
+  status               TEXT          DEFAULT 'pending',
+  polling_attempts     INTEGER       DEFAULT 0
 );
 
+-- ─────────────────────────────────────────────────────────────
+-- A.13 — prets_pending
+-- Schéma réel prod : id, code, membre_id, membre_nom, montant,
+--   montant_net, taux_interet, duree_mois, devise, motif, statut,
+--   motif_rejet, gestionnaire, cree_le, traite_le
+-- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS prets_pending (
-  id         BIGSERIAL   PRIMARY KEY,
-  code       TEXT        NOT NULL,
-  emprunteur TEXT        NOT NULL,
-  montant    INTEGER     NOT NULL,
-  statut     TEXT        NOT NULL DEFAULT 'en_attente',
-  demande_le TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  traite_le  TIMESTAMPTZ,
-  traite_par TEXT
+  id             BIGSERIAL     PRIMARY KEY,
+  code           TEXT          NOT NULL,
+  membre_id      TEXT          NOT NULL,
+  membre_nom     TEXT          NOT NULL,
+  montant        NUMERIC(14,2) NOT NULL,
+  montant_net    NUMERIC(14,2),
+  taux_interet   NUMERIC(5,2)  DEFAULT 0,
+  duree_mois     INT           DEFAULT 1,
+  devise         TEXT          NOT NULL DEFAULT 'XOF',
+  motif          TEXT,
+  statut         TEXT          NOT NULL DEFAULT 'pending'
+                 CHECK (statut IN ('pending','validee','rejetee')),
+  motif_rejet    TEXT,
+  gestionnaire   TEXT,
+  cree_le        TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  traite_le      TIMESTAMPTZ
 );
 
+-- ─────────────────────────────────────────────────────────────
+-- A.14 — decaissements_pending
+-- Schéma réel prod : id, code, beneficiaire, montant, devise,
+--   motif, statut, motif_rejet, gestionnaire, cree_le, traite_le
+-- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS decaissements_pending (
-  id           BIGSERIAL   PRIMARY KEY,
-  code         TEXT        NOT NULL,
-  beneficiaire TEXT        NOT NULL,
-  montant      INTEGER     NOT NULL,
-  statut       TEXT        NOT NULL DEFAULT 'en_attente',
-  cree_le      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  traite_le    TIMESTAMPTZ,
-  traite_par   TEXT
+  id           BIGSERIAL     PRIMARY KEY,
+  code         TEXT          NOT NULL,
+  beneficiaire TEXT          NOT NULL,
+  montant      NUMERIC(14,2) NOT NULL,
+  devise       TEXT          NOT NULL DEFAULT 'XOF',
+  motif        TEXT,
+  statut       TEXT          NOT NULL DEFAULT 'pending'
+               CHECK (statut IN ('pending','validee','rejetee')),
+  motif_rejet  TEXT,
+  gestionnaire TEXT,
+  cree_le      TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  traite_le    TIMESTAMPTZ
 );
 
+-- ─────────────────────────────────────────────────────────────
+-- A.15 — depenses_pending
+-- Schéma réel prod : id, code, libelle, montant, devise,
+--   categorie, statut, motif_rejet, gestionnaire, cree_le, traite_le
+-- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS depenses_pending (
-  id          BIGSERIAL   PRIMARY KEY,
-  code        TEXT        NOT NULL,
-  description TEXT        NOT NULL,
-  montant     INTEGER     NOT NULL,
-  statut      TEXT        NOT NULL DEFAULT 'en_attente',
-  cree_le     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  traite_le   TIMESTAMPTZ,
-  traite_par  TEXT
+  id           BIGSERIAL     PRIMARY KEY,
+  code         TEXT          NOT NULL,
+  libelle      TEXT          NOT NULL,
+  montant      NUMERIC(14,2) NOT NULL,
+  devise       TEXT          NOT NULL DEFAULT 'XOF',
+  categorie    TEXT          DEFAULT 'autre',
+  statut       TEXT          NOT NULL DEFAULT 'pending'
+               CHECK (statut IN ('pending','validee','rejetee')),
+  motif_rejet  TEXT,
+  gestionnaire TEXT,
+  cree_le      TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  traite_le    TIMESTAMPTZ
 );
 
+-- ─────────────────────────────────────────────────────────────
+-- A.16 — premium_requests
+-- Schéma réel prod : id, code, gestionnaire, nom, contact,
+--   formule, statut, cree_le, mis_a_jour
+-- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS premium_requests (
-  id         BIGSERIAL   PRIMARY KEY,
-  code       TEXT        NOT NULL UNIQUE,
-  membre_id  TEXT        NOT NULL,
-  plan       TEXT        NOT NULL DEFAULT 'premium',
-  statut     TEXT        NOT NULL DEFAULT 'en_attente',
-  demande_le TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  traite_le  TIMESTAMPTZ,
-  traite_par TEXT
+  id           BIGSERIAL   PRIMARY KEY,
+  code         TEXT        NOT NULL UNIQUE,
+  gestionnaire TEXT        NOT NULL,
+  nom          TEXT,
+  contact      TEXT,
+  formule      TEXT        NOT NULL DEFAULT 'mensuel',
+  statut       TEXT        NOT NULL DEFAULT 'pending'
+               CHECK (statut IN ('pending','active','rejected','expired')),
+  cree_le      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  mis_a_jour   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- ─────────────────────────────────────────────────────────────
+-- A.17 — kyc_submissions
+-- Schéma réel prod : id, code, gestionnaire, nom_complet,
+--   type_piece, numero_piece, photo_recto_url, photo_verso_url,
+--   photo_selfie_url, statut, motif_rejet, note_admin,
+--   soumis_le, traite_le
+-- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.kyc_submissions (
-  id         BIGSERIAL   PRIMARY KEY,
-  code       TEXT        NOT NULL,
-  membre_id  TEXT        NOT NULL,
-  type_doc   TEXT        NOT NULL,
-  url_doc    TEXT        NOT NULL,
-  statut     TEXT        NOT NULL DEFAULT 'en_attente',
-  soumis_le  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  traite_le  TIMESTAMPTZ,
-  traite_par TEXT,
-  notes      TEXT
+  id               BIGSERIAL   PRIMARY KEY,
+  code             TEXT        NOT NULL,
+  gestionnaire     TEXT        NOT NULL,
+  nom_complet      TEXT        NOT NULL,
+  type_piece       TEXT        NOT NULL DEFAULT 'cni'
+                   CHECK (type_piece IN ('cni','passeport','permis','sejour')),
+  numero_piece     TEXT,
+  photo_recto_url  TEXT,
+  photo_verso_url  TEXT,
+  photo_selfie_url TEXT,
+  statut           TEXT        NOT NULL DEFAULT 'pending'
+                   CHECK (statut IN ('pending','valide','rejete')),
+  motif_rejet      TEXT,
+  note_admin       TEXT,
+  soumis_le        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  traite_le        TIMESTAMPTZ
 );
 
+-- ─────────────────────────────────────────────────────────────
+-- A.18 — fcm_tokens
+-- Schéma réel prod : id, token, tontine, membre_id, platform,
+--   cree_le, mis_a_jour, langue
+-- (upgrade v2 avait appareil — incorrect ; vrai nom : platform)
+-- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.fcm_tokens (
   id         BIGSERIAL   PRIMARY KEY,
-  tontine    TEXT        NOT NULL,
-  membre_id  TEXT        NOT NULL,
   token      TEXT        NOT NULL UNIQUE,
-  appareil   TEXT,
-  mis_a_jour TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  tontine    TEXT,
+  membre_id  TEXT,
+  platform   TEXT        DEFAULT 'android',
+  cree_le    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  mis_a_jour TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  langue     TEXT
 );
 
+-- ─────────────────────────────────────────────────────────────
+-- A.19 — rappels_envoyes
+-- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS rappels_envoyes (
   id        BIGSERIAL   PRIMARY KEY,
   code      TEXT        NOT NULL,
   membre_id TEXT        NOT NULL,
-  type      TEXT        NOT NULL,
+  type      TEXT        NOT NULL DEFAULT 'cotisation',
   envoye_le TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (code, membre_id, type)
 );
 
+-- ─────────────────────────────────────────────────────────────
+-- A.20 — admin_membres
+-- Schéma réel prod : id, nom, pseudo, cle_hash, role, actif,
+--   cree_par, cree_le, derniere_connexion
+-- (upgrade v2 avait cle_perso — incorrect ; vrai nom : cle_hash)
+-- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS admin_membres (
-  id        BIGSERIAL   PRIMARY KEY,
-  pseudo    TEXT        NOT NULL UNIQUE,
-  cle_perso TEXT        NOT NULL,
-  role      TEXT        NOT NULL DEFAULT 'moderateur',
-  cree_le   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id                 BIGSERIAL   PRIMARY KEY,
+  nom                TEXT        NOT NULL,
+  pseudo             TEXT        NOT NULL UNIQUE,
+  cle_hash           TEXT        NOT NULL,
+  role               TEXT        NOT NULL DEFAULT 'comptable'
+                     CHECK (role IN ('super_admin','comptable','conformite')),
+  actif              BOOLEAN     NOT NULL DEFAULT TRUE,
+  cree_par           TEXT        NOT NULL,
+  cree_le            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  derniere_connexion TIMESTAMPTZ
 );
 
+-- ─────────────────────────────────────────────────────────────
+-- A.21 — admin_messages
+-- Schéma réel prod : id, expediteur, destinataire, sujet, corps,
+--   lu, lu_le, envoye_le
+-- (upgrade v2 avait contenu — incorrect ; vrais noms : sujet + corps)
+-- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS admin_messages (
   id           BIGSERIAL   PRIMARY KEY,
   expediteur   TEXT        NOT NULL,
   destinataire TEXT        NOT NULL,
-  contenu      TEXT        NOT NULL,
+  sujet        TEXT        NOT NULL DEFAULT '',
+  corps        TEXT        NOT NULL,
   lu           BOOLEAN     NOT NULL DEFAULT FALSE,
+  lu_le        TIMESTAMPTZ,
   envoye_le    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- ─────────────────────────────────────────────────────────────
+-- A.22 — support_tickets
+-- Schéma réel prod : id, ref, gestionnaire, code_tontine,
+--   categorie, sujet, description, statut, priorite, assigne_a,
+--   cree_le, mis_a_jour, resolu_le
+-- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS support_tickets (
   id           BIGSERIAL   PRIMARY KEY,
   ref          TEXT        NOT NULL UNIQUE,
   gestionnaire TEXT        NOT NULL,
-  tontine_code TEXT,
+  code_tontine TEXT,
+  categorie    TEXT        NOT NULL DEFAULT 'autre'
+               CHECK (categorie IN ('paiement','kyc','tontine','technique','autre')),
   sujet        TEXT        NOT NULL,
-  statut       TEXT        NOT NULL DEFAULT 'ouvert',
-  priorite     TEXT        NOT NULL DEFAULT 'normale',
+  description  TEXT        NOT NULL,
+  statut       TEXT        NOT NULL DEFAULT 'ouvert'
+               CHECK (statut IN ('ouvert','en_cours','resolu','ferme')),
+  priorite     TEXT        NOT NULL DEFAULT 'normale'
+               CHECK (priorite IN ('basse','normale','haute','urgente')),
+  assigne_a    TEXT,
   cree_le      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  ferme_le     TIMESTAMPTZ,
-  ferme_par    TEXT
+  mis_a_jour   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  resolu_le    TIMESTAMPTZ
 );
 
+-- ─────────────────────────────────────────────────────────────
+-- A.23 — support_messages
+-- Schéma réel prod : id, ticket_id, auteur, est_admin, corps,
+--   lu_client, lu_admin, envoye_le
+-- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS support_messages (
-  id          BIGSERIAL   PRIMARY KEY,
-  ticket_id   BIGINT      NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
-  auteur      TEXT        NOT NULL,
-  role_auteur TEXT        NOT NULL DEFAULT 'client',
-  contenu     TEXT        NOT NULL,
-  envoye_le   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id        BIGSERIAL   PRIMARY KEY,
+  ticket_id BIGINT      NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+  auteur    TEXT        NOT NULL,
+  est_admin BOOLEAN     NOT NULL DEFAULT FALSE,
+  corps     TEXT        NOT NULL,
+  lu_client BOOLEAN     NOT NULL DEFAULT FALSE,
+  lu_admin  BOOLEAN     NOT NULL DEFAULT FALSE,
+  envoye_le TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 
 -- ============================================================
--- SECTION B : NOUVELLES COLONNES (no-op si déjà présentes)
+-- SECTION B : NOUVELLES COLONNES (ADD COLUMN IF NOT EXISTS)
 -- ============================================================
+-- RÈGLE CRITIQUE : cette section couvre TOUTES les colonnes
+-- potentiellement absentes sur une base de production avec
+-- un ancien schéma, y compris les colonnes "de base" qui
+-- n'étaient pas encore ajoutées via ALTER TABLE dans les
+-- versions précédentes de ce script.
+--
+-- ORDRE OBLIGATOIRE : Section B doit précéder Section C
+-- (les index référencent des colonnes qui doivent exister).
+--
 -- Règle stricte : toute colonne NOT NULL a un DEFAULT.
 -- → Aucun risque sur les lignes existantes.
+-- ============================================================
 
--- B.1 — tontines : colonnes v2 (gestionnaires, membres_pins, plan, etc.)
+-- ─────────────────────────────────────────────────────────────
+-- B.1 — tontines : colonnes v2
+-- ─────────────────────────────────────────────────────────────
 ALTER TABLE tontines ADD COLUMN IF NOT EXISTS gestionnaires          JSONB       DEFAULT '[]';
 ALTER TABLE tontines ADD COLUMN IF NOT EXISTS membres_pins           JSONB       DEFAULT '[]';
 ALTER TABLE tontines ADD COLUMN IF NOT EXISTS plan                   TEXT        NOT NULL DEFAULT 'free';
@@ -330,42 +561,271 @@ ALTER TABLE tontines ADD COLUMN IF NOT EXISTS invitation_code_active BOOLEAN    
 ALTER TABLE tontines ADD COLUMN IF NOT EXISTS updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE tontines ADD COLUMN IF NOT EXISTS created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
--- B.2 — sycapay_transactions : colonnes v2 (API SycaPay mise à jour)
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS internal_reference       TEXT UNIQUE;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS idempotency_key          TEXT UNIQUE;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS statut_traitement        TEXT NOT NULL DEFAULT 'non_traite';
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS user_id                  TEXT;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS tontine_code             TEXT;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS type_operation           TEXT;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS pret_id                  TEXT;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS emprunteur_id            TEXT;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS provider_transaction_id  TEXT;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS sycapay_reference        TEXT;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS amount                   INTEGER;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS currency                 TEXT;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS operator                 TEXT;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS phone_number_masked      TEXT;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS description              TEXT;
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS status                   TEXT DEFAULT 'pending';
-ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS polling_attempts         INTEGER DEFAULT 0;
+-- ─────────────────────────────────────────────────────────────
+-- B.2 — audit : colonnes réelles prod
+-- (l'ancienne version avait peut-être action/data au lieu de gestionnaire/empreinte)
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE audit ADD COLUMN IF NOT EXISTS gestionnaire TEXT NOT NULL DEFAULT '';
+ALTER TABLE audit ADD COLUMN IF NOT EXISTS empreinte    TEXT NOT NULL DEFAULT '';
 
--- B.3 — fcm_tokens : colonne langue (préférences de notification)
-DO $lang_guard$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name   = 'fcm_tokens'
-      AND column_name  = 'langue'
-  ) THEN
-    ALTER TABLE fcm_tokens ADD COLUMN langue text;
-  END IF;
-END;
-$lang_guard$;
+-- ─────────────────────────────────────────────────────────────
+-- B.3 — demandes_premium : colonnes réelles prod
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE demandes_premium ADD COLUMN IF NOT EXISTS gestionnaire TEXT;
+ALTER TABLE demandes_premium ADD COLUMN IF NOT EXISTS nom          TEXT;
+ALTER TABLE demandes_premium ADD COLUMN IF NOT EXISTS contact      TEXT;
+ALTER TABLE demandes_premium ADD COLUMN IF NOT EXISTS formule      TEXT NOT NULL DEFAULT 'mensuel';
+ALTER TABLE demandes_premium ADD COLUMN IF NOT EXISTS statut       TEXT NOT NULL DEFAULT 'en_attente';
+ALTER TABLE demandes_premium ADD COLUMN IF NOT EXISTS quand        TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+-- ─────────────────────────────────────────────────────────────
+-- B.4 — scores_historique : colonnes réelles prod
+-- (l'ancienne version avait type/delta/raison — incorrects)
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE scores_historique ADD COLUMN IF NOT EXISTS score        INT  NOT NULL DEFAULT 0;
+ALTER TABLE scores_historique ADD COLUMN IF NOT EXISTS score_prec   INT  NOT NULL DEFAULT 0;
+ALTER TABLE scores_historique ADD COLUMN IF NOT EXISTS evenement    TEXT NOT NULL DEFAULT '';
+ALTER TABLE scores_historique ADD COLUMN IF NOT EXISTS description  TEXT NOT NULL DEFAULT '';
+ALTER TABLE scores_historique ADD COLUMN IF NOT EXISTS gestionnaire TEXT;
+
+-- ─────────────────────────────────────────────────────────────
+-- B.5 — propositions_retrait : colonnes réelles prod
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS membre_nom   TEXT NOT NULL DEFAULT '';
+ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS score_moment INT  NOT NULL DEFAULT 0;
+ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS propose_par  TEXT NOT NULL DEFAULT '';
+ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS vote_id      TEXT;
+ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS quorum       INT  NOT NULL DEFAULT 50;
+ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS majorite     INT  NOT NULL DEFAULT 67;
+ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS clos_le      TIMESTAMPTZ;
+ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS resultat_oui INT  DEFAULT 0;
+ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS resultat_non INT  DEFAULT 0;
+ALTER TABLE propositions_retrait ADD COLUMN IF NOT EXISTS resultat_abs INT  DEFAULT 0;
+
+-- ─────────────────────────────────────────────────────────────
+-- B.6 — journal_audit : colonnes réelles prod
+-- (l'ancienne version avait acteur/details — incorrects)
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE journal_audit ADD COLUMN IF NOT EXISTS gestionnaire TEXT NOT NULL DEFAULT '';
+ALTER TABLE journal_audit ADD COLUMN IF NOT EXISTS action       TEXT NOT NULL DEFAULT '';
+ALTER TABLE journal_audit ADD COLUMN IF NOT EXISTS detail       TEXT;
+ALTER TABLE journal_audit ADD COLUMN IF NOT EXISTS membre_id    TEXT;
+ALTER TABLE journal_audit ADD COLUMN IF NOT EXISTS ancien_val   TEXT;
+ALTER TABLE journal_audit ADD COLUMN IF NOT EXISTS nouveau_val  TEXT;
+
+-- ─────────────────────────────────────────────────────────────
+-- B.7 — subscriptions : colonnes réelles prod
+-- (l'ancienne version avait debut/fin — incorrects)
+-- vrais noms : date_debut / date_fin / stripe_id
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS date_debut TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS date_fin   TIMESTAMPTZ;
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS stripe_id  TEXT;
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS modifie_le TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+-- ─────────────────────────────────────────────────────────────
+-- B.8 — abonnements : colonnes réelles prod
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE abonnements ADD COLUMN IF NOT EXISTS gestionnaire TEXT;
+ALTER TABLE abonnements ADD COLUMN IF NOT EXISTS contact      TEXT;
+ALTER TABLE abonnements ADD COLUMN IF NOT EXISTS formule      TEXT          NOT NULL DEFAULT 'mensuel';
+ALTER TABLE abonnements ADD COLUMN IF NOT EXISTS debut        TIMESTAMPTZ   NOT NULL DEFAULT NOW();
+ALTER TABLE abonnements ADD COLUMN IF NOT EXISTS fin          TIMESTAMPTZ;
+ALTER TABLE abonnements ADD COLUMN IF NOT EXISTS montant      NUMERIC(12,2) DEFAULT 0;
+ALTER TABLE abonnements ADD COLUMN IF NOT EXISTS devise       TEXT          DEFAULT 'XOF';
+ALTER TABLE abonnements ADD COLUMN IF NOT EXISTS note         TEXT;
+ALTER TABLE abonnements ADD COLUMN IF NOT EXISTS cree_le      TIMESTAMPTZ   NOT NULL DEFAULT NOW();
+
+-- ─────────────────────────────────────────────────────────────
+-- B.9 — admin_actions : colonnes réelles prod
+-- (l'ancienne version avait admin_id/action/cible/details/fait_le — incorrect)
+-- vrais noms : type, code, detail, admin, quand
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE admin_actions ADD COLUMN IF NOT EXISTS type   TEXT        NOT NULL DEFAULT '';
+ALTER TABLE admin_actions ADD COLUMN IF NOT EXISTS code   TEXT;
+ALTER TABLE admin_actions ADD COLUMN IF NOT EXISTS detail TEXT;
+ALTER TABLE admin_actions ADD COLUMN IF NOT EXISTS admin  TEXT        NOT NULL DEFAULT 'admin';
+ALTER TABLE admin_actions ADD COLUMN IF NOT EXISTS quand  TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+-- ─────────────────────────────────────────────────────────────
+-- B.10 — sycapay_transactions : TOUTES les colonnes potentiellement
+-- absentes sur une production avec l'ancien schéma ~10 colonnes.
+--
+-- COLONNE PAR COLONNE :
+--   code             → colonne qui causait ERROR 42703 en prod
+--   membre_nom       → absente dans ancien schéma
+--   devise           → absente dans ancien schéma
+--   numero_telephone → absente dans ancien schéma
+--   gestionnaire     → absente dans ancien schéma
+--   metadata         → absente dans ancien schéma
+--   created_at       → absente dans ancien schéma (alias de cree_le)
+--   updated_at       → absente dans ancien schéma
+--   + toutes les colonnes v2 (internal_reference, idempotency_key, etc.)
+-- ─────────────────────────────────────────────────────────────
+
+-- Colonnes de base potentiellement absentes (ancien schéma prod)
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS code             TEXT          NOT NULL DEFAULT '';
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS membre_nom       TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS devise           TEXT          NOT NULL DEFAULT 'XOF';
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS numero_telephone TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS gestionnaire     TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS metadata         JSONB         DEFAULT '{}';
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS created_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW();
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS updated_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW();
+
+-- Colonnes v2 : idempotence et suivi avancé
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS internal_reference      TEXT UNIQUE;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS idempotency_key         TEXT UNIQUE;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS statut_traitement       TEXT NOT NULL DEFAULT 'non_traite';
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS user_id                 TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS tontine_code            TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS type_operation          TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS pret_id                 TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS emprunteur_id           TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS provider_transaction_id TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS sycapay_reference       TEXT;
+
+-- Colonnes convention SycaPay API
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS amount             INTEGER DEFAULT 0;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS currency           TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS operator           TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS phone_number_masked TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS description        TEXT;
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS status             TEXT    DEFAULT 'pending';
+ALTER TABLE sycapay_transactions ADD COLUMN IF NOT EXISTS polling_attempts   INTEGER DEFAULT 0;
+
+-- ─────────────────────────────────────────────────────────────
+-- B.11 — prets_pending : colonnes réelles prod
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE prets_pending ADD COLUMN IF NOT EXISTS membre_id    TEXT          NOT NULL DEFAULT '';
+ALTER TABLE prets_pending ADD COLUMN IF NOT EXISTS membre_nom   TEXT          NOT NULL DEFAULT '';
+ALTER TABLE prets_pending ADD COLUMN IF NOT EXISTS montant_net  NUMERIC(14,2);
+ALTER TABLE prets_pending ADD COLUMN IF NOT EXISTS taux_interet NUMERIC(5,2)  DEFAULT 0;
+ALTER TABLE prets_pending ADD COLUMN IF NOT EXISTS duree_mois   INT           DEFAULT 1;
+ALTER TABLE prets_pending ADD COLUMN IF NOT EXISTS devise       TEXT          NOT NULL DEFAULT 'XOF';
+ALTER TABLE prets_pending ADD COLUMN IF NOT EXISTS motif        TEXT;
+ALTER TABLE prets_pending ADD COLUMN IF NOT EXISTS statut       TEXT          NOT NULL DEFAULT 'pending';
+ALTER TABLE prets_pending ADD COLUMN IF NOT EXISTS motif_rejet  TEXT;
+ALTER TABLE prets_pending ADD COLUMN IF NOT EXISTS gestionnaire TEXT;
+ALTER TABLE prets_pending ADD COLUMN IF NOT EXISTS cree_le      TIMESTAMPTZ   NOT NULL DEFAULT NOW();
+ALTER TABLE prets_pending ADD COLUMN IF NOT EXISTS traite_le    TIMESTAMPTZ;
+
+-- ─────────────────────────────────────────────────────────────
+-- B.12 — decaissements_pending : colonnes réelles prod
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE decaissements_pending ADD COLUMN IF NOT EXISTS beneficiaire TEXT          NOT NULL DEFAULT '';
+ALTER TABLE decaissements_pending ADD COLUMN IF NOT EXISTS devise       TEXT          NOT NULL DEFAULT 'XOF';
+ALTER TABLE decaissements_pending ADD COLUMN IF NOT EXISTS motif        TEXT;
+ALTER TABLE decaissements_pending ADD COLUMN IF NOT EXISTS statut       TEXT          NOT NULL DEFAULT 'pending';
+ALTER TABLE decaissements_pending ADD COLUMN IF NOT EXISTS motif_rejet  TEXT;
+ALTER TABLE decaissements_pending ADD COLUMN IF NOT EXISTS gestionnaire TEXT;
+ALTER TABLE decaissements_pending ADD COLUMN IF NOT EXISTS cree_le      TIMESTAMPTZ   NOT NULL DEFAULT NOW();
+ALTER TABLE decaissements_pending ADD COLUMN IF NOT EXISTS traite_le    TIMESTAMPTZ;
+
+-- ─────────────────────────────────────────────────────────────
+-- B.13 — depenses_pending : colonnes réelles prod
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE depenses_pending ADD COLUMN IF NOT EXISTS libelle      TEXT          NOT NULL DEFAULT '';
+ALTER TABLE depenses_pending ADD COLUMN IF NOT EXISTS devise       TEXT          NOT NULL DEFAULT 'XOF';
+ALTER TABLE depenses_pending ADD COLUMN IF NOT EXISTS categorie    TEXT          DEFAULT 'autre';
+ALTER TABLE depenses_pending ADD COLUMN IF NOT EXISTS statut       TEXT          NOT NULL DEFAULT 'pending';
+ALTER TABLE depenses_pending ADD COLUMN IF NOT EXISTS motif_rejet  TEXT;
+ALTER TABLE depenses_pending ADD COLUMN IF NOT EXISTS gestionnaire TEXT;
+ALTER TABLE depenses_pending ADD COLUMN IF NOT EXISTS cree_le      TIMESTAMPTZ   NOT NULL DEFAULT NOW();
+ALTER TABLE depenses_pending ADD COLUMN IF NOT EXISTS traite_le    TIMESTAMPTZ;
+
+-- ─────────────────────────────────────────────────────────────
+-- B.14 — premium_requests : colonnes réelles prod
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE premium_requests ADD COLUMN IF NOT EXISTS gestionnaire TEXT        NOT NULL DEFAULT '';
+ALTER TABLE premium_requests ADD COLUMN IF NOT EXISTS nom          TEXT;
+ALTER TABLE premium_requests ADD COLUMN IF NOT EXISTS contact      TEXT;
+ALTER TABLE premium_requests ADD COLUMN IF NOT EXISTS formule      TEXT        NOT NULL DEFAULT 'mensuel';
+ALTER TABLE premium_requests ADD COLUMN IF NOT EXISTS statut       TEXT        NOT NULL DEFAULT 'pending';
+ALTER TABLE premium_requests ADD COLUMN IF NOT EXISTS cree_le      TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE premium_requests ADD COLUMN IF NOT EXISTS mis_a_jour   TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+-- ─────────────────────────────────────────────────────────────
+-- B.15 — kyc_submissions : colonnes réelles prod
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE public.kyc_submissions ADD COLUMN IF NOT EXISTS gestionnaire      TEXT        NOT NULL DEFAULT '';
+ALTER TABLE public.kyc_submissions ADD COLUMN IF NOT EXISTS nom_complet       TEXT        NOT NULL DEFAULT '';
+ALTER TABLE public.kyc_submissions ADD COLUMN IF NOT EXISTS type_piece        TEXT        NOT NULL DEFAULT 'cni';
+ALTER TABLE public.kyc_submissions ADD COLUMN IF NOT EXISTS numero_piece      TEXT;
+ALTER TABLE public.kyc_submissions ADD COLUMN IF NOT EXISTS photo_recto_url   TEXT;
+ALTER TABLE public.kyc_submissions ADD COLUMN IF NOT EXISTS photo_verso_url   TEXT;
+ALTER TABLE public.kyc_submissions ADD COLUMN IF NOT EXISTS photo_selfie_url  TEXT;
+ALTER TABLE public.kyc_submissions ADD COLUMN IF NOT EXISTS statut            TEXT        NOT NULL DEFAULT 'pending';
+ALTER TABLE public.kyc_submissions ADD COLUMN IF NOT EXISTS motif_rejet       TEXT;
+ALTER TABLE public.kyc_submissions ADD COLUMN IF NOT EXISTS note_admin        TEXT;
+ALTER TABLE public.kyc_submissions ADD COLUMN IF NOT EXISTS soumis_le         TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE public.kyc_submissions ADD COLUMN IF NOT EXISTS traite_le         TIMESTAMPTZ;
+
+-- ─────────────────────────────────────────────────────────────
+-- B.16 — fcm_tokens : colonnes réelles prod
+-- (l'ancienne version avait appareil — incorrect ; vrai nom : platform)
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE public.fcm_tokens ADD COLUMN IF NOT EXISTS tontine    TEXT;
+ALTER TABLE public.fcm_tokens ADD COLUMN IF NOT EXISTS membre_id  TEXT;
+ALTER TABLE public.fcm_tokens ADD COLUMN IF NOT EXISTS platform   TEXT        DEFAULT 'android';
+ALTER TABLE public.fcm_tokens ADD COLUMN IF NOT EXISTS cree_le    TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE public.fcm_tokens ADD COLUMN IF NOT EXISTS mis_a_jour TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE public.fcm_tokens ADD COLUMN IF NOT EXISTS langue     TEXT;
+
+-- ─────────────────────────────────────────────────────────────
+-- B.17 — admin_membres : colonnes réelles prod
+-- (l'ancienne version avait cle_perso — incorrect ; vrai nom : cle_hash)
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE admin_membres ADD COLUMN IF NOT EXISTS nom                TEXT        NOT NULL DEFAULT '';
+ALTER TABLE admin_membres ADD COLUMN IF NOT EXISTS cle_hash           TEXT        NOT NULL DEFAULT '';
+ALTER TABLE admin_membres ADD COLUMN IF NOT EXISTS role               TEXT        NOT NULL DEFAULT 'comptable';
+ALTER TABLE admin_membres ADD COLUMN IF NOT EXISTS actif              BOOLEAN     NOT NULL DEFAULT TRUE;
+ALTER TABLE admin_membres ADD COLUMN IF NOT EXISTS cree_par           TEXT        NOT NULL DEFAULT '';
+ALTER TABLE admin_membres ADD COLUMN IF NOT EXISTS cree_le            TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE admin_membres ADD COLUMN IF NOT EXISTS derniere_connexion TIMESTAMPTZ;
+
+-- ─────────────────────────────────────────────────────────────
+-- B.18 — admin_messages : colonnes réelles prod
+-- (l'ancienne version avait contenu — incorrect ; vrais noms : sujet + corps)
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE admin_messages ADD COLUMN IF NOT EXISTS sujet        TEXT        NOT NULL DEFAULT '';
+ALTER TABLE admin_messages ADD COLUMN IF NOT EXISTS corps        TEXT        NOT NULL DEFAULT '';
+ALTER TABLE admin_messages ADD COLUMN IF NOT EXISTS lu           BOOLEAN     NOT NULL DEFAULT FALSE;
+ALTER TABLE admin_messages ADD COLUMN IF NOT EXISTS lu_le        TIMESTAMPTZ;
+ALTER TABLE admin_messages ADD COLUMN IF NOT EXISTS envoye_le    TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+-- ─────────────────────────────────────────────────────────────
+-- B.19 — support_tickets : colonnes réelles prod
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS gestionnaire TEXT        NOT NULL DEFAULT '';
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS code_tontine TEXT;
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS categorie    TEXT        NOT NULL DEFAULT 'autre';
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS sujet        TEXT        NOT NULL DEFAULT '';
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS description  TEXT        NOT NULL DEFAULT '';
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS statut       TEXT        NOT NULL DEFAULT 'ouvert';
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS priorite     TEXT        NOT NULL DEFAULT 'normale';
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS assigne_a    TEXT;
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS cree_le      TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS mis_a_jour   TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS resolu_le    TIMESTAMPTZ;
+
+-- ─────────────────────────────────────────────────────────────
+-- B.20 — support_messages : colonnes réelles prod
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS auteur    TEXT        NOT NULL DEFAULT '';
+ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS est_admin BOOLEAN     NOT NULL DEFAULT FALSE;
+ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS corps     TEXT        NOT NULL DEFAULT '';
+ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS lu_client BOOLEAN     NOT NULL DEFAULT FALSE;
+ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS lu_admin  BOOLEAN     NOT NULL DEFAULT FALSE;
+ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS envoye_le TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 
 -- ============================================================
 -- SECTION C : INDEX (no-op si déjà présents)
+-- ============================================================
+-- IMPORTANT : Section C doit toujours venir APRÈS Section B.
+-- Tous les index référencent des colonnes déjà garanties
+-- présentes par la Section B ci-dessus.
 -- ============================================================
 
 -- tontines
@@ -404,6 +864,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_code_key ON subscriptions(code);
 CREATE INDEX IF NOT EXISTS idx_abonnements_code ON abonnements(code);
 
 -- sycapay_transactions
+-- (code et statut et type garantis présents par B.10 avant ces CREATE INDEX)
 CREATE INDEX IF NOT EXISTS idx_sycapay_code   ON sycapay_transactions(code);
 CREATE INDEX IF NOT EXISTS idx_sycapay_statut ON sycapay_transactions(statut);
 CREATE INDEX IF NOT EXISTS idx_sycapay_type   ON sycapay_transactions(type);
@@ -459,9 +920,9 @@ CREATE INDEX        IF NOT EXISTS idx_admin_membres_role   ON admin_membres(role
 CREATE UNIQUE INDEX IF NOT EXISTS admin_membres_pseudo_key ON admin_membres(pseudo);
 
 -- admin_messages
-CREATE INDEX IF NOT EXISTS idx_admin_msg_dest  ON admin_messages(destinataire);
-CREATE INDEX IF NOT EXISTS idx_admin_msg_exp   ON admin_messages(expediteur);
-CREATE INDEX IF NOT EXISTS idx_admin_msg_date  ON admin_messages(envoye_le DESC);
+CREATE INDEX IF NOT EXISTS idx_admin_msg_dest ON admin_messages(destinataire);
+CREATE INDEX IF NOT EXISTS idx_admin_msg_exp  ON admin_messages(expediteur);
+CREATE INDEX IF NOT EXISTS idx_admin_msg_date ON admin_messages(envoye_le DESC);
 
 -- support_tickets
 CREATE INDEX IF NOT EXISTS idx_support_tickets_statut       ON support_tickets(statut);
@@ -511,6 +972,7 @@ CREATE TRIGGER trg_sub_modifie_le
 -- ============================================================
 -- DROP POLICY IF EXISTS + CREATE POLICY = mise à jour in-place.
 -- Ne touche pas aux données, uniquement aux règles d'accès.
+-- ============================================================
 
 ALTER TABLE tontines              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit                 ENABLE ROW LEVEL SECURITY;
@@ -704,7 +1166,7 @@ CREATE POLICY "support_messages_service" ON support_messages
 -- -- Nombre de politiques RLS (attendu : 32+)
 -- SELECT count(*) FROM pg_policies WHERE schemaname = 'public';
 --
--- -- Index (attendu : 54+)
+-- -- Index non-PK (attendu : 54+)
 -- SELECT count(*) FROM pg_indexes
 -- WHERE schemaname = 'public' AND indexname NOT LIKE '%_pkey';
 --
@@ -713,6 +1175,11 @@ CREATE POLICY "support_messages_service" ON support_messages
 -- FROM information_schema.triggers
 -- WHERE trigger_schema = 'public';
 --
+-- -- Colonnes sycapay_transactions (attendu : 31)
+-- SELECT column_name FROM information_schema.columns
+-- WHERE table_schema = 'public' AND table_name = 'sycapay_transactions'
+-- ORDER BY ordinal_position;
+--
 -- ============================================================
--- FIN upgrade.sql
+-- FIN upgrade.sql  v3
 -- ============================================================
