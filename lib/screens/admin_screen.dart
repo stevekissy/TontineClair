@@ -4,6 +4,9 @@ import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import 'admin_dashboard_screen.dart';
+import 'equipe_screen.dart';
+import 'messagerie_screen.dart';
+import 'support_admin_screen.dart';
 import '../utils/app_localizations.dart';
 
 class AdminScreen extends StatefulWidget {
@@ -39,9 +42,23 @@ class _AdminScreenState extends State<AdminScreen> {
   String _filtreKyc          = 'pending';
   String get _cle => _cleCtrl.text.trim();
 
+  // ── Auth membre (role-based login) ───────────────────────────────────────────
+  // null = connecté via clé master ; non-null = connecté en tant que membre
+  String? _pseudoMembre;
+  String? _clePersoMembre;
+  String? _roleMembre;  // 'super_admin' | 'comptable' | 'conformite'
+  String? _nomMembre;
+  bool get _estMembreRole => _roleMembre != null;
+  // Clés des champs pseudo/clePerso pour la connexion membre
+  final _pseudoCtrl   = TextEditingController();
+  final _clePersoCtrl = TextEditingController();
+  bool _loginMembreMode = false; // bascule entre mode clé-master et mode membre
+
   @override
   void dispose() {
     _cleCtrl.dispose();
+    _pseudoCtrl.dispose();
+    _clePersoCtrl.dispose();
     super.dispose();
   }
 
@@ -81,6 +98,51 @@ class _AdminScreenState extends State<AdminScreen> {
       setState(() => _erreur = 'Clé incorrecte ou erreur réseau.');
     } finally {
       setState(() => _loading = false);
+    }
+  }
+
+  // ── Connexion membre (pseudo + clePerso, role-based) ─────────────────────────
+  Future<void> _connecterMembre() async {
+    final pseudo   = _pseudoCtrl.text.trim();
+    final clePerso = _clePersoCtrl.text.trim();
+    if (pseudo.isEmpty || clePerso.isEmpty) {
+      setState(() => _erreur = 'Pseudo et clé personnelle requis.');
+      return;
+    }
+    setState(() { _loading = true; _erreur = null; });
+    try {
+      final res = await SupabaseService.adminAuthMembre(
+        pseudo: pseudo, clePerso: clePerso,
+      );
+      if (res['ok'] != true) {
+        setState(() => _erreur = 'Identifiants incorrects ou compte désactivé.');
+        return;
+      }
+      final role = res['role'] as String? ?? '';
+      // Charger uniquement les données selon le rôle
+      List<Map<String, dynamic>> decaissements = [];
+      List<Map<String, dynamic>> kycs          = [];
+      if (role == 'comptable' || role == 'super_admin') {
+        decaissements = await SupabaseService.adminListerDecaissements(_cle, statut: 'tous');
+      }
+      if (role == 'conformite' || role == 'super_admin') {
+        kycs = await SupabaseService.adminListerKyc(_cle, statut: 'tous');
+      }
+      setState(() {
+        _pseudoMembre   = pseudo;
+        _clePersoMembre = clePerso;
+        _roleMembre     = role;
+        _nomMembre      = res['nom'] as String? ?? pseudo;
+        _decaissements  = decaissements;
+        _kycs           = kycs;
+        _connecte       = true;
+        // Onglet par défaut selon le rôle
+        _onglet = role == 'conformite' ? 7 : 6; // KYC ou Décaissements
+      });
+    } catch (e) {
+      setState(() => _erreur = 'Erreur de connexion : $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -494,75 +556,183 @@ class _AdminScreenState extends State<AdminScreen> {
     );
   }
 
-  // ── Page de connexion améliorée ─────────────────────────────────────────────
+  // ── Page de connexion (clé master OU pseudo+clePerso membre) ───────────────
   Widget _VueConnexion() {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Logo + titre
-          Row(
-            children: [
-              Container(
-                width: 52, height: 52,
-                decoration: BoxDecoration(
-                  color: AppColors.encre,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(Icons.admin_panel_settings_rounded,
-                    color: Colors.white, size: 28),
-              ),
-              const SizedBox(width: 14),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  Text(
-                    'Espace Admin',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 22,
-                      color: AppColors.encre,
-                    ),
-                  ),
-                  Text(
-                    'TontineClair — accès restreint',
-                    style: TextStyle(fontSize: 12, color: AppColors.texteDoux),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 32),
-          CarteTC(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: StatefulBuilder(
+        builder: (ctx, setLocalState) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Logo + titre ────────────────────────────────────────────────
+            Row(
               children: [
-                ChampLabel(label: context.tr('cle_admin')),
-                TextField(
-                  controller: _cleCtrl,
-                  obscureText: true,
-                  decoration: const InputDecoration(hintText: 'Clé secrète admin'),
-                  onSubmitted: (_) => _connecter(),
+                Container(
+                  width: 52, height: 52,
+                  decoration: BoxDecoration(
+                    color: AppColors.encre,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(Icons.admin_panel_settings_rounded,
+                      color: Colors.white, size: 28),
                 ),
-                ChampErreur(texte: _erreur),
-                const SizedBox(height: 16),
-                BtnPrincipal(
-                  label: context.tr('acceder_btn'),
-                  onTap: _connecter,
-                  loading: _loading,
+                const SizedBox(width: 14),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Text(
+                      'Espace Admin',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 22,
+                        color: AppColors.encre,
+                      ),
+                    ),
+                    Text(
+                      'TontineClair — accès restreint',
+                      style: TextStyle(fontSize: 12, color: AppColors.texteDoux),
+                    ),
+                  ],
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 16),
-          TextButton.icon(
-            onPressed: () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.arrow_back, size: 15),
-            label: Text(context.tr('retour')),
-            style: TextButton.styleFrom(foregroundColor: AppColors.texteDoux),
-          ),
-        ],
+            const SizedBox(height: 24),
+
+            // ── Sélecteur mode connexion ─────────────────────────────────────
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.lignes,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.all(4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setLocalState(() {
+                        _loginMembreMode = false;
+                        _erreur = null;
+                      }),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color: !_loginMembreMode ? AppColors.encre : Colors.transparent,
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: Text(
+                          'Super Admin',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                            color: !_loginMembreMode ? Colors.white : AppColors.texteDoux,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setLocalState(() {
+                        _loginMembreMode = true;
+                        _erreur = null;
+                      }),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color: _loginMembreMode ? AppColors.encre : Colors.transparent,
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: Text(
+                          'Membre équipe',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                            color: _loginMembreMode ? Colors.white : AppColors.texteDoux,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // ── Formulaire selon mode ────────────────────────────────────────
+            CarteTC(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (!_loginMembreMode) ...[
+                    // Mode clé master (super admin)
+                    const ChampLabel(label: 'Clé administrateur'),
+                    TextField(
+                      controller: _cleCtrl,
+                      obscureText: true,
+                      decoration: const InputDecoration(hintText: 'Clé secrète admin'),
+                      onSubmitted: (_) => _connecter(),
+                    ),
+                  ] else ...[
+                    // Mode membre (comptable / conformité)
+                    const ChampLabel(label: 'Pseudo'),
+                    TextField(
+                      controller: _pseudoCtrl,
+                      decoration: const InputDecoration(
+                        hintText: 'Votre pseudo membre',
+                        prefixIcon: Icon(Icons.person_outline, size: 18),
+                      ),
+                      textInputAction: TextInputAction.next,
+                    ),
+                    const SizedBox(height: 14),
+                    const ChampLabel(label: 'Clé personnelle'),
+                    TextField(
+                      controller: _clePersoCtrl,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        hintText: 'Votre clé secrète',
+                        prefixIcon: Icon(Icons.lock_outline, size: 18),
+                      ),
+                      onSubmitted: (_) => _connecterMembre(),
+                    ),
+                  ],
+                  ChampErreur(texte: _erreur),
+                  const SizedBox(height: 16),
+                  BtnPrincipal(
+                    label: 'Accéder',
+                    onTap: _loginMembreMode ? _connecterMembre : _connecter,
+                    loading: _loading,
+                  ),
+                  if (_loginMembreMode) ...[
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        const Icon(Icons.info_outline, size: 13, color: AppColors.texteDoux),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Accès limité à votre rôle (Comptable ou Conformité)',
+                            style: TextStyle(fontSize: 11.5, color: AppColors.texteDoux),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextButton.icon(
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.arrow_back, size: 15),
+              label: Text(context.tr('retour')),
+              style: TextButton.styleFrom(foregroundColor: AppColors.texteDoux),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -580,17 +750,82 @@ class _AdminScreenState extends State<AdminScreen> {
     final totalAlertes = nbDemandesPending + nbDepensesPending + nbPretsPending +
         nbDecaissementsPending + nbKycPending;
 
-    // index : 0=Accueil 1=Demandes 2=Tontines 3=Stats 4=Dépenses 5=Prêts 6=Décaiss. 7=KYC
-    final onglets = [
-      _OngletDef(icone: Icons.home_rounded,                   label: 'Accueil',   badge: 0),
-      _OngletDef(icone: Icons.how_to_reg_rounded,             label: 'Demandes',  badge: nbDemandesPending),
-      _OngletDef(icone: Icons.group_outlined,                 label: 'Tontines',  badge: 0),
-      _OngletDef(icone: Icons.bar_chart_rounded,              label: 'Stats',     badge: 0),
-      _OngletDef(icone: Icons.receipt_long_outlined,          label: 'Dépenses',  badge: nbDepensesPending),
-      _OngletDef(icone: Icons.account_balance_outlined,       label: 'Prêts',     badge: nbPretsPending),
-      _OngletDef(icone: Icons.account_balance_wallet_rounded, label: 'Décaiss.',  badge: nbDecaissementsPending),
-      _OngletDef(icone: Icons.badge_outlined,                 label: 'KYC',       badge: nbKycPending),
-    ];
+    // ── Onglets visibles selon le rôle ───────────────────────────────────────
+    // index réels : 0=Accueil 1=Demandes 2=Tontines 3=Stats 4=Dépenses 5=Prêts
+    //               6=Décaiss. 7=KYC 8=Équipe 9=Messagerie 10=Support
+    // Comptable  → uniquement Décaissements (index 6)
+    // Conformité → uniquement KYC (index 7)
+    // Super-admin → tout
+    List<_OngletDef> onglets;
+    if (_roleMembre == 'comptable') {
+      onglets = [
+        _OngletDef(icone: Icons.account_balance_wallet_rounded, label: 'Décaiss.',  badge: nbDecaissementsPending, index: 6),
+        _OngletDef(icone: Icons.forum_outlined,                  label: 'Messages',  badge: 0,                      index: 9),
+      ];
+      if (!onglets.any((o) => o.index == _onglet)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => setState(() => _onglet = 6));
+      }
+    } else if (_roleMembre == 'conformite') {
+      onglets = [
+        _OngletDef(icone: Icons.badge_outlined,  label: 'KYC',       badge: nbKycPending, index: 7),
+        _OngletDef(icone: Icons.forum_outlined,  label: 'Messages',  badge: 0,            index: 9),
+      ];
+      if (!onglets.any((o) => o.index == _onglet)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => setState(() => _onglet = 7));
+      }
+    } else {
+      // super_admin ou clé master → accès complet
+      onglets = [
+        _OngletDef(icone: Icons.home_rounded,                   label: 'Accueil',   badge: 0,                      index: 0),
+        _OngletDef(icone: Icons.how_to_reg_rounded,             label: 'Demandes',  badge: nbDemandesPending,       index: 1),
+        _OngletDef(icone: Icons.group_outlined,                 label: 'Tontines',  badge: 0,                      index: 2),
+        _OngletDef(icone: Icons.bar_chart_rounded,              label: 'Stats',     badge: 0,                      index: 3),
+        _OngletDef(icone: Icons.receipt_long_outlined,          label: 'Dépenses',  badge: nbDepensesPending,       index: 4),
+        _OngletDef(icone: Icons.account_balance_outlined,       label: 'Prêts',     badge: nbPretsPending,          index: 5),
+        _OngletDef(icone: Icons.account_balance_wallet_rounded, label: 'Décaiss.',  badge: nbDecaissementsPending,  index: 6),
+        _OngletDef(icone: Icons.badge_outlined,                 label: 'KYC',       badge: nbKycPending,            index: 7),
+        _OngletDef(icone: Icons.groups_outlined,                label: 'Équipe',    badge: 0,                      index: 8),
+        _OngletDef(icone: Icons.forum_outlined,                 label: 'Messages',  badge: 0,                      index: 9),
+        _OngletDef(icone: Icons.support_agent_outlined,         label: 'Support',   badge: 0,                      index: 10),
+      ];
+    }
+
+    // ── Bandeau identité rôle (si connecté en tant que membre) ───────────────
+    Widget? bandeauRole;
+    if (_estMembreRole) {
+      final (labelRole, couleurRole) = switch (_roleMembre) {
+        'comptable'  => ('Comptable', AppColors.orFonce),
+        'conformite' => ('Conformité', AppColors.encre),
+        _            => ('Super Admin', AppColors.succes),
+      };
+      bandeauRole = Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        color: couleurRole.withValues(alpha: 0.10),
+        child: Row(
+          children: [
+            Icon(Icons.verified_user_outlined, size: 14, color: couleurRole),
+            const SizedBox(width: 6),
+            Text(
+              'Connecté : $_nomMembre  •  $labelRole',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: couleurRole),
+            ),
+            const Spacer(),
+            GestureDetector(
+              onTap: () => setState(() {
+                _connecte       = false;
+                _roleMembre     = null;
+                _pseudoMembre   = null;
+                _clePersoMembre = null;
+                _nomMembre      = null;
+                _pseudoCtrl.clear();
+                _clePersoCtrl.clear();
+              }),
+              child: Text('Déconnexion', style: TextStyle(fontSize: 11, color: couleurRole, decoration: TextDecoration.underline)),
+            ),
+          ],
+        ),
+      );
+    }
 
     return Column(
       children: [
@@ -601,6 +836,7 @@ class _AdminScreenState extends State<AdminScreen> {
           onRefresh: _rechargerAvecFeedback,
           onBack: () => Navigator.of(context).pop(),
         ),
+        if (bandeauRole != null) bandeauRole,
         // ── Barre de navigation icônes ───────────────────────────────────────
         _BarreNavAdmin(
           onglets: onglets,
@@ -611,11 +847,11 @@ class _AdminScreenState extends State<AdminScreen> {
         // ── Corps de l'onglet ────────────────────────────────────────────────
         Expanded(
           child: _onglet == 0 ? _VueResume(
-              nbDemandesPending:     nbDemandesPending,
-              nbDepensesPending:     nbDepensesPending,
-              nbPretsPending:        nbPretsPending,
+              nbDemandesPending:      nbDemandesPending,
+              nbDepensesPending:      nbDepensesPending,
+              nbPretsPending:         nbPretsPending,
               nbDecaissementsPending: nbDecaissementsPending,
-              nbKycPending:          nbKycPending,
+              nbKycPending:           nbKycPending,
               onNaviguer: (i) => setState(() => _onglet = i),
             )
             : _onglet == 1 ? _ListeDemandes()
@@ -624,7 +860,17 @@ class _AdminScreenState extends State<AdminScreen> {
             : _onglet == 4 ? _ListeDepenses()
             : _onglet == 5 ? _ListePrets()
             : _onglet == 6 ? _ListeDecaissements()
-            : _ListeKyc(),
+            : _onglet == 7 ? _ListeKyc()
+            : _onglet == 8 ? EquipeScreen(
+                cle:        _cle,
+                roleActuel: _roleMembre ?? 'super_admin',
+              )
+            : _onglet == 9 ? AdminMessagerieScreen(
+                pseudo:   _pseudoMembre   ?? '',
+                clePerso: _clePersoMembre ?? '',
+                nom:      _nomMembre      ?? (_pseudoMembre ?? 'Admin'),
+              )
+            : SupportAdminScreen(cle: _cle),
         ),
       ],
     );
@@ -2673,7 +2919,11 @@ class _OngletDef {
   final IconData icone;
   final String label;
   final int badge;
-  const _OngletDef({required this.icone, required this.label, required this.badge});
+  /// Index réel de l'onglet dans la hiérarchie globale (0-10).
+  /// Permet au rôle-based filtering de ne montrer qu'un sous-ensemble d'onglets
+  /// tout en continuant d'utiliser les mêmes indices de contenu.
+  final int index;
+  const _OngletDef({required this.icone, required this.label, required this.badge, required this.index});
 }
 
 // ─── Donnée alerte résumé ──────────────────────────────────────────────────────
@@ -2798,11 +3048,12 @@ class _BarreNavAdmin extends StatelessWidget {
         child: Row(
           children: List.generate(onglets.length, (i) {
             final o = onglets[i];
-            final selected = ongletActif == i;
+            // Utilise o.index (index réel) pour comparer et naviguer
+            final selected = ongletActif == o.index;
             return Padding(
               padding: const EdgeInsets.only(right: 6),
               child: GestureDetector(
-                onTap: () => onSelect(i),
+                onTap: () => onSelect(o.index),
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [

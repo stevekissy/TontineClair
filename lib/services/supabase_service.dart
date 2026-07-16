@@ -1886,6 +1886,283 @@ class SupabaseService {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ADMIN TEAM — Gestion membres, rôles, messagerie interne
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Authentifier un membre admin par pseudo + clé personnelle.
+  static Future<Map<String, dynamic>> adminAuthMembre({
+    required String pseudo,
+    required String clePerso,
+  }) async {
+    try {
+      final result = await rpc('admin_auth_membre', {
+        'p_pseudo':    pseudo,
+        'p_cle_perso': clePerso,
+      });
+      if (result is Map<String, dynamic>) return result;
+      return {'ok': false, 'erreur': 'Réponse inattendue'};
+    } catch (e) {
+      return {'ok': false, 'erreur': '$e'};
+    }
+  }
+
+  /// Lister tous les membres admin (super_admin seulement).
+  static Future<List<Map<String, dynamic>>> adminListerMembres(String cle) async {
+    try {
+      final result = await rpc('admin_lister_membres', {'p_cle': cle});
+      if (result == null) return [];
+      final list = result is List ? result : (result as Map)['data'] ?? [];
+      return List<Map<String, dynamic>>.from(list as List);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Créer un nouveau membre admin.
+  static Future<Map<String, dynamic>> adminCreerMembre({
+    required String cle,
+    required String nom,
+    required String pseudo,
+    required String clePerso,
+    required String role,
+    required String creePar,
+  }) async {
+    try {
+      final result = await rpc('admin_creer_membre', {
+        'p_cle':      cle,
+        'p_nom':      nom,
+        'p_pseudo':   pseudo,
+        'p_cle_perso':clePerso,
+        'p_role':     role,
+        'p_cree_par': creePar,
+      });
+      if (result is Map<String, dynamic>) return result;
+      return {'ok': false, 'erreur': 'Réponse inattendue'};
+    } catch (e) {
+      return {'ok': false, 'erreur': '$e'};
+    }
+  }
+
+  /// Modifier rôle/statut d'un membre admin.
+  static Future<Map<String, dynamic>> adminModifierMembre({
+    required String cle,
+    required int id,
+    String? role,
+    bool? actif,
+  }) async {
+    try {
+      final result = await rpc('admin_modifier_membre', {
+        'p_cle':   cle,
+        'p_id':    id,
+        if (role  != null) 'p_role':  role,
+        if (actif != null) 'p_actif': actif,
+      });
+      if (result is Map<String, dynamic>) return result;
+      return {'ok': false};
+    } catch (e) {
+      return {'ok': false, 'erreur': '$e'};
+    }
+  }
+
+  // ── Messagerie interne ──────────────────────────────────────────────────────
+
+  /// Lister messages d'un membre (reçus / envoyés / tous).
+  static Future<List<Map<String, dynamic>>> adminListerMessages({
+    required String pseudo,
+    required String clePerso,
+    String boite = 'recus',
+  }) async {
+    try {
+      final result = await rpc('admin_lister_messages', {
+        'p_pseudo':    pseudo,
+        'p_cle_perso': clePerso,
+        'p_boite':     boite,
+      });
+      if (result == null) return [];
+      final list = result is List ? result : (result as Map)['data'] ?? [];
+      return List<Map<String, dynamic>>.from(list as List);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Envoyer un message interne.
+  static Future<Map<String, dynamic>> adminEnvoyerMessage({
+    required String pseudo,
+    required String clePerso,
+    required String destinataire,
+    required String sujet,
+    required String corps,
+  }) async {
+    try {
+      final result = await rpc('admin_envoyer_message', {
+        'p_pseudo':       pseudo,
+        'p_cle_perso':    clePerso,
+        'p_destinataire': destinataire,
+        'p_sujet':        sujet,
+        'p_corps':        corps,
+      });
+      if (result is Map<String, dynamic>) return result;
+      return {'ok': false};
+    } catch (e) {
+      return {'ok': false, 'erreur': '$e'};
+    }
+  }
+
+  /// Marquer un message comme lu.
+  static Future<void> adminMarquerLu({
+    required String pseudo,
+    required String clePerso,
+    required int messageId,
+  }) async {
+    try {
+      await rpc('admin_marquer_lu', {
+        'p_pseudo':     pseudo,
+        'p_cle_perso':  clePerso,
+        'p_message_id': messageId,
+      });
+    } catch (_) {}
+  }
+
+  /// Compter messages non lus.
+  static Future<int> adminCompterNonLus({
+    required String pseudo,
+    required String clePerso,
+  }) async {
+    try {
+      final result = await rpc('admin_compter_non_lus', {
+        'p_pseudo':    pseudo,
+        'p_cle_perso': clePerso,
+      });
+      return (result as num?)?.toInt() ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SUPPORT CLIENT
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Ouvrir un ticket support (côté client).
+  static Future<Map<String, dynamic>> supportOuvrirTicket({
+    required String gestionnaire,
+    String? codeTontine,
+    required String categorie,
+    required String sujet,
+    required String description,
+    String priorite = 'normale',
+  }) async {
+    try {
+      final result = await rpc('support_ouvrir_ticket', {
+        'p_gestionnaire': gestionnaire,
+        'p_code_tontine': codeTontine ?? '',
+        'p_categorie':    categorie,
+        'p_sujet':        sujet,
+        'p_description':  description,
+        'p_priorite':     priorite,
+      });
+      if (result is Map<String, dynamic>) return result;
+      return {'ok': false};
+    } catch (e) {
+      return {'ok': false, 'erreur': '$e'};
+    }
+  }
+
+  /// Lister les tickets d'un client.
+  static Future<List<Map<String, dynamic>>> supportMesTickets(String gestionnaire) async {
+    try {
+      final result = await rpc('support_mes_tickets', {'p_gestionnaire': gestionnaire});
+      if (result == null) return [];
+      final list = result is List ? result : (result as Map)['data'] ?? [];
+      return List<Map<String, dynamic>>.from(list as List);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Lister tous les tickets (admin).
+  static Future<List<Map<String, dynamic>>> adminListerTickets(String cle, {String statut = 'tous'}) async {
+    try {
+      final result = await rpc('admin_lister_tickets', {
+        'p_cle':    cle,
+        'p_statut': statut,
+      });
+      if (result == null) return [];
+      final list = result is List ? result : (result as Map)['data'] ?? [];
+      return List<Map<String, dynamic>>.from(list as List);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Lister messages d'un ticket.
+  static Future<List<Map<String, dynamic>>> supportMessagesTicket({
+    required int ticketId,
+    bool estAdmin = false,
+    required String cleOuGest,
+  }) async {
+    try {
+      final result = await rpc('support_messages_ticket', {
+        'p_ticket_id':   ticketId,
+        'p_est_admin':   estAdmin,
+        'p_cle_ou_gest': cleOuGest,
+      });
+      if (result == null) return [];
+      final list = result is List ? result : (result as Map)['data'] ?? [];
+      return List<Map<String, dynamic>>.from(list as List);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Répondre à un ticket.
+  static Future<Map<String, dynamic>> supportRepondre({
+    required int ticketId,
+    required String auteur,
+    required String corps,
+    bool estAdmin = false,
+    required String cleOuGest,
+  }) async {
+    try {
+      final result = await rpc('support_repondre', {
+        'p_ticket_id':   ticketId,
+        'p_auteur':      auteur,
+        'p_corps':       corps,
+        'p_est_admin':   estAdmin,
+        'p_cle_ou_gest': cleOuGest,
+      });
+      if (result is Map<String, dynamic>) return result;
+      return {'ok': false};
+    } catch (e) {
+      return {'ok': false, 'erreur': '$e'};
+    }
+  }
+
+  /// Changer le statut d'un ticket (admin).
+  static Future<Map<String, dynamic>> adminChangerStatutTicket({
+    required String cle,
+    required int ticketId,
+    required String statut,
+    String? assigneA,
+  }) async {
+    try {
+      final result = await rpc('admin_changer_statut_ticket', {
+        'p_cle':       cle,
+        'p_ticket_id': ticketId,
+        'p_statut':    statut,
+        if (assigneA != null) 'p_assigne_a': assigneA,
+      });
+      if (result is Map<String, dynamic>) return result;
+      return {'ok': false};
+    } catch (e) {
+      return {'ok': false, 'erreur': '$e'};
+    }
+  }
+
+  // ── Méthodes existantes ─────────────────────────────────────────────────────
+
   static Future<void> envoyerNotification({
     required String code,
     required String type,
