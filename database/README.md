@@ -2,7 +2,9 @@
 
 ## Vue d'ensemble
 
-Ce dossier contient la **reconstruction consolidée** de toute la base Supabase de TontineClair, issue de l'analyse de 27 fichiers SQL sources accumulés au fil du développement.
+Ce dossier contient la **reconstruction consolidée** de toute la base Supabase de TontineClair, issue de l'analyse de 31 fichiers SQL sources accumulés au fil du développement.
+
+See [`audit_report.md`](./audit_report.md) for the full cross-reference audit (Q1: full reconstruction, Q2: RPC coverage, Q3: safe-to-delete source files).
 
 ```
 database/
@@ -17,7 +19,9 @@ database/
     ├── 007_rpcs_scores_audit.sql
     ├── 008_rpcs_admin.sql
     ├── 009_rpcs_financier_support.sql
-    └── 010_rpcs_notifs_sycapay.sql
+    ├── 010_rpcs_notifs_sycapay.sql
+    └── 011_rpcs_core_v1.sql       ← RPCs fondamentales v1 reconstruites
+├── audit_report.md               ← Rapport d'audit complet
 ```
 
 ---
@@ -60,8 +64,10 @@ Puis copier-coller `init_inline.sql` dans le SQL Editor Supabase.
 | `008_rpcs_admin.sql` | 14 RPCs + 1 trigger : `_verif_admin_cle`, `admin_stats_globales`, `admin_dashboard_tontines`, `admin_lister_abonnements`, `admin_alertes` (v1.2), `admin_enregistrer_abonnement`, `admin_stats_mensuelles`, `admin_top_tontines`, `admin_tontine_counts` (v17), `admin_lister_tontines` (v17-FINAL), `tontines_set_updated_at`, `admin_lister_demandes` (v12-FINAL), `admin_activer_premium` (v12), `admin_refuser_demande` (v12) | ~680 |
 | `009_rpcs_financier_support.sql` | 31 RPCs : abonnements (7), prêts (3), décaissements (3), dépenses (2), KYC (3), admin team (4), messagerie (4), support (7) | ~1 400 |
 | `010_rpcs_notifs_sycapay.sql` | 8 RPCs : `sauvegarder_token`, `creer_transaction_sycapay`, `get_pending_sycapay_transactions`, `crediter_caisse_sycapay`, `crediter_cotisation_sycapay`, `crediter_penalite_sycapay`, `recalculer_echeances_expir`, `distribuer_tour` | ~700 |
+| `011_rpcs_core_v1.sql` | 10 RPCs reconstruites : `creer_tontine`, `ecrire_tontine`, `lire_voix_tontine`, `lire_plan`, `membres_avec_pin`, `definir_pin_membre`, `changer_pin_membre`, `admin_desactiver_premium`, `sauvegarder_langue_appareil`, `charger_langue_appareil` | ~380 |
 
-**Total : 20 tables · 81 fonctions RPC · 2 triggers**
+**Total : 20 tables · 93 fonctions RPC · 1 trigger**  
+*(+10 fonctions v1 reconstruites dans migration 011 — jamais sauvegardées en repo avant cet audit)*
 
 ---
 

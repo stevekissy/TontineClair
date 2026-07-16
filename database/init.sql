@@ -23,6 +23,7 @@
 --   008 → RPCs admin dashboard (admin_lister_tontines v17, admin_alertes v1.2, …)
 --   009 → RPCs financier & support (abonnements, prêts, décaissements, KYC, team, …)
 --   010 → RPCs notifications & SycaPay (sauvegarder_token, crediter_* sycapay, …)
+--   011 → RPCs fondamentaux v1 reconstruits (creer_tontine, ecrire_tontine, lire_plan, …)
 -- =============================================================================
 
 \echo '============================================================'
@@ -35,23 +36,23 @@
 -- PHASE 1 — TABLES (migrations 001–005)
 -- =============================================================================
 
-\echo '--- [001/010] Tables core (tontines, config, audit) ---'
+\echo '--- [001/011] Tables core (tontines, config, audit) ---'
 \i migrations/001_tables_core.sql
 
 \echo ''
-\echo '--- [002/010] Tables scores & audit ---'
+\echo '--- [002/011] Tables scores & audit ---'
 \i migrations/002_tables_scores_audit.sql
 
 \echo ''
-\echo '--- [003/010] Tables financier (sycapay, prêts, abonnements) ---'
+\echo '--- [003/011] Tables financier (sycapay, prêts, abonnements) ---'
 \i migrations/003_tables_financier.sql
 
 \echo ''
-\echo '--- [004/010] Tables KYC & notifications FCM ---'
+\echo '--- [004/011] Tables KYC & notifications FCM ---'
 \i migrations/004_tables_kyc_notifs.sql
 
 \echo ''
-\echo '--- [005/010] Tables admin team & support tickets ---'
+\echo '--- [005/011] Tables admin team & support tickets ---'
 \i migrations/005_tables_admin_team_support.sql
 
 -- =============================================================================
@@ -59,24 +60,28 @@
 -- =============================================================================
 
 \echo ''
-\echo '--- [006/010] RPCs tontines core (lire_tontine, voter, cloturer_tour, …) ---'
+\echo '--- [006/011] RPCs tontines core (lire_tontine, voter, cloturer_tour, …) ---'
 \i migrations/006_rpcs_tontines_core.sql
 
 \echo ''
-\echo '--- [007/010] RPCs scores & audit (enregistrer_score, modifier_score_membre, …) ---'
+\echo '--- [007/011] RPCs scores & audit (enregistrer_score, modifier_score_membre, …) ---'
 \i migrations/007_rpcs_scores_audit.sql
 
 \echo ''
-\echo '--- [008/010] RPCs admin dashboard (admin_lister_tontines, admin_alertes, …) ---'
+\echo '--- [008/011] RPCs admin dashboard (admin_lister_tontines, admin_alertes, …) ---'
 \i migrations/008_rpcs_admin.sql
 
 \echo ''
-\echo '--- [009/010] RPCs financier & support (abonnements, prêts, KYC, team, …) ---'
+\echo '--- [009/011] RPCs financier & support (abonnements, prêts, KYC, team, …) ---'
 \i migrations/009_rpcs_financier_support.sql
 
 \echo ''
-\echo '--- [010/010] RPCs notifications & SycaPay (sauvegarder_token, crediter_*, …) ---'
+\echo '--- [010/011] RPCs notifications & SycaPay (sauvegarder_token, crediter_*, …) ---'
 \i migrations/010_rpcs_notifs_sycapay.sql
+
+\echo ''
+\echo '--- [011/011] RPCs fondamentaux v1 reconstruits (creer_tontine, lire_plan, …) ---'
+\i migrations/011_rpcs_core_v1.sql
 
 -- =============================================================================
 -- PHASE 3 — VÉRIFICATION FINALE
