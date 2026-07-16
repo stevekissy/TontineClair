@@ -67,38 +67,111 @@ class _AdminScreenState extends State<AdminScreen> {
     if (cle.isEmpty) return;
     setState(() {
       _loading = true;
-      _erreur = null;
+      _erreur  = null;
     });
 
-    try {
-      // Charger en parallèle : demandes + tontines + compteurs + dépenses
-      final results = await Future.wait<List<Map<String, dynamic>>>(
-        [
-          SupabaseService.adminListerDemandes(cle),
-          SupabaseService.adminListerTontines(cle),
-          SupabaseService.adminListerDepensesPending(cle),
-          SupabaseService.adminListerPretsPending(cle, statut: 'tous'),
-          SupabaseService.adminListerDecaissements(cle, statut: 'tous'),
-          SupabaseService.adminListerKyc(cle, statut: 'tous'),
-        ],
-      );
-      final counts = await SupabaseService.adminTontineCounts(cle);
+    // ── Helpers de log ────────────────────────────────────────────────────────
+    void logOk(String nom)         => debugPrint('ADMIN_DEBUG — $nom — succès');
+    void logErr(String nom, Object e) => debugPrint('ADMIN_DEBUG — $nom — $e');
 
-      setState(() {
-        _connecte       = true;
-        _demandes       = results[0];
-        _tontines       = results[1];
-        _depenses       = results[2];
-        _prets          = results[3];
-        _decaissements  = results[4];
-        _kycs           = results[5];
-        _counts         = counts;
-      });
+    // ── Indicateur : au moins un appel RPC a levé CLE_INVALIDE / auth error ──
+    bool cleRejetee = false;
+
+    // ── Appel 1 : admin_lister_demandes ──────────────────────────────────────
+    // C'est le seul appel qui lève EXCEPTION 'CLE_INVALIDE' si la clé est trop
+    // courte. On le teste en premier, isolément.
+    List<Map<String, dynamic>> demandes = [];
+    try {
+      demandes = await SupabaseService.adminListerDemandes(cle);
+      logOk('admin_lister_demandes');
     } catch (e) {
-      setState(() => _erreur = 'Clé incorrecte ou erreur réseau.');
-    } finally {
-      setState(() => _loading = false);
+      logErr('admin_lister_demandes', e);
+      final msg = e.toString();
+      if (msg.contains('CLE_INVALIDE') ||
+          msg.contains('invalide')     ||
+          msg.contains('401')          ||
+          msg.contains('403')) {
+        cleRejetee = true;
+      }
     }
+
+    // Si la clé est explicitement rejetée, on s'arrête immédiatement.
+    if (cleRejetee) {
+      setState(() {
+        _loading = false;
+        _erreur  = 'Clé incorrecte ou erreur réseau.';
+      });
+      return;
+    }
+
+    // ── Appels secondaires : échec individuel = liste vide, pas de blocage ───
+
+    // Appel 2 : admin_lister_tontines
+    List<Map<String, dynamic>> tontines = [];
+    try {
+      tontines = await SupabaseService.adminListerTontines(cle);
+      logOk('admin_lister_tontines');
+    } catch (e) {
+      logErr('admin_lister_tontines', e);
+    }
+
+    // Appel 3 : depenses_pending (REST direct — pas de clé admin)
+    List<Map<String, dynamic>> depenses = [];
+    try {
+      depenses = await SupabaseService.adminListerDepensesPending(cle);
+      logOk('depenses_pending (REST)');
+    } catch (e) {
+      logErr('depenses_pending (REST)', e);
+    }
+
+    // Appel 4 : prets_pending (REST direct — pas de clé admin)
+    List<Map<String, dynamic>> prets = [];
+    try {
+      prets = await SupabaseService.adminListerPretsPending(cle, statut: 'tous');
+      logOk('prets_pending (REST)');
+    } catch (e) {
+      logErr('prets_pending (REST)', e);
+    }
+
+    // Appel 5 : admin_lister_decaissements
+    List<Map<String, dynamic>> decaissements = [];
+    try {
+      decaissements = await SupabaseService.adminListerDecaissements(cle, statut: 'tous');
+      logOk('admin_lister_decaissements');
+    } catch (e) {
+      logErr('admin_lister_decaissements', e);
+    }
+
+    // Appel 6 : admin_lister_kyc
+    List<Map<String, dynamic>> kycs = [];
+    try {
+      kycs = await SupabaseService.adminListerKyc(cle, statut: 'tous');
+      logOk('admin_lister_kyc');
+    } catch (e) {
+      logErr('admin_lister_kyc', e);
+    }
+
+    // Appel 7 : admin_tontine_counts
+    Map<String, dynamic> counts = {};
+    try {
+      counts = await SupabaseService.adminTontineCounts(cle);
+      logOk('admin_tontine_counts');
+    } catch (e) {
+      logErr('admin_tontine_counts', e);
+    }
+
+    // ── Connexion établie (les erreurs secondaires n'ont pas bloqué) ──────────
+    setState(() {
+      _connecte      = true;
+      _loading       = false;
+      _demandes      = demandes;
+      _tontines      = tontines;
+      _depenses      = depenses;
+      _prets         = prets;
+      _decaissements = decaissements;
+      _kycs          = kycs;
+      _counts        = counts;
+    });
   }
 
   // ── Connexion membre (pseudo + clePerso, role-based) ─────────────────────────
