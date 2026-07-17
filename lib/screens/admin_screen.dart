@@ -262,7 +262,7 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Future<void> _activer(String code, {int mois = 1}) async {
-    final cle = _cleCtrl.text.trim();
+    final cle = _cleEffective;
     // Confirmer avant activation
     final confirmer = await showDialog<bool>(
       context: context,
@@ -296,7 +296,7 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Future<void> _refuserDemande(String code) async {
-    final cle       = _cleCtrl.text.trim();
+    final cle       = _cleEffective;
     final motifCtrl = TextEditingController();
     String? motifErreur;
 
@@ -393,7 +393,7 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Future<void> _desactiver(String code) async {
-    final cle = _cleCtrl.text.trim();
+    final cle = _cleEffective;
     final ok = await SupabaseService.adminDesactiverPremium(cle: cle, code: code);
     if (!mounted) return;
     if (ok) {
@@ -405,7 +405,7 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Future<void> _recharger() async {
-    final cle = _cleCtrl.text.trim();
+    final cle = _cleEffective;
     final results = await Future.wait<List<Map<String, dynamic>>>(
       [
         SupabaseService.adminListerDemandes(cle),
