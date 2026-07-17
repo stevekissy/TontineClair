@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/tontine.dart';
@@ -1985,22 +1986,13 @@ class SupabaseService {
     }
   }
 
-  /// Calcule le SHA-256 hex d'une chaîne (même méthode que la fonction SQL encode(digest(p_cle,'sha256'),'hex')).
+  /// Calcule le SHA-256 hex d'une chaîne — identique à la fonction SQL
+  /// `encode(digest(p_cle, 'sha256'), 'hex')` utilisée dans Supabase.
+  /// Utilise package:crypto (déjà présent dans pubspec.yaml).
   static String _sha256hex(String input) {
-    // Implémentation manuelle SHA-256 — évite l'import du package crypto
-    // qui n'est pas encore importé en haut du fichier.
-    // On utilise l'encodage UTF-8 + la méthode de hachage de la stdlib Dart.
     final bytes = utf8.encode(input);
-    final hash = StringBuffer();
-    // Réutilise le package crypto déjà présent dans pubspec.yaml via dart:convert
-    // Pour un hash correct, on passe par une fonction RPC légère plutôt que
-    // de dupliquer SHA-256 en Dart — on laisse Supabase hasher via une RPC dédiée.
-    // En attendant : stocke la clé en clair préfixée (temporaire, sécurisé côté RLS).
-    // TODO: remplacer par import 'package:crypto/crypto.dart' après ajout de l'import.
-    for (final b in bytes) {
-      hash.write(b.toRadixString(16).padLeft(2, '0'));
-    }
-    return hash.toString();
+    final digest = crypto.sha256.convert(bytes);
+    return digest.toString(); // format hex natif de package:crypto
   }
 
   /// Modifier rôle/statut d'un membre admin — PATCH REST direct sur admin_membres.
