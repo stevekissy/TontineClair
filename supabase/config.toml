@@ -31,3 +31,9 @@ enable_signup = true
 enabled = true
 policy = "oneshot"
 inspector_port = 8083
+
+# sycapay-payment : verify_jwt=false obligatoire car SycaPay envoie ses
+# webhooks sans Authorization header → sinon HTTP 401 et le callback est ignoré.
+# Flutter passe toujours son anon key → l'action payer/confirmer/statut reste sécurisée.
+[functions.sycapay-payment]
+verify_jwt = false

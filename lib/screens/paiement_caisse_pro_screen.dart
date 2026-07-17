@@ -71,12 +71,16 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
   bool         _peutVerifierManuellement = false;
   bool         _enTraitement             = false; // anti double-clic
   Timer?       _watchdogTimer;           // 180s — sécurité côté Flutter
+  // Affichage progressif du bouton Vérifier pendant la phase attente (30s)
+  bool         _boutonVerifierDansAttente = false;
+  Timer?       _timerBoutonAttente;
 
   @override
   void dispose() {
     _telCtrl.dispose();
     _otpCtrl.dispose();
     _watchdogTimer?.cancel();
+    _timerBoutonAttente?.cancel();
     super.dispose();
   }
 
@@ -192,6 +196,13 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
       // Flutter attend la réponse (avec son watchdog 180s).
       // Pendant ce temps → vue "attente" pour l'utilisateur.
       if (!mounted) return;
+      // Démarrer le timer qui rend visible le bouton Vérifier après 30s d'attente
+      _boutonVerifierDansAttente = false;
+      _timerBoutonAttente?.cancel();
+      _timerBoutonAttente = Timer(const Duration(seconds: 30), () {
+        if (!mounted || _etape != _EtapeCaisse.attente) return;
+        setState(() => _boutonVerifierDansAttente = true);
+      });
       setState(() => _etape = _EtapeCaisse.attente);
 
       if (kDebugMode) debugPrint('[CaissePro] Étape 2 — confirmer_et_crediter serveur');
@@ -697,6 +708,45 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 10, color: AppColors.texteDoux),
               ),
+            // Bouton Vérifier — visible après 30s si confirmation tarde
+            if (_boutonVerifierDansAttente && _numCommande != null) ...[
+              const SizedBox(height: 20),
+              const Divider(),
+              const SizedBox(height: 12),
+              const Text(
+                'La confirmation tarde ?',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: AppColors.texteDoux),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: () {
+                  _timerBoutonAttente?.cancel();
+                  _boutonVerifierDansAttente = false;
+                  _verifierPaiementManuellement();
+                },
+                icon:  const Icon(Icons.search_rounded, color: _couleurPro),
+                label: const Text(
+                  'Vérifier le paiement',
+                  style: TextStyle(color: _couleurPro, fontWeight: FontWeight.w600),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side:    const BorderSide(color: _couleurPro),
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+                  shape:   RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Ne relancez PAS un nouveau paiement.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontSize: 11,
+                    color: AppColors.alerte,
+                    fontStyle: FontStyle.italic),
+              ),
+            ],
           ],
         ),
       ),

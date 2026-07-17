@@ -225,11 +225,17 @@ function normaliserStatut(code: number, createdAt?: string): NStatus {
   if (code === -999) return "unknown"; // erreur réseau → retry
 
   // -1 : peut être temporaire (Orange Money prend du temps à enregistrer)
-  // Si la transaction a moins de 3 minutes → traiter comme pending
-  if (code === -1 && createdAt) {
-    const ageMs = Date.now() - new Date(createdAt).getTime();
-    if (ageMs < 3 * 60 * 1000) {
-      console.log(`[normaliser] code=-1 mais transaction a ${Math.round(ageMs/1000)}s → pending`);
+  // SycaPay peut retourner -1 transitoire pendant jusqu'à 10min sur certains opérateurs.
+  // On traite -1 comme pending si < 10min après création pour ne pas bloquer à tort.
+  if (code === -1) {
+    if (createdAt) {
+      const ageMs = Date.now() - new Date(createdAt).getTime();
+      if (ageMs < 10 * 60 * 1000) {
+        console.log(`[normaliser] code=-1 transitoire (${Math.round(ageMs/1000)}s) → pending`);
+        return "pending";
+      }
+    } else {
+      // Pas de createdAt → traiter comme pending par précaution
       return "pending";
     }
   }
@@ -909,7 +915,9 @@ Deno.serve(async (req: Request) => {
       if (lastStatus === "confirmed" && dbTx) {
         const freshTx = { ...dbTx, status: "confirmed", provider_transaction_id: newTxId };
         const creditResult = await crediterCoteServeur(freshTx);
+        // ok:true OBLIGATOIRE pour que Flutter détecte estSucces via fromJson
         return json({
+          ok:              creditResult.ok,
           code:            0,
           statusNormalise: "confirmed",
           message:         creditResult.ok
@@ -917,10 +925,12 @@ Deno.serve(async (req: Request) => {
             : "Paiement confirmé. Enregistrement en cours.",
           numcommande,
           transactionId:   newTxId,
+          fromCache:       true,
         });
       }
 
       return json({
+        ok:              false,
         code:            gs.code,
         message:         messageFr(gs.code),
         statusNormalise: lastStatus,
@@ -1000,23 +1010,43 @@ Deno.serve(async (req: Request) => {
 
 async function handleWebhook(req: Request): Promise<Response> {
   const url         = new URL(req.url);
-  const numcommande = url.searchParams.get("ref") ?? "";
+  // SycaPay peut passer la ref via ?ref=... OU ?numcommande=... OU ?order_id=...
+  const numcommande = url.searchParams.get("ref")
+                   ?? url.searchParams.get("numcommande")
+                   ?? url.searchParams.get("order_id")
+                   ?? "";
 
   let payload: Record<string, unknown> = {};
   try {
     if (req.method === "POST") {
-      payload = await req.json().catch(() => ({}));
+      const text = await req.text();
+      try { payload = JSON.parse(text); } catch {
+        // Certains opérateurs envoient application/x-www-form-urlencoded
+        const params = new URLSearchParams(text);
+        params.forEach((v, k) => { payload[k] = v; });
+      }
     } else {
+      // GET : SycaPay peut passer le statut dans l'URL
       url.searchParams.forEach((v, k) => { payload[k] = v; });
     }
   } catch { /* payload vide */ }
 
-  console.log(`[webhook] Reçu ref=${numcommande}`, JSON.stringify(payload).substring(0, 300));
+  console.log(`[webhook] Reçu method=${req.method} ref=${numcommande || "AUCUN"}`, JSON.stringify(payload).substring(0, 400));
 
-  if (!numcommande) {
-    console.warn("[webhook] Pas de numcommande dans l'URL");
+  // Si pas de ref dans l'URL, chercher dans le payload
+  const refEffective = numcommande
+    || (payload["ref"] as string)
+    || (payload["numcommande"] as string)
+    || (payload["order_id"] as string)
+    || "";
+
+  if (!refEffective) {
+    console.warn("[webhook] Pas de numcommande dans l'URL ni le payload → HTTP 200 quand même");
     return new Response("OK", { status: 200 });
   }
+
+  // Rebind numcommande avec la ref effective
+  const numcommandeFinal = refEffective;
 
   // Récupérer la transaction
   const rows = await sbSelect(
@@ -1024,8 +1054,13 @@ async function handleWebhook(req: Request): Promise<Response> {
     `internal_reference=eq.${encodeURIComponent(numcommande)}&select=*`,
   ).catch(() => [] as Array<Record<string, unknown>>);
 
+  const rows = await sbSelect(
+    "sycapay_transactions",
+    `internal_reference=eq.${encodeURIComponent(numcommandeFinal)}&select=*`,
+  ).catch(() => [] as Array<Record<string, unknown>>);
+
   if (rows.length === 0) {
-    console.warn(`[webhook] Transaction introuvable: ${numcommande}`);
+    console.warn(`[webhook] Transaction introuvable: ${numcommandeFinal} → HTTP 200 quand même`);
     return new Response("OK", { status: 200 });
   }
 
@@ -1033,38 +1068,73 @@ async function handleWebhook(req: Request): Promise<Response> {
 
   // Idempotence
   if (tx["status"] === "credited") {
-    console.log(`[webhook] ${numcommande} déjà crédité → skip`);
+    console.log(`[webhook] ${numcommandeFinal} déjà crédité → skip`);
     return new Response("OK", { status: 200 });
   }
 
-  // Extraire le code du payload
-  const webhookCode: number = (payload["code"] as number)
-    ?? (payload["statut"] === "success" || payload["status"] === "success" ? 0 : -1);
-  const webhookStatus = normaliserStatut(webhookCode, tx["created_at"] as string);
-  const txId          = extractTxId(payload) ?? (tx["provider_transaction_id"] as string | undefined);
+  // Extraire le code du payload webhook
+  // SycaPay peut envoyer: code=0, statut="success", status="SUCCESS", etc.
+  let webhookCode: number = -1;
+  if (typeof payload["code"] === "number") {
+    webhookCode = payload["code"] as number;
+  } else if (
+    payload["statut"] === "success"  || payload["status"] === "success" ||
+    payload["statut"] === "SUCCESS"  || payload["status"] === "SUCCESS" ||
+    payload["statut"] === "completed"|| payload["status"] === "completed" ||
+    payload["payment_status"] === "success" || payload["payment_status"] === "SUCCESS"
+  ) {
+    webhookCode = 0;
+  } else if (
+    payload["statut"] === "failed"   || payload["status"] === "failed" ||
+    payload["statut"] === "FAILED"   || payload["status"] === "FAILED"
+  ) {
+    webhookCode = -1; // sera traité comme pending si < 10min
+  }
 
-  console.log(`[webhook] code=${webhookCode} status=${webhookStatus} txId=${txId ?? "n/a"}`);
+  // Si payload quasi-vide (GET sans body ou body vide) → appeler GetStatus pour vrai statut
+  const payloadSignificant = Object.keys(payload).filter(k => !['action','ref','numcommande'].includes(k)).length > 0;
+  let txId = extractTxId(payload) ?? (tx["provider_transaction_id"] as string | undefined);
+
+  if (!payloadSignificant && webhookCode === -1) {
+    console.log(`[webhook] Payload vide/GET → GetStatus pour ${numcommandeFinal}`);
+    try {
+      const gs = await getStatusMulti(numcommandeFinal, txId);
+      webhookCode = gs.code;
+      const gsTxId = extractTxId(gs.result);
+      if (gsTxId) txId = gsTxId;
+      console.log(`[webhook] GetStatus fallback → code=${webhookCode} txId=${txId ?? "n/a"}`);
+    } catch (e) {
+      console.error("[webhook] GetStatus fallback échoué:", e);
+    }
+  }
+
+  const webhookStatus = normaliserStatut(webhookCode, tx["created_at"] as string);
+
+  console.log(`[webhook] code=${webhookCode} status=${webhookStatus} txId=${txId ?? "n/a"} numcommande=${numcommandeFinal}`);
 
   // Mettre à jour DB avec infos webhook
   const updateData: Record<string, unknown> = {
     webhook_received_at: new Date().toISOString(),
-    webhook_payload:     payload,
+    // Ne pas stocker le payload brut pour éviter les gros blobs
+    // webhook_payload: payload, — désactivé, infos dans les logs
   };
   if (txId) updateData["provider_transaction_id"] = txId;
 
   if (webhookStatus === "confirmed") {
     updateData["status"]       = "confirmed";
     updateData["confirmed_at"] = new Date().toISOString();
-  } else if (webhookStatus === "failed") {
+  } else if (webhookStatus === "failed" && ![-1, -9, -200, -250, -999].includes(webhookCode)) {
+    // Seulement les échecs définitifs (pas les temporaires)
     updateData["status"]        = "failed";
     updateData["error_message"] = messageFr(webhookCode);
   } else if (webhookStatus === "expired") {
     updateData["status"] = "expired";
   }
+  // pending / unknown → ne pas écraser le statut DB, juste webhook_received_at
 
   await sbPatch(
     "sycapay_transactions",
-    `internal_reference=eq.${encodeURIComponent(numcommande)}`,
+    `internal_reference=eq.${encodeURIComponent(numcommandeFinal)}`,
     updateData,
   ).catch(e => console.error("[webhook] update DB:", e));
 
@@ -1072,8 +1142,11 @@ async function handleWebhook(req: Request): Promise<Response> {
   if (webhookStatus === "confirmed") {
     const freshTx = { ...tx, ...updateData };
     const creditResult = await crediterCoteServeur(freshTx);
-    console.log(`[webhook] Crédit résultat: ${creditResult.message}`);
+    console.log(`[webhook] ✅ Crédit résultat: ${creditResult.message}`);
+  } else {
+    console.log(`[webhook] Status=${webhookStatus} → pas de crédit (code=${webhookCode})`);
   }
 
+  // TOUJOURS retourner HTTP 200 pour que SycaPay ne re-tente pas indéfiniment
   return new Response("OK", { status: 200 });
 }

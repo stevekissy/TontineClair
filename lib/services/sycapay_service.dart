@@ -329,6 +329,10 @@ class SycaPayResultat {
       else                                   status = 'failed';
     }
 
+    // ✅ FIX: lire ok depuis la réponse JSON (était toujours false avant)
+    // Nécessaire pour estSucces lors de l'action 'statut' avec code=0/confirmed
+    final isOk = j['ok'] == true || code == 0;
+
     return SycaPayResultat(
       code:            code,
       message:         j['message']     as String? ?? j['messageFr'] as String? ?? '',
@@ -342,6 +346,7 @@ class SycaPayResultat {
       statusNormalise: status,
       fromCache:       j['fromCache']  == true,
       dejaConfirme:    j['idempotent'] == true,
+      ok:              isOk,
     );
   }
 
