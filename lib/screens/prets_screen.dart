@@ -211,7 +211,7 @@ class _PretsScreenState extends State<PretsScreen> {
                           SizedBox(width: 6),
                           Flexible(
                             child: Text(
-                              'Mobile Money — frais 2% — validation admin requise',
+                              'Mobile Money — frais 2% — validation TontineClair requise',
                               style: TextStyle(fontSize: 12, color: Color(0xFFE65100)),
                             ),
                           ),
@@ -397,7 +397,7 @@ class _PretsScreenState extends State<PretsScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Text(
-                  '⏳ Le prêt sera soumis à validation admin.\nLa caisse ne sera débitée qu\'après approbation.',
+                  '⏳ Le prêt sera soumis à validation TontineClair.\nLa caisse ne sera débitée qu\'après approbation de TontineClair.',
                   style: TextStyle(fontSize: 12, color: AppColors.orFonce, height: 1.4),
                 ),
               ),
@@ -435,7 +435,7 @@ class _PretsScreenState extends State<PretsScreen> {
           devise:              data.devise,
         );
         if (context.mounted) {
-          afficherToast(context, '✅ Prêt soumis ! En attente de validation admin.');
+          afficherToast(context, '✅ Prêt soumis ! En attente de validation TontineClair.');
         }
       } catch (e) {
         if (context.mounted) afficherToast(context, 'Erreur : $e', estErreur: true);

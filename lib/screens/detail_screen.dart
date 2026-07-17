@@ -1994,7 +1994,7 @@ class _BarreDetail extends StatelessWidget {
           data: data, membres: membres, payesIds: payesIds,
           nbPayesClot: nbPayesClot, numerTourAffiche: numerTourAffiche,
           ref: ref, gestNom: provider.gestActifNom ?? '',
-          debiterCaisse: false,   // Premium : caisse débitée par l'admin
+          debiterCaisse: false,   // Premium : caisse débitée après validation TontineClair
           montantVerse: montantVerse,
           benefNom: benefNom,
         );
@@ -2124,7 +2124,7 @@ class _BarreDetail extends StatelessWidget {
     final journal = List<Map<String, dynamic>>.from(
       (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
     );
-    final modeStr = debiterCaisse ? 'décaissement immédiat' : 'décaissement en attente admin';
+    final modeStr = debiterCaisse ? 'décaissement immédiat' : 'décaissement en attente TontineClair';
     journal.insert(0, {
       'quoi':      'Tour $numerTourAffiche clôturé — ${Formatters.montant(montantVerse, devise: data.devise)} pour $benefNom ($modeStr)',
       'par':       gestNom,

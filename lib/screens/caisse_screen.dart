@@ -356,7 +356,7 @@ class CaisseScreen extends StatelessWidget {
                       SizedBox(width: 6),
                       Flexible(
                         child: Text(
-                          'Mobile Money — validation admin requise',
+                          'Mobile Money — validation TontineClair requise',
                           style: TextStyle(fontSize: 12, color: Color(0xFFE65100)),
                         ),
                       ),
@@ -481,7 +481,7 @@ class CaisseScreen extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Text(
-                '⏳ La dépense sera soumise à validation par l\'admin. La caisse ne sera débitée qu\'après approbation.',
+                '⏳ La dépense sera soumise à validation par TontineClair. La caisse ne sera débitée qu\'après approbation.',
                 style: TextStyle(fontSize: 12, color: AppColors.orFonce, height: 1.4),
               ),
             ),
@@ -520,7 +520,7 @@ class CaisseScreen extends StatelessWidget {
       if (context.mounted) {
         afficherToast(
           context,
-          '✅ Dépense soumise ! En attente de validation admin.',
+          '✅ Dépense soumise ! En attente de validation TontineClair.',
         );
       }
     } catch (e) {

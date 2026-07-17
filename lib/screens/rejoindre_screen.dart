@@ -276,7 +276,7 @@ class _RejoindreScreenState extends State<RejoindreScreen> {
               '• Son code d\'invitation n\'est plus valide.\n'
               '• Aucune adhésion ni opération n\'est possible.\n'
               '• Si vous pensez qu\'il s\'agit d\'une erreur, contactez '
-              'votre gestionnaire ou l\'administrateur.',
+              'votre gestionnaire ou le support TontineClair.',
         );
 
       // ── Introuvable / code invalide ────────────────────────────────────────

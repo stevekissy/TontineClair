@@ -268,7 +268,7 @@ class _AbonnementScreenState extends State<AbonnementScreen> {
                             SizedBox(width: 10),
                             Expanded(
                               child: Text(
-                                'KYC soumis — en attente de validation admin. Vous pourrez continuer après validation.',
+                                'KYC soumis — en attente de validation TontineClair. Vous pourrez continuer après validation.',
                                 style: TextStyle(
                                   fontSize: 13,
                                   color: Color(0xFF92400E),
@@ -468,7 +468,7 @@ class _AbonnementScreenState extends State<AbonnementScreen> {
                       if (mounted) {
                         setState(() => _demandeEnvoyee = true);
                         afficherToast(context,
-                          '✅ Demande envoyée ! L\'administrateur vous contactera sous 24h.');
+                          '✅ Demande envoyée ! TontineClair vous contactera sous 24h.');
                       }
                     } catch (e) {
                       setSt(() { loading = false; erreur = 'Erreur : $e'; });

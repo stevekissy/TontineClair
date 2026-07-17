@@ -349,7 +349,7 @@ class _UpgradePremiumScreenState extends State<UpgradePremiumScreen> {
                       )
                     else if (_kycPending)
                       const Text(
-                        '⏳ KYC soumis — en attente de validation admin. Vous pourrez continuer après validation.',
+                        '⏳ KYC soumis — en attente de validation TontineClair. Vous pourrez continuer après validation.',
                         textAlign: TextAlign.center,
                         style: TextStyle(fontSize: 12, color: Color(0xFF92400E)),
                       )

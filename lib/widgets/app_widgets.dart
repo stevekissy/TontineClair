@@ -1296,7 +1296,7 @@ class BanniereKyc extends StatelessWidget {
         couleurTexte  = const Color(0xFF065F46);
         emoji         = '✅';
         titre         = 'KYC validé';
-        sousTitre     = 'Votre identité a été vérifiée par l\'administrateur.';
+        sousTitre     = 'Votre identité a été vérifiée par TontineClair.';
       case _KycStatut.pending:
         fond          = const Color(0xFFFFFBEB);
         bordure       = const Color(0xFFF59E0B);
@@ -1521,7 +1521,7 @@ class _ModaleKycState extends State<ModaleKyc> {
                 border: Border.all(color: const Color(0xFF93C5FD)),
               ),
               child: const Text(
-                'ℹ️  Ces informations sont transmises à l\'administrateur TontineClair '
+                'ℹ️  Ces informations sont transmises à TontineClair '
                 'pour vérification. Aucun document physique n\'est requis.',
                 style: TextStyle(fontSize: 12, color: Color(0xFF1E40AF), height: 1.4),
               ),
@@ -1622,7 +1622,7 @@ class _ModaleKycState extends State<ModaleKyc> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Après soumission, l\'admin validera votre dossier sous 24–48h.',
+              'Après soumission, TontineClair validera votre dossier sous 24–48h.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 11.5, color: AppColors.texteDoux),
             ),

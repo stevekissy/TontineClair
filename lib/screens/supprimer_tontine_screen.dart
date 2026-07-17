@@ -154,7 +154,7 @@ class _SupprimerTontineScreenState extends State<SupprimerTontineScreen> {
                   'Cette action rendra la tontine inaccessible à tous les membres. '
                   'Le code d\'invitation sera désactivé et aucune nouvelle opération '
                   'ne sera possible.\n\n'
-                  'L\'historique restera conservé dans l\'espace administrateur.',
+                  'L\'historique restera conservé dans l\'espace TontineClair.',
                   style: TextStyle(
                     fontSize: 14,
                     color: AppColors.texte,
@@ -482,7 +482,7 @@ class _SupprimerTontineScreenState extends State<SupprimerTontineScreen> {
               'La tontine a été supprimée avec succès.\n'
               'Son code d\'invitation est désormais invalide.\n\n'
               'Elle n\'apparaît plus dans la liste des membres.\n'
-              'L\'historique reste conservé dans l\'espace administrateur.',
+              'L\'historique reste conservé dans l\'espace TontineClair.',
               style: TextStyle(
                 fontSize: 14.5,
                 color: AppColors.texte,

@@ -369,10 +369,10 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
                   gestNom: provider.gestActifNom ?? '',
                 ),
         );
-        // Dans tous les cas on arrête ici : l'admin doit valider avant de démarrer
+        // Dans tous les cas on arrête ici : TontineClair doit valider avant de démarrer
         if (mounted && !soumis) {
           afficherToast(context,
-            '⏳ Dossier KYC soumis — en attente de validation admin.');
+            '⏳ Dossier KYC soumis — en attente de validation TontineClair.');
         }
         return;
       }
@@ -1538,7 +1538,7 @@ class _KycEnAttenteSheet extends StatelessWidget {
           const SizedBox(height: 8),
           const Text(
             'Votre dossier d\'identité a été soumis et est en cours de vérification '
-            'par l\'administrateur TontineClair.\n\n'
+            'par TontineClair.\n\n'
             'Vous pourrez démarrer le nouveau cycle une fois votre KYC validé.\n'
             'Délai habituel : 24–48h.',
             textAlign: TextAlign.center,

@@ -375,7 +375,7 @@ class _CarteChangements extends StatelessWidget {
           ...[
             'Les membres paient leurs cotisations via Mobile Money directement dans l\'app.',
             'Le bénéficiaire de chaque tour reçoit 100% du pool — la commission de 1% est débitée séparément de la caisse.',
-            'Le gestionnaire soumet une demande de décaissement. L\'admin TontineClair valide manuellement.',
+            'Le gestionnaire soumet une demande de décaissement. TontineClair valide et exécute le paiement.',
             'L\'historique existant (membres, tours, votes) est intégralement conservé.',
           ].map((t) => Padding(
             padding: const EdgeInsets.only(bottom: 8),
