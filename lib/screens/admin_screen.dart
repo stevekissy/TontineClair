@@ -149,6 +149,64 @@ class _AdminScreenState extends State<AdminScreen> {
     _clePersoCtrl.clear();
   }
 
+  /// Affiche une boîte de confirmation avant déconnexion.
+  /// Retourne [true] si l'utilisateur confirme, [false] sinon.
+  Future<bool> _confirmerDeconnexion() async {
+    final confirme = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.fondPapier,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.alerte.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.logout_rounded, color: AppColors.alerte, size: 22),
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              'Se déconnecter ?',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: AppColors.encre),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Voulez-vous vraiment quitter votre session administrateur ?',
+          style: TextStyle(fontSize: 14, color: AppColors.texteDoux, height: 1.45),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: AppColors.lignes),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            ),
+            child: const Text('Annuler', style: TextStyle(color: AppColors.texteDoux, fontWeight: FontWeight.w600)),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.logout_rounded, size: 16, color: Colors.white),
+            label: const Text('Se déconnecter', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.alerte,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              elevation: 0,
+            ),
+          ),
+        ],
+      ),
+    );
+    return confirme == true;
+  }
+
   // ── Connexion membre (pseudo + clePerso, role-based) ─────────────────────────
   Future<void> _connecterMembre() async {
     final pseudo   = _pseudoCtrl.text.trim();
@@ -596,10 +654,24 @@ class _AdminScreenState extends State<AdminScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.fondPapier,
-      body: SafeArea(
-        child: _connecte ? _CorpsAdmin() : _VueConnexion(),
+    return PopScope(
+      // Quand connecté : intercepter le bouton retour Android.
+      // canPop=false + onPopInvokedWithResult gère la confirmation.
+      canPop: !_connecte,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return; // L'écran n'est pas connecté → retour libre
+        // L'utilisateur a appuyé sur retour Android alors qu'il est connecté
+        final ok = await _confirmerDeconnexion();
+        if (ok && mounted) {
+          _deconnecter();
+          // Reste sur l'écran de connexion admin (pas de Navigator.pop)
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.fondPapier,
+        body: SafeArea(
+          child: _connecte ? _CorpsAdmin() : _VueConnexion(),
+        ),
       ),
     );
   }
@@ -772,13 +844,6 @@ class _AdminScreenState extends State<AdminScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 16),
-            TextButton.icon(
-              onPressed: () => Navigator.of(context).pop(),
-              icon: const Icon(Icons.arrow_back, size: 15),
-              label: Text(context.tr('retour')),
-              style: TextButton.styleFrom(foregroundColor: AppColors.texteDoux),
-            ),
           ],
         ),
       ),
@@ -841,26 +906,50 @@ class _AdminScreenState extends State<AdminScreen> {
     // ── Bandeau identité rôle (si connecté en tant que membre) ───────────────
     Widget? bandeauRole;
     if (_estMembreRole) {
-      final (labelRole, couleurRole) = switch (_roleMembre) {
-        'comptable'  => ('Comptable', AppColors.orFonce),
-        'conformite' => ('Conformité', AppColors.encre),
-        _            => ('Super Admin', AppColors.succes),
+      final (labelRole, couleurRole, iconeRole) = switch (_roleMembre) {
+        'comptable'  => ('Comptable',  AppColors.orFonce, Icons.account_balance_outlined),
+        'conformite' => ('Conformité', AppColors.encre,   Icons.badge_outlined),
+        _            => ('Super Admin', AppColors.succes,  Icons.shield_outlined),
       };
       bandeauRole = Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        color: couleurRole.withValues(alpha: 0.10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+        decoration: BoxDecoration(
+          color: couleurRole.withValues(alpha: 0.08),
+          border: Border(bottom: BorderSide(color: couleurRole.withValues(alpha: 0.15))),
+        ),
         child: Row(
           children: [
-            Icon(Icons.verified_user_outlined, size: 14, color: couleurRole),
+            Icon(iconeRole, size: 14, color: couleurRole),
             const SizedBox(width: 6),
-            Text(
-              'Connecté : $_nomMembre  •  $labelRole',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: couleurRole),
+            Expanded(
+              child: Text(
+                '$_nomMembre  •  $labelRole',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: couleurRole),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-            const Spacer(),
+            // Bouton déconnexion membre stylisé
             GestureDetector(
-              onTap: _deconnecter,
-              child: Text('Déconnexion', style: TextStyle(fontSize: 11, color: couleurRole, decoration: TextDecoration.underline)),
+              onTap: () async {
+                final ok = await _confirmerDeconnexion();
+                if (ok && mounted) _deconnecter();
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.alerte.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.alerte.withValues(alpha: 0.25)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Icon(Icons.logout_rounded, size: 12, color: AppColors.alerte),
+                    SizedBox(width: 4),
+                    Text('Déconnexion', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.alerte)),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -874,7 +963,10 @@ class _AdminScreenState extends State<AdminScreen> {
           totalAlertes: totalAlertes,
           recharging: _recharging,
           onRefresh: _rechargerAvecFeedback,
-          onBack: () { _deconnecter(); Navigator.of(context).pop(); },
+          onDeconnecter: () async {
+            final ok = await _confirmerDeconnexion();
+            if (ok && mounted) _deconnecter();
+          },
         ),
         if (bandeauRole != null) bandeauRole,
         // ── Barre de navigation icônes ───────────────────────────────────────
@@ -2980,25 +3072,28 @@ class _HeaderAdmin extends StatelessWidget {
   final int totalAlertes;
   final bool recharging;
   final VoidCallback onRefresh;
-  final VoidCallback onBack;
+  /// Callback déclenché lorsque l'utilisateur clique sur « Déconnexion ».
+  /// La confirmation a déjà eu lieu dans l'appelant.
+  final VoidCallback onDeconnecter;
+
   const _HeaderAdmin({
     required this.totalAlertes,
     required this.recharging,
     required this.onRefresh,
-    required this.onBack,
+    required this.onDeconnecter,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 10),
       decoration: const BoxDecoration(
         color: AppColors.fondPapier,
         border: Border(bottom: BorderSide(color: AppColors.lignes, width: 0.5)),
       ),
       child: Row(
         children: [
-          // Icône admin + titre
+          // ── Icône admin + titre ────────────────────────────────────────────
           Container(
             width: 36, height: 36,
             decoration: BoxDecoration(
@@ -3029,10 +3124,10 @@ class _HeaderAdmin extends StatelessWidget {
               ],
             ),
           ),
-          // Badge total alertes
+          // ── Badge alertes ──────────────────────────────────────────────────
           if (totalAlertes > 0)
             Container(
-              margin: const EdgeInsets.only(right: 8),
+              margin: const EdgeInsets.only(right: 6),
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
                 color: AppColors.alerteFond,
@@ -3044,7 +3139,7 @@ class _HeaderAdmin extends StatelessWidget {
                 style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.alerte),
               ),
             ),
-          // Bouton refresh
+          // ── Bouton Actualiser ──────────────────────────────────────────────
           IconButton(
             onPressed: onRefresh,
             icon: recharging
@@ -3057,13 +3152,36 @@ class _HeaderAdmin extends StatelessWidget {
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
             padding: EdgeInsets.zero,
           ),
-          // Bouton retour
-          IconButton(
-            onPressed: onBack,
-            icon: const Icon(Icons.close_rounded, color: AppColors.texteDoux, size: 20),
-            tooltip: 'Quitter',
-            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-            padding: EdgeInsets.zero,
+          // ── Bouton Déconnexion (remplace la croix X) ───────────────────────
+          Tooltip(
+            message: 'Se déconnecter',
+            child: InkWell(
+              onTap: onDeconnecter,
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.alerte.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.alerte.withValues(alpha: 0.20)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Icon(Icons.logout_rounded, size: 15, color: AppColors.alerte),
+                    SizedBox(width: 5),
+                    Text(
+                      'Déconnexion',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.alerte,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ],
       ),
