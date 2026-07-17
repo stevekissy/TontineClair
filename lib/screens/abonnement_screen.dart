@@ -1,14 +1,12 @@
-// ignore_for_file: avoid_print
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
 import '../services/supabase_service.dart';
 import '../services/platform_service.dart';
 import '../services/subscription_service.dart';
-import '../services/feature_gate_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
@@ -25,11 +23,20 @@ class AbonnementScreen extends StatefulWidget {
   final String code;
   /// Forcer la plateforme (utilisé depuis création sans tontine chargée)
   final PlatformType? platformeForce;
+  /// Montant de la cagnotte — pour détecter si le KYC est obligatoire
+  final int montantCagnotte;
+  /// Statut KYC du gestionnaire
+  final String? kycStatut;
+  /// Nom du gestionnaire (pour le formulaire KYC)
+  final String gestNom;
 
   const AbonnementScreen({
     super.key,
     required this.code,
     this.platformeForce,
+    this.montantCagnotte = 0,
+    this.kycStatut,
+    this.gestNom = '',
   });
 
   @override
@@ -37,12 +44,27 @@ class AbonnementScreen extends StatefulWidget {
 }
 
 class _AbonnementScreenState extends State<AbonnementScreen> {
-  bool _loading = false;
   bool _demandeEnvoyee = false;
   String _formule = 'mensuel';
+  bool _checkboxLu = false;
+  String? _kycStatut;
+
+  static const _couleurPremium = Color(0xFFF59E0B);
 
   PlatformType get _platform =>
       widget.platformeForce ?? PlatformService.current;
+
+  bool get _kycRequis    => widget.montantCagnotte >= TontineData.kSeuilKyc;
+  bool get _kycValide    => _kycStatut == 'valide';
+  bool get _kycPending   => _kycStatut == 'pending';
+  bool get _kycBloquant  => _kycRequis && !_kycValide;
+  bool get _peutProceder => _checkboxLu && !_kycBloquant;
+
+  @override
+  void initState() {
+    super.initState();
+    _kycStatut = widget.kycStatut;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -55,98 +77,240 @@ class _AbonnementScreenState extends State<AbonnementScreen> {
     return Scaffold(
       backgroundColor: AppColors.fondPapier,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 18, 16, 40),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ── En-tête ──────────────────────────────────────────────────
-              Row(
+        child: Stack(
+          children: [
+            SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 120),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const LogoTontineClair(),
-                  const Spacer(),
-                  TextButton.icon(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.arrow_back, size: 16),
-                    label: const Text('Retour'),
-                    style: TextButton.styleFrom(
-                        foregroundColor: AppColors.encre),
+                  // ── En-tête ──────────────────────────────────────────────────
+                  Row(
+                    children: [
+                      const LogoTontineClair(),
+                      const Spacer(),
+                      TextButton.icon(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.arrow_back, size: 16),
+                        label: const Text('Retour'),
+                        style: TextButton.styleFrom(
+                            foregroundColor: AppColors.encre),
+                      ),
+                    ],
                   ),
+                  const SizedBox(height: 24),
+
+                  // ── Titre + sous-titre ────────────────────────────────────────
+                  Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: _couleurPremium.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Center(
+                          child: Text('⭐', style: TextStyle(fontSize: 24)),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Abonnement',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 26,
+                                color: AppColors.encre,
+                                letterSpacing: -0.5,
+                              ),
+                            ),
+                            Text(
+                              'Débloquez toutes les fonctionnalités',
+                              style: TextStyle(
+                                fontSize: 13.5,
+                                color: AppColors.texteDoux,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // ── Statut actuel (si déjà Premium) ──────────────────────────
+                  if (isPremium && tontine != null)
+                    _BandeauPremiumActif(tontine: tontine)
+                  else if (isPremium)
+                    _BandeauPremiumActifSimple(),
+
+                  if (isPremium) const SizedBox(height: 24),
+
+                  // ── Tableau comparatif amélioré ───────────────────────────────
+                  _TableauComparatif(),
+                  const SizedBox(height: 20),
+
+                  // ══════════════════════════════════════════════════════════════
+                  // Tout ce qui suit n'est visible que si NON Premium
+                  // ══════════════════════════════════════════════════════════════
+                  if (!isPremium) ...[
+
+                    // ── Sélection formule ─────────────────────────────────────
+                    _SectionTitre(
+                      titre: 'Choisissez votre formule',
+                      icone: Icons.workspace_premium,
+                    ),
+                    const SizedBox(height: 12),
+                    Row(children: [
+                      Expanded(
+                        child: _CarteTarif(
+                          label: 'Mensuel',
+                          prix: '2 500 FCFA / mois',
+                          description: 'Flexible, sans engagement',
+                          badge: null,
+                          selected: _formule == 'mensuel',
+                          onTap: () => setState(() => _formule = 'mensuel'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _CarteTarif(
+                          label: 'Annuel',
+                          prix: '25 000 FCFA / an',
+                          description: '2 mois offerts vs mensuel',
+                          badge: '−17%',
+                          selected: _formule == 'annuel',
+                          onTap: () => setState(() => _formule = 'annuel'),
+                        ),
+                      ),
+                    ]),
+                    const SizedBox(height: 24),
+
+                    // ── Carte jaune : Action irréversible ─────────────────────
+                    _CarteIrreversible(),
+                    const SizedBox(height: 16),
+
+                    // ── Carte rouge KYC (si cagnotte >= 200 000 XOF) ─────────
+                    if (_kycRequis && !_kycValide) ...[
+                      _CarteKycObligatoire(
+                        kycStatut:       _kycStatut,
+                        montantCagnotte: widget.montantCagnotte,
+                        gestNom:         widget.gestNom,
+                        code:            widget.code,
+                        onSoumis:        () => setState(() => _kycStatut = 'pending'),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // ── KYC validé : bandeau succès ───────────────────────────
+                    if (_kycValide) ...[
+                      _BandeauKycValide(),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // ── Checkbox confirmation ─────────────────────────────────
+                    if (!_kycBloquant) ...[
+                      _CheckboxConfirmation(
+                        valeur:   _checkboxLu,
+                        onChange: (v) => setState(() => _checkboxLu = v),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+
+                    // ── Message KYC bloquant ──────────────────────────────────
+                    if (_kycBloquant) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFFCA5A5)),
+                        ),
+                        child: const Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('🔒', style: TextStyle(fontSize: 16)),
+                            SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Soumettez votre KYC avant de continuer.\n'
+                                'Impossible de payer tant que le KYC n\'est pas validé.',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Color(0xFF991B1B),
+                                  fontWeight: FontWeight.w600,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+
+                    // ── KYC pending ───────────────────────────────────────────
+                    if (_kycPending && !_kycValide && !_kycBloquant) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFFBEB),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFFDE68A)),
+                        ),
+                        child: const Row(
+                          children: [
+                            Text('⏳', style: TextStyle(fontSize: 16)),
+                            SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'KYC soumis — en attente de validation admin. Vous pourrez continuer après validation.',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Color(0xFF92400E),
+                                  height: 1.4,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                  ],
+
+                  const SizedBox(height: 32),
+                  _buildNotesLegales(),
                 ],
               ),
-              const SizedBox(height: 24),
+            ),
 
-              Text(
-                'Abonnement',
-                style: GoogleFonts.bricolageGrotesque(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 28,
-                  color: AppColors.encre,
+            // ── Bouton bas fixe (uniquement si NON Premium) ───────────────────
+            if (!isPremium)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [
+                        AppColors.fondPapier,
+                        AppColors.fondPapier.withValues(alpha: 0),
+                      ],
+                    ),
+                  ),
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+                  child: _buildCtaPlateforme(context, tontine),
                 ),
               ),
-              const SizedBox(height: 8),
-
-              // ── Statut actuel ─────────────────────────────────────────────
-              if (isPremium && tontine != null)
-                _BandeauPremiumActif(tontine: tontine)
-              else if (isPremium)
-                _BandeauPremiumActifSimple()
-              else
-                Text(
-                  'Débloquez toutes les fonctionnalités avec Premium.',
-                  style: GoogleFonts.inter(
-                    fontSize: 15,
-                    color: AppColors.texteDoux,
-                  ),
-                ),
-              const SizedBox(height: 24),
-
-              // ── Tableau comparatif ────────────────────────────────────────
-              _TableauComparatif(),
-              const SizedBox(height: 24),
-
-              // ── Section souscription selon la plateforme ─────────────────
-              if (!isPremium) ...[
-                _SectionTitre(
-                  titre: 'Choisissez votre formule',
-                  icone: Icons.workspace_premium,
-                ),
-                const SizedBox(height: 12),
-
-                // ── Sélection formule ─────────────────────────────────────
-                Row(children: [
-                  Expanded(
-                    child: _CarteTarif(
-                      label: 'Mensuel',
-                      prix: '2 500 FCFA / mois',
-                      description: 'Flexible, sans engagement',
-                      badge: null,
-                      selected: _formule == 'mensuel',
-                      onTap: () => setState(() => _formule = 'mensuel'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _CarteTarif(
-                      label: 'Annuel',
-                      prix: '25 000 FCFA / an',
-                      description: '2 mois offerts vs mensuel',
-                      badge: '−17%',
-                      selected: _formule == 'annuel',
-                      onTap: () => setState(() => _formule = 'annuel'),
-                    ),
-                  ),
-                ]),
-                const SizedBox(height: 20),
-
-                // ── CTA selon la plateforme ───────────────────────────────
-                _buildCtaPlateforme(context, tontine),
-              ],
-
-              const SizedBox(height: 32),
-              _buildNotesLegales(),
-            ],
-          ),
+          ],
         ),
       ),
     );
@@ -157,16 +321,25 @@ class _AbonnementScreenState extends State<AbonnementScreen> {
   Widget _buildCtaPlateforme(BuildContext context, dynamic tontine) {
     switch (_platform) {
       case PlatformType.android:
-        return _SectionAndroid(formule: _formule);
+        return _SectionAndroid(
+          formule:       _formule,
+          peutProceder:  _peutProceder,
+          kycBloquant:   _kycBloquant,
+          kycPending:    _kycPending && !_kycValide,
+        );
       case PlatformType.ios:
-        return _SectionIOS(formule: _formule);
+        return _SectionIOS(
+          formule:      _formule,
+          peutProceder: _peutProceder,
+          kycBloquant:  _kycBloquant,
+        );
       case PlatformType.web:
         return _SectionWeb(
           formule: _formule,
           code: widget.code.isNotEmpty
               ? widget.code
               : tontine?.code ?? '',
-          loading: _loading,
+          loading: false,
           demandeEnvoyee: _demandeEnvoyee,
           onDemander: _demanderPremium,
         );
@@ -183,7 +356,6 @@ class _AbonnementScreenState extends State<AbonnementScreen> {
       return;
     }
 
-    // Afficher le formulaire de collecte des infos avant d'envoyer
     await _afficherFormulaireDemandeWeb(code);
   }
 
@@ -344,6 +516,333 @@ class _AbonnementScreenState extends State<AbonnementScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// CARTE JAUNE — Action irréversible
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _CarteIrreversible extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.5), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFF59E0B).withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Center(
+              child: Text('⚠️', style: TextStyle(fontSize: 18)),
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Action irréversible',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14.5,
+                    color: Color(0xFF78350F),
+                  ),
+                ),
+                SizedBox(height: 6),
+                Text(
+                  'Une fois cette tontine passée en Premium, elle ne pourra plus revenir à la formule Gratuite.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF92400E),
+                    height: 1.5,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  "L'abonnement sera géré automatiquement par Google Play (Android) ou Apple App Store (iPhone).",
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF92400E),
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CARTE ROUGE — KYC obligatoire (cagnotte >= 200 000 XOF)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _CarteKycObligatoire extends StatelessWidget {
+  final String? kycStatut;
+  final int     montantCagnotte;
+  final String  gestNom;
+  final String  code;
+  final VoidCallback onSoumis;
+
+  const _CarteKycObligatoire({
+    required this.kycStatut,
+    required this.montantCagnotte,
+    required this.gestNom,
+    required this.code,
+    required this.onSoumis,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isPending = kycStatut == 'pending';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.4), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFEF4444).withValues(alpha: 0.07),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Center(
+                  child: Text('🚨', style: TextStyle(fontSize: 18)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'KYC obligatoire',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14.5,
+                        color: Color(0xFF991B1B),
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Cette cagnotte dépasse 200 000 XOF.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFFB91C1C),
+                        height: 1.4,
+                      ),
+                    ),
+                    Text(
+                      'Une vérification d\'identité est obligatoire avant de pouvoir activer Premium.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFFB91C1C),
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (!isPending) ...[
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => _ouvrirKyc(context),
+                icon: const Icon(Icons.description_outlined, size: 16),
+                label: const Text(
+                  'Soumettre le KYC',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFEF4444),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 0,
+                ),
+              ),
+            ),
+          ],
+          if (isPending) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFBEB),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Row(
+                children: [
+                  Text('⏳', style: TextStyle(fontSize: 14)),
+                  SizedBox(width: 8),
+                  Text(
+                    'KYC soumis — en attente de validation',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: Color(0xFF92400E),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _ouvrirKyc(BuildContext context) async {
+    final soumis = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => ModaleKyc(code: code, gestNom: gestNom),
+    );
+    if (soumis == true) onSoumis();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BANDEAU KYC VALIDÉ
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _BandeauKycValide extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.succesFond,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.succes.withValues(alpha: 0.4)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.verified_user, color: AppColors.succes, size: 22),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Identité vérifiée — vous pouvez procéder au paiement.',
+              style: TextStyle(
+                fontSize: 13.5,
+                color: AppColors.succes,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CHECKBOX CONFIRMATION
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _CheckboxConfirmation extends StatelessWidget {
+  final bool valeur;
+  final ValueChanged<bool> onChange;
+
+  const _CheckboxConfirmation({required this.valeur, required this.onChange});
+
+  static const _couleurPremium = Color(0xFFF59E0B);
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => onChange(!valeur),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: valeur
+              ? _couleurPremium.withValues(alpha: 0.06)
+              : AppColors.carte,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: valeur ? _couleurPremium : AppColors.lignes,
+            width: valeur ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: valeur ? _couleurPremium : Colors.transparent,
+                border: Border.all(
+                  color: valeur ? _couleurPremium : AppColors.lignes,
+                  width: 2,
+                ),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: valeur
+                  ? const Icon(Icons.check, size: 14, color: Colors.white)
+                  : null,
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'J\'ai compris que le passage en Premium est définitif et irréversible.',
+                style: TextStyle(
+                  fontSize: 13.5,
+                  color: AppColors.encre,
+                  height: 1.4,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SECTION WEB — formulaire de demande manuelle
 // Visible UNIQUEMENT sur plateforme web
 // ─────────────────────────────────────────────────────────────────────────────
@@ -410,7 +909,6 @@ class _SectionWeb extends StatelessWidget {
                 onTap: onDemander,
               ),
               const SizedBox(height: 10),
-              // WhatsApp contact (web uniquement)
               OutlinedButton.icon(
                 onPressed: () => _ouvrirWhatsApp(context, formule),
                 icon: const Icon(Icons.chat, size: 16),
@@ -432,7 +930,6 @@ class _SectionWeb extends StatelessWidget {
     final msg = Uri.encodeComponent(
       'Bonjour, je souhaite activer Premium TontineClair ($montant) pour la tontine $code.',
     );
-    // Numéro WhatsApp admin : +225 02 43 21 76 (format international sans espaces)
     final url = Uri.parse('https://wa.me/22502432176?text=$msg');
     launchUrl(url, mode: LaunchMode.externalApplication).catchError((_) => false);
   }
@@ -440,249 +937,147 @@ class _SectionWeb extends StatelessWidget {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SECTION ANDROID — Google Play Billing
-// Aucun formulaire web, aucun WhatsApp
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _SectionAndroid extends StatelessWidget {
   final String formule;
+  final bool   peutProceder;
+  final bool   kycBloquant;
+  final bool   kycPending;
 
-  const _SectionAndroid({required this.formule});
+  const _SectionAndroid({
+    required this.formule,
+    required this.peutProceder,
+    required this.kycBloquant,
+    required this.kycPending,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return CarteTC(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Image.network(
-                'https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Google_Play_Store_badge_EN.svg/320px-Google_Play_Store_badge_EN.svg.png',
-                height: 28,
-                errorBuilder: (_, __, ___) =>
-                    const Icon(Icons.shop, color: AppColors.encreDoux, size: 28),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                'Google Play',
-                style: GoogleFonts.inter(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 15,
-                  color: AppColors.encre,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'L\'abonnement Premium est disponible via Google Play.\n'
-            'Le paiement est sécurisé et géré directement par Google.',
-            style: GoogleFonts.inter(
-              fontSize: 13.5,
-              color: AppColors.texteDoux,
-              height: 1.5,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: peutProceder ? () => _lancerGooglePlay(context) : null,
+            icon: const Icon(Icons.play_circle_outline_rounded, size: 20),
+            label: const Text(
+              'Passer en Premium',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: peutProceder
+                  ? const Color(0xFF01875F)
+                  : AppColors.lignes,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 15),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
+              elevation: 0,
             ),
           ),
-          const SizedBox(height: 16),
-
-          // Product ID affiché pour transparence
-          _InfoProduit(
-            productId: formule == 'annuel'
-                ? FeatureGate.googlePlayYearly
-                : FeatureGate.googlePlayMonthly,
-            prix: formule == 'annuel' ? '25 000 FCFA/an' : '2 500 FCFA/mois',
+        ),
+        const SizedBox(height: 6),
+        Text(
+          peutProceder
+              ? 'Le passage en Premium sera activé après validation du paiement Google Play.'
+              : kycBloquant
+                  ? '🔒 Soumettez votre KYC avant de continuer. Impossible de payer tant que le KYC n\'est pas validé.'
+                  : 'Cochez la case ci-dessus pour activer le bouton.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 11.5,
+            color: kycBloquant
+                ? const Color(0xFF991B1B)
+                : AppColors.texteDoux,
+            fontWeight: kycBloquant ? FontWeight.w600 : FontWeight.normal,
           ),
-          const SizedBox(height: 16),
-
-          // Bouton Souscrire via Google Play
-          BtnPrincipal(
-            label: 'Souscrire via Google Play',
-            icone: Icons.play_circle_outline,
-            couleur: const Color(0xFF01875F), // couleur Google Play
-            onTap: () => _lancerGooglePlay(context),
-          ),
-          const SizedBox(height: 8),
-
-          // Restaurer les achats
-          TextButton.icon(
-            onPressed: () => _restaurerAchats(context),
-            icon: const Icon(Icons.restore, size: 16),
-            label: const Text('Restaurer les achats'),
-            style: TextButton.styleFrom(
-                foregroundColor: AppColors.texteDoux),
-          ),
-
-          const SizedBox(height: 12),
-          _NoteRenouvellement(),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   void _lancerGooglePlay(BuildContext ctx) {
-    // TODO : déclencher in_app_purchase quand le package est intégré.
-    // Pour l'instant : afficher un message d'information.
     afficherToast(
       ctx,
       'Google Play Billing sera activé après publication sur le Play Store.',
     );
   }
-
-  void _restaurerAchats(BuildContext ctx) {
-    afficherToast(ctx, 'Restauration en cours via Google Play…');
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SECTION iOS — Apple In-App Purchase / StoreKit
-// Aucun formulaire web, aucun WhatsApp
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _SectionIOS extends StatelessWidget {
   final String formule;
+  final bool   peutProceder;
+  final bool   kycBloquant;
 
-  const _SectionIOS({required this.formule});
+  const _SectionIOS({
+    required this.formule,
+    required this.peutProceder,
+    required this.kycBloquant,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return CarteTC(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.apple, size: 28, color: AppColors.encre),
-              const SizedBox(width: 10),
-              Text(
-                'App Store',
-                style: GoogleFonts.inter(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 15,
-                  color: AppColors.encre,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'L\'abonnement Premium est disponible via l\'App Store d\'Apple.\n'
-            'Le paiement est sécurisé et géré directement par Apple.',
-            style: GoogleFonts.inter(
-              fontSize: 13.5,
-              color: AppColors.texteDoux,
-              height: 1.5,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: peutProceder ? () => _lancerAppStore(context) : null,
+            icon: const Icon(Icons.apple_rounded, size: 20),
+            label: const Text(
+              'Passer en Premium',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: peutProceder
+                  ? const Color(0xFF0071E3)
+                  : AppColors.lignes,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 15),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
+              elevation: 0,
             ),
           ),
-          const SizedBox(height: 16),
-
-          _InfoProduit(
-            productId: formule == 'annuel'
-                ? FeatureGate.appleYearly
-                : FeatureGate.appleMonthly,
-            prix: formule == 'annuel' ? '25 000 FCFA/an' : '2 500 FCFA/mois',
+        ),
+        const SizedBox(height: 6),
+        Text(
+          peutProceder
+              ? 'Le passage en Premium sera activé après validation du paiement App Store.'
+              : kycBloquant
+                  ? '🔒 Soumettez votre KYC avant de continuer. Impossible de payer tant que le KYC n\'est pas validé.'
+                  : 'Cochez la case ci-dessus pour activer le bouton.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 11.5,
+            color: kycBloquant
+                ? const Color(0xFF991B1B)
+                : AppColors.texteDoux,
+            fontWeight: kycBloquant ? FontWeight.w600 : FontWeight.normal,
           ),
-          const SizedBox(height: 16),
-
-          BtnPrincipal(
-            label: 'Souscrire via App Store',
-            icone: Icons.apple,
-            couleur: const Color(0xFF0071E3), // couleur Apple
-            onTap: () => _lancerAppStore(context),
-          ),
-          const SizedBox(height: 8),
-
-          TextButton.icon(
-            onPressed: () => _restaurerAchats(context),
-            icon: const Icon(Icons.restore, size: 16),
-            label: const Text('Restaurer les achats'),
-            style: TextButton.styleFrom(
-                foregroundColor: AppColors.texteDoux),
-          ),
-
-          const SizedBox(height: 12),
-          _NoteRenouvellement(),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   void _lancerAppStore(BuildContext ctx) {
-    // TODO : déclencher StoreKit quand le package est intégré.
     afficherToast(
       ctx,
       'Apple In-App Purchase sera activé après publication sur l\'App Store.',
     );
-  }
-
-  void _restaurerAchats(BuildContext ctx) {
-    afficherToast(ctx, 'Restauration en cours via App Store…');
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WIDGETS COMMUNS
 // ─────────────────────────────────────────────────────────────────────────────
-
-class _InfoProduit extends StatelessWidget {
-  final String productId;
-  final String prix;
-
-  const _InfoProduit({required this.productId, required this.prix});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.fondCode,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.label_outline, size: 14, color: AppColors.texteDoux),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  productId,
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 11,
-                    color: AppColors.encreDoux,
-                  ),
-                ),
-                Text(
-                  prix,
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.encre,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _NoteRenouvellement extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      '⟳ Se renouvelle automatiquement. Annulez à tout moment depuis les paramètres de votre compte store.',
-      style: GoogleFonts.inter(
-        fontSize: 11.5,
-        color: AppColors.texteDoux,
-        height: 1.4,
-      ),
-    );
-  }
-}
 
 class _CarteSucces extends StatelessWidget {
   @override
@@ -878,6 +1273,9 @@ class _CarteTarif extends StatelessWidget {
             color: selected ? AppColors.encre : AppColors.lignes,
             width: selected ? 2 : 1,
           ),
+          boxShadow: selected
+              ? [BoxShadow(color: AppColors.encre.withValues(alpha: 0.15), blurRadius: 10, offset: const Offset(0, 4))]
+              : [],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -933,44 +1331,112 @@ class _CarteTarif extends StatelessWidget {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// TABLEAU COMPARATIF — version améliorée
+// ─────────────────────────────────────────────────────────────────────────────
+
 class _TableauComparatif extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.carte,
-        borderRadius: BorderRadius.circular(16),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppColors.lignes, width: 1),
-      ),
-      child: Column(
-        children: [
-          _EnTeteTableau(),
-          const Divider(height: 1, color: AppColors.lignes),
-          _LigneTableau('Tontines',
-              '1', 'Illimitées', false),
-          _LigneTableau('Membres par tontine',
-              '5 max', 'Illimités', false),
-          _LigneTableau('Cotisations et tours',
-              '✓', '✓', true),
-          _LigneTableau('Votes sécurisés',
-              '—', '✓', false),
-          _LigneTableau('Prêts internes',
-              '—', '✓', false),
-          _LigneTableau('Exports PDF',
-              '—', '✓', false),
-          _LigneTableau('Score IA de confiance',
-              '—', '✓', false),
-          _LigneTableau('Statistiques avancées',
-              '—', '✓', false),
-          _LigneTableau('Partage WhatsApp',
-              '—', '✓', false),
-          _LigneTableau('Historique complet',
-              '—', '✓', false),
-          _LigneTableau('Journal d\'audit',
-              '—', '✓', false),
-          _LigneTableau('Relances automatiques',
-              '—', '✓', false),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
         ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Column(
+          children: [
+            // ── En-tête avec badges ──────────────────────────────────────────
+            _EnTeteTableau(),
+            // ── Lignes ──────────────────────────────────────────────────────
+            _LigneTableau(
+              icone: Icons.home_work_outlined,
+              label: 'Tontines',
+              gratuit: '1',
+              premium: 'Illimitées',
+              gratuitOk: true,
+            ),
+            _LigneTableau(
+              icone: Icons.group_outlined,
+              label: 'Membres par tontine',
+              gratuit: '5 max',
+              premium: 'Illimités',
+              gratuitOk: true,
+            ),
+            _LigneTableau(
+              icone: Icons.payments_outlined,
+              label: 'Cotisations & tours',
+              gratuit: '✓',
+              premium: '✓',
+              gratuitOk: true,
+              egalite: true,
+            ),
+            _LigneTableau(
+              icone: Icons.account_balance_wallet_outlined,
+              label: 'Caisse & trésorerie',
+              gratuit: '—',
+              premium: '✓',
+            ),
+            _LigneTableau(
+              icone: Icons.how_to_vote_outlined,
+              label: 'Votes sécurisés',
+              gratuit: '—',
+              premium: '✓',
+            ),
+            _LigneTableau(
+              icone: Icons.handshake_outlined,
+              label: 'Prêts internes',
+              gratuit: '—',
+              premium: '✓',
+            ),
+            _LigneTableau(
+              icone: Icons.picture_as_pdf_outlined,
+              label: 'Exports PDF',
+              gratuit: '—',
+              premium: '✓',
+            ),
+            _LigneTableau(
+              icone: Icons.psychology_outlined,
+              label: 'Score IA de confiance',
+              gratuit: '—',
+              premium: '✓',
+            ),
+            _LigneTableau(
+              icone: Icons.bar_chart_rounded,
+              label: 'Statistiques avancées',
+              gratuit: '—',
+              premium: '✓',
+            ),
+            _LigneTableau(
+              icone: Icons.share_outlined,
+              label: 'Partage WhatsApp',
+              gratuit: '—',
+              premium: '✓',
+            ),
+            _LigneTableau(
+              icone: Icons.history_rounded,
+              label: 'Historique complet',
+              gratuit: '—',
+              premium: '✓',
+            ),
+            _LigneTableau(
+              icone: Icons.notifications_outlined,
+              label: 'Relances automatiques',
+              gratuit: '—',
+              premium: '✓',
+              derniere: true,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -980,45 +1446,84 @@ class _EnTeteTableau extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.fondSecondaire,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFFF8F9FA), Color(0xFFF0F0EF)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
       ),
       child: Row(
         children: [
           const Expanded(
-            flex: 3,
-            child: Text('Fonctionnalité',
-                style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12.5,
-                    color: AppColors.encre)),
-          ),
-          Expanded(
-            flex: 2,
-            child: Center(
-              child: Text('Gratuit',
-                  style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.texteDoux)),
+            flex: 5,
+            child: Text(
+              'Fonctionnalité',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+                color: AppColors.encreDoux,
+                letterSpacing: 0.5,
+              ),
             ),
           ),
-          Expanded(
-            flex: 2,
+          // Badge Gratuit
+          SizedBox(
+            width: 72,
             child: Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
-                  color: AppColors.orFonce,
+                  color: AppColors.lignes,
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: Text('Premium',
-                    style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white)),
+                child: const Text(
+                  'Gratuit',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.encreDoux,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Badge Premium
+          SizedBox(
+            width: 76,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFF59E0B), Color(0xFFD97706)],
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFF59E0B).withValues(alpha: 0.3),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.star_rounded, size: 10, color: Colors.white),
+                    SizedBox(width: 3),
+                    Text(
+                      'Premium',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1029,56 +1534,138 @@ class _EnTeteTableau extends StatelessWidget {
 }
 
 class _LigneTableau extends StatelessWidget {
-  final String label;
-  final String gratuit;
-  final String premium;
-  final bool gratuitActif;
+  final IconData icone;
+  final String   label;
+  final String   gratuit;
+  final String   premium;
+  final bool     gratuitOk;
+  final bool     egalite;
+  final bool     derniere;
 
-  const _LigneTableau(this.label, this.gratuit, this.premium, this.gratuitActif);
+  const _LigneTableau({
+    required this.icone,
+    required this.label,
+    required this.gratuit,
+    required this.premium,
+    this.gratuitOk = false,
+    this.egalite   = false,
+    this.derniere  = false,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final bool premiumActif = premium == '✓' || premium == 'Illimitées' || premium == 'Illimités';
+    final bool gratuitActif = gratuitOk && (gratuit == '✓' || gratuit == '1' || gratuit == '5 max');
+    final bool isPremiumOnly = !egalite && !gratuitOk;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: AppColors.lignes, width: 0.5)),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+      decoration: BoxDecoration(
+        color: isPremiumOnly
+            ? const Color(0xFFFFFDF5)
+            : Colors.white,
+        border: derniere
+            ? null
+            : const Border(bottom: BorderSide(color: AppColors.lignes, width: 0.5)),
       ),
       child: Row(
         children: [
+          // Icône
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: isPremiumOnly
+                  ? const Color(0xFFF59E0B).withValues(alpha: 0.1)
+                  : AppColors.fondSecondaire,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              icone,
+              size: 15,
+              color: isPremiumOnly
+                  ? const Color(0xFFF59E0B)
+                  : AppColors.encreDoux,
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Label
           Expanded(
-            flex: 3,
+            flex: 5,
             child: Text(
               label,
-              style: GoogleFonts.inter(fontSize: 13, color: AppColors.encre),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Center(
-              child: Text(
-                gratuit,
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: gratuitActif ? AppColors.succes : AppColors.texteDoux,
-                ),
+              style: TextStyle(
+                fontSize: 13,
+                color: AppColors.encre,
+                fontWeight: isPremiumOnly ? FontWeight.w600 : FontWeight.w500,
               ),
             ),
           ),
-          Expanded(
-            flex: 2,
+          // Colonne Gratuit
+          SizedBox(
+            width: 72,
             child: Center(
-              child: Text(
-                premium,
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.succes,
-                ),
-              ),
+              child: _buildCellule(gratuit, gratuitActif, false),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Colonne Premium
+          SizedBox(
+            width: 76,
+            child: Center(
+              child: _buildCellule(premium, premiumActif, !egalite),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCellule(String valeur, bool actif, bool isPremiumStyle) {
+    if (valeur == '✓') {
+      return Container(
+        width: 26,
+        height: 26,
+        decoration: BoxDecoration(
+          color: isPremiumStyle
+              ? const Color(0xFFF59E0B).withValues(alpha: 0.12)
+              : actif
+                  ? AppColors.succesFond
+                  : AppColors.fondSecondaire,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(
+          Icons.check_rounded,
+          size: 15,
+          color: isPremiumStyle
+              ? const Color(0xFFF59E0B)
+              : actif
+                  ? AppColors.succes
+                  : AppColors.texteDoux,
+        ),
+      );
+    }
+    if (valeur == '—') {
+      return const Text(
+        '—',
+        style: TextStyle(
+          fontSize: 14,
+          color: AppColors.lignes,
+          fontWeight: FontWeight.w700,
+        ),
+      );
+    }
+    return Text(
+      valeur,
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+        color: isPremiumStyle
+            ? const Color(0xFFF59E0B)
+            : actif
+                ? AppColors.succes
+                : AppColors.texteDoux,
       ),
     );
   }

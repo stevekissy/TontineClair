@@ -22,7 +22,6 @@ import 'membres_screen.dart';
 import 'dashboard_screen.dart';
 import 'nouveau_cycle_screen.dart';
 import 'supprimer_tontine_screen.dart';
-import 'upgrade_premium_screen.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
 
@@ -343,6 +342,7 @@ class _DetailScreenState extends State<DetailScreen> {
                       estGest: estGest,
                       isPremium: tontine.isPremium,
                       code: tontine.code,
+                      gestNom: gestNom ?? '',
                     ),
                     const SizedBox(height: 16),
                     // Liste des membres
@@ -971,12 +971,14 @@ class _ActionsRapides extends StatelessWidget {
   final bool estGest;
   final bool isPremium;
   final String code;
+  final String gestNom;
 
   _ActionsRapides({
     required this.data,
     required this.estGest,
     required this.isPremium,
     required this.code,
+    this.gestNom = '',
   });
 
   @override
@@ -1056,7 +1058,12 @@ class _ActionsRapides extends StatelessWidget {
                   : () => Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => AbonnementScreen(code: code),
+                          builder: (_) => AbonnementScreen(
+                            code: code,
+                            montantCagnotte: data.montantCagnotte,
+                            kycStatut: data.kycStatut,
+                            gestNom: gestNom,
+                          ),
                         ),
                       ),
             ),
@@ -1074,7 +1081,12 @@ class _ActionsRapides extends StatelessWidget {
                   : () => Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => AbonnementScreen(code: code),
+                          builder: (_) => AbonnementScreen(
+                            code: code,
+                            montantCagnotte: data.montantCagnotte,
+                            kycStatut: data.kycStatut,
+                            gestNom: gestNom,
+                          ),
                         ),
                       ),
             ),
@@ -1092,7 +1104,12 @@ class _ActionsRapides extends StatelessWidget {
                   : () => Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => AbonnementScreen(code: code),
+                          builder: (_) => AbonnementScreen(
+                            code: code,
+                            montantCagnotte: data.montantCagnotte,
+                            kycStatut: data.kycStatut,
+                            gestNom: gestNom,
+                          ),
                         ),
                       ),
             ),
@@ -1613,41 +1630,6 @@ class _BarreDetail extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Bouton "Passer en Premium" — visible seulement si tontine encore en Gratuite
-          if (!isPremium)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => UpgradePremiumScreen(
-                        code:             code,
-                        montantCagnotte:  data.montantCagnotte,
-                        kycStatut:        data.kycStatut,
-                        gestNom:          gestNom,
-                      ),
-                    ),
-                  ),
-                  icon: const Icon(Icons.star_rounded, size: 15),
-                  label: const Text('Passer en Premium — Google Play'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFFF59E0B),
-                    side: const BorderSide(color: Color(0xFFF59E0B), width: 1.5),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    textStyle: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13.5,
-                    ),
-                  ),
-                ),
-              ),
-            ),
           Row(
             children: [
               Expanded(
