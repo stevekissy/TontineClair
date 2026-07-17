@@ -1,6 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 import '../utils/app_colors.dart';
 import '../services/platform_service.dart';
 import '../services/feature_gate_service.dart';
@@ -1409,11 +1411,17 @@ class ModaleKyc extends StatefulWidget {
 }
 
 class _ModaleKycState extends State<ModaleKyc> {
-  final _nomCtrl = TextEditingController();
-  final _numCtrl = TextEditingController();
-  String  _pieceType = 'cni';
-  bool    _loading   = false;
+  final _nomCtrl  = TextEditingController();
+  final _numCtrl  = TextEditingController();
+  final _picker   = ImagePicker();
+
+  String  _pieceType  = 'cni';
+  bool    _loading    = false;
   String? _erreur;
+
+  // Photos capturées via la caméra
+  File? _photoRecto;
+  File? _photoVerso;
 
   static const _pieceTypes = [
     ('cni',       "Carte Nationale d'Identité"),
@@ -1434,6 +1442,32 @@ class _ModaleKycState extends State<ModaleKyc> {
     super.dispose();
   }
 
+  // ── Prise de photo (caméra uniquement) ────────────────────────────────────
+  Future<void> _prendrePhoto({required bool estRecto}) async {
+    try {
+      final xfile = await _picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+        maxWidth: 1920,
+        maxHeight: 1080,
+        preferredCameraDevice: CameraDevice.rear,
+      );
+      if (xfile == null) return;
+      setState(() {
+        if (estRecto) {
+          _photoRecto = File(xfile.path);
+        } else {
+          _photoVerso = File(xfile.path);
+        }
+        _erreur = null;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _erreur = 'Impossible d\'accéder à la caméra. Vérifiez les permissions.');
+      }
+    }
+  }
+
   Future<void> _soumettre() async {
     final nom    = _nomCtrl.text.trim();
     final numero = _numCtrl.text.trim();
@@ -1445,6 +1479,15 @@ class _ModaleKycState extends State<ModaleKyc> {
       setState(() => _erreur = 'Veuillez saisir le numéro de la pièce.');
       return;
     }
+    if (_photoRecto == null) {
+      setState(() => _erreur = 'Photo recto obligatoire — prenez une photo de votre pièce.');
+      return;
+    }
+    if (_photoVerso == null) {
+      setState(() => _erreur = 'Photo verso obligatoire — prenez une photo du verso de votre pièce.');
+      return;
+    }
+
     setState(() { _loading = true; _erreur = null; });
     final ok = await SupabaseService.soumettreKyc(
       code:         widget.code,
@@ -1462,6 +1505,97 @@ class _ModaleKycState extends State<ModaleKyc> {
     }
   }
 
+  // ── Widget photo recto ou verso ───────────────────────────────────────────
+  Widget _cartePhoto({
+    required bool estRecto,
+    required File? photo,
+  }) {
+    final label  = estRecto ? 'Recto' : 'Verso';
+    final icone  = estRecto ? Icons.credit_card_rounded : Icons.flip_rounded;
+    final couleur = photo != null ? AppColors.succes : AppColors.encre;
+
+    return GestureDetector(
+      onTap: () => _prendrePhoto(estRecto: estRecto),
+      child: Container(
+        height: 110,
+        decoration: BoxDecoration(
+          color: photo != null
+              ? AppColors.succes.withValues(alpha: .06)
+              : AppColors.fondCode,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: photo != null
+                ? AppColors.succes.withValues(alpha: .4)
+                : AppColors.lignes,
+            width: 1.5,
+          ),
+        ),
+        child: photo != null
+            ? Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(11),
+                    child: Image.file(photo, fit: BoxFit.cover),
+                  ),
+                  // Badge ✓
+                  Positioned(
+                    top: 6, right: 6,
+                    child: Container(
+                      width: 26, height: 26,
+                      decoration: BoxDecoration(
+                        color: AppColors.succes,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.check_rounded, color: Colors.white, size: 15),
+                    ),
+                  ),
+                  // Tap pour refaire
+                  Positioned(
+                    bottom: 0, left: 0, right: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: .45),
+                        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(11)),
+                      ),
+                      child: const Text(
+                        'Appuyer pour reprendre',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 38, height: 38,
+                    decoration: BoxDecoration(
+                      color: couleur.withValues(alpha: .10),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icone, size: 20, color: couleur),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Photo $label',
+                    style: TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w700, color: couleur),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'Caméra uniquement',
+                    style: TextStyle(fontSize: 10.5, color: AppColors.texteDoux),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.of(context).viewInsets.bottom;
@@ -1476,6 +1610,7 @@ class _ModaleKycState extends State<ModaleKyc> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── En-tête ─────────────────────────────────────────────────────
             Row(
               children: [
                 Container(
@@ -1493,11 +1628,8 @@ class _ModaleKycState extends State<ModaleKyc> {
                     children: [
                       Text('Vérification d\'identité (KYC)',
                           style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 15,
-                            color: AppColors.encre,
-                          )),
-                      Text('Tontines Premium · cagnotte ≥ 200 000 XOF',
+                            fontWeight: FontWeight.w800, fontSize: 15, color: AppColors.encre)),
+                      Text('Cagnotte ≥ 200 000 XOF · Photos obligatoires',
                           style: TextStyle(fontSize: 11.5, color: AppColors.texteDoux)),
                     ],
                   ),
@@ -1513,6 +1645,7 @@ class _ModaleKycState extends State<ModaleKyc> {
             const Divider(height: 1, color: AppColors.lignes),
             const SizedBox(height: 14),
 
+            // ── Bandeau info ─────────────────────────────────────────────────
             Container(
               padding: const EdgeInsets.all(11),
               decoration: BoxDecoration(
@@ -1521,13 +1654,15 @@ class _ModaleKycState extends State<ModaleKyc> {
                 border: Border.all(color: const Color(0xFF93C5FD)),
               ),
               child: const Text(
-                'ℹ️  Ces informations sont transmises à TontineClair '
-                'pour vérification. Aucun document physique n\'est requis.',
+                '📷  Prenez une photo de votre pièce d\'identité '
+                'avec l\'appareil photo de votre téléphone. '
+                'Les photos sont transmises à TontineClair pour vérification.',
                 style: TextStyle(fontSize: 12, color: Color(0xFF1E40AF), height: 1.4),
               ),
             ),
             const SizedBox(height: 14),
 
+            // ── Nom gestionnaire ─────────────────────────────────────────────
             const Text('Nom complet du gestionnaire *',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.encre)),
             const SizedBox(height: 6),
@@ -1548,6 +1683,7 @@ class _ModaleKycState extends State<ModaleKyc> {
             ),
             const SizedBox(height: 12),
 
+            // ── Type pièce ───────────────────────────────────────────────────
             const Text('Type de pièce d\'identité *',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.encre)),
             const SizedBox(height: 8),
@@ -1573,6 +1709,7 @@ class _ModaleKycState extends State<ModaleKyc> {
             ),
             const SizedBox(height: 12),
 
+            // ── Numéro pièce ─────────────────────────────────────────────────
             const Text('Numéro de la pièce *',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.encre)),
             const SizedBox(height: 6),
@@ -1592,14 +1729,50 @@ class _ModaleKycState extends State<ModaleKyc> {
                 prefixIcon: const Icon(Icons.badge_outlined, size: 18),
               ),
             ),
+            const SizedBox(height: 16),
 
+            // ── Photos recto / verso ─────────────────────────────────────────
+            const Text('Photos de la pièce *',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.encre)),
+            const SizedBox(height: 4),
+            const Text(
+              'Prenez chaque côté avec la caméra de votre téléphone.',
+              style: TextStyle(fontSize: 11.5, color: AppColors.texteDoux),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(child: _cartePhoto(estRecto: true,  photo: _photoRecto)),
+                const SizedBox(width: 10),
+                Expanded(child: _cartePhoto(estRecto: false, photo: _photoVerso)),
+              ],
+            ),
+
+            // ── Erreur ───────────────────────────────────────────────────────
             if (_erreur != null) ...[
-              const SizedBox(height: 8),
-              Text(_erreur!,
-                  style: const TextStyle(fontSize: 12.5, color: AppColors.alerte)),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.alerte.withValues(alpha: .08),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.alerte.withValues(alpha: .3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, size: 16, color: AppColors.alerte),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(_erreur!,
+                          style: const TextStyle(fontSize: 12.5, color: AppColors.alerte)),
+                    ),
+                  ],
+                ),
+              ),
             ],
             const SizedBox(height: 16),
 
+            // ── Bouton soumettre ─────────────────────────────────────────────
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(

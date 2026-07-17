@@ -37,6 +37,19 @@ class _CreationScreenState extends State<CreationScreen> {
   String? _erreur;
   String _typeTontine = 'gratuite'; // 'gratuite' | 'premium'
 
+  // ── KYC automatique ──────────────────────────────────────────
+  bool _kycSoumis = false;
+
+  /// Cagnotte totale = montant × nombre de membres remplis
+  int get _cagnotteTotale {
+    final montant = int.tryParse(_montantCtrl.text.trim()) ?? 0;
+    final nbMembres = _membresCtrl.where((c) => c.text.trim().isNotEmpty).length;
+    return montant * nbMembres;
+  }
+
+  /// KYC obligatoire si cagnotte ≥ 200 000 XOF
+  bool get _kycRequis => _cagnotteTotale >= TontineData.kSeuilKyc && _devise == 'XOF';
+
   @override
   void dispose() {
     _nomCtrl.dispose();
@@ -69,6 +82,27 @@ class _CreationScreenState extends State<CreationScreen> {
     if (nom.isEmpty) {
       setState(() => _erreur = 'Donnez un nom à la tontine.');
       return;
+    }
+
+    // ── Gate KYC : cagnotte ≥ 200 000 XOF ───────────────────────
+    if (_kycRequis && !_kycSoumis) {
+      // gestNom = premier gestionnaire saisi (ou vide), code = nom tontine
+      final gestNomKyc = _gestNomCtrl.isNotEmpty
+          ? _gestNomCtrl.first.text.trim()
+          : '';
+      final nomTontineKyc = _nomCtrl.text.trim();
+      final ok = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => ModaleKyc(
+          code:    nomTontineKyc.isNotEmpty ? nomTontineKyc : 'KYC',
+          gestNom: gestNomKyc,
+        ),
+      );
+      if (!mounted) return;
+      if (ok != true) return; // annulé ou fermé
+      setState(() => _kycSoumis = true);
     }
     if (montantStr.isEmpty || int.tryParse(montantStr) == null) {
       setState(() => _erreur = 'Montant invalide.');
@@ -218,6 +252,81 @@ class _CreationScreenState extends State<CreationScreen> {
     }
   }
 
+  /// Bannière orange KYC — recalculée à chaque rebuild
+  Widget _banniereKyc() {
+    if (!_kycRequis) return const SizedBox.shrink();
+    final cagnotteStr = _cagnotteTotale
+        .toString()
+        .replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+$)'), (m) => '${m[1]} ');
+    final badge = _kycSoumis
+        ? Row(children: [
+            const Icon(Icons.verified_rounded, size: 14, color: Color(0xFF2E7D5B)),
+            const SizedBox(width: 5),
+            const Text('KYC validé ✓',
+                style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF2E7D5B))),
+          ])
+        : const Text(
+            'Vérification KYC obligatoire avant la création',
+            style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF92400E)),
+          );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        decoration: BoxDecoration(
+          color: _kycSoumis
+              ? const Color(0xFFE3F1EA)
+              : const Color(0xFFFFF3CD),
+          border: Border.all(
+            color: _kycSoumis
+                ? const Color(0xFF2E7D5B).withValues(alpha: 0.4)
+                : const Color(0xFFF59E0B).withValues(alpha: 0.6),
+            width: 1.5,
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              _kycSoumis
+                  ? Icons.shield_rounded
+                  : Icons.warning_amber_rounded,
+              size: 20,
+              color: _kycSoumis
+                  ? const Color(0xFF2E7D5B)
+                  : const Color(0xFFF59E0B),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Cagnotte totale : $cagnotteStr XOF',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: _kycSoumis
+                            ? const Color(0xFF1B5E3B)
+                            : const Color(0xFF78350F)),
+                  ),
+                  const SizedBox(height: 3),
+                  badge,
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -266,6 +375,11 @@ class _CreationScreenState extends State<CreationScreen> {
                     style: TextStyle(fontSize: 15, color: AppColors.texteDoux),
                   ),
                   SizedBox(height: 16),
+                  // ── Bannière KYC live ──────────────────────────────
+                  ValueListenableBuilder(
+                    valueListenable: _montantCtrl,
+                    builder: (_, __, ___) => _banniereKyc(),
+                  ),
                   _SelecteurTypeTontine(
                     valeur: _typeTontine,
                     onChanged: (v) => setState(() {

@@ -11,7 +11,7 @@ import 'services/locale_service.dart';
 import 'utils/app_theme.dart';
 import 'utils/app_colors.dart';
 import 'utils/app_localizations.dart';
-import 'screens/accueil_screen.dart';
+import 'screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -93,6 +93,6 @@ class AppShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const AccueilScreen();
+    return const SplashScreen();
   }
 }
