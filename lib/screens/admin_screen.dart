@@ -40,6 +40,7 @@ class _AdminScreenState extends State<AdminScreen> {
   String _filtreDecaissement = 'pending';
   // Filtre KYC : 'pending' | 'valide' | 'rejete' | 'tous'
   String _filtreKyc          = 'pending';
+  /// Clé saisie dans le champ master (super admin).
   String get _cle => _cleCtrl.text.trim();
 
   // ── Auth membre (role-based login) ───────────────────────────────────────────
@@ -49,6 +50,14 @@ class _AdminScreenState extends State<AdminScreen> {
   String? _roleMembre;  // 'super_admin' | 'comptable' | 'conformite'
   String? _nomMembre;
   bool get _estMembreRole => _roleMembre != null;
+
+  /// Clé effective à utiliser pour TOUTES les RPCs admin.
+  /// — Mode super admin (clé master) : retourne _cle (champ texte).
+  /// — Mode membre (comptable/conformité) : retourne _clePersoMembre.
+  /// Les RPCs admin côté Supabase acceptent soit la clé master soit la clePerso
+  /// selon le paramètre p_cle. Pour les membres, on passe leur clePerso et le
+  /// RPC vérifie le rôle via la table equipe_admin.
+  String get _cleEffective => _estMembreRole ? (_clePersoMembre ?? '') : _cle;
   // Clés des champs pseudo/clePerso pour la connexion membre
   final _pseudoCtrl   = TextEditingController();
   final _clePersoCtrl = TextEditingController();
@@ -229,10 +238,10 @@ class _AdminScreenState extends State<AdminScreen> {
       List<Map<String, dynamic>> decaissements = [];
       List<Map<String, dynamic>> kycs          = [];
       if (role == 'comptable' || role == 'super_admin') {
-        decaissements = await SupabaseService.adminListerDecaissements(_cle, statut: 'tous');
+        decaissements = await SupabaseService.adminListerDecaissements(_cleEffective, statut: 'tous');
       }
       if (role == 'conformite' || role == 'super_admin') {
-        kycs = await SupabaseService.adminListerKyc(_cle, statut: 'tous');
+        kycs = await SupabaseService.adminListerKyc(_cleEffective, statut: 'tous');
       }
       setState(() {
         _pseudoMembre   = pseudo;
@@ -444,7 +453,7 @@ class _AdminScreenState extends State<AdminScreen> {
     );
     if (confirmer != true || !mounted) return;
 
-    final result = await SupabaseService.adminValiderPret(cle: _cle, id: id);
+    final result = await SupabaseService.adminValiderPret(cle: _cleEffective, id: id);
     if (!mounted) return;
     if (result['ok'] == true) {
       afficherToast(context, '✅ Prêt validé — caisse débitée !');
@@ -519,7 +528,7 @@ class _AdminScreenState extends State<AdminScreen> {
 
     if (motif == null || !mounted) return;
 
-    final result = await SupabaseService.adminRejeterPret(cle: _cle, id: id, motif: motif);
+    final result = await SupabaseService.adminRejeterPret(cle: _cleEffective, id: id, motif: motif);
     if (!mounted) return;
     if (result['ok'] == true) {
       afficherToast(context, 'Prêt rejeté.');
@@ -554,7 +563,7 @@ class _AdminScreenState extends State<AdminScreen> {
     );
     if (confirmer != true || !mounted) return;
 
-    final result = await SupabaseService.adminValiderDepense(cle: _cle, id: id);
+    final result = await SupabaseService.adminValiderDepense(cle: _cleEffective, id: id);
     if (!mounted) return;
     if (result['ok'] == true) {
       afficherToast(context, '✅ ${result['message'] ?? 'Dépense validée !'}');
@@ -630,7 +639,7 @@ class _AdminScreenState extends State<AdminScreen> {
 
     if (motif == null || !mounted) return;
 
-    final result = await SupabaseService.adminRejeterDepense(cle: _cle, id: id, motif: motif);
+    final result = await SupabaseService.adminRejeterDepense(cle: _cleEffective, id: id, motif: motif);
     if (!mounted) return;
     if (result['ok'] == true) {
       afficherToast(context, 'Dépense rejetée.');
@@ -988,21 +997,21 @@ class _AdminScreenState extends State<AdminScreen> {
             )
             : _onglet == 1 ? _ListeDemandes()
             : _onglet == 2 ? _ListeTontines()
-            : _onglet == 3 ? AdminDashboardScreen(cle: _cle)
+            : _onglet == 3 ? AdminDashboardScreen(cle: _cleEffective)
             : _onglet == 4 ? _ListeDepenses()
             : _onglet == 5 ? _ListePrets()
             : _onglet == 6 ? _ListeDecaissements()
             : _onglet == 7 ? _ListeKyc()
             : _onglet == 8 ? EquipeScreen(
-                cle:        _cle,
+                cle:        _cleEffective,
                 roleActuel: _roleMembre ?? 'super_admin',
               )
             : _onglet == 9 ? AdminMessagerieScreen(
                 pseudo:   _pseudoMembre   ?? '',
-                clePerso: _clePersoMembre ?? '',
+                clePerso: _clePersoMembre ?? _cleEffective,
                 nom:      _nomMembre      ?? (_pseudoMembre ?? 'Admin'),
               )
-            : SupportAdminScreen(cle: _cle),
+            : SupportAdminScreen(cle: _cleEffective),
         ),
       ],
     );
@@ -1275,7 +1284,7 @@ class _AdminScreenState extends State<AdminScreen> {
     );
     if (confirmer != true || !mounted) return;
 
-    final result = await SupabaseService.adminValiderDecaissement(cle: _cle, id: id);
+    final result = await SupabaseService.adminValiderDecaissement(cle: _cleEffective, id: id);
     if (!mounted) return;
     if (result['ok'] == true) {
       afficherToast(context, '✅ Décaissement validé — caisse débitée !');
@@ -1346,7 +1355,7 @@ class _AdminScreenState extends State<AdminScreen> {
     );
     if (motif == null || !mounted) return;
 
-    final result = await SupabaseService.adminRejeterDecaissement(cle: _cle, id: id, motif: motif);
+    final result = await SupabaseService.adminRejeterDecaissement(cle: _cleEffective, id: id, motif: motif);
     if (!mounted) return;
     if (result['ok'] == true) {
       afficherToast(context, 'Décaissement rejeté.');
@@ -1476,7 +1485,7 @@ class _AdminScreenState extends State<AdminScreen> {
     );
     if (confirmer != true || !mounted) return;
 
-    final result = await SupabaseService.adminValiderKyc(cle: _cle, id: id);
+    final result = await SupabaseService.adminValiderKyc(cle: _cleEffective, id: id);
     if (!mounted) return;
     if (result['ok'] == true) {
       afficherToast(context, '✅ KYC validé pour $gestNom !');
@@ -1549,7 +1558,7 @@ class _AdminScreenState extends State<AdminScreen> {
     );
     if (motif == null || !mounted) return;
 
-    final result = await SupabaseService.adminRejeterKyc(cle: _cle, id: id, motif: motif);
+    final result = await SupabaseService.adminRejeterKyc(cle: _cleEffective, id: id, motif: motif);
     if (!mounted) return;
     if (result['ok'] == true) {
       afficherToast(context, 'Dossier KYC rejeté.');
@@ -3011,7 +3020,7 @@ class _AdminScreenState extends State<AdminScreen> {
     setState(() => _loading = true);
     try {
       final result = await SupabaseService.restaurerTontine(
-        cle:   _cle,
+        cle:   _cleEffective,
         code:  code,
         motif: motifCtrl.text.trim(),
       );
@@ -3024,7 +3033,7 @@ class _AdminScreenState extends State<AdminScreen> {
           ),
         );
         // Recharger la liste
-        final tontines = await SupabaseService.adminListerTontines(_cle);
+        final tontines = await SupabaseService.adminListerTontines(_cleEffective);
         if (mounted) setState(() { _tontines = tontines; _loading = false; });
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
