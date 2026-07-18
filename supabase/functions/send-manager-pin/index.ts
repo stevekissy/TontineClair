@@ -356,11 +356,32 @@ serve(async (req: Request) => {
       status: 200, headers: { ...CORS, "Content-Type": "application/json" },
     });
   } else {
-    // Détail technique dans les logs Supabase (console.error ci-dessus)
-    // Message générique côté client
+    // Retourner l'erreur SMTP précise pour permettre le diagnostic.
+    // En production, on peut re-masquer ce champ si nécessaire.
+    const erreurDetail = result.erreur ?? "Erreur SMTP inconnue";
+    console.error(`[send-manager-pin] Échec envoi → ${email} : ${erreurDetail}`);
+
+    // Catégoriser l'erreur pour le client Flutter
+    let messageClient = "Impossible d'envoyer le code. Réessayez.";
+    if (!SMTP_PASSWORD) {
+      messageClient = "Configuration email manquante (SMTP_PASSWORD). Contacter l'administrateur.";
+    } else if (erreurDetail.toLowerCase().includes("authentication") ||
+               erreurDetail.toLowerCase().includes("credentials") ||
+               erreurDetail.toLowerCase().includes("535") ||
+               erreurDetail.toLowerCase().includes("password")) {
+      messageClient = "Erreur d'authentification SMTP. Vérifier SMTP_PASSWORD dans les secrets.";
+    } else if (erreurDetail.toLowerCase().includes("timeout") ||
+               erreurDetail.toLowerCase().includes("connect")) {
+      messageClient = "Serveur email inaccessible. Réessayez dans quelques instants.";
+    } else if (erreurDetail.toLowerCase().includes("invalid") ||
+               erreurDetail.toLowerCase().includes("550")) {
+      messageClient = "Adresse email destinataire invalide.";
+    }
+
     return new Response(JSON.stringify({
-      success: false,
-      error:   "Impossible d'envoyer le code. Réessayez.",
+      success:       false,
+      error:         messageClient,
+      error_detail:  erreurDetail, // Détail technique pour diagnostic
     }), {
       status: 500, headers: { ...CORS, "Content-Type": "application/json" },
     });

@@ -2664,9 +2664,13 @@ class SupabaseService {
         return {'success': true};
       }
 
-      // Récupérer le message d'erreur renvoyé par l'Edge Function (générique)
-      final errMsg = body['error'] as String?
-          ?? "Impossible d'envoyer le code. Réessayez.";
+      // Récupérer le message d'erreur renvoyé par l'Edge Function
+      final errMsg    = body['error']        as String? ?? "Impossible d'envoyer le code. Réessayez.";
+      final errDetail = body['error_detail'] as String? ?? '';
+      // ⑧ Log du détail technique pour diagnostic SMTP
+      if (errDetail.isNotEmpty) {
+        debugPrint('[AdminPIN] Erreur SMTP detail: $errDetail');
+      }
       return {'success': false, 'error': errMsg};
     } on TimeoutException {
       debugPrint('[AdminPIN] Timeout après 25s — URL: $url');
