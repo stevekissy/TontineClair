@@ -267,7 +267,7 @@ class _CarteComparatif extends StatelessWidget {
   static const _lignes = [
     ['Suivi cotisations',   '✅ Déclaratif',   '✅ Réel (SycaPay)'],
     ['Décaissement',        '✅ Déclaratif',   '✅ Demande validée'],
-    ['Commission',          '❌ Aucune',        '✅ 1% (caisse)'],
+    ['Commission',          '❌ Aucune',        '✅ 2% (caisse)'],
     ['Paiement Mobile Money','❌',             '✅ Orange, Moov, MTN, Wave'],
     ['Historique conservé', '—',              '✅ Intégralement'],
     ['Retour en Lite',      '—',              '❌ Impossible'],
@@ -374,7 +374,7 @@ class _CarteChangements extends StatelessWidget {
           const SizedBox(height: 12),
           ...[
             'Les membres paient leurs cotisations via Mobile Money directement dans l\'app.',
-            'Le bénéficiaire de chaque tour reçoit 100% du pool — la commission de 1% est débitée séparément de la caisse.',
+            'Le bénéficiaire de chaque tour reçoit 100% du pool — la commission de 2% est débitée séparément de la caisse.',
             'Le gestionnaire soumet une demande de décaissement. TontineClair valide et exécute le paiement.',
             'L\'historique existant (membres, tours, votes) est intégralement conservé.',
           ].map((t) => Padding(

@@ -182,7 +182,7 @@ class _UpgradePremiumScreenState extends State<UpgradePremiumScreen> {
                         _LigneComparaison(
                           fonctionnalite: 'Commission décaissement',
                           gratuite: 'Aucune',
-                          premium: '1 % sur versement',
+                          premium: '2 % sur versement',
                         ),
                       ],
                     ),

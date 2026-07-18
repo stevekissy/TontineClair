@@ -1042,7 +1042,7 @@ class _SelecteurTypeTontine extends StatelessWidget {
                 SizedBox(width: 7),
                 Expanded(
                   child: Text(
-                    'Commission 1 % sur les décaissements. Paiement via Google Play lors de la création.',
+                    'Commission 2 % sur les décaissements. Paiement via Google Play lors de la création.',
                     style: TextStyle(
                       fontSize: 12,
                       color: Color(0xFF92400E),

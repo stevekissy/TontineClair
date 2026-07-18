@@ -6,6 +6,7 @@ import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
 import '../services/echeance_service.dart';
 import '../services/supabase_service.dart';
+import '../services/kyc_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
@@ -24,6 +25,7 @@ import 'nouveau_cycle_screen.dart';
 import 'supprimer_tontine_screen.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
+import 'kyc_screen.dart';
 
 class DetailScreen extends StatefulWidget {
   final String code;
@@ -1705,8 +1707,61 @@ class _BarreDetail extends StatelessWidget {
         : data.paiements.keys.toList();
     final nbPayesClot = payesIds.isNotEmpty ? payesIds.length : data.membres.length;
     final montantVerse = data.montant * data.membres.length;
-    final commission   = isPremium ? (montantVerse * 0.01).round() : 0;
+    final commission   = isPremium ? (montantVerse * 0.02).round() : 0;
     final montantNet   = montantVerse - commission;
+
+    // ── Garde KYC — obligatoire pour les décaissements Premium ────────────
+    if (isPremium && context.mounted) {
+      final kycResult = await KycService.canPerformFinancialAction(
+        userId:     gestNom,
+        actionType: 'disbursement',
+        amount:     montantNet.toDouble(),
+      );
+      if (!kycResult.allowed) {
+        if (!context.mounted) return;
+        final allerKyc = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: AppColors.fondPapier,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            title: Row(children: [
+              const Icon(Icons.verified_user_outlined, color: AppColors.or, size: 22),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text('Vérification d\'identité requise',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.encre)),
+              ),
+            ]),
+            content: Text(
+              kycResult.reason ??
+              'Le décaissement requiert une vérification d\'identité (KYC) préalable.\n\n'
+              'Complétez votre vérification d\'identité pour accéder à cette fonctionnalité.',
+              style: const TextStyle(color: AppColors.texte, height: 1.5),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Plus tard', style: TextStyle(color: AppColors.texteDoux)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.encre,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Vérifier mon identité', style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        );
+        if (!context.mounted) return;
+        if (allerKyc == true) {
+          Navigator.push(context, MaterialPageRoute(builder: (_) => KycScreen(userId: gestNom)));
+        }
+        return;
+      }
+    }
 
     // ── Branchement Premium / Lite ─────────────────────────────────────────
     if (isPremium) {
@@ -1875,7 +1930,7 @@ class _BarreDetail extends StatelessWidget {
                 child: Column(
                   children: [
                     _LigneRecapCloture('Montant versé',      Formatters.montant(montantVerse, devise: data.devise)),
-                    _LigneRecapCloture('Commission (1%)',     '− ${Formatters.montant(commission, devise: data.devise)}', rouge: true),
+                    _LigneRecapCloture('Commission (2%)',     '− ${Formatters.montant(commission, devise: data.devise)}', rouge: true),
                     const Divider(height: 12, color: AppColors.lignes),
                     _LigneRecapCloture('Montant net à décaisser', Formatters.montant(montantNet, devise: data.devise), gras: true),
                   ],
@@ -1983,7 +2038,7 @@ class _BarreDetail extends StatelessWidget {
         (label: 'Opérateur',             valeur: operateurLabel),
         (label: 'Numéro',                valeur: numeroBenef),
         (label: 'Montant brut',          valeur: Formatters.montant(montantVerse, devise: data.devise)),
-        (label: 'Commission TontineClair (1%)', valeur: '− ${Formatters.montant(commission, devise: data.devise)}'),
+        (label: 'Commission TontineClair (2%)', valeur: '− ${Formatters.montant(commission, devise: data.devise)}'),
         (label: 'Montant net',           valeur: Formatters.montant(montantNet, devise: data.devise)),
         (label: 'Tour',                  valeur: 'N° $numerTourAffiche → N° ${numerTourAffiche + 1}'),
         (label: '📤 Mode',               valeur: 'Demande Admin — caisse non débitée'),

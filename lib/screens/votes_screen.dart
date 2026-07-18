@@ -155,7 +155,7 @@ class _VotesScreenState extends State<VotesScreen> {
                         SizedBox(height: 16),
                         if (estGest)
                           BtnKola(
-                            label: '+ Créer un vote',
+                            label: 'Créer un vote',
                             icon: Icons.add,
                             onTap: () => _creerVote(context, provider, data),
                           ),

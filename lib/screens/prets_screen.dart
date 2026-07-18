@@ -28,10 +28,12 @@ class PretsScreen extends StatefulWidget {
 class _PretsScreenState extends State<PretsScreen> {
   bool _chargement = false;
 
+  /// Prêts soumis en attente de validation admin (table prets_pending)
+  List<Map<String, dynamic>> _pretsPending = [];
+
   @override
   void initState() {
     super.initState();
-    // Recharger depuis Supabase à l'ouverture pour avoir les membres à jour
     WidgetsBinding.instance.addPostFrameCallback((_) => _recharger());
   }
 
@@ -39,9 +41,22 @@ class _PretsScreenState extends State<PretsScreen> {
     if (!mounted) return;
     setState(() => _chargement = true);
     try {
-      await context.read<TontineProvider>().chargerTontine(widget.code);
+      await Future.wait([
+        context.read<TontineProvider>().chargerTontine(widget.code),
+        _chargerPending(),
+      ]);
     } finally {
       if (mounted) setState(() => _chargement = false);
+    }
+  }
+
+  /// Charge les demandes pending depuis prets_pending (toutes statuts pour affichage complet)
+  Future<void> _chargerPending() async {
+    try {
+      final liste = await SupabaseService.listerPretsPendingPourCode(widget.code);
+      if (mounted) setState(() => _pretsPending = liste);
+    } catch (_) {
+      // Non-bloquant : on affiche juste sans les pending si erreur
     }
   }
 
@@ -99,22 +114,46 @@ class _PretsScreenState extends State<PretsScreen> {
                   SizedBox(height: 16),
                   if (estGest)
                     BtnKola(
-                      label: '+ Nouveau prêt',
+                      label: 'Nouveau prêt',
                       icon: Icons.add,
                       onTap: () => _nouveauPret(context, provider, tontine, data),
                     ),
                   SizedBox(height: 16),
-                  if (data.prets.isEmpty)
+
+                  // ── Section prêts en attente de validation (prets_pending) ──
+                  if (_pretsPending.isNotEmpty) ...[
+                    _SectionPending(pretsPending: _pretsPending),
+                    const SizedBox(height: 20),
+                    const Divider(),
+                    const SizedBox(height: 8),
+                  ],
+
+                  // ── Section prêts validés / historique ──────────────────────
+                  if (data.prets.isEmpty && _pretsPending.isEmpty)
                     Center(
                       child: Padding(
                         padding: EdgeInsets.all(24),
-                        child: Text(
-                          context.tr('aucun_pret'),
-                          style: TextStyle(color: AppColors.texteDoux),
+                        child: Column(
+                          children: [
+                            Icon(Icons.account_balance_outlined, size: 48, color: AppColors.texteDoux.withValues(alpha: 0.4)),
+                            const SizedBox(height: 12),
+                            Text(
+                              context.tr('aucun_pret'),
+                              style: TextStyle(color: AppColors.texteDoux),
+                            ),
+                          ],
                         ),
                       ),
                     )
-                  else
+                  else if (data.prets.isNotEmpty) ...[
+                    if (_pretsPending.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Text(
+                          'Prêts accordés',
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.encre),
+                        ),
+                      ),
                     ...data.prets.map(
                       (p) => _CartePret(
                         pret: p,
@@ -125,6 +164,7 @@ class _PretsScreenState extends State<PretsScreen> {
                         tontineCode: tontine.code,
                       ),
                     ),
+                  ],
                 ],
               ),
             ),
@@ -1301,6 +1341,178 @@ class _RecapLigne extends StatelessWidget {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Section des prêts en attente de validation (côté utilisateur) ────────────
+class _SectionPending extends StatelessWidget {
+  final List<Map<String, dynamic>> pretsPending;
+
+  const _SectionPending({required this.pretsPending});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.orFonce.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.hourglass_top_rounded, size: 14, color: AppColors.orFonce),
+                  const SizedBox(width: 6),
+                  Text(
+                    'En attente de validation (${pretsPending.length})',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.orFonce,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        ...pretsPending.map((p) => _CartePretPending(p)),
+      ],
+    );
+  }
+}
+
+class _CartePretPending extends StatelessWidget {
+  final Map<String, dynamic> p;
+  const _CartePretPending(this.p);
+
+  @override
+  Widget build(BuildContext context) {
+    final emprunteur = p['emprunteur_nom'] as String? ?? '—';
+    final montant    = (p['montant'] as num?)?.toInt() ?? 0;
+    final taux       = p['taux'];
+    final durees     = (p['durees_mois'] as num?)?.toInt() ?? 0;
+    final ref        = p['reference'] as String? ?? '—';
+    final statut     = p['statut'] as String? ?? 'pending';
+    final devise     = p['devise'] as String? ?? 'XOF';
+    final createdAt  = DateTime.tryParse(p['created_at'] as String? ?? '');
+
+    final Color couleurStatut;
+    final String labelStatut;
+    final IconData iconeStatut;
+    switch (statut) {
+      case 'validee':
+        couleurStatut = AppColors.succes;
+        labelStatut   = 'Validé ✓';
+        iconeStatut   = Icons.check_circle_outline;
+        break;
+      case 'rejetee':
+        couleurStatut = AppColors.alerte;
+        labelStatut   = 'Rejeté ✗';
+        iconeStatut   = Icons.cancel_outlined;
+        break;
+      default:
+        couleurStatut = AppColors.orFonce;
+        labelStatut   = '⏳ En attente';
+        iconeStatut   = Icons.hourglass_top_rounded;
+    }
+
+    return CarteTC(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  emprunteur.toUpperCase(),
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: AppColors.encre),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: couleurStatut.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(iconeStatut, size: 13, color: couleurStatut),
+                    const SizedBox(width: 4),
+                    Text(labelStatut, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: couleurStatut)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Taux ${taux ?? 0}% · $durees mois · Réf. $ref',
+            style: const TextStyle(fontSize: 12, color: AppColors.texteDoux),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Montant demandé', style: TextStyle(fontSize: 11, color: AppColors.texteDoux)),
+                    Text(
+                      Formatters.montant(montant, devise: devise),
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: AppColors.encre),
+                    ),
+                  ],
+                ),
+              ),
+              if (createdAt != null)
+                Text(
+                  'Soumis le ${createdAt.day.toString().padLeft(2, '0')}/${createdAt.month.toString().padLeft(2, '0')}/${createdAt.year}',
+                  style: const TextStyle(fontSize: 11, color: AppColors.texteDoux),
+                ),
+            ],
+          ),
+          if (statut == 'pending') ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.orFonce.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                '⏳ Demande soumise — en attente de validation par TontineClair.\nNe relancez pas une nouvelle demande.',
+                style: TextStyle(fontSize: 12, color: AppColors.orFonce, height: 1.4),
+              ),
+            ),
+          ],
+          if (statut == 'rejetee') ...[
+            const SizedBox(height: 8),
+            if ((p['motif_rejet'] as String?) != null && (p['motif_rejet'] as String).isNotEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.alerte.withValues(alpha: 0.07),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'Motif : ${p['motif_rejet']}',
+                  style: const TextStyle(fontSize: 12, color: AppColors.alerte, height: 1.4),
+                ),
+              ),
+          ],
         ],
       ),
     );

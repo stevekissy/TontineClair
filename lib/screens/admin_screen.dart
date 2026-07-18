@@ -5,6 +5,7 @@ import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import 'admin_dashboard_screen.dart';
 import '../utils/app_localizations.dart';
+import 'kyc_admin_screen.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -580,7 +581,7 @@ class _AdminScreenState extends State<AdminScreen> {
     final totalAlertes = nbDemandesPending + nbDepensesPending + nbPretsPending +
         nbDecaissementsPending + nbKycPending;
 
-    // index : 0=Accueil 1=Demandes 2=Tontines 3=Stats 4=Dépenses 5=Prêts 6=Décaiss. 7=KYC
+    // index : 0=Accueil 1=Demandes 2=Tontines 3=Stats 4=Dépenses 5=Prêts 6=Décaiss. 7=KYC 8=KYC ID
     final onglets = [
       _OngletDef(icone: Icons.home_rounded,                   label: 'Accueil',   badge: 0),
       _OngletDef(icone: Icons.how_to_reg_rounded,             label: 'Demandes',  badge: nbDemandesPending),
@@ -590,6 +591,7 @@ class _AdminScreenState extends State<AdminScreen> {
       _OngletDef(icone: Icons.account_balance_outlined,       label: 'Prêts',     badge: nbPretsPending),
       _OngletDef(icone: Icons.account_balance_wallet_rounded, label: 'Décaiss.',  badge: nbDecaissementsPending),
       _OngletDef(icone: Icons.badge_outlined,                 label: 'KYC',       badge: nbKycPending),
+      _OngletDef(icone: Icons.verified_user_outlined,         label: 'KYC ID',    badge: 0),
     ];
 
     return Column(
@@ -624,7 +626,8 @@ class _AdminScreenState extends State<AdminScreen> {
             : _onglet == 4 ? _ListeDepenses()
             : _onglet == 5 ? _ListePrets()
             : _onglet == 6 ? _ListeDecaissements()
-            : _ListeKyc(),
+            : _onglet == 7 ? _ListeKyc()
+            : KycAdminScreen(cleAdmin: _cle, modeOnglet: true),
         ),
       ],
     );
@@ -1324,7 +1327,7 @@ class _AdminScreenState extends State<AdminScreen> {
               children: [
                 _InfoLigneAdmin(icone: Icons.monetization_on_outlined, label: 'Montant versé',
                     valeur: Formatters.montant(montant, devise: devise)),
-                _InfoLigneAdmin(icone: Icons.percent_rounded, label: 'Commission (1%)',
+                _InfoLigneAdmin(icone: Icons.percent_rounded, label: 'Commission (2%)',
                     valeur: '− ${Formatters.montant(commission, devise: devise)}'),
                 _InfoLigneAdmin(icone: Icons.account_balance_wallet_rounded, label: 'Net à décaisser',
                     valeur: Formatters.montant(montantNet, devise: devise)),

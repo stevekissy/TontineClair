@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/tontine.dart';
+import '../models/kyc_model.dart' as kyc_model;
 
 class SupabaseService {
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1599,14 +1600,14 @@ class SupabaseService {
     }
   }
 
-  /// Récupère les demandes de prêts pending pour l'admin.
+  /// Récupère les demandes de prêts pour l'admin (tous statuts ou filtré).
   static Future<List<Map<String, dynamic>>> adminListerPretsPending(
     String cle, {
     String statut = 'tous',
   }) async {
     try {
       final params = <String, String>{
-        'order': 'cree_le.desc',
+        'order': 'created_at.desc',   // ← corrigé : created_at (pas cree_le)
         'limit': '200',
       };
       if (statut != 'tous') params['statut'] = 'eq.$statut';
@@ -1619,11 +1620,42 @@ class SupabaseService {
         headers: {
           'Authorization': 'Bearer $_key',
           'apikey':        _key,
+          'Accept':        'application/json',
         },
       );
       if (resp.statusCode != 200) return [];
-      final list = jsonDecode(resp.body) as List<dynamic>;
-      return list.cast<Map<String, dynamic>>();
+      final decoded = jsonDecode(resp.body);
+      if (decoded is! List) return [];
+      return decoded.cast<Map<String, dynamic>>();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Récupère les demandes de prêts pending pour un code tontine (côté utilisateur).
+  static Future<List<Map<String, dynamic>>> listerPretsPendingPourCode(
+    String code,
+  ) async {
+    try {
+      final url = Uri.parse('$_url/rest/v1/prets_pending').replace(
+        queryParameters: {
+          'code':  'eq.${code.toUpperCase()}',
+          'order': 'created_at.desc',
+          'limit': '50',
+        },
+      );
+      final resp = await http.get(
+        url,
+        headers: {
+          'Authorization': 'Bearer $_key',
+          'apikey':        _key,
+          'Accept':        'application/json',
+        },
+      );
+      if (resp.statusCode != 200) return [];
+      final decoded = jsonDecode(resp.body);
+      if (decoded is! List) return [];
+      return decoded.cast<Map<String, dynamic>>();
     } catch (_) {
       return [];
     }
@@ -1887,6 +1919,297 @@ class SupabaseService {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // KYC SMILE ID — table kyc_verifications (nouveau système)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Récupère le statut KYC le plus récent d'un utilisateur.
+  static Future<Map<String, dynamic>?> kycGetStatus(String userId) async {
+    try {
+      final result = await rpc('get_kyc_status', {'p_user_id': userId});
+      if (result is List && result.isNotEmpty) {
+        return Map<String, dynamic>.from(result.first as Map);
+      }
+      if (result is Map && result.isNotEmpty) {
+        return Map<String, dynamic>.from(result as Map);
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[KYC] getStatus error: $e');
+      return null;
+    }
+  }
+
+  /// Insère ou met à jour l'entrée KYC (upsert sur user_id).
+  static Future<void> kycUpsert(
+    kyc_model.KycVerification entry,
+    kyc_model.KycSubmissionData data,
+  ) async {
+    try {
+      final now = DateTime.now().toUtc().toIso8601String();
+      final url = Uri.parse('$_url/rest/v1/kyc_verifications');
+
+      // Vérifier si une entrée existe déjà
+      final existing = await kycGetStatus(entry.userId);
+
+      final body = {
+        'user_id':               entry.userId,
+        'provider':              entry.provider,
+        'status':                entry.status.toDbString(),
+        'document_type':         entry.documentType?.toDbString(),
+        'document_country':      entry.documentCountry,
+        'document_number_masked': data.documentNumberMasked,
+        'full_name':             data.fullName,
+        'date_of_birth':         data.dateOfBirth.toIso8601String().substring(0, 10),
+        'consent_given':         data.consentGiven,
+        'consent_given_at':      data.consentGiven ? now : null,
+        'submitted_at':          now,
+        'updated_at':            now,
+      };
+
+      if (existing != null && existing['id'] != null) {
+        // UPDATE
+        final upUrl = Uri.parse('$_url/rest/v1/kyc_verifications?id=eq.${existing['id']}');
+        await http.patch(
+          upUrl,
+          headers: {
+            'Content-Type':  'application/json',
+            'Authorization': 'Bearer $_key',
+            'apikey':        _key,
+            'Prefer':        'return=minimal',
+          },
+          body: jsonEncode(body),
+        );
+      } else {
+        // INSERT
+        await http.post(
+          url,
+          headers: {
+            'Content-Type':  'application/json',
+            'Authorization': 'Bearer $_key',
+            'apikey':        _key,
+            'Prefer':        'return=minimal',
+          },
+          body: jsonEncode(body),
+        );
+      }
+
+      // Journaliser dans kyc_audit_log
+      await _kycAuditLog(
+        userId:      entry.userId,
+        action:      'submitted',
+        newStatus:   entry.status,
+        performedBy: 'user',
+      );
+    } catch (e) {
+      debugPrint('[KYC] upsert error: $e');
+    }
+  }
+
+  /// Met à jour le statut KYC (appelé par webhook ou mock).
+  static Future<void> kycUpdateStatus({
+    required String userId,
+    required kyc_model.KycStatus status,
+    String? rejectionReason,
+    String? rejectionCode,
+    double? confidenceScore,
+    DateTime? verifiedAt,
+    DateTime? expiresAt,
+    String performedBy = 'system',
+  }) async {
+    try {
+      // Récupérer l'entrée actuelle
+      final existing = await kycGetStatus(userId);
+      if (existing == null) return;
+
+      final oldStatus = kyc_model.KycStatus.fromString(existing['status'] as String?);
+      final id = existing['id'] as String?;
+      if (id == null) return;
+
+      final body = <String, dynamic>{
+        'status':     status.toDbString(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      };
+      if (rejectionReason != null) body['rejection_reason'] = rejectionReason;
+      if (rejectionCode != null)   body['rejection_code']   = rejectionCode;
+      if (confidenceScore != null) body['confidence_score'] = confidenceScore;
+      if (verifiedAt != null)      body['verified_at']      = verifiedAt.toUtc().toIso8601String();
+      if (expiresAt != null)       body['expires_at']       = expiresAt.toUtc().toIso8601String();
+
+      final upUrl = Uri.parse('$_url/rest/v1/kyc_verifications?id=eq.$id');
+      await http.patch(
+        upUrl,
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': 'Bearer $_key',
+          'apikey':        _key,
+          'Prefer':        'return=minimal',
+        },
+        body: jsonEncode(body),
+      );
+
+      // Journal
+      await _kycAuditLog(
+        userId:      userId,
+        kycId:       id,
+        action:      'status_changed',
+        oldStatus:   oldStatus,
+        newStatus:   status,
+        notes:       rejectionReason,
+        performedBy: performedBy,
+      );
+    } catch (e) {
+      debugPrint('[KYC] updateStatus error: $e');
+    }
+  }
+
+  /// Met à jour la référence Smile ID (provider_reference).
+  static Future<void> kycSetProviderReference(
+      String userId, String reference) async {
+    try {
+      final existing = await kycGetStatus(userId);
+      final id = existing?['id'] as String?;
+      if (id == null) return;
+
+      final upUrl = Uri.parse('$_url/rest/v1/kyc_verifications?id=eq.$id');
+      await http.patch(
+        upUrl,
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': 'Bearer $_key',
+          'apikey':        _key,
+          'Prefer':        'return=minimal',
+        },
+        body: jsonEncode({
+          'provider_reference': reference,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        }),
+      );
+    } catch (e) {
+      debugPrint('[KYC] setProviderRef error: $e');
+    }
+  }
+
+  /// Réinitialise le statut KYC (passe à rejected pour permettre ré-soumission).
+  static Future<bool> kycReset(String userId) async {
+    try {
+      final existing = await kycGetStatus(userId);
+      final id = existing?['id'] as String?;
+      if (id == null) return false;
+
+      final upUrl = Uri.parse('$_url/rest/v1/kyc_verifications?id=eq.$id');
+      final resp = await http.patch(
+        upUrl,
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': 'Bearer $_key',
+          'apikey':        _key,
+          'Prefer':        'return=minimal',
+        },
+        body: jsonEncode({
+          'status':     'not_started',
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        }),
+      );
+      return resp.statusCode < 300;
+    } catch (e) {
+      debugPrint('[KYC] reset error: $e');
+      return false;
+    }
+  }
+
+  /// Statistiques KYC pour l'admin.
+  static Future<Map<String, dynamic>?> kycAdminStats(String cle) async {
+    try {
+      final result = await rpc('admin_kyc_stats', {'p_cle': cle});
+      if (result is Map<String, dynamic>) return result;
+      return null;
+    } catch (e) {
+      debugPrint('[KYC] adminStats error: $e');
+      return null;
+    }
+  }
+
+  /// Liste des KYC pour l'admin.
+  static Future<List<Map<String, dynamic>>> kycAdminList(
+    String cle, {
+    String status = 'tous',
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    try {
+      final result = await rpc('admin_kyc_list', {
+        'p_cle':    cle,
+        'p_status': status,
+        'p_limit':  limit,
+        'p_offset': offset,
+      });
+      if (result is List) {
+        return List<Map<String, dynamic>>.from(result.cast<Map<String, dynamic>>());
+      }
+      return [];
+    } catch (e) {
+      debugPrint('[KYC] adminList error: $e');
+      return [];
+    }
+  }
+
+  /// Admin : demander à un utilisateur de recommencer son KYC.
+  static Future<bool> kycAdminRequestReset({
+    required String cleAdmin,
+    required String kycId,
+    required String reason,
+    required String adminNom,
+  }) async {
+    try {
+      final result = await rpc('admin_kyc_request_reset', {
+        'p_cle':       cleAdmin,
+        'p_kyc_id':    kycId,
+        'p_reason':    reason,
+        'p_admin_nom': adminNom,
+      });
+      return result == true || result == 'true';
+    } catch (e) {
+      debugPrint('[KYC] adminRequestReset error: $e');
+      return false;
+    }
+  }
+
+  /// Insérer une entrée dans le journal d'audit KYC.
+  static Future<void> _kycAuditLog({
+    required String userId,
+    String? kycId,
+    required String action,
+    kyc_model.KycStatus? oldStatus,
+    kyc_model.KycStatus? newStatus,
+    String? notes,
+    String performedBy = 'system',
+  }) async {
+    try {
+      final url = Uri.parse('$_url/rest/v1/kyc_audit_log');
+      await http.post(
+        url,
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': 'Bearer $_key',
+          'apikey':        _key,
+          'Prefer':        'return=minimal',
+        },
+        body: jsonEncode({
+          if (kycId != null) 'kyc_id':    kycId,
+          'user_id':      userId,
+          'action':       action,
+          if (oldStatus != null) 'old_status': oldStatus.toDbString(),
+          if (newStatus != null) 'new_status': newStatus.toDbString(),
+          'performed_by': performedBy,
+          if (notes != null) 'notes': notes,
+        }),
+      );
+    } catch (_) {
+      // L'audit ne doit pas faire planter l'app
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // SUPPORT CLIENT — Tickets et messagerie support
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1927,16 +2250,43 @@ class SupabaseService {
     }
   }
 
-  /// Récupérer les messages d'un ticket (client ou admin).
+  /// Récupérer les messages d'un ticket — lecture REST directe (côté client).
+  /// La RPC support_messages_ticket ne retourne pas toujours les messages admin
+  /// (est_admin=true). On lit directement support_messages par ticket_id pour
+  /// avoir TOUS les messages (client + admin) dans l'ordre chronologique.
   static Future<List<Map<String, dynamic>>> supportMessagesTicket({
     required int ticketId,
     bool estAdmin = false,
     required String cleOuGest,
   }) async {
     try {
+      // Lecture REST directe : retourne TOUS les messages du ticket (client + admin)
+      final url = Uri.parse('$_url/rest/v1/support_messages').replace(
+        queryParameters: {
+          'ticket_id': 'eq.$ticketId',
+          'order':     'envoye_le.asc',
+          'select':    'id,ticket_id,auteur,corps,est_admin,envoye_le,lu_client,lu_admin',
+        },
+      );
+      final resp = await http.get(url, headers: {
+        'Authorization': 'Bearer $_key',
+        'apikey':        _key,
+        'Accept':        'application/json',
+      });
+
+      if (resp.statusCode == 200) {
+        final decoded = jsonDecode(resp.body);
+        if (decoded is List && decoded.isNotEmpty) {
+          // Marquer les messages admin comme lus par le client (asynchrone)
+          _marquerLuClient(ticketId);
+          return decoded.cast<Map<String, dynamic>>();
+        }
+      }
+
+      // Fallback : RPC si REST échoue (RLS restrictive)
       final result = await rpc('support_messages_ticket', {
-        'p_ticket_id':  ticketId,
-        'p_est_admin':  estAdmin,
+        'p_ticket_id':   ticketId,
+        'p_est_admin':   estAdmin,
         'p_cle_ou_gest': cleOuGest,
       });
       if (result == null) return [];
@@ -1947,7 +2297,29 @@ class SupabaseService {
     }
   }
 
-  /// Envoyer un message dans un ticket (client ou admin).
+  /// Marque les messages admin d'un ticket comme lus par le client.
+  static Future<void> _marquerLuClient(int ticketId) async {
+    try {
+      final url = Uri.parse('$_url/rest/v1/support_messages').replace(
+        queryParameters: {
+          'ticket_id': 'eq.$ticketId',
+          'est_admin': 'eq.true',
+          'lu_client': 'eq.false',
+        },
+      );
+      await http.patch(url,
+        headers: {
+          'Authorization': 'Bearer $_key',
+          'apikey':        _key,
+          'Content-Type':  'application/json',
+        },
+        body: jsonEncode({'lu_client': true}),
+      );
+    } catch (_) {}
+  }
+
+  /// Envoyer un message dans un ticket — INSERT REST direct pour le client.
+  /// Plus fiable que la RPC qui peut bloquer selon les politiques RLS.
   static Future<Map<String, dynamic>> supportRepondre({
     required int ticketId,
     required String auteur,
@@ -1956,6 +2328,42 @@ class SupabaseService {
     required String cleOuGest,
   }) async {
     try {
+      // INSERT REST direct dans support_messages
+      final url = Uri.parse('$_url/rest/v1/support_messages');
+      final resp = await http.post(url,
+        headers: {
+          'Authorization': 'Bearer $_key',
+          'apikey':        _key,
+          'Content-Type':  'application/json',
+          'Prefer':        'return=minimal',
+        },
+        body: jsonEncode({
+          'ticket_id': ticketId,
+          'auteur':    auteur.isNotEmpty ? auteur : 'Utilisateur',
+          'corps':     corps,
+          'est_admin': estAdmin,
+          'lu_client': estAdmin ? false : true,   // client voit ses propres messages
+          'lu_admin':  estAdmin ? true  : false,  // admin voit les messages client
+        }),
+      );
+
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        // Mettre à jour mis_a_jour du ticket
+        final urlTicket = Uri.parse('$_url/rest/v1/support_tickets').replace(
+          queryParameters: {'id': 'eq.$ticketId'},
+        );
+        await http.patch(urlTicket,
+          headers: {
+            'Authorization': 'Bearer $_key',
+            'apikey':        _key,
+            'Content-Type':  'application/json',
+          },
+          body: jsonEncode({'mis_a_jour': DateTime.now().toIso8601String()}),
+        );
+        return {'ok': true};
+      }
+
+      // Fallback : RPC si REST bloqué
       final result = await rpc('support_repondre', {
         'p_ticket_id':   ticketId,
         'p_auteur':      auteur,
@@ -1964,7 +2372,7 @@ class SupabaseService {
         'p_cle_ou_gest': cleOuGest,
       });
       if (result is Map<String, dynamic>) return result;
-      return {'ok': false, 'erreur': 'Réponse inattendue'};
+      return {'ok': false, 'erreur': 'Erreur envoi'};
     } catch (e) {
       return {'ok': false, 'erreur': '$e'};
     }

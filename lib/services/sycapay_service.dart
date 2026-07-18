@@ -17,7 +17,7 @@ import 'supabase_service.dart';
 ///   → utilisée pour GetStatus ET pour l'idempotence
 ///   → JAMAIS le transactionId SycaPay seul (instable)
 class SycaPayService {
-  static const double commissionPct = 0.01;
+  static const double commissionPct = 0.02;
   static const String _edgeFn      = 'sycapay-payment';
 
   static int calculerCommission(int montant) => (montant * commissionPct).round();
