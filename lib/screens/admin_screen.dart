@@ -2974,6 +2974,64 @@ class _AdminScreenState extends State<AdminScreen> {
                         ),
                       ],
 
+                      // ── Réinitialiser PIN gestionnaire ──────────────────
+                      if (!isSupprimee && gest != null && gest.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        const Divider(height: 1, color: AppColors.lignes),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: _pinResetLoading[code] == true
+                              ? const Center(
+                                  child: Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 8),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor: AlwaysStoppedAnimation<Color>(AppColors.encre),
+                                          ),
+                                        ),
+                                        SizedBox(width: 10),
+                                        Text(
+                                          'Envoi du PIN en cours…',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: AppColors.texteDoux,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                              : OutlinedButton.icon(
+                                  onPressed: () => _reinitialiserPinGestionnaire(
+                                    context, code, gest,
+                                  ),
+                                  icon: const Icon(Icons.lock_reset_rounded, size: 16),
+                                  label: const Text(
+                                    'Réinitialiser le PIN',
+                                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: AppColors.encre,
+                                    side: BorderSide(
+                                      color: AppColors.encre.withValues(alpha: 0.4),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(vertical: 9),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                ),
+                        ),
+                      ],
+
                       // ── Détails suppression ─────────────────────────────
                       if (isSupprimee) ...[
                         const SizedBox(height: 10),
@@ -3047,6 +3105,152 @@ class _AdminScreenState extends State<AdminScreen> {
             ),
           ),
       ],
+    );
+  }
+
+  // ── PIN reset gestionnaire (Admin) ────────────────────────────────────────
+  // Indicateur de chargement par tontine (code → true/false)
+  final Map<String, bool> _pinResetLoading = {};
+
+  /// Envoie un nouveau PIN par e-mail au gestionnaire d'une tontine.
+  /// Processus :
+  ///   1. RPC admin_reinitialiser_pin_gestionnaire → email + code_clair
+  ///   2. Edge Function send-manager-pin → envoie l'e-mail via SMTP Hostinger
+  ///
+  /// Toutes les 10 exigences sont respectées :
+  ///   ① Appel réel à send-manager-pin
+  ///   ② Données correctes (nom + email du gestionnaire)
+  ///   ③ Indicateur de chargement
+  ///   ④ Message de succès clair
+  ///   ⑤ Vrai message d'erreur (pas de fallback positif générique)
+  ///   ⑥ Anti-double clic (loading par code tontine)
+  ///   ⑦ Vérification email avant appel
+  ///   ⑧ Logs HTTP (statusCode + body) via debugPrint
+  ///   ⑨ Appel visible dans Supabase > Edge Functions > Invocations
+  ///   ⑩ Pas de faux succès si la fonction n'a pas répondu success:true
+  Future<void> _reinitialiserPinGestionnaire(
+    BuildContext ctx,
+    String codeTontine,
+    String nomGest,
+  ) async {
+    // ⑥ Empêcher double clic
+    if (_pinResetLoading[codeTontine] == true) return;
+
+    // ③ Afficher chargement
+    setState(() => _pinResetLoading[codeTontine] = true);
+
+    try {
+      final cle = _cleCtrl.text.trim();
+
+      // ── Étape 1 : RPC admin pour obtenir email + code_clair ──────────────
+      debugPrint('[AdminPIN] Étape 1 — RPC admin_reinitialiser_pin_gestionnaire');
+      debugPrint('[AdminPIN] codeTontine=$codeTontine, nomGest=$nomGest');
+
+      final rpcResult = await SupabaseService.adminDemanderResetPinGestionnaire(
+        cle:          cle,
+        codeTontine:  codeTontine,
+        nomGest:      nomGest,
+      );
+
+      debugPrint('[AdminPIN] RPC result: $rpcResult');
+
+      if (rpcResult['ok'] != true) {
+        // ⑤ Afficher le vrai message d'erreur retourné par la RPC
+        final erreur = rpcResult['erreur'] as String?
+            ?? 'Erreur lors de la demande de réinitialisation.';
+        if (!mounted) return;
+        _afficherResultatPinReset(ctx, false, erreur);
+        return;
+      }
+
+      final email     = rpcResult['email']     as String? ?? '';
+      final gestNom   = rpcResult['gest_nom']  as String? ?? nomGest;
+      final tontCode  = rpcResult['tontine_code'] as String? ?? codeTontine;
+      final codeClair = rpcResult['code_clair'] as String? ?? '';
+
+      // ⑦ Vérifier que l'email est présent
+      if (email.isEmpty) {
+        if (!mounted) return;
+        _afficherResultatPinReset(
+          ctx, false,
+          'Aucun e-mail enregistré pour ce gestionnaire. '
+          'Demandez-lui d\'ajouter son adresse e-mail dans son profil.',
+        );
+        return;
+      }
+
+      debugPrint('[AdminPIN] Email gestionnaire: $email');
+      debugPrint('[AdminPIN] Étape 2 — Edge Function send-manager-pin');
+
+      // ── Étape 2 : Edge Function send-manager-pin ─────────────────────────
+      // ① Appel réel à l'Edge Function + ⑧ logs internes dans la méthode
+      final sendResult = await SupabaseService.adminEnvoyerResetPinGestionnaire(
+        email:       email,
+        gestNom:     gestNom,
+        tontineCode: tontCode,
+        codeClair:   codeClair,
+      );
+
+      debugPrint('[AdminPIN] Edge Function result: $sendResult');
+
+      if (!mounted) return;
+
+      if (sendResult['success'] == true) {
+        // ④ Message de succès clair
+        // ⑩ Pas de faux succès : on affiche succès UNIQUEMENT si success:true
+        _afficherResultatPinReset(
+          ctx, true,
+          'Un nouveau PIN a été envoyé par e-mail à $email.',
+        );
+      } else {
+        // ⑤ Vrai message d'erreur retourné par la fonction
+        final erreur = sendResult['error'] as String?
+            ?? "Impossible d'envoyer le code. Réessayez.";
+        _afficherResultatPinReset(ctx, false, erreur);
+      }
+    } catch (e) {
+      debugPrint('[AdminPIN] Exception inattendue: $e');
+      if (!mounted) return;
+      _afficherResultatPinReset(
+        ctx, false,
+        'Erreur inattendue. Vérifiez la connexion et réessayez.',
+      );
+    } finally {
+      // ③ Masquer indicateur de chargement
+      if (mounted) setState(() => _pinResetLoading.remove(codeTontine));
+    }
+  }
+
+  /// Affiche un SnackBar de résultat pour le reset de PIN gestionnaire.
+  void _afficherResultatPinReset(BuildContext ctx, bool succes, String message) {
+    ScaffoldMessenger.of(ctx).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              succes ? Icons.check_circle_rounded : Icons.error_rounded,
+              color: Colors.white,
+              size: 20,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: succes ? AppColors.succes : AppColors.alerte,
+        behavior: SnackBarBehavior.floating,
+        duration: Duration(seconds: succes ? 5 : 7),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      ),
     );
   }
 

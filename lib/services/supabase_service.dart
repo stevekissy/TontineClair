@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -2592,6 +2593,87 @@ class SupabaseService {
       return true;
     } catch (_) {
       return false;
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Admin — Réinitialisation PIN gestionnaire via Edge Function send-manager-pin
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /// Étape 1 (Admin) : appelle la RPC admin_reinitialiser_pin_gestionnaire.
+  /// L'admin fournit la clé admin + code tontine + nom gestionnaire.
+  /// La RPC retrouve l'email en base, génère un code hashé, retourne
+  /// {ok, email, gest_nom, tontine_code, code_clair} pour que Flutter
+  /// appelle immédiatement l'Edge Function send-manager-pin.
+  ///
+  /// Retourne :
+  ///   {ok: true,  email, gest_nom, tontine_code, code_clair}  ← succès
+  ///   {ok: false, erreur: "message lisible"}                   ← échec
+  static Future<Map<String, dynamic>> adminDemanderResetPinGestionnaire({
+    required String cle,
+    required String codeTontine,
+    required String nomGest,
+  }) async {
+    try {
+      final res = await rpc('admin_reinitialiser_pin_gestionnaire', {
+        'p_cle':          cle,
+        'p_code_tontine': codeTontine.toUpperCase(),
+        'p_nom_gest':     nomGest.trim(),
+      });
+      if (res is Map) return Map<String, dynamic>.from(res);
+      return {'ok': false, 'erreur': 'Réponse inattendue du serveur.'};
+    } catch (e) {
+      return {'ok': false, 'erreur': 'Erreur réseau. Vérifiez votre connexion.'};
+    }
+  }
+
+  /// Étape 2 (Admin) : appelle l'Edge Function send-manager-pin.
+  /// Identique à [envoyerCodeResetPin] mais avec logs supplémentaires.
+  /// Retourne {success: true} ou {success: false, error: "message"}.
+  static Future<Map<String, dynamic>> adminEnvoyerResetPinGestionnaire({
+    required String email,
+    required String gestNom,
+    required String tontineCode,
+    required String codeClair,
+  }) async {
+    final url = Uri.parse('$_url/functions/v1/send-manager-pin');
+    try {
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': 'Bearer $_key',
+          'apikey':        _key,
+        },
+        body: jsonEncode({
+          'email':       email,
+          'gestNom':     gestNom,
+          'tontineCode': tontineCode.toUpperCase(),
+          'code':        codeClair,
+        }),
+      ).timeout(const Duration(seconds: 25));
+
+      // ── Logs côté application (visibles dans debugPrint / console dev) ───────
+      debugPrint('[AdminPIN] POST ${url.path}');
+      debugPrint('[AdminPIN] HTTP ${response.statusCode}');
+      debugPrint('[AdminPIN] Body: ${response.body}');
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+
+      if (response.statusCode == 200 && body['success'] == true) {
+        return {'success': true};
+      }
+
+      // Récupérer le message d'erreur renvoyé par l'Edge Function (générique)
+      final errMsg = body['error'] as String?
+          ?? "Impossible d'envoyer le code. Réessayez.";
+      return {'success': false, 'error': errMsg};
+    } on TimeoutException {
+      debugPrint('[AdminPIN] Timeout après 25s — URL: $url');
+      return {'success': false, 'error': 'Délai dépassé. Vérifiez votre connexion.'};
+    } catch (e) {
+      debugPrint('[AdminPIN] Exception: $e');
+      return {'success': false, 'error': "Impossible d'envoyer le code. Réessayez."};
     }
   }
 }
