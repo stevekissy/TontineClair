@@ -2407,6 +2407,151 @@ class SupabaseService {
       // Silencieux — la notification n'est jamais bloquante
     }
   }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // PIN Reset — Réinitialisation et modification sécurisée du PIN de gestion
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /// Demande un code de réinitialisation du PIN par contact (e-mail ou tél.).
+  /// Retourne {ok, code_clair, envoyer, message, erreur}.
+  /// Anti-énumération : toujours ok:true même si le contact est inconnu.
+  /// `code_clair` n'est retourné qu'ici (jamais stocké en clair).
+  static Future<Map<String, dynamic>> demanderResetPin({
+    required String code,
+    required String nom,
+    required String contact,
+  }) async {
+    try {
+      final res = await rpc('demander_reset_pin', {
+        'p_code':    code.toUpperCase(),
+        'p_nom':     nom,
+        'p_contact': contact.trim(),
+      });
+      if (res is Map) return Map<String, dynamic>.from(res);
+      return {'ok': true, 'envoyer': false, 'message': 'Si ce contact est lié à votre compte, un code vous a été envoyé.'};
+    } catch (e) {
+      // Anti-énumération : ne jamais révéler si le contact existe
+      return {'ok': true, 'envoyer': false, 'message': 'Si ce contact est lié à votre compte, un code vous a été envoyé.'};
+    }
+  }
+
+  /// Valide le code à 6 chiffres saisi par le gestionnaire.
+  /// Retourne {ok, message, erreur, tentatives_restantes}.
+  /// Maximum 5 tentatives, comparaison SHA-256 côté SQL.
+  static Future<Map<String, dynamic>> validerCodeResetPin({
+    required String codeTontine,
+    required String nom,
+    required String codeSaisi,
+  }) async {
+    try {
+      final res = await rpc('valider_code_reset_pin', {
+        'p_code_tontine': codeTontine.toUpperCase(),
+        'p_nom':          nom,
+        'p_code_saisi':   codeSaisi.trim(),
+      });
+      if (res is Map) return Map<String, dynamic>.from(res);
+      return {'ok': false, 'erreur': 'Réponse inattendue du serveur.'};
+    } catch (e) {
+      return {'ok': false, 'erreur': 'Erreur réseau. Vérifiez votre connexion.'};
+    }
+  }
+
+  /// Définit un nouveau PIN après validation du code de réinitialisation.
+  /// Retourne {ok, message, erreur}.
+  /// Vérifie côté SQL que la session reset est valide (code utilisé < 5 min).
+  static Future<Map<String, dynamic>> reinitialiserPin({
+    required String codeTontine,
+    required String nom,
+    required String nouveauPin,
+  }) async {
+    try {
+      final res = await rpc('reinitialiser_pin', {
+        'p_code_tontine':  codeTontine.toUpperCase(),
+        'p_nom':           nom,
+        'p_nouveau_pin':   nouveauPin,
+      });
+      if (res is Map) return Map<String, dynamic>.from(res);
+      return {'ok': false, 'erreur': 'Réponse inattendue du serveur.'};
+    } catch (e) {
+      return {'ok': false, 'erreur': 'Erreur réseau. Vérifiez votre connexion.'};
+    }
+  }
+
+  /// Modifie le PIN depuis une session connectée (vérifie l'ancien PIN).
+  /// Retourne {ok, message, erreur}.
+  static Future<Map<String, dynamic>> modifierPin({
+    required String code,
+    required String nom,
+    required String ancienPin,
+    required String nouveauPin,
+  }) async {
+    try {
+      final res = await rpc('modifier_pin', {
+        'p_code':        code.toUpperCase(),
+        'p_nom':         nom,
+        'p_ancien_pin':  ancienPin,
+        'p_nouveau_pin': nouveauPin,
+      });
+      if (res is Map) return Map<String, dynamic>.from(res);
+      return {'ok': false, 'erreur': 'Réponse inattendue du serveur.'};
+    } catch (e) {
+      return {'ok': false, 'erreur': 'Erreur réseau. Vérifiez votre connexion.'};
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // E-mail logs — Historique admin des e-mails envoyés
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /// Retourne la liste paginée des e-mails loggés (admin uniquement).
+  /// [statut] filtre optionnel : 'envoye' | 'pending' | 'echoue'
+  /// [type]   filtre optionnel : ex. 'pin_reset', 'alerte_securite', etc.
+  static Future<List<Map<String, dynamic>>> adminEmailLogs(
+    String cle, {
+    String? statut,
+    String? type,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    try {
+      final params = <String, dynamic>{
+        'p_cle':    cle,
+        'p_limit':  limit,
+        'p_offset': offset,
+      };
+      if (statut != null && statut.isNotEmpty) params['p_statut'] = statut;
+      if (type   != null && type.isNotEmpty)   params['p_type']   = type;
+      final res = await rpc('admin_email_logs', params);
+      if (res is List) {
+        return res.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+      // La RPC peut aussi retourner un JSONB {logs:[...]}
+      if (res is Map && res['logs'] is List) {
+        return (res['logs'] as List)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Remet un e-mail en statut 'pending' pour relance.
+  static Future<bool> adminRelancerEmail({
+    required String cle,
+    required String emailId,
+  }) async {
+    try {
+      await rpc('admin_relancer_email', {
+        'p_cle':      cle,
+        'p_email_id': emailId,
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

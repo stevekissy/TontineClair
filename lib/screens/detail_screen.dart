@@ -26,6 +26,7 @@ import 'supprimer_tontine_screen.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
 import 'kyc_screen.dart';
+import 'securite_screen.dart';
 
 class DetailScreen extends StatefulWidget {
   final String code;
@@ -1651,6 +1652,77 @@ class _BarreDetail extends StatelessWidget {
                   label: 'Clôturer le tour',
                   onTap: () => _cloturerTour(context),
                 ),
+              ),
+              const SizedBox(width: 8),
+              // ── Menu ··· gestionnaire (Sécurité, etc.) ────────────────────
+              PopupMenuButton<String>(
+                icon: const Icon(
+                  Icons.more_vert,
+                  color: AppColors.encre,
+                  size: 22,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                color: AppColors.fondPapier,
+                elevation: 6,
+                onSelected: (val) {
+                  if (val == 'securite') {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => SecuriteScreen(
+                          tontineCode: code,
+                          gestNom: gestNom,
+                        ),
+                      ),
+                    );
+                  }
+                },
+                itemBuilder: (_) => [
+                  PopupMenuItem<String>(
+                    value: 'securite',
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: AppColors.encre.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.security_rounded,
+                            size: 18,
+                            color: AppColors.encre,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Sécurité',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                                color: AppColors.encre,
+                              ),
+                            ),
+                            Text(
+                              'Modifier le PIN',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.texteDoux,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

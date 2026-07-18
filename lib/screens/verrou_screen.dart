@@ -4,6 +4,7 @@ import '../services/tontine_provider.dart';
 import '../utils/app_colors.dart';
 import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
+import 'pin_reset_screen.dart';
 
 class VerrouScreen extends StatefulWidget {
   const VerrouScreen({super.key});
@@ -226,7 +227,38 @@ class _VerrouScreenState extends State<VerrouScreen> {
                       onSubmitted: (_) => _debloqur(),
                     ),
                     ChampErreur(texte: _erreur),
-                    SizedBox(height: 16),
+                    // ── Lien "PIN oublié ?" ───────────────────────────────────
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () {
+                          final gest = gests[_gestChoisi];
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => PinResetScreen(
+                                tontineCode: tontine.code,
+                                gestNom: gest.nom,
+                              ),
+                            ),
+                          );
+                        },
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.encre,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 2),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text(
+                          'PIN oublié ?',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 8),
                     BtnPrincipal(
                       label: context.tr('acceder'),
                       onTap: _debloqur,

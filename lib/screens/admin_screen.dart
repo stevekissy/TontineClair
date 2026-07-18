@@ -38,6 +38,14 @@ class _AdminScreenState extends State<AdminScreen> {
   String _filtreDecaissement = 'pending';
   // Filtre KYC : 'pending' | 'valide' | 'rejete' | 'tous'
   String _filtreKyc          = 'pending';
+  // E-mails
+  List<Map<String, dynamic>> _emails        = [];
+  String _filtreEmailStatut  = 'tous';
+  String _filtreEmailType    = '';
+  bool   _emailsChargement   = false;
+  int    _emailsOffset       = 0;
+  bool   _emailsPlusDispos   = true;
+  static const int _emailsPageSize = 30;
   String get _cle => _cleCtrl.text.trim();
 
   @override
@@ -67,6 +75,7 @@ class _AdminScreenState extends State<AdminScreen> {
         ],
       );
       final counts = await SupabaseService.adminTontineCounts(cle);
+      final emails = await SupabaseService.adminEmailLogs(cle, limit: _emailsPageSize, offset: 0);
 
       setState(() {
         _connecte       = true;
@@ -77,6 +86,9 @@ class _AdminScreenState extends State<AdminScreen> {
         _decaissements  = results[4];
         _kycs           = results[5];
         _counts         = counts;
+        _emails         = emails;
+        _emailsOffset   = emails.length;
+        _emailsPlusDispos = emails.length >= _emailsPageSize;
       });
     } catch (e) {
       setState(() => _erreur = 'Clé incorrecte ou erreur réseau.');
@@ -581,7 +593,7 @@ class _AdminScreenState extends State<AdminScreen> {
     final totalAlertes = nbDemandesPending + nbDepensesPending + nbPretsPending +
         nbDecaissementsPending + nbKycPending;
 
-    // index : 0=Accueil 1=Demandes 2=Tontines 3=Stats 4=Dépenses 5=Prêts 6=Décaiss. 7=KYC 8=KYC ID
+    // index : 0=Accueil 1=Demandes 2=Tontines 3=Stats 4=Dépenses 5=Prêts 6=Décaiss. 7=KYC 8=KYC ID 9=E-mails
     final onglets = [
       _OngletDef(icone: Icons.home_rounded,                   label: 'Accueil',   badge: 0),
       _OngletDef(icone: Icons.how_to_reg_rounded,             label: 'Demandes',  badge: nbDemandesPending),
@@ -592,6 +604,7 @@ class _AdminScreenState extends State<AdminScreen> {
       _OngletDef(icone: Icons.account_balance_wallet_rounded, label: 'Décaiss.',  badge: nbDecaissementsPending),
       _OngletDef(icone: Icons.badge_outlined,                 label: 'KYC',       badge: nbKycPending),
       _OngletDef(icone: Icons.verified_user_outlined,         label: 'KYC ID',    badge: 0),
+      _OngletDef(icone: Icons.email_outlined,                 label: 'E-mails',   badge: 0),
     ];
 
     return Column(
@@ -627,7 +640,8 @@ class _AdminScreenState extends State<AdminScreen> {
             : _onglet == 5 ? _ListePrets()
             : _onglet == 6 ? _ListeDecaissements()
             : _onglet == 7 ? _ListeKyc()
-            : KycAdminScreen(cleAdmin: _cle, modeOnglet: true),
+            : _onglet == 8 ? KycAdminScreen(cleAdmin: _cle, modeOnglet: true)
+            : _ListeEmails(),
         ),
       ],
     );
@@ -1187,6 +1201,465 @@ class _AdminScreenState extends State<AdminScreen> {
       await _recharger();
     } else {
       afficherToast(context, result['erreur'] as String? ?? 'Erreur rejet KYC.', estErreur: true);
+    }
+  }
+
+  // ─── Onglet 9 : Historique e-mails ──────────────────────────────────────────
+  Widget _ListeEmails() {
+    // Filtre local sur les données déjà chargées
+    var filtered = _emails.where((e) {
+      final statut = e['statut'] as String? ?? '';
+      final type   = e['type_email'] as String? ?? '';
+      final okStat = _filtreEmailStatut == 'tous' || statut == _filtreEmailStatut;
+      final okType = _filtreEmailType.isEmpty || type == _filtreEmailType;
+      return okStat && okType;
+    }).toList();
+
+    // Couleurs par statut
+    Color _couleurStatut(String s) => switch (s) {
+      'envoye'  => AppColors.succes,
+      'pending' => AppColors.or,
+      'echoue'  => AppColors.alerte,
+      _         => AppColors.texteDoux,
+    };
+
+    String _labelStatut(String s) => switch (s) {
+      'envoye'  => 'Envoyé',
+      'pending' => 'En attente',
+      'echoue'  => 'Échoué',
+      _         => s,
+    };
+
+    String _labelType(String t) => switch (t) {
+      'code_verification'    => 'Code vérif.',
+      'pin_reset'            => 'Reset PIN',
+      'pin_change_confirme'  => 'Modif. PIN',
+      'invitation_tontine'   => 'Invitation',
+      'demande_pret'         => 'Demande prêt',
+      'pret_valide'          => 'Prêt validé',
+      'pret_rejete'          => 'Prêt rejeté',
+      'rappel_cotisation'    => 'Rappel cotis.',
+      'cotisation_enregistree' => 'Cotis. enreg.',
+      'retard_paiement'      => 'Retard pmt',
+      'demande_premium'      => 'Demande Premium',
+      'premium_active'       => 'Premium activé',
+      'premium_expire'       => 'Premium expiré',
+      'kyc_valide'           => 'KYC validé',
+      'kyc_rejete'           => 'KYC rejeté',
+      'nouveau_vote'         => 'Nouveau vote',
+      'resultat_vote'        => 'Résultat vote',
+      'alerte_securite'      => 'Alerte sécu.',
+      'message_support'      => 'Support',
+      'reset_mot_de_passe'   => 'Reset MDP',
+      _                      => t,
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── En-tête ─────────────────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.encre.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.email_outlined, size: 20, color: AppColors.encre),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Historique e-mails',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                        color: AppColors.encre,
+                      ),
+                    ),
+                    Text(
+                      '${filtered.length} e-mail${filtered.length > 1 ? "s" : ""} · ${_emails.length} au total',
+                      style: const TextStyle(fontSize: 12, color: AppColors.texteDoux),
+                    ),
+                  ],
+                ),
+              ),
+              // Bouton rechargement
+              if (_emailsChargement)
+                const SizedBox(
+                  width: 20, height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.encre,
+                  ),
+                )
+              else
+                IconButton(
+                  icon: const Icon(Icons.refresh_rounded, color: AppColors.encre, size: 20),
+                  onPressed: _rechargerEmails,
+                  tooltip: 'Actualiser',
+                ),
+            ],
+          ),
+        ),
+        // ── Filtres ─────────────────────────────────────────────────────────
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              // Filtre statut
+              ...['tous', 'envoye', 'pending', 'echoue'].map((s) {
+                final actif = _filtreEmailStatut == s;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: GestureDetector(
+                    onTap: () => setState(() => _filtreEmailStatut = s),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: actif ? AppColors.encre : AppColors.fondCode,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: actif ? AppColors.encre : AppColors.lignes,
+                        ),
+                      ),
+                      child: Text(
+                        s == 'tous' ? 'Tous' : _labelStatut(s),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: actif ? Colors.white : AppColors.encre,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+              const SizedBox(width: 8),
+              // Filtre type rapide
+              ...['', 'pin_reset', 'alerte_securite', 'kyc_valide', 'kyc_rejete', 'premium_active'].map((t) {
+                final actif = _filtreEmailType == t;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: GestureDetector(
+                    onTap: () => setState(() => _filtreEmailType = t),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: actif
+                            ? AppColors.or.withValues(alpha: 0.15)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: actif ? AppColors.or : AppColors.lignes,
+                        ),
+                      ),
+                      child: Text(
+                        t.isEmpty ? 'Tous types' : _labelType(t),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: actif ? AppColors.orFonce : AppColors.texteDoux,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+        const Divider(height: 1, color: AppColors.lignes),
+        // ── Liste ────────────────────────────────────────────────────────────
+        Expanded(
+          child: filtered.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.mail_outline_rounded, size: 48,
+                          color: AppColors.texteDoux),
+                      const SizedBox(height: 12),
+                      Text(
+                        _emailsChargement ? 'Chargement…' : 'Aucun e-mail trouvé.',
+                        style: const TextStyle(color: AppColors.texteDoux),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: filtered.length + (_emailsPlusDispos ? 1 : 0),
+                  separatorBuilder: (_, __) =>
+                      const Divider(height: 1, indent: 16, color: AppColors.lignes),
+                  itemBuilder: (ctx, i) {
+                    // Bouton "Charger plus"
+                    if (i == filtered.length) {
+                      return Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: OutlinedButton.icon(
+                          onPressed: _emailsChargement ? null : _chargerPlusEmails,
+                          icon: _emailsChargement
+                              ? const SizedBox(
+                                  width: 14, height: 14,
+                                  child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.expand_more_rounded, size: 18),
+                          label: const Text('Charger plus'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.encre,
+                            side: const BorderSide(color: AppColors.lignes),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                      );
+                    }
+
+                    final email  = filtered[i];
+                    final statut = email['statut'] as String? ?? 'pending';
+                    final type   = email['type_email'] as String? ?? '';
+                    final dest   = email['destinataire'] as String? ?? '—';
+                    final sujet  = email['sujet'] as String? ?? '—';
+                    final dateStr = email['envoye_le'] as String? ?? '';
+                    final motif  = email['motif_echec'] as String?;
+                    final id     = email['id'] as String? ?? '';
+                    final tentatives = email['tentatives'] as int? ?? 0;
+
+                    // Formatage date
+                    String dateAff = dateStr;
+                    try {
+                      final dt = DateTime.parse(dateStr).toLocal();
+                      dateAff =
+                          '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year} '
+                          '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+                    } catch (_) {}
+
+                    final couleur = _couleurStatut(statut);
+
+                    return ListTile(
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      leading: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: couleur.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          statut == 'envoye'
+                              ? Icons.check_circle_outline_rounded
+                              : statut == 'echoue'
+                                  ? Icons.error_outline_rounded
+                                  : Icons.schedule_rounded,
+                          size: 20,
+                          color: couleur,
+                        ),
+                      ),
+                      title: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              dest,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13.5,
+                                color: AppColors.encre,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 7, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: couleur.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              _labelStatut(statut),
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: couleur,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 3),
+                          Text(
+                            sujet,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.texte,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Text(
+                                _labelType(type),
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.texteDoux,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                              const Text(' · ',
+                                  style: TextStyle(color: AppColors.texteDoux)),
+                              Text(
+                                dateAff,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.texteDoux,
+                                ),
+                              ),
+                              if (tentatives > 1) ...[
+                                const Text(' · ',
+                                    style: TextStyle(color: AppColors.texteDoux)),
+                                Text(
+                                  '$tentatives tentative${tentatives > 1 ? "s" : ""}',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.texteDoux,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          if (motif != null && motif.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                const Icon(Icons.info_outline,
+                                    size: 12, color: AppColors.alerte),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    motif,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.alerte,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                      // Bouton "Renvoyer" pour les e-mails échoués
+                      trailing: (statut == 'echoue' || statut == 'pending') && id.isNotEmpty
+                          ? TextButton(
+                              onPressed: () => _renvoyer(id, email),
+                              style: TextButton.styleFrom(
+                                foregroundColor: AppColors.encre,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 6),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  side: const BorderSide(color: AppColors.lignes),
+                                ),
+                              ),
+                              child: const Text(
+                                'Renvoyer',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            )
+                          : null,
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  /// Recharge la liste e-mails depuis la page 0
+  Future<void> _rechargerEmails() async {
+    if (_emailsChargement) return;
+    setState(() {
+      _emailsChargement = true;
+      _emailsOffset = 0;
+    });
+    try {
+      final emails = await SupabaseService.adminEmailLogs(
+        _cle,
+        statut: _filtreEmailStatut == 'tous' ? null : _filtreEmailStatut,
+        type:   _filtreEmailType.isEmpty ? null : _filtreEmailType,
+        limit:  _emailsPageSize,
+        offset: 0,
+      );
+      setState(() {
+        _emails = emails;
+        _emailsOffset = emails.length;
+        _emailsPlusDispos = emails.length >= _emailsPageSize;
+      });
+    } finally {
+      setState(() => _emailsChargement = false);
+    }
+  }
+
+  /// Charge la page suivante d'e-mails (pagination)
+  Future<void> _chargerPlusEmails() async {
+    if (_emailsChargement || !_emailsPlusDispos) return;
+    setState(() => _emailsChargement = true);
+    try {
+      final plus = await SupabaseService.adminEmailLogs(
+        _cle,
+        statut: _filtreEmailStatut == 'tous' ? null : _filtreEmailStatut,
+        type:   _filtreEmailType.isEmpty ? null : _filtreEmailType,
+        limit:  _emailsPageSize,
+        offset: _emailsOffset,
+      );
+      setState(() {
+        _emails = [..._emails, ...plus];
+        _emailsOffset += plus.length;
+        _emailsPlusDispos = plus.length >= _emailsPageSize;
+      });
+    } finally {
+      setState(() => _emailsChargement = false);
+    }
+  }
+
+  /// Renvoie un e-mail (remet en statut 'pending')
+  Future<void> _renvoyer(String emailId, Map<String, dynamic> email) async {
+    final ok = await SupabaseService.adminRelancerEmail(
+      cle:     _cle,
+      emailId: emailId,
+    );
+    if (!mounted) return;
+    if (ok) {
+      afficherToast(context, 'E-mail remis en file d\'attente.');
+      // Mise à jour optimiste locale
+      setState(() {
+        final idx = _emails.indexWhere((e) => e['id'] == emailId);
+        if (idx != -1) {
+          _emails[idx] = {..._emails[idx], 'statut': 'pending'};
+        }
+      });
+    } else {
+      afficherToast(context, 'Impossible de relancer cet e-mail.', estErreur: true);
     }
   }
 
