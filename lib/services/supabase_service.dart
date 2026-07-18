@@ -2409,20 +2409,19 @@ class SupabaseService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // PIN Reset — Réinitialisation et modification sécurisée du PIN de gestion
+  // PIN Reset v2 — RPC + Edge Function send-manager-pin (SMTP Hostinger)
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /// Demande un code de réinitialisation du PIN par contact (e-mail ou tél.).
-  /// Retourne {ok, code_clair, envoyer, message, erreur}.
-  /// Anti-énumération : toujours ok:true même si le contact est inconnu.
-  /// `code_clair` n'est retourné qu'ici (jamais stocké en clair).
+  /// Étape 1 : génère un code via RPC (stocké hashé) et retourne l'email +
+  /// code_clair pour que Flutter appelle l'Edge Function send-manager-pin.
+  /// Anti-énumération : retourne toujours ok:true même si contact inconnu.
   static Future<Map<String, dynamic>> demanderResetPin({
     required String code,
     required String nom,
     required String contact,
   }) async {
     try {
-      final res = await rpc('demander_reset_pin', {
+      final res = await rpc('demander_reset_pin_v2', {
         'p_code':    code.toUpperCase(),
         'p_nom':     nom,
         'p_contact': contact.trim(),
@@ -2430,8 +2429,51 @@ class SupabaseService {
       if (res is Map) return Map<String, dynamic>.from(res);
       return {'ok': true, 'envoyer': false, 'message': 'Si ce contact est lié à votre compte, un code vous a été envoyé.'};
     } catch (e) {
-      // Anti-énumération : ne jamais révéler si le contact existe
       return {'ok': true, 'envoyer': false, 'message': 'Si ce contact est lié à votre compte, un code vous a été envoyé.'};
+    }
+  }
+
+  /// Étape 1b : appelle l'Edge Function send-manager-pin via SMTP Hostinger.
+  /// Retourne {success: true} ou {success: false, error: "message générique"}.
+  /// Le mot de passe SMTP est uniquement dans les secrets Supabase — jamais ici.
+  static Future<Map<String, dynamic>> envoyerCodeResetPin({
+    required String email,
+    required String gestNom,
+    required String tontineCode,
+    required String codeClair,
+  }) async {
+    try {
+      final url = Uri.parse('$_url/functions/v1/send-manager-pin');
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': 'Bearer $_key',
+          'apikey':        _key,
+        },
+        body: jsonEncode({
+          'email':       email,
+          'gestNom':     gestNom,
+          'tontineCode': tontineCode.toUpperCase(),
+          'code':        codeClair,
+        }),
+      ).timeout(const Duration(seconds: 20));
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+
+      if (response.statusCode == 200 && body['success'] == true) {
+        return {'success': true};
+      }
+      // Message générique côté client (détail dans les logs Supabase)
+      return {
+        'success': false,
+        'error': "Impossible d'envoyer le code. Réessayez.",
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'error': "Impossible d'envoyer le code. Réessayez.",
+      };
     }
   }
 
