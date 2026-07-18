@@ -2867,11 +2867,34 @@ class _AdminScreenState extends State<AdminScreen> {
                     ? 'Tontine sans nom'
                     : nomBrut.trim();
 
-                // Gestionnaire / propriétaire
-                final gest = t['president'] as String?
+                // ── Gestionnaire principal ──────────────────────────────────
+                // Source 1 : colonne 'gestionnaires' (JSONB séparée) — liste
+                //   d'objets [{nom, pin, email?}, ...]  ← source canonique
+                // Source 2 : data['gestionnaires'] — liste de strings ["Nom", ...]
+                //   (anciennes tontines ou tontines créées avant la migration)
+                // Source 3 : fallback scalaires president / gestionnaire / created_by
+                String? premierGestNom(dynamic gests) {
+                  if (gests == null) return null;
+                  final list = gests is List ? gests : null;
+                  if (list == null || list.isEmpty) return null;
+                  final first = list.first;
+                  if (first is Map) return (first['nom'] as String?)?.trim();
+                  if (first is String) return first.trim().isEmpty ? null : first.trim();
+                  return null;
+                }
+                // Colonne gestionnaires (prioritaire — contient email)
+                final gestColonne   = premierGestNom(t['gestionnaires']);
+                // data['gestionnaires'] (fallback — strings sans email)
+                final dataGests     = (t['data'] is Map)
+                    ? (t['data'] as Map<dynamic,dynamic>)['gestionnaires']
+                    : null;
+                final gestData      = premierGestNom(dataGests);
+                // Fallback scalaires
+                final gestScalaire  = t['president'] as String?
                     ?? t['gestionnaire'] as String?
                     ?? t['created_by'] as String?
                     ?? t['owner'] as String?;
+                final gest = gestColonne ?? gestData ?? gestScalaire;
 
                 // Membres
                 final nbMembres = t['membres'] as int? ?? t['nb_membres'] as int? ?? 0;
@@ -3142,9 +3165,19 @@ class _AdminScreenState extends State<AdminScreen> {
     try {
       final cle = _cleCtrl.text.trim();
 
+      // Vérification préalable : clé admin saisie
+      if (cle.isEmpty) {
+        if (!mounted) return;
+        _afficherResultatPinReset(
+          ctx, false,
+          'Veuillez saisir la clé d\'administration avant de réinitialiser un PIN.',
+        );
+        return;
+      }
+
       // ── Étape 1 : RPC admin pour obtenir email + code_clair ──────────────
       debugPrint('[AdminPIN] Étape 1 — RPC admin_reinitialiser_pin_gestionnaire');
-      debugPrint('[AdminPIN] codeTontine=$codeTontine, nomGest=$nomGest');
+      debugPrint('[AdminPIN] codeTontine=$codeTontine, nomGest=$nomGest, cle=${cle.length} chars');
 
       final rpcResult = await SupabaseService.adminDemanderResetPinGestionnaire(
         cle:          cle,
