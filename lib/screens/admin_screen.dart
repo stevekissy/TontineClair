@@ -2873,6 +2873,7 @@ class _AdminScreenState extends State<AdminScreen> {
                 // Source 2 : data['gestionnaires'] — liste de strings ["Nom", ...]
                 //   (anciennes tontines ou tontines créées avant la migration)
                 // Source 3 : fallback scalaires president / gestionnaire / created_by
+                // ── Helpers extraction gestionnaire ───────────────────────
                 String? premierGestNom(dynamic gests) {
                   if (gests == null) return null;
                   final list = gests is List ? gests : null;
@@ -2882,8 +2883,20 @@ class _AdminScreenState extends State<AdminScreen> {
                   if (first is String) return first.trim().isEmpty ? null : first.trim();
                   return null;
                 }
+                String? premierGestEmail(dynamic gests) {
+                  if (gests == null) return null;
+                  final list = gests is List ? gests : null;
+                  if (list == null || list.isEmpty) return null;
+                  final first = list.first;
+                  if (first is Map) {
+                    final e = (first['email'] as String?)?.trim() ?? '';
+                    return e.isEmpty ? null : e;
+                  }
+                  return null;
+                }
                 // Colonne gestionnaires (prioritaire — contient email)
                 final gestColonne   = premierGestNom(t['gestionnaires']);
+                final gestEmailBase = premierGestEmail(t['gestionnaires']) ?? '';
                 // data['gestionnaires'] (fallback — strings sans email)
                 final dataGests     = (t['data'] is Map)
                     ? (t['data'] as Map<dynamic,dynamic>)['gestionnaires']
@@ -3002,56 +3015,136 @@ class _AdminScreenState extends State<AdminScreen> {
                         const SizedBox(height: 10),
                         const Divider(height: 1, color: AppColors.lignes),
                         const SizedBox(height: 8),
-                        SizedBox(
-                          width: double.infinity,
-                          child: _pinResetLoading[code] == true
-                              ? const Center(
-                                  child: Padding(
-                                    padding: EdgeInsets.symmetric(vertical: 8),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            valueColor: AlwaysStoppedAnimation<Color>(AppColors.encre),
-                                          ),
-                                        ),
-                                        SizedBox(width: 10),
-                                        Text(
-                                          'Envoi du PIN en cours…',
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            color: AppColors.texteDoux,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ],
+
+                        // Indicateur email du gestionnaire
+                        if (gestEmailBase.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.email_outlined,
+                                    size: 13, color: AppColors.succes),
+                                const SizedBox(width: 5),
+                                Expanded(
+                                  child: Text(
+                                    gestEmailBase,
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      color: AppColors.succes,
                                     ),
-                                  ),
-                                )
-                              : OutlinedButton.icon(
-                                  onPressed: () => _reinitialiserPinGestionnaire(
-                                    context, code, gest,
-                                  ),
-                                  icon: const Icon(Icons.lock_reset_rounded, size: 16),
-                                  label: const Text(
-                                    'Réinitialiser le PIN',
-                                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                                  ),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: AppColors.encre,
-                                    side: BorderSide(
-                                      color: AppColors.encre.withValues(alpha: 0.4),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(vertical: 9),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
+                              ],
+                            ),
+                          )
+                        else
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Row(
+                              children: [
+                                Icon(Icons.warning_amber_rounded,
+                                    size: 13,
+                                    color: AppColors.orFonce.withValues(alpha: 0.8)),
+                                const SizedBox(width: 5),
+                                const Text(
+                                  'Aucun e-mail enregistré',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: AppColors.orFonce,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                        // Boutons : Réinitialiser le PIN + Modifier e-mail
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _pinResetLoading[code] == true
+                                  ? const Center(
+                                      child: Padding(
+                                        padding: EdgeInsets.symmetric(vertical: 8),
+                                        child: Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            SizedBox(
+                                              width: 14,
+                                              height: 14,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                valueColor: AlwaysStoppedAnimation<Color>(
+                                                    AppColors.encre),
+                                              ),
+                                            ),
+                                            SizedBox(width: 8),
+                                            Text(
+                                              'Chargement…',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: AppColors.texteDoux,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    )
+                                  : OutlinedButton.icon(
+                                      onPressed: () => _reinitialiserPinGestionnaire(
+                                        context, code, gest,
+                                      ),
+                                      icon: const Icon(Icons.lock_reset_rounded, size: 15),
+                                      label: const Text(
+                                        'Réinitialiser PIN',
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 12.5),
+                                      ),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: AppColors.encre,
+                                        side: BorderSide(
+                                          color: AppColors.encre.withValues(alpha: 0.4),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 8, horizontal: 10),
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(8)),
+                                      ),
+                                    ),
+                            ),
+                            const SizedBox(width: 8),
+                            // Bouton modifier e-mail gestionnaire
+                            OutlinedButton.icon(
+                              onPressed: () => _modifierEmailGestionnaire(
+                                context, code, gest, gestEmailBase,
+                              ),
+                              icon: Icon(
+                                gestEmailBase.isEmpty
+                                    ? Icons.add_circle_outline_rounded
+                                    : Icons.edit_outlined,
+                                size: 15,
+                              ),
+                              label: Text(
+                                gestEmailBase.isEmpty ? 'Ajouter e-mail' : 'E-mail',
+                                style: const TextStyle(fontSize: 12.5),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: gestEmailBase.isEmpty
+                                    ? AppColors.orFonce
+                                    : AppColors.encreDoux,
+                                side: BorderSide(
+                                  color: gestEmailBase.isEmpty
+                                      ? AppColors.orFonce.withValues(alpha: 0.5)
+                                      : AppColors.lignes,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 8, horizontal: 10),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8)),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
 
@@ -3135,127 +3228,9 @@ class _AdminScreenState extends State<AdminScreen> {
   // Indicateur de chargement par tontine (code → true/false)
   final Map<String, bool> _pinResetLoading = {};
 
-  /// Envoie un nouveau PIN par e-mail au gestionnaire d'une tontine.
-  /// Processus :
-  ///   1. RPC admin_reinitialiser_pin_gestionnaire → email + code_clair
-  ///   2. Edge Function send-manager-pin → envoie l'e-mail via SMTP Hostinger
-  ///
-  /// Toutes les 10 exigences sont respectées :
-  ///   ① Appel réel à send-manager-pin
-  ///   ② Données correctes (nom + email du gestionnaire)
-  ///   ③ Indicateur de chargement
-  ///   ④ Message de succès clair
-  ///   ⑤ Vrai message d'erreur (pas de fallback positif générique)
-  ///   ⑥ Anti-double clic (loading par code tontine)
-  ///   ⑦ Vérification email avant appel
-  ///   ⑧ Logs HTTP (statusCode + body) via debugPrint
-  ///   ⑨ Appel visible dans Supabase > Edge Functions > Invocations
-  ///   ⑩ Pas de faux succès si la fonction n'a pas répondu success:true
-  Future<void> _reinitialiserPinGestionnaire(
-    BuildContext ctx,
-    String codeTontine,
-    String nomGest,
-  ) async {
-    // ⑥ Empêcher double clic
-    if (_pinResetLoading[codeTontine] == true) return;
-
-    // ③ Afficher chargement
-    setState(() => _pinResetLoading[codeTontine] = true);
-
-    try {
-      final cle = _cleCtrl.text.trim();
-
-      // Vérification préalable : clé admin saisie
-      if (cle.isEmpty) {
-        if (!mounted) return;
-        _afficherResultatPinReset(
-          ctx, false,
-          'Veuillez saisir la clé d\'administration avant de réinitialiser un PIN.',
-        );
-        return;
-      }
-
-      // ── Étape 1 : RPC admin pour obtenir email + code_clair ──────────────
-      debugPrint('[AdminPIN] Étape 1 — RPC admin_reinitialiser_pin_gestionnaire');
-      debugPrint('[AdminPIN] codeTontine=$codeTontine, nomGest=$nomGest, cle=${cle.length} chars');
-
-      final rpcResult = await SupabaseService.adminDemanderResetPinGestionnaire(
-        cle:          cle,
-        codeTontine:  codeTontine,
-        nomGest:      nomGest,
-      );
-
-      debugPrint('[AdminPIN] RPC result: $rpcResult');
-
-      if (rpcResult['ok'] != true) {
-        // ⑤ Afficher le vrai message d'erreur retourné par la RPC
-        final erreur = rpcResult['erreur'] as String?
-            ?? 'Erreur lors de la demande de réinitialisation.';
-        if (!mounted) return;
-        _afficherResultatPinReset(ctx, false, erreur);
-        return;
-      }
-
-      final email     = rpcResult['email']     as String? ?? '';
-      final gestNom   = rpcResult['gest_nom']  as String? ?? nomGest;
-      final tontCode  = rpcResult['tontine_code'] as String? ?? codeTontine;
-      final codeClair = rpcResult['code_clair'] as String? ?? '';
-
-      // ⑦ Vérifier que l'email est présent
-      if (email.isEmpty) {
-        if (!mounted) return;
-        _afficherResultatPinReset(
-          ctx, false,
-          'Aucun e-mail enregistré pour ce gestionnaire. '
-          'Demandez-lui d\'ajouter son adresse e-mail dans son profil.',
-        );
-        return;
-      }
-
-      debugPrint('[AdminPIN] Email gestionnaire: $email');
-      debugPrint('[AdminPIN] Étape 2 — Edge Function send-manager-pin');
-
-      // ── Étape 2 : Edge Function send-manager-pin ─────────────────────────
-      // ① Appel réel à l'Edge Function + ⑧ logs internes dans la méthode
-      final sendResult = await SupabaseService.adminEnvoyerResetPinGestionnaire(
-        email:       email,
-        gestNom:     gestNom,
-        tontineCode: tontCode,
-        codeClair:   codeClair,
-      );
-
-      debugPrint('[AdminPIN] Edge Function result: $sendResult');
-
-      if (!mounted) return;
-
-      if (sendResult['success'] == true) {
-        // ④ Message de succès clair
-        // ⑩ Pas de faux succès : on affiche succès UNIQUEMENT si success:true
-        _afficherResultatPinReset(
-          ctx, true,
-          'Un nouveau PIN a été envoyé par e-mail à $email.',
-        );
-      } else {
-        // ⑤ Vrai message d'erreur retourné par la fonction
-        final erreur = sendResult['error'] as String?
-            ?? "Impossible d'envoyer le code. Réessayez.";
-        _afficherResultatPinReset(ctx, false, erreur);
-      }
-    } catch (e) {
-      debugPrint('[AdminPIN] Exception inattendue: $e');
-      if (!mounted) return;
-      _afficherResultatPinReset(
-        ctx, false,
-        'Erreur inattendue. Vérifiez la connexion et réessayez.',
-      );
-    } finally {
-      // ③ Masquer indicateur de chargement
-      if (mounted) setState(() => _pinResetLoading.remove(codeTontine));
-    }
-  }
-
-  /// Affiche un SnackBar de résultat pour le reset de PIN gestionnaire.
+  // ─── Snackbar résultat PIN reset ────────────────────────────────────────────
   void _afficherResultatPinReset(BuildContext ctx, bool succes, String message) {
+    if (!ctx.mounted) return;
     ScaffoldMessenger.of(ctx).showSnackBar(
       SnackBar(
         content: Row(
@@ -3285,6 +3260,612 @@ class _AdminScreenState extends State<AdminScreen> {
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       ),
     );
+  }
+
+  // ─── Dialogue principal : réinitialisation PIN gestionnaire ────────────────
+  ///
+  /// Flux complet (10 exigences) :
+  ///   1. Lecture de l'email en base (RPC admin_get_gestionnaire_email)
+  ///   2. Si email absent → demander la saisie à l'admin + proposer enregistrement
+  ///   3. Si email présent → afficher email + confirmation avant envoi
+  ///   4. Envoi RPC (génère code) + Edge Function (envoie email)
+  ///   5. Ne passer au succès QUE si HTTP 200 + success:true
+  ///   6. Afficher le vrai message d'erreur en cas d'échec
+  Future<void> _reinitialiserPinGestionnaire(
+    BuildContext ctx,
+    String codeTontine,
+    String nomGest,
+  ) async {
+    if (_pinResetLoading[codeTontine] == true) return;
+
+    final cle = _cleCtrl.text.trim();
+    if (cle.isEmpty) {
+      _afficherResultatPinReset(ctx, false,
+          'Veuillez saisir la clé d\'administration avant de réinitialiser un PIN.');
+      return;
+    }
+
+    // ── Étape 0 : lire l'email en base ───────────────────────────────────────
+    setState(() => _pinResetLoading[codeTontine] = true);
+    String emailEnBase = '';
+    try {
+      final getRes = await SupabaseService.adminGetGestionnaireEmail(
+        cle: cle, codeTontine: codeTontine, nomGest: nomGest,
+      );
+      if (getRes['ok'] == true) {
+        emailEnBase = (getRes['email'] as String? ?? '').trim();
+      }
+      // Si la RPC échoue (gestionnaire pas trouvé ou tontine absente),
+      // on continue avec email vide → l'admin devra saisir l'email manuellement
+    } catch (_) {}
+    finally {
+      if (mounted) setState(() => _pinResetLoading.remove(codeTontine));
+    }
+
+    if (!ctx.mounted) return;
+
+    // ── Étape 1 : afficher le dialogue ───────────────────────────────────────
+    await _dialoguePinReset(
+      ctx:          ctx,
+      codeTontine:  codeTontine,
+      nomGest:      nomGest,
+      cle:          cle,
+      emailEnBase:  emailEnBase,
+    );
+  }
+
+  /// Dialogue multi-étapes pour la réinitialisation du PIN.
+  /// Gère les deux cas : email connu en base / email absent (anciennes tontines).
+  Future<void> _dialoguePinReset({
+    required BuildContext ctx,
+    required String codeTontine,
+    required String nomGest,
+    required String cle,
+    required String emailEnBase,
+  }) async {
+    final emailCtrl    = TextEditingController(text: emailEnBase);
+    final enregistrerEmail = ValueNotifier<bool>(emailEnBase.isEmpty);
+    final chargement   = ValueNotifier<bool>(false);
+    final messageErr   = ValueNotifier<String>('');
+    final emailAbsent  = emailEnBase.isEmpty;
+
+    final ok = await showDialog<bool>(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (dCtx) => StatefulBuilder(
+        builder: (sCtx, setS) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+            contentPadding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+            actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            title: Row(
+              children: [
+                const Icon(Icons.lock_reset_rounded, size: 22, color: AppColors.encre),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Réinitialiser le PIN',
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                      Text(
+                        'Gestionnaire : $nomGest · $codeTontine',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w400,
+                          color: AppColors.texteDoux,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            content: ValueListenableBuilder<String>(
+              valueListenable: messageErr,
+              builder: (_, errMsg, __) => Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 6),
+
+                  // ── Bandeau info email absent / présent ───────────────────
+                  if (emailAbsent)
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.orFonce.withValues(alpha: 0.08),
+                        border: Border.all(color: AppColors.orFonce.withValues(alpha: 0.3)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.info_outline_rounded,
+                              size: 16, color: AppColors.orFonce),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Aucun e-mail enregistré pour ce gestionnaire.\n'
+                              'Saisissez son adresse e-mail ci-dessous.',
+                              style: TextStyle(fontSize: 12.5, color: AppColors.orFonce),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.succes.withValues(alpha: 0.08),
+                        border: Border.all(color: AppColors.succes.withValues(alpha: 0.3)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.email_outlined,
+                              size: 16, color: AppColors.succes),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'E-mail enregistré : $emailEnBase',
+                              style: const TextStyle(
+                                  fontSize: 12.5, color: AppColors.succes,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  const SizedBox(height: 12),
+
+                  // ── Champ e-mail ──────────────────────────────────────────
+                  Text(
+                    emailAbsent
+                        ? 'Adresse e-mail du gestionnaire *'
+                        : 'Modifier l\'adresse e-mail (optionnel)',
+                    style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.encreDoux),
+                  ),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    autocorrect: false,
+                    decoration: InputDecoration(
+                      hintText: 'gestionnaire@exemple.com',
+                      hintStyle: const TextStyle(color: AppColors.texteDoux, fontSize: 13),
+                      prefixIcon: const Icon(Icons.alternate_email_rounded,
+                          size: 18, color: AppColors.encreDoux),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: AppColors.lignes),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: AppColors.encre, width: 1.5),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 11),
+                      isDense: true,
+                    ),
+                    style: const TextStyle(fontSize: 13.5),
+                    onChanged: (_) {
+                      if (messageErr.value.isNotEmpty) messageErr.value = '';
+                    },
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // ── Option : enregistrer l'email en base ──────────────────
+                  ValueListenableBuilder<bool>(
+                    valueListenable: enregistrerEmail,
+                    builder: (_, enreg, __) => InkWell(
+                      onTap: () => enregistrerEmail.value = !enreg,
+                      borderRadius: BorderRadius.circular(6),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: Checkbox(
+                                value: enreg,
+                                onChanged: (v) =>
+                                    enregistrerEmail.value = v ?? false,
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                                activeColor: AppColors.encre,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(4)),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                'Enregistrer cet e-mail pour les prochaines fois',
+                                style: TextStyle(
+                                    fontSize: 12.5, color: AppColors.encreDoux),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // ── Message d'erreur ──────────────────────────────────────
+                  if (errMsg.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.alerte.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                            color: AppColors.alerte.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.error_outline_rounded,
+                              size: 16, color: AppColors.alerte),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              errMsg,
+                              style: const TextStyle(
+                                  fontSize: 12.5, color: AppColors.alerte),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 4),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dCtx, false),
+                child: const Text('Annuler',
+                    style: TextStyle(color: AppColors.texteDoux)),
+              ),
+              ValueListenableBuilder<bool>(
+                valueListenable: chargement,
+                builder: (_, charge, __) => FilledButton.icon(
+                  onPressed: charge
+                      ? null
+                      : () async {
+                          final emailSaisi = emailCtrl.text.trim().toLowerCase();
+
+                          // ── Validation e-mail ─────────────────────────────
+                          if (emailSaisi.isEmpty) {
+                            messageErr.value =
+                                'Veuillez saisir l\'adresse e-mail du gestionnaire.';
+                            return;
+                          }
+                          if (!emailSaisi.contains('@') ||
+                              !emailSaisi.contains('.')) {
+                            messageErr.value =
+                                'Adresse e-mail invalide. Vérifiez le format.';
+                            return;
+                          }
+
+                          messageErr.value = '';
+                          chargement.value = true;
+
+                          try {
+                            // ── Étape A : enregistrer l'email si demandé ───
+                            if (enregistrerEmail.value &&
+                                emailSaisi != emailEnBase) {
+                              debugPrint('[AdminPIN] Enregistrement email en base...');
+                              final setRes =
+                                  await SupabaseService.adminSetGestionnaireEmail(
+                                cle:         cle,
+                                codeTontine: codeTontine,
+                                nomGest:     nomGest,
+                                email:       emailSaisi,
+                              );
+                              debugPrint('[AdminPIN] Set email result: $setRes');
+                              if (setRes['ok'] != true) {
+                                messageErr.value = setRes['erreur'] as String? ??
+                                    'Impossible d\'enregistrer l\'e-mail.';
+                                return;
+                              }
+                            }
+
+                            // ── Étape B : RPC génération code PIN ─────────
+                            debugPrint(
+                                '[AdminPIN] RPC admin_reinitialiser_pin_gestionnaire');
+                            final rpcRes = await SupabaseService
+                                .adminDemanderResetPinGestionnaire(
+                              cle:           cle,
+                              codeTontine:   codeTontine,
+                              nomGest:       nomGest,
+                              emailOverride: emailSaisi,
+                            );
+                            debugPrint('[AdminPIN] RPC result: $rpcRes');
+
+                            if (rpcRes['ok'] != true) {
+                              messageErr.value = rpcRes['erreur'] as String? ??
+                                  'Erreur lors de la génération du code.';
+                              return;
+                            }
+
+                            final emailFinal =
+                                rpcRes['email'] as String? ?? emailSaisi;
+                            final gestNomFinal =
+                                rpcRes['gest_nom'] as String? ?? nomGest;
+                            final tontCode =
+                                rpcRes['tontine_code'] as String? ?? codeTontine;
+                            final codeClair =
+                                rpcRes['code_clair'] as String? ?? '';
+
+                            // ── Étape C : Edge Function send-manager-pin ──
+                            debugPrint(
+                                '[AdminPIN] Edge Function send-manager-pin → $emailFinal');
+                            final sendRes = await SupabaseService
+                                .adminEnvoyerResetPinGestionnaire(
+                              email:       emailFinal,
+                              gestNom:     gestNomFinal,
+                              tontineCode: tontCode,
+                              codeClair:   codeClair,
+                            );
+                            debugPrint('[AdminPIN] Send result: $sendRes');
+
+                            if (sendRes['success'] == true) {
+                              // ✅ Succès confirmé HTTP 200 + success:true
+                              if (sCtx.mounted) Navigator.pop(dCtx, true);
+                              // Afficher le SnackBar après fermeture du dialogue
+                              Future.microtask(() {
+                                if (ctx.mounted) {
+                                  _afficherResultatPinReset(
+                                    ctx, true,
+                                    'PIN envoyé par e-mail à $emailFinal.',
+                                  );
+                                  // Rafraîchir la liste (l'email peut avoir changé)
+                                  _recharger();
+                                }
+                              });
+                            } else {
+                              // ❌ Erreur réelle de l'Edge Function
+                              messageErr.value = sendRes['error'] as String? ??
+                                  "Impossible d'envoyer le code. Réessayez.";
+                            }
+                          } catch (e) {
+                            debugPrint('[AdminPIN] Exception: $e');
+                            messageErr.value =
+                                'Erreur inattendue. Vérifiez la connexion.';
+                          } finally {
+                            chargement.value = false;
+                          }
+                        },
+                  icon: charge
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.send_rounded, size: 16),
+                  label: Text(charge ? 'Envoi…' : 'Envoyer le PIN'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.encre,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    emailCtrl.dispose();
+    // ok est géré directement dans le callback onPressed (Navigator.pop)
+  }
+
+  // ─── Modifier l'email d'un gestionnaire (bouton séparé) ───────────────────
+  Future<void> _modifierEmailGestionnaire(
+    BuildContext ctx,
+    String codeTontine,
+    String nomGest,
+    String emailActuel,
+  ) async {
+    final cle = _cleCtrl.text.trim();
+    if (cle.isEmpty) {
+      _afficherResultatPinReset(ctx, false,
+          'Veuillez saisir la clé d\'administration.');
+      return;
+    }
+
+    final emailCtrl = TextEditingController(text: emailActuel);
+    final chargement = ValueNotifier<bool>(false);
+    final messageErr = ValueNotifier<String>('');
+
+    await showDialog<void>(
+      context: ctx,
+      builder: (dCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+        contentPadding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        title: Row(
+          children: [
+            const Icon(Icons.edit_outlined, size: 20, color: AppColors.encre),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Modifier l\'e-mail',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 16)),
+                  Text(
+                    '$nomGest · $codeTontine',
+                    style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                        color: AppColors.texteDoux),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        content: ValueListenableBuilder<String>(
+          valueListenable: messageErr,
+          builder: (_, errMsg, __) => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 10),
+              const Text('Nouvelle adresse e-mail *',
+                  style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.encreDoux)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: emailCtrl,
+                keyboardType: TextInputType.emailAddress,
+                autocorrect: false,
+                decoration: InputDecoration(
+                  hintText: 'gestionnaire@exemple.com',
+                  prefixIcon: const Icon(Icons.alternate_email_rounded,
+                      size: 18, color: AppColors.encreDoux),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: AppColors.lignes)),
+                  focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide:
+                          const BorderSide(color: AppColors.encre, width: 1.5)),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                  isDense: true,
+                ),
+                style: const TextStyle(fontSize: 13.5),
+                onChanged: (_) {
+                  if (messageErr.value.isNotEmpty) messageErr.value = '';
+                },
+              ),
+              if (emailActuel.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Actuel : $emailActuel',
+                  style: const TextStyle(
+                      fontSize: 11.5, color: AppColors.texteDoux),
+                ),
+              ],
+              if (errMsg.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.alerte.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: AppColors.alerte.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.error_outline_rounded,
+                          size: 16, color: AppColors.alerte),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(errMsg,
+                            style: const TextStyle(
+                                fontSize: 12.5, color: AppColors.alerte)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 4),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dCtx),
+            child: const Text('Annuler',
+                style: TextStyle(color: AppColors.texteDoux)),
+          ),
+          ValueListenableBuilder<bool>(
+            valueListenable: chargement,
+            builder: (_, charge, __) => FilledButton.icon(
+              onPressed: charge
+                  ? null
+                  : () async {
+                      final emailSaisi = emailCtrl.text.trim().toLowerCase();
+                      if (emailSaisi.isEmpty ||
+                          !emailSaisi.contains('@') ||
+                          !emailSaisi.contains('.')) {
+                        messageErr.value =
+                            'Adresse e-mail invalide. Vérifiez le format.';
+                        return;
+                      }
+                      messageErr.value = '';
+                      chargement.value = true;
+                      try {
+                        final res =
+                            await SupabaseService.adminSetGestionnaireEmail(
+                          cle:         cle,
+                          codeTontine: codeTontine,
+                          nomGest:     nomGest,
+                          email:       emailSaisi,
+                        );
+                        if (res['ok'] == true) {
+                          Navigator.pop(dCtx);
+                          _afficherResultatPinReset(
+                            ctx, true,
+                            'E-mail mis à jour : $emailSaisi',
+                          );
+                          _recharger();
+                        } else {
+                          messageErr.value = res['erreur'] as String? ??
+                              'Impossible de mettre à jour l\'e-mail.';
+                        }
+                      } catch (e) {
+                        messageErr.value =
+                            'Erreur inattendue. Vérifiez la connexion.';
+                      } finally {
+                        chargement.value = false;
+                      }
+                    },
+              icon: charge
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.save_rounded, size: 16),
+              label: Text(charge ? 'Enregistrement…' : 'Enregistrer'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.encre,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    emailCtrl.dispose();
   }
 
   /// Dialogue de restauration d'une tontine supprimée (Super Admin)

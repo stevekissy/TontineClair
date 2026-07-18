@@ -2600,25 +2600,67 @@ class SupabaseService {
   // Admin — Réinitialisation PIN gestionnaire via Edge Function send-manager-pin
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /// Étape 1 (Admin) : appelle la RPC admin_reinitialiser_pin_gestionnaire.
-  /// L'admin fournit la clé admin + code tontine + nom gestionnaire.
-  /// La RPC retrouve l'email en base, génère un code hashé, retourne
-  /// {ok, email, gest_nom, tontine_code, code_clair} pour que Flutter
-  /// appelle immédiatement l'Edge Function send-manager-pin.
-  ///
-  /// Retourne :
-  ///   {ok: true,  email, gest_nom, tontine_code, code_clair}  ← succès
-  ///   {ok: false, erreur: "message lisible"}                   ← échec
-  static Future<Map<String, dynamic>> adminDemanderResetPinGestionnaire({
+  /// Lit l'e-mail enregistré d'un gestionnaire dans la colonne `gestionnaires`.
+  /// Retourne {ok: true, email, gest_nom} ou {ok: false, erreur}.
+  static Future<Map<String, dynamic>> adminGetGestionnaireEmail({
     required String cle,
     required String codeTontine,
     required String nomGest,
   }) async {
     try {
-      final res = await rpc('admin_reinitialiser_pin_gestionnaire', {
+      final res = await rpc('admin_get_gestionnaire_email', {
         'p_cle':          cle,
         'p_code_tontine': codeTontine.toUpperCase(),
         'p_nom_gest':     nomGest.trim(),
+      });
+      if (res is Map) return Map<String, dynamic>.from(res);
+      return {'ok': false, 'erreur': 'Réponse inattendue du serveur.'};
+    } catch (e) {
+      return {'ok': false, 'erreur': 'Erreur réseau. Vérifiez votre connexion.'};
+    }
+  }
+
+  /// Enregistre ou met à jour l'e-mail d'un gestionnaire dans la tontine.
+  /// Retourne {ok: true, email, gest_nom, ancienEmail?, message} ou {ok: false, erreur}.
+  static Future<Map<String, dynamic>> adminSetGestionnaireEmail({
+    required String cle,
+    required String codeTontine,
+    required String nomGest,
+    required String email,
+  }) async {
+    try {
+      final res = await rpc('admin_set_gestionnaire_email', {
+        'p_cle':          cle,
+        'p_code_tontine': codeTontine.toUpperCase(),
+        'p_nom_gest':     nomGest.trim(),
+        'p_email':        email.trim().toLowerCase(),
+      });
+      if (res is Map) return Map<String, dynamic>.from(res);
+      return {'ok': false, 'erreur': 'Réponse inattendue du serveur.'};
+    } catch (e) {
+      return {'ok': false, 'erreur': 'Erreur réseau. Vérifiez votre connexion.'};
+    }
+  }
+
+  /// Étape 1 (Admin) : appelle la RPC admin_reinitialiser_pin_gestionnaire.
+  /// Accepte un [emailOverride] pour les tontines sans email enregistré.
+  /// La RPC génère un code hashé et retourne {ok, email, gest_nom, tontine_code, code_clair}.
+  ///
+  /// Retourne :
+  ///   {ok: true,  email, gest_nom, tontine_code, code_clair, email_source}  ← succès
+  ///   {ok: false, erreur: "message lisible"}                                  ← échec
+  static Future<Map<String, dynamic>> adminDemanderResetPinGestionnaire({
+    required String cle,
+    required String codeTontine,
+    required String nomGest,
+    String emailOverride = '',
+  }) async {
+    try {
+      final res = await rpc('admin_reinitialiser_pin_gestionnaire', {
+        'p_cle':            cle,
+        'p_code_tontine':   codeTontine.toUpperCase(),
+        'p_nom_gest':       nomGest.trim(),
+        'p_email_override': emailOverride.trim().toLowerCase(),
       });
       if (res is Map) return Map<String, dynamic>.from(res);
       return {'ok': false, 'erreur': 'Réponse inattendue du serveur.'};
