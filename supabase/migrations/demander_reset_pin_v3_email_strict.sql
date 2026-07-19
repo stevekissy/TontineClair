@@ -1,25 +1,7 @@
--- ═══════════════════════════════════════════════════════════════════════════════
--- TontineClair — demander_reset_pin_v3 : vérification stricte de l'email
---
--- CONTEXTE :
---   v2 utilisait l'anti-énumération : réponse neutre si email inconnu.
---   Désormais, l'email est OBLIGATOIRE à la création (stocké dans gestionnaires).
---   → Si l'email saisi ne correspond PAS → erreur explicite (ok: false).
---   → L'utilisateur sait qu'il doit ressaisir le BON email.
---
--- CHANGEMENTS vs v2 :
---   - Si tontine introuvable      → ok: false, erreur explicite
---   - Si email ne correspond pas  → ok: false, erreur explicite
---   - Si email correct + code ok  → ok: true, envoyer: true (inchangé)
---   - Rate limit                  → ok: false (inchangé)
---
--- À déployer : Supabase → SQL Editor → New query → Run
--- ═══════════════════════════════════════════════════════════════════════════════
-
 CREATE OR REPLACE FUNCTION demander_reset_pin_v3(
-    p_code    TEXT,    -- code de la tontine
-    p_nom     TEXT,    -- nom du gestionnaire (affiché dans l'email)
-    p_contact TEXT     -- email saisi par l'utilisateur
+    p_code    TEXT,
+    p_nom     TEXT,
+    p_contact TEXT
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -27,19 +9,21 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-    v_tontine_code  TEXT    := UPPER(TRIM(p_code));
-    v_nom           TEXT    := TRIM(p_nom);
-    v_contact       TEXT    := LOWER(TRIM(p_contact));
-    v_gest_email    TEXT    := NULL;
-    v_gest_nom_reel TEXT    := NULL;
-    v_nb_recents    INT     := 0;
-    v_code_clair    TEXT;
-    v_code_hash     TEXT;
-    v_tontine_row   tontines%ROWTYPE;
-    v_gests         JSONB;
-    v_gest          JSONB;
-    v_i             INT;
-    v_match         BOOLEAN := FALSE;
+    v_tontine_code   TEXT    := UPPER(TRIM(p_code));
+    v_nom            TEXT    := TRIM(p_nom);
+    v_contact        TEXT    := LOWER(TRIM(p_contact));
+    v_gest_email     TEXT    := NULL;
+    v_gest_nom_reel  TEXT    := NULL;
+    v_email_enreg    TEXT    := NULL;  -- email enregistré pour ce gestionnaire
+    v_email_present  BOOLEAN := FALSE; -- TRUE si au moins 1 email non-vide existe
+    v_nb_recents     INT     := 0;
+    v_code_clair     TEXT;
+    v_code_hash      TEXT;
+    v_tontine_row    tontines%ROWTYPE;
+    v_gests          JSONB;
+    v_gest           JSONB;
+    v_i              INT;
+    v_match          BOOLEAN := FALSE;
 BEGIN
     -- ── 1. Récupérer la tontine ──────────────────────────────────────────────
     SELECT * INTO v_tontine_row
@@ -49,56 +33,95 @@ BEGIN
 
     IF NOT FOUND THEN
         RETURN jsonb_build_object(
-            'ok',     FALSE,
-            'erreur', 'Tontine introuvable. Vérifiez le code saisi.'
+            'ok',      TRUE,
+            'envoyer', FALSE,
+            'message', 'Si ce contact est lié à votre compte, un code vous a été envoyé.'
         );
     END IF;
 
-    -- ── 2. Lire la colonne `gestionnaires` (objets {nom, email, pin}) ────────
+    -- ── 2. Lire la colonne gestionnaires ────────────────────────────────────
     v_gests := v_tontine_row.gestionnaires;
 
-    -- Fallback : si la colonne séparée est vide, tenter data->'gestionnaires'
+    -- Fallback si colonne vide → lire data->'gestionnaires'
     IF v_gests IS NULL OR jsonb_typeof(v_gests) <> 'array' OR jsonb_array_length(v_gests) = 0 THEN
         v_gests := v_tontine_row.data -> 'gestionnaires';
     END IF;
 
-    -- ── 3. Chercher le gestionnaire par email ────────────────────────────────
+    -- ── 3. Parcourir les gestionnaires ───────────────────────────────────────
     IF v_gests IS NOT NULL AND jsonb_typeof(v_gests) = 'array' THEN
         FOR v_i IN 0 .. jsonb_array_length(v_gests) - 1 LOOP
             v_gest := v_gests -> v_i;
 
-            -- Ignorer les entrées de type string (ancien format sans email)
-            IF jsonb_typeof(v_gest) <> 'object' THEN
-                CONTINUE;
-            END IF;
+            IF jsonb_typeof(v_gest) = 'object' THEN
+                -- Vérifier si cet objet a un email non-vide
+                IF COALESCE(TRIM(v_gest ->> 'email'), '') <> '' THEN
+                    v_email_present := TRUE;
+                END IF;
 
-            -- Comparaison email exacte (insensible à la casse)
-            IF LOWER(COALESCE(v_gest ->> 'email', '')) = v_contact
-               AND v_contact <> ''
-            THEN
-                v_gest_email    := v_gest ->> 'email';
-                v_gest_nom_reel := v_gest ->> 'nom';
-                v_match         := TRUE;
-                EXIT;
+                -- Chercher par nom (pour identifier le bon gestionnaire)
+                IF LOWER(TRIM(COALESCE(v_gest ->> 'nom', ''))) = LOWER(v_nom)
+                   OR v_nom = ''
+                THEN
+                    v_gest_nom_reel := COALESCE(v_gest ->> 'nom', v_nom);
+                    v_email_enreg   := COALESCE(TRIM(v_gest ->> 'email'), '');
+
+                    -- Si email enregistré → vérifier correspondance
+                    IF v_email_enreg <> '' THEN
+                        IF LOWER(v_email_enreg) = v_contact THEN
+                            v_gest_email := v_email_enreg;
+                            v_match      := TRUE;
+                            EXIT;
+                        END IF;
+                        -- Email enregistré mais ne correspond pas → on note sans EXIT
+                        -- (on continue au cas où il y a d'autres gestionnaires)
+                    ELSE
+                        -- Pas d'email enregistré pour ce gestionnaire → match direct
+                        -- On utilise le contact saisi comme adresse de destination
+                        v_gest_email := v_contact;
+                        v_match      := TRUE;
+                        EXIT;
+                    END IF;
+                END IF;
+
+            ELSIF jsonb_typeof(v_gest) = 'string' THEN
+                -- Format ancien (string pure) → pas d'email → match direct
+                IF LOWER(TRIM(v_gest #>> '{}')) = LOWER(v_nom) OR v_nom = '' THEN
+                    v_gest_nom_reel := TRIM(v_gest #>> '{}');
+                    v_gest_email    := v_contact;
+                    v_match         := TRUE;
+                    EXIT;
+                END IF;
             END IF;
         END LOOP;
     END IF;
 
-    -- ── 4. Email incorrect → refus explicite ─────────────────────────────────
-    -- (Pas d'anti-énumération en v3 : l'email est obligatoire à la création)
-    IF NOT v_match OR v_gest_email IS NULL OR v_gest_email = '' THEN
+    -- ── 4. Logique de décision selon présence d'email enregistré ────────────
+    --
+    -- CAS A : gestionnaire trouvé par nom, avait un email enregistré,
+    --         mais le contact saisi ne correspond pas → REFUS EXPLICITE
+    --         (seulement si l'email est bien enregistré)
+    IF NOT v_match AND v_gest_nom_reel IS NOT NULL AND v_email_enreg <> '' THEN
         INSERT INTO audit_securite (tontine_code, gest_nom, action, description, resultat)
         VALUES (v_tontine_code, v_nom, 'reset_pin_demande',
-                'Email incorrect ou absent : ' || v_contact, 'echec');
+                'Email incorrect : ' || v_contact || ' (attendu: ' || v_email_enreg || ')', 'echec');
 
         RETURN jsonb_build_object(
             'ok',     FALSE,
             'erreur', 'Cet email ne correspond pas à cette tontine. '
-                      'Vérifiez l''email saisi lors de la création.'
+                      'Utilisez l''email enregistré lors de la création.'
         );
     END IF;
 
-    -- ── 5. Rate limiting : max 3 codes dans 30 min ───────────────────────────
+    -- CAS B : gestionnaire non trouvé du tout → réponse neutre (anti-énumération)
+    IF NOT v_match THEN
+        RETURN jsonb_build_object(
+            'ok',      TRUE,
+            'envoyer', FALSE,
+            'message', 'Si ce contact est lié à votre compte, un code vous a été envoyé.'
+        );
+    END IF;
+
+    -- ── 5. Rate limiting ─────────────────────────────────────────────────────
     SELECT COUNT(*) INTO v_nb_recents
     FROM   pin_reset_codes
     WHERE  tontine_code = v_tontine_code
@@ -117,7 +140,7 @@ BEGIN
         );
     END IF;
 
-    -- ── 6. Invalider les anciens codes non utilisés ───────────────────────────
+    -- ── 6. Invalider anciens codes ───────────────────────────────────────────
     UPDATE pin_reset_codes
     SET    utilise = TRUE
     WHERE  tontine_code = v_tontine_code
@@ -131,7 +154,6 @@ BEGIN
         6, '0'
     );
 
-    -- Hachage SHA-256
     BEGIN
         v_code_hash := ENCODE(DIGEST(v_code_clair, 'sha256'), 'hex');
     EXCEPTION WHEN undefined_function THEN
@@ -149,17 +171,20 @@ BEGIN
         NOW() + INTERVAL '10 minutes'
     );
 
-    -- ── 9. Log audit succès ───────────────────────────────────────────────────
+    -- ── 9. Log audit ─────────────────────────────────────────────────────────
     INSERT INTO audit_securite (tontine_code, gest_nom, action, description, resultat)
     VALUES (
         v_tontine_code,
         COALESCE(v_gest_nom_reel, v_nom),
         'reset_pin_demande',
-        'Code généré — email vérifié et envoyé via Edge Function',
+        CASE WHEN v_email_enreg <> ''
+             THEN 'Code généré — email vérifié (' || v_gest_email || ')'
+             ELSE 'Code généré — tontine ancienne, email non enregistré'
+        END,
         'succes'
     );
 
-    -- ── 10. Retourner le code en clair (UNE SEULE FOIS) ──────────────────────
+    -- ── 10. Retourner le code en clair ───────────────────────────────────────
     RETURN jsonb_build_object(
         'ok',           TRUE,
         'envoyer',      TRUE,
@@ -174,49 +199,11 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN
     RAISE LOG '[demander_reset_pin_v3] Erreur inattendue : %', SQLERRM;
     RETURN jsonb_build_object(
-        'ok',     FALSE,
-        'erreur', 'Erreur serveur inattendue. Réessayez.'
+        'ok',      TRUE,
+        'envoyer', FALSE,
+        'message', 'Si ce contact est lié à votre compte, un code vous a été envoyé.'
     );
 END;
 $$;
 
 GRANT EXECUTE ON FUNCTION demander_reset_pin_v3(TEXT, TEXT, TEXT) TO anon, authenticated;
-
-
--- ═══════════════════════════════════════════════════════════════════════════════
--- MIGRATION creer_tontine : stocker l'email dans la colonne `gestionnaires`
---
--- La RPC creer_tontine reçoit p_gestionnaires comme tableau d'objets {nom, pin, email}.
--- La colonne `gestionnaires` de la table `tontines` doit stocker ces objets.
--- Ce bloc vérifie que la colonne accepte bien le champ email.
--- ═══════════════════════════════════════════════════════════════════════════════
-
--- Vérification que la colonne gestionnaires existe (JSONB)
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE  table_name  = 'tontines'
-          AND  column_name = 'gestionnaires'
-    ) THEN
-        ALTER TABLE tontines ADD COLUMN gestionnaires JSONB DEFAULT '[]';
-        RAISE NOTICE 'Colonne gestionnaires ajoutée à la table tontines.';
-    ELSE
-        RAISE NOTICE 'Colonne gestionnaires déjà présente.';
-    END IF;
-END;
-$$;
-
-
--- ═══════════════════════════════════════════════════════════════════════════════
--- VÉRIFICATION POST-DÉPLOIEMENT
--- ═══════════════════════════════════════════════════════════════════════════════
-
--- Test 1 : Vérifier que v3 est bien créée
--- SELECT proname, pronargs FROM pg_proc WHERE proname = 'demander_reset_pin_v3';
-
--- Test 2 : Test avec email correct (doit retourner ok:true, envoyer:true)
--- SELECT demander_reset_pin_v3('CODE_TONTINE', 'NOM_GEST', 'email@correct.com');
-
--- Test 3 : Test avec email incorrect (doit retourner ok:false)
--- SELECT demander_reset_pin_v3('CODE_TONTINE', 'NOM_GEST', 'mauvais@email.com');
