@@ -13,11 +13,14 @@
 //   SMTP_USERNAME → support@tontineclair.com (défaut)
 //   FROM_EMAIL    → support@tontineclair.com (défaut)
 //   FROM_NAME     → TontineClair            (défaut)
+//
+// IMPORTANT: Utilise npm:nodemailer (compatible Deno moderne)
+// Remplace deno.land/x/smtp@v0.7.0 qui utilisait Deno.writeAll (déprécié)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { SmtpClient } from "https://deno.land/x/smtp@v0.7.0/mod.ts";
+import nodemailer from "npm:nodemailer@6.9.9";
 
 // ─── Configuration SMTP (secrets Supabase) ────────────────────────────────────
 const SMTP_HOST     = Deno.env.get("SMTP_HOST")     ?? "smtp.hostinger.com";
@@ -209,7 +212,8 @@ function genererEmailPin(params: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Envoi SMTP via SmtpClient (Hostinger port 465 SSL)
+// Envoi SMTP via nodemailer (npm:nodemailer@6.9.9 — compatible Deno moderne)
+// Remplace smtp@v0.7.0 qui utilisait Deno.writeAll (API supprimée)
 // ─────────────────────────────────────────────────────────────────────────────
 async function envoyerSmtp(params: {
   to:      string;
@@ -222,32 +226,41 @@ async function envoyerSmtp(params: {
     return { ok: false, erreur: "SMTP_PASSWORD non configuré." };
   }
 
-  const client = new SmtpClient();
-
   try {
-    await client.connectTLS({
-      hostname: SMTP_HOST,
-      port:     SMTP_PORT,
-      username: SMTP_USERNAME,
-      password: SMTP_PASSWORD,
+    // Créer le transporteur nodemailer
+    const transporter = nodemailer.createTransport({
+      host:   SMTP_HOST,
+      port:   SMTP_PORT,
+      secure: SMTP_SECURE, // true = port 465 SSL, false = STARTTLS
+      auth: {
+        user: SMTP_USERNAME,
+        pass: SMTP_PASSWORD,
+      },
+      // Options de connexion pour robustesse
+      connectionTimeout: 10000, // 10 secondes
+      greetingTimeout:   5000,
+      socketTimeout:     10000,
     });
 
-    await client.send({
-      from:    `${FROM_NAME} <${FROM_EMAIL}>`,
-      to:      params.toName ? `${params.toName} <${params.to}>` : params.to,
+    // Préparer le destinataire
+    const toFormatted = params.toName
+      ? `"${params.toName}" <${params.to}>`
+      : params.to;
+
+    // Envoyer l'email
+    const info = await transporter.sendMail({
+      from:    `"${FROM_NAME}" <${FROM_EMAIL}>`,
+      to:      toFormatted,
       subject: params.sujet,
       html:    params.html,
-      content: "auto",
     });
 
-    await client.close();
-    console.log(`[send-manager-pin] ✅ E-mail envoyé → ${params.to}`);
+    console.log(`[send-manager-pin] ✅ E-mail envoyé → ${params.to} (messageId: ${info.messageId})`);
     return { ok: true };
 
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[send-manager-pin] ❌ Erreur SMTP → ${params.to} :`, msg);
-    try { await client.close(); } catch (_) { /* ignore */ }
     return { ok: false, erreur: msg };
   }
 }
@@ -357,7 +370,6 @@ serve(async (req: Request) => {
     });
   } else {
     // Retourner l'erreur SMTP précise pour permettre le diagnostic.
-    // En production, on peut re-masquer ce champ si nécessaire.
     const erreurDetail = result.erreur ?? "Erreur SMTP inconnue";
     console.error(`[send-manager-pin] Échec envoi → ${email} : ${erreurDetail}`);
 
