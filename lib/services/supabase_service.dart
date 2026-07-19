@@ -2452,6 +2452,7 @@ class SupabaseService {
     debugPrint('[PIN] Appel functions.invoke(send-manager-pin)...');
 
     try {
+      print('AVANT INVOKE');
       final response = await Supabase.instance.client.functions
           .invoke(
             'send-manager-pin',
@@ -2463,6 +2464,7 @@ class SupabaseService {
             },
           )
           .timeout(const Duration(seconds: 25));
+      print('APRES INVOKE');
 
       debugPrint('[PIN] Status     : ${response.status}');
       debugPrint('[PIN] Data       : ${response.data}');
@@ -2476,9 +2478,15 @@ class SupabaseService {
       final errMsg = (data is Map ? data['error'] as String? : null)
           ?? "Impossible d'envoyer le code (statut ${response.status})";
       final errDetail = (data is Map ? data['error_detail'] as String? : null) ?? '';
-      debugPrint('[PIN] ❌ Échec SMTP: $errMsg');
-      if (errDetail.isNotEmpty) debugPrint('[PIN] Détail: $errDetail');
-      return {'success': false, 'error': errMsg};
+      debugPrint('[PIN] ❌ Échec SMTP: $errMsg (HTTP ${response.status})');
+      if (errDetail.isNotEmpty) debugPrint('[PIN] Détail SMTP: $errDetail');
+      debugPrint('[PIN] Data complet: $data');
+      return {
+        'success': false,
+        'error': errMsg,
+        'error_detail': errDetail,
+        'http_status': response.status,
+      };
 
     } on FunctionException catch (e) {
       debugPrint('[PIN] FunctionException status=${e.status} details=${e.details} reason=${e.reasonPhrase}');
@@ -2701,6 +2709,7 @@ class SupabaseService {
     debugPrint('[AdminPIN] Appel functions.invoke(send-manager-pin)...');
 
     try {
+      print('AVANT INVOKE');
       final response = await Supabase.instance.client.functions
           .invoke(
             'send-manager-pin',
@@ -2712,6 +2721,7 @@ class SupabaseService {
             },
           )
           .timeout(const Duration(seconds: 25));
+      print('APRES INVOKE');
 
       debugPrint('[AdminPIN] Status : ${response.status}');
       debugPrint('[AdminPIN] Data   : ${response.data}');
