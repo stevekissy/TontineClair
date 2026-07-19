@@ -221,25 +221,6 @@ class _EtapeContactState extends State<_EtapeContact> {
     super.dispose();
   }
 
-  // Helper : ligne de diagnostic colorée
-  static Widget _diagLine(String label, String value) => Padding(
-    padding: const EdgeInsets.only(bottom: 4),
-    child: RichText(
-      text: TextSpan(
-        children: [
-          TextSpan(
-            text: '$label: ',
-            style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.w700, fontSize: 12),
-          ),
-          TextSpan(
-            text: value,
-            style: const TextStyle(color: Colors.white, fontFamily: 'monospace', fontSize: 12),
-          ),
-        ],
-      ),
-    ),
-  );
-
   Future<void> _envoyer() async {
     final contact = _contactCtrl.text.trim().toLowerCase();
     if (contact.isEmpty) {
@@ -258,63 +239,6 @@ class _EtapeContactState extends State<_EtapeContact> {
       );
 
       if (!mounted) return;
-
-      // ══════════════════════════════════════════════════════════════════════
-      // DIAGNOSTIC — afficher le résultat BRUT de la RPC avant toute décision
-      // ══════════════════════════════════════════════════════════════════════
-      debugPrint('[DIAG-RPC] rpcResult type : ${rpcResult.runtimeType}');
-      debugPrint('[DIAG-RPC] rpcResult      : $rpcResult');
-
-      // Dialog bloquant — l'utilisateur doit appuyer "Continuer" pour avancer
-      final continuer = await showDialog<bool>(
-        context:            context,
-        barrierDismissible: false,
-        builder: (_) => AlertDialog(
-          backgroundColor: const Color(0xFF1A1A2E),
-          title: const Text(
-            '🔬 RÉSULTAT RPC',
-            style: TextStyle(color: Colors.amber, fontWeight: FontWeight.w800),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _diagLine('tontineCode', widget.tontineCode),
-                _diagLine('gestNom',     widget.gestNom),
-                _diagLine('contact',     contact),
-                const Divider(color: Colors.amber),
-                _diagLine('ok',          '${rpcResult['ok']}'),
-                _diagLine('envoyer',     '${rpcResult['envoyer']}'),
-                _diagLine('email',       '${rpcResult['email']}'),
-                _diagLine('gest_nom',    '${rpcResult['gest_nom']}'),
-                _diagLine('tontine_code','${rpcResult['tontine_code']}'),
-                _diagLine('code_clair',  rpcResult['code_clair'] != null ? '✅ présent' : '❌ null'),
-                _diagLine('message',     '${rpcResult['message'] ?? rpcResult['erreur'] ?? '-'}'),
-                const Divider(color: Colors.amber),
-                Text(
-                  rpcResult['envoyer'] == true
-                      ? '→ Edge Function SERA appelée'
-                      : '⚠️ Edge Function NE SERA PAS appelée\n(envoyer != true)',
-                  style: TextStyle(
-                    color: rpcResult['envoyer'] == true ? Colors.greenAccent : Colors.redAccent,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Continuer', style: TextStyle(color: Colors.amber)),
-            ),
-          ],
-        ),
-      );
-      if (continuer != true || !mounted) return;
-      // ══════════════════════════════════════════════════════════════════════
 
       // Anti-énumération : toujours avancer à l'étape 2
       if (rpcResult['ok'] != true) {
@@ -355,90 +279,7 @@ class _EtapeContactState extends State<_EtapeContact> {
         return;
       }
 
-      // ══════════════════════════════════════════════════════════════════════
-      // DIAGNOSTIC — dialog visible AVANT l'appel Edge Function
-      // ══════════════════════════════════════════════════════════════════════
-      final supabaseUrl = SupabaseService.supabaseUrl;
-      const appVersion  = '1.2.2+5';
-      const fnName      = 'send-manager-pin';
-
-      // Contrôleur pour mettre à jour le contenu du dialog après l'appel
-      final diagNotifier = ValueNotifier<String>(
-        '⏳ En attente de la réponse serveur…',
-      );
-
-      if (mounted) {
-        showDialog<void>(
-          context:           context,
-          barrierDismissible: false,
-          builder: (_) => AlertDialog(
-            backgroundColor: const Color(0xFF1A1A2E),
-            title: const Text(
-              '🔬 DIAGNOSTIC INVOKE',
-              style: TextStyle(color: Colors.amber, fontWeight: FontWeight.w800),
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _diagLine('Version',  appVersion),
-                  _diagLine('URL Supabase', supabaseUrl),
-                  _diagLine('Fonction', fnName),
-                  _diagLine('email',    emailGest),
-                  _diagLine('gestNom',  gestNomReel),
-                  _diagLine('tontineCode', tontineCode.toUpperCase()),
-                  const Divider(color: Colors.amber),
-                  const Text(
-                    'AVANT INVOKE',
-                    style: TextStyle(
-                      color:      Colors.greenAccent,
-                      fontSize:   16,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  ValueListenableBuilder<String>(
-                    valueListenable: diagNotifier,
-                    builder: (_, val, __) => Text(
-                      val,
-                      style: TextStyle(
-                        color: val.startsWith('✅')
-                            ? Colors.greenAccent
-                            : val.startsWith('❌') || val.startsWith('💥')
-                                ? Colors.redAccent
-                                : Colors.white70,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              ValueListenableBuilder<String>(
-                valueListenable: diagNotifier,
-                builder: (ctx, val, __) {
-                  final termine = !val.startsWith('⏳');
-                  return TextButton(
-                    onPressed: termine ? () => Navigator.of(ctx).pop() : null,
-                    child: Text(
-                      termine ? 'Fermer' : 'Attente…',
-                      style: TextStyle(
-                        color: termine ? Colors.amber : Colors.grey,
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-        );
-      }
-
-      // ── Appel réel Edge Function SMTP ────────────────────────────────────
-      debugPrint('[PIN] _envoyer() → $fnName pour $emailGest');
+      // ── Appel Edge Function SMTP ─────────────────────────────────────────
       Map<String, dynamic> smtpResult;
       try {
         smtpResult = await SupabaseService.envoyerCodeResetPin(
@@ -447,20 +288,9 @@ class _EtapeContactState extends State<_EtapeContact> {
           tontineCode: tontineCode,
           codeClair:   codeClair,
         );
-        // Mise à jour du dialog avec le résultat
-        final ok        = smtpResult['success'] == true;
-        final errMsg    = smtpResult['error']        as String? ?? '';
-        final errDetail = smtpResult['error_detail'] as String? ?? '';
-        final httpStatus = smtpResult['http_status']  as int?    ?? 0;
-        diagNotifier.value = ok
-            ? '✅ APRES INVOKE\nHTTP 200 — success: true\nE-mail envoyé !'
-            : '❌ APRES INVOKE\nHTTP $httpStatus\nsuccess: false\n$errMsg'
-              '${errDetail.isNotEmpty ? '\n\nSMTP:\n$errDetail' : ''}';
       } catch (ex) {
-        diagNotifier.value = '💥 EXCEPTION\n${ex.runtimeType}\n$ex';
         smtpResult = {'success': false, 'error': 'Exception: $ex'};
       }
-      // ─────────────────────────────────────────────────────────────────────
 
       if (!mounted) return;
 
@@ -475,7 +305,6 @@ class _EtapeContactState extends State<_EtapeContact> {
       }
 
       // ── N'avancer QUE si Edge Function a retourné success == true ─────────
-      debugPrint('[PIN] _envoyer() ✅ succès SMTP → passage étape Code');
       if (mounted) widget.onSuivant(contact, emailGest);
 
     } catch (e) {
@@ -652,8 +481,7 @@ class _EtapeCodeState extends State<_EtapeCode> {
         return;
       }
 
-      // ── Appel réel Edge Function SMTP — BLOQUANT avant toast ─────────────
-      debugPrint('[PIN] _renvoyer() → send-manager-pin pour $emailGest');
+      // ── Appel Edge Function SMTP ─────────────────────────────────────────
       final smtpResult = await SupabaseService.envoyerCodeResetPin(
         email:       emailGest,
         gestNom:     gestNom,
@@ -672,7 +500,6 @@ class _EtapeCodeState extends State<_EtapeCode> {
       }
 
       // ── Toast + cooldown UNIQUEMENT si Edge Function a répondu success:true ─
-      debugPrint('[PIN] _renvoyer() ✅ succès SMTP → cooldown démarré');
       _codeCtrl.clear();
       _demarrerCooldown();
       if (mounted) {
