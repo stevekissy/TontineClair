@@ -224,7 +224,13 @@ class _EtapeContactState extends State<_EtapeContact> {
   Future<void> _envoyer() async {
     final contact = _contactCtrl.text.trim().toLowerCase();
     if (contact.isEmpty) {
-      setState(() => _erreur = 'Veuillez saisir votre email ou téléphone.');
+      setState(() => _erreur = 'Veuillez saisir votre email de récupération.');
+      return;
+    }
+    // Validation format email basique
+    final emailReg = RegExp(r'^[\w.+\-]+@[\w\-]+\.[\w.]+$');
+    if (!emailReg.hasMatch(contact)) {
+      setState(() => _erreur = 'Saisissez un email valide (ex: nom@gmail.com).');
       return;
     }
 
@@ -240,14 +246,21 @@ class _EtapeContactState extends State<_EtapeContact> {
 
       if (!mounted) return;
 
-      // Anti-énumération : toujours avancer à l'étape 2
+      // Gestion des erreurs RPC
       if (rpcResult['ok'] != true) {
-        // Seul cas bloquant : rate limit explicite
         final erreur = rpcResult['erreur'] as String? ?? '';
+        // Rate limit → message explicite
         if (erreur.contains('Trop de tentatives') || erreur.contains('30 minutes')) {
           setState(() { _erreur = erreur; _loading = false; });
           return;
         }
+        // Email incorrect ou gestionnaire introuvable → refus explicite
+        setState(() {
+          _erreur  = 'Cet email ne correspond pas à cette tontine. '
+                     'Vérifiez l\'email saisi lors de la création.';
+          _loading = false;
+        });
+        return;
       }
 
       // ── Étape B : si la RPC a généré un code → appel Edge Function SMTP ──
@@ -257,9 +270,13 @@ class _EtapeContactState extends State<_EtapeContact> {
       final gestNomReel  = rpcResult['gest_nom'] as String? ?? widget.gestNom;
       final tontineCode  = rpcResult['tontine_code'] as String? ?? widget.tontineCode;
 
-      // ── Anti-énumération : si la RPC dit "pas d'envoi", avancer sans email ──
+      // ── Si la RPC dit "pas d'envoi" (email non trouvé) → refus explicite ──
       if (!doitEnvoyer) {
-        if (mounted) widget.onSuivant(contact, emailGest);
+        setState(() {
+          _erreur  = 'Cet email ne correspond pas à cette tontine. '
+                     'Vérifiez l\'email saisi lors de la création.';
+          _loading = false;
+        });
         return;
       }
 
@@ -339,19 +356,21 @@ class _EtapeContactState extends State<_EtapeContact> {
           ),
           const SizedBox(height: 24),
           const Text(
-            'Saisissez votre adresse e-mail ou numéro de téléphone lié à votre profil.',
+            'Saisissez l\'email de récupération que vous avez renseigné lors de la création de la tontine.',
             style: TextStyle(fontSize: 14, color: AppColors.texte, height: 1.5),
           ),
           const SizedBox(height: 16),
-          const ChampLabel(label: 'E-mail ou téléphone'),
+          const ChampLabel(label: 'Email de récupération'),
           TextField(
             controller:      _contactCtrl,
             keyboardType:    TextInputType.emailAddress,
+            autocorrect:     false,
             textInputAction: TextInputAction.done,
             decoration: const InputDecoration(
-              hintText:   'Ex : gestionnaire@email.com ou +225 07 00 00 00',
-              prefixIcon: Icon(Icons.alternate_email_rounded,
-                  color: AppColors.encreDoux),
+              hintText:   'Ex : nom@gmail.com',
+              prefixIcon: Icon(Icons.email_outlined, color: AppColors.encreDoux),
+              helperText: 'L\'email doit correspondre exactement à celui de la création',
+              helperStyle: TextStyle(fontSize: 11, color: AppColors.encreDoux),
             ),
             onSubmitted: (_) => _envoyer(),
           ),

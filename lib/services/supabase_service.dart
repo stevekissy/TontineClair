@@ -2414,24 +2414,24 @@ class SupabaseService {
   // PIN Reset v2 — RPC + Edge Function send-manager-pin (SMTP Hostinger)
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /// Étape 1 : génère un code via RPC (stocké hashé) et retourne l'email +
-  /// code_clair pour que Flutter appelle l'Edge Function send-manager-pin.
-  /// Anti-énumération : retourne toujours ok:true même si contact inconnu.
+  /// Étape 1 : génère un code via RPC v3 (vérification stricte de l'email).
+  /// Retourne ok:true + code si l'email correspond, ok:false + erreur sinon.
+  /// L'email saisi DOIT correspondre exactement à celui enregistré à la création.
   static Future<Map<String, dynamic>> demanderResetPin({
     required String code,
     required String nom,
     required String contact,
   }) async {
     try {
-      final res = await rpc('demander_reset_pin_v2', {
+      final res = await rpc('demander_reset_pin_v3', {
         'p_code':    code.toUpperCase(),
         'p_nom':     nom,
-        'p_contact': contact.trim(),
+        'p_contact': contact.trim().toLowerCase(),
       });
       if (res is Map) return Map<String, dynamic>.from(res);
-      return {'ok': true, 'envoyer': false, 'message': 'Si ce contact est lié à votre compte, un code vous a été envoyé.'};
+      return {'ok': false, 'erreur': 'Réponse serveur inattendue. Réessayez.'};
     } catch (e) {
-      return {'ok': true, 'envoyer': false, 'message': 'Si ce contact est lié à votre compte, un code vous a été envoyé.'};
+      return {'ok': false, 'erreur': 'Erreur réseau. Vérifiez votre connexion.'};
     }
   }
 
