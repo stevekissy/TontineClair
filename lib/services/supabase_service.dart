@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/tontine.dart';
 import '../models/kyc_model.dart' as kyc_model;
 
@@ -2434,47 +2435,63 @@ class SupabaseService {
     }
   }
 
-  /// Étape 1b : appelle l'Edge Function send-manager-pin via SMTP Hostinger.
-  /// Retourne {success: true} ou {success: false, error: "message générique"}.
-  /// Le mot de passe SMTP est uniquement dans les secrets Supabase — jamais ici.
+  /// Étape 1b : appelle l'Edge Function send-manager-pin via le SDK Supabase.
+  /// Utilise functions.invoke() — seul appel qui apparaît dans les Invocations Supabase.
+  /// Retourne {success: true} ou {success: false, error: "message"}.
   static Future<Map<String, dynamic>> envoyerCodeResetPin({
     required String email,
     required String gestNom,
     required String tontineCode,
     required String codeClair,
   }) async {
+    debugPrint('[PIN] ── envoyerCodeResetPin ────────────────────────────────');
+    debugPrint('[PIN] email       : $email');
+    debugPrint('[PIN] gestNom     : $gestNom');
+    debugPrint('[PIN] tontineCode : $tontineCode');
+    debugPrint('[PIN] codeClair   : (présent=${codeClair.isNotEmpty})');
+    debugPrint('[PIN] Appel functions.invoke(send-manager-pin)...');
+
     try {
-      final url = Uri.parse('$_url/functions/v1/send-manager-pin');
-      final response = await http.post(
-        url,
-        headers: {
-          'Content-Type':  'application/json',
-          'Authorization': 'Bearer $_key',
-          'apikey':        _key,
-        },
-        body: jsonEncode({
-          'email':       email,
-          'gestNom':     gestNom,
-          'tontineCode': tontineCode.toUpperCase(),
-          'code':        codeClair,
-        }),
-      ).timeout(const Duration(seconds: 20));
+      final response = await Supabase.instance.client.functions
+          .invoke(
+            'send-manager-pin',
+            body: {
+              'email':       email.trim(),
+              'gestNom':     gestNom,
+              'tontineCode': tontineCode.toUpperCase(),
+              'code':        codeClair,
+            },
+          )
+          .timeout(const Duration(seconds: 25));
 
-      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      debugPrint('[PIN] Status     : ${response.status}');
+      debugPrint('[PIN] Data       : ${response.data}');
 
-      if (response.statusCode == 200 && body['success'] == true) {
+      final data = response.data;
+      if (response.status == 200 && data is Map && data['success'] == true) {
+        debugPrint('[PIN] ✅ Succès — e-mail envoyé');
         return {'success': true};
       }
-      // Message générique côté client (détail dans les logs Supabase)
-      return {
-        'success': false,
-        'error': "Impossible d'envoyer le code. Réessayez.",
-      };
+
+      final errMsg = (data is Map ? data['error'] as String? : null)
+          ?? "Impossible d'envoyer le code (statut ${response.status})";
+      final errDetail = (data is Map ? data['error_detail'] as String? : null) ?? '';
+      debugPrint('[PIN] ❌ Échec SMTP: $errMsg');
+      if (errDetail.isNotEmpty) debugPrint('[PIN] Détail: $errDetail');
+      return {'success': false, 'error': errMsg};
+
+    } on FunctionException catch (e) {
+      debugPrint('[PIN] FunctionException status=${e.status} details=${e.details} reason=${e.reasonPhrase}');
+      return {'success': false, 'error': 'Erreur serveur (${e.status}). Réessayez.'};
+    } on TimeoutException {
+      debugPrint('[PIN] Timeout après 25s');
+      return {'success': false, 'error': 'Délai dépassé. Vérifiez votre connexion.'};
+    } on Exception catch (e) {
+      debugPrint('[PIN] Exception réseau/fetch: $e');
+      return {'success': false, 'error': 'Erreur réseau. Vérifiez votre connexion.'};
     } catch (e) {
-      return {
-        'success': false,
-        'error': "Impossible d'envoyer le code. Réessayez.",
-      };
+      debugPrint('[PIN] Exception inattendue: $e');
+      return {'success': false, 'error': "Impossible d'envoyer le code. Réessayez."};
     }
   }
 
@@ -2669,8 +2686,7 @@ class SupabaseService {
     }
   }
 
-  /// Étape 2 (Admin) : appelle l'Edge Function send-manager-pin.
-  /// Identique à [envoyerCodeResetPin] mais avec logs supplémentaires.
+  /// Étape 2 (Admin) : appelle l'Edge Function send-manager-pin via SDK Supabase.
   /// Retourne {success: true} ou {success: false, error: "message"}.
   static Future<Map<String, dynamic>> adminEnvoyerResetPinGestionnaire({
     required String email,
@@ -2678,47 +2694,51 @@ class SupabaseService {
     required String tontineCode,
     required String codeClair,
   }) async {
-    final url = Uri.parse('$_url/functions/v1/send-manager-pin');
+    debugPrint('[AdminPIN] ── adminEnvoyerResetPinGestionnaire ────────────────');
+    debugPrint('[AdminPIN] email       : $email');
+    debugPrint('[AdminPIN] gestNom     : $gestNom');
+    debugPrint('[AdminPIN] tontineCode : $tontineCode');
+    debugPrint('[AdminPIN] Appel functions.invoke(send-manager-pin)...');
+
     try {
-      final response = await http.post(
-        url,
-        headers: {
-          'Content-Type':  'application/json',
-          'Authorization': 'Bearer $_key',
-          'apikey':        _key,
-        },
-        body: jsonEncode({
-          'email':       email,
-          'gestNom':     gestNom,
-          'tontineCode': tontineCode.toUpperCase(),
-          'code':        codeClair,
-        }),
-      ).timeout(const Duration(seconds: 25));
+      final response = await Supabase.instance.client.functions
+          .invoke(
+            'send-manager-pin',
+            body: {
+              'email':       email.trim(),
+              'gestNom':     gestNom,
+              'tontineCode': tontineCode.toUpperCase(),
+              'code':        codeClair,
+            },
+          )
+          .timeout(const Duration(seconds: 25));
 
-      // ── Logs côté application (visibles dans debugPrint / console dev) ───────
-      debugPrint('[AdminPIN] POST ${url.path}');
-      debugPrint('[AdminPIN] HTTP ${response.statusCode}');
-      debugPrint('[AdminPIN] Body: ${response.body}');
+      debugPrint('[AdminPIN] Status : ${response.status}');
+      debugPrint('[AdminPIN] Data   : ${response.data}');
 
-      final body = jsonDecode(response.body) as Map<String, dynamic>;
-
-      if (response.statusCode == 200 && body['success'] == true) {
+      final data = response.data;
+      if (response.status == 200 && data is Map && data['success'] == true) {
+        debugPrint('[AdminPIN] ✅ Succès — e-mail envoyé');
         return {'success': true};
       }
 
-      // Récupérer le message d'erreur renvoyé par l'Edge Function
-      final errMsg    = body['error']        as String? ?? "Impossible d'envoyer le code. Réessayez.";
-      final errDetail = body['error_detail'] as String? ?? '';
-      // ⑧ Log du détail technique pour diagnostic SMTP
-      if (errDetail.isNotEmpty) {
-        debugPrint('[AdminPIN] Erreur SMTP detail: $errDetail');
-      }
+      final errMsg    = (data is Map ? data['error']        as String? : null) ?? "Impossible d'envoyer le code (statut ${response.status})";
+      final errDetail = (data is Map ? data['error_detail'] as String? : null) ?? '';
+      debugPrint('[AdminPIN] ❌ Échec: $errMsg');
+      if (errDetail.isNotEmpty) debugPrint('[AdminPIN] Détail SMTP: $errDetail');
       return {'success': false, 'error': errMsg};
+
+    } on FunctionException catch (e) {
+      debugPrint('[AdminPIN] FunctionException status=${e.status} details=${e.details} reason=${e.reasonPhrase}');
+      return {'success': false, 'error': 'Erreur serveur (${e.status}). Réessayez.'};
     } on TimeoutException {
-      debugPrint('[AdminPIN] Timeout après 25s — URL: $url');
+      debugPrint('[AdminPIN] Timeout après 25s');
       return {'success': false, 'error': 'Délai dépassé. Vérifiez votre connexion.'};
+    } on Exception catch (e) {
+      debugPrint('[AdminPIN] Exception réseau/fetch: $e');
+      return {'success': false, 'error': 'Erreur réseau. Vérifiez votre connexion.'};
     } catch (e) {
-      debugPrint('[AdminPIN] Exception: $e');
+      debugPrint('[AdminPIN] Exception inattendue: $e');
       return {'success': false, 'error': "Impossible d'envoyer le code. Réessayez."};
     }
   }

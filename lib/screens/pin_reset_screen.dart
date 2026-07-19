@@ -257,29 +257,51 @@ class _EtapeContactState extends State<_EtapeContact> {
       final gestNomReel  = rpcResult['gest_nom'] as String? ?? widget.gestNom;
       final tontineCode  = rpcResult['tontine_code'] as String? ?? widget.tontineCode;
 
-      if (doitEnvoyer && codeClair != null && emailGest.isNotEmpty) {
-        // Appel Edge Function — peut prendre quelques secondes (SMTP)
-        final smtpResult = await SupabaseService.envoyerCodeResetPin(
-          email:       emailGest,
-          gestNom:     gestNomReel,
-          tontineCode: tontineCode,
-          codeClair:   codeClair,
-        );
-
-        if (!mounted) return;
-
-        if (smtpResult['success'] != true) {
-          // Message générique — détail dans logs Supabase
-          setState(() {
-            _erreur  = smtpResult['error'] as String?
-                ?? "Impossible d'envoyer le code. Réessayez.";
-            _loading = false;
-          });
-          return;
-        }
+      // ── Anti-énumération : si la RPC dit "pas d'envoi", avancer sans email ──
+      if (!doitEnvoyer) {
+        if (mounted) widget.onSuivant(contact, emailGest);
+        return;
       }
 
-      // ── Toujours avancer (anti-énumération) ───────────────────────────────
+      // ── doitEnvoyer == true → email et code obligatoires ──────────────────
+      if (codeClair == null || codeClair.isEmpty) {
+        setState(() {
+          _erreur  = "Erreur interne : code absent. Réessayez.";
+          _loading = false;
+        });
+        return;
+      }
+      if (emailGest.isEmpty) {
+        setState(() {
+          _erreur  = "E-mail du gestionnaire introuvable. Contactez l'administrateur.";
+          _loading = false;
+        });
+        return;
+      }
+
+      // ── Appel réel Edge Function SMTP — BLOQUANT avant avancement ────────
+      debugPrint('[PIN] _envoyer() → send-manager-pin pour $emailGest');
+      final smtpResult = await SupabaseService.envoyerCodeResetPin(
+        email:       emailGest,
+        gestNom:     gestNomReel,
+        tontineCode: tontineCode,
+        codeClair:   codeClair,
+      );
+
+      if (!mounted) return;
+
+      if (smtpResult['success'] != true) {
+        // Afficher la vraie erreur serveur — NE PAS avancer
+        setState(() {
+          _erreur  = smtpResult['error'] as String?
+              ?? "Impossible d'envoyer le code. Réessayez.";
+          _loading = false;
+        });
+        return;
+      }
+
+      // ── N'avancer QUE si Edge Function a retourné success == true ─────────
+      debugPrint('[PIN] _envoyer() ✅ succès SMTP → passage étape Code');
       if (mounted) widget.onSuivant(contact, emailGest);
 
     } catch (e) {
@@ -437,26 +459,46 @@ class _EtapeCodeState extends State<_EtapeCode> {
       final gestNom     = (rpcResult['gest_nom'] as String?)
                           ?? widget.gestNom;
 
-      if (doitEnvoyer && codeClair != null && emailGest.isNotEmpty) {
-        // 2. Edge Function SMTP
-        final smtpResult = await SupabaseService.envoyerCodeResetPin(
-          email:       emailGest,
-          gestNom:     gestNom,
-          tontineCode: widget.tontineCode,
-          codeClair:   codeClair,
-        );
-
-        if (!mounted) return;
-
-        if (smtpResult['success'] != true) {
-          setState(() =>
-              _erreur = smtpResult['error'] as String?
-                  ?? "Impossible d'envoyer le code. Réessayez.");
-          return;
-        }
+      // ── Si RPC dit "pas d'envoi" → erreur (on est déjà en étape 2, c'est anormal)
+      if (!doitEnvoyer) {
+        setState(() =>
+            _erreur = "Impossible de générer un nouveau code. Réessayez.");
+        return;
       }
 
-      // ✅ Renvoi ok — reset timer + champ
+      // ── codeClair et emailGest obligatoires ────────────────────────────────
+      if (codeClair == null || codeClair.isEmpty) {
+        setState(() =>
+            _erreur = "Erreur interne : code absent. Réessayez.");
+        return;
+      }
+      if (emailGest.isEmpty) {
+        setState(() =>
+            _erreur = "E-mail introuvable. Contactez l'administrateur.");
+        return;
+      }
+
+      // ── Appel réel Edge Function SMTP — BLOQUANT avant toast ─────────────
+      debugPrint('[PIN] _renvoyer() → send-manager-pin pour $emailGest');
+      final smtpResult = await SupabaseService.envoyerCodeResetPin(
+        email:       emailGest,
+        gestNom:     gestNom,
+        tontineCode: widget.tontineCode,
+        codeClair:   codeClair,
+      );
+
+      if (!mounted) return;
+
+      if (smtpResult['success'] != true) {
+        // Afficher la vraie erreur serveur — NE PAS déclencher cooldown
+        setState(() =>
+            _erreur = smtpResult['error'] as String?
+                ?? "Impossible d'envoyer le code. Réessayez.");
+        return;
+      }
+
+      // ── Toast + cooldown UNIQUEMENT si Edge Function a répondu success:true ─
+      debugPrint('[PIN] _renvoyer() ✅ succès SMTP → cooldown démarré');
       _codeCtrl.clear();
       _demarrerCooldown();
       if (mounted) {
