@@ -359,7 +359,31 @@ class _EtapeContactState extends State<_EtapeContact> {
             'Saisissez l\'email de récupération que vous avez renseigné lors de la création de la tontine.',
             style: TextStyle(fontSize: 14, color: AppColors.texte, height: 1.5),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
+          // ── Encadré conseil tontines anciennes ───────────────────────────
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0F4FF),
+              border: Border.all(color: const Color(0xFFBFCBF4)),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Icon(Icons.lightbulb_outline, size: 15, color: Color(0xFF3B4DB8)),
+                SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Si la tontine a été créée avant la mise à jour, '
+                    'saisissez n\'importe quel email valide — le code y sera envoyé.',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF3B4DB8), height: 1.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
           const ChampLabel(label: 'Email de récupération'),
           TextField(
             controller:      _contactCtrl,
@@ -700,6 +724,48 @@ class _EtapeCodeState extends State<_EtapeCode> {
             child: Text(
               '⏱ Ce code expire dans 10 minutes',
               style: TextStyle(fontSize: 12, color: AppColors.texteDoux),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // ── Encadré "Pas reçu ?" ─────────────────────────────────────────
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFFBEB), // Jaune très clair
+              border: Border.all(color: const Color(0xFFF59E0B), width: 1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 15, color: Color(0xFF92400E)),
+                    SizedBox(width: 6),
+                    Text(
+                      'Email non reçu ?',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF92400E),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  '1. Vérifiez vos courriers indésirables (SPAM / Promotions)',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF78350F), height: 1.5),
+                ),
+                const Text(
+                  '2. L\'email vient de support@tontineclair.com',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF78350F), height: 1.5),
+                ),
+                const Text(
+                  '3. Attendez 1-2 minutes puis cliquez "Renvoyer"',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF78350F), height: 1.5),
+                ),
+              ],
             ),
           ),
         ],

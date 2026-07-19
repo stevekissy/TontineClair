@@ -220,7 +220,7 @@ async function envoyerSmtp(params: {
   toName?: string;
   sujet:   string;
   html:    string;
-}): Promise<{ ok: boolean; erreur?: string }> {
+}): Promise<{ ok: boolean; erreur?: string; messageId?: string }> {
   if (!SMTP_PASSWORD) {
     console.error("[send-manager-pin] SMTP_PASSWORD manquant dans les secrets Supabase.");
     return { ok: false, erreur: "SMTP_PASSWORD non configuré." };
@@ -256,7 +256,7 @@ async function envoyerSmtp(params: {
     });
 
     console.log(`[send-manager-pin] ✅ E-mail envoyé → ${params.to} (messageId: ${info.messageId})`);
-    return { ok: true };
+    return { ok: true, messageId: info.messageId ?? undefined };
 
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -325,21 +325,31 @@ serve(async (req: Request) => {
 
   // ── Log Supabase (audit) ────────────────────────────────────────────────────
   const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-  const logId: string | null = null;
+  let logId: string | null = null;
 
   try {
     // Log de tentative d'envoi (statut pending)
-    await supabase.from("email_logs").insert({
-      destinataire: email,
-      type_email:   "pin_reset",
-      sujet:        `Code PIN reset — ${tontineCode.toUpperCase()}`,
-      tontine_code: tontineCode.toUpperCase(),
-      gest_nom:     gestNom,
-      statut:       "pending",
-    });
+    const { data: logData, error: logErr } = await supabase
+      .from("email_logs")
+      .insert({
+        destinataire: email,
+        type_email:   "pin_reset",
+        sujet:        `Code PIN reset — ${tontineCode.toUpperCase()}`,
+        tontine_code: tontineCode.toUpperCase(),
+        gest_nom:     gestNom,
+        statut:       "pending",
+      })
+      .select("id")
+      .single();
+
+    if (logErr) {
+      console.warn("[send-manager-pin] Log Supabase échoué :", logErr.message);
+    } else if (logData) {
+      logId = logData.id?.toString() ?? null;
+    }
   } catch (logErr) {
     // Non bloquant — on continue l'envoi même si le log échoue
-    console.warn("[send-manager-pin] Log Supabase échoué :", logErr);
+    console.warn("[send-manager-pin] Log Supabase échoué (exception) :", logErr);
   }
 
   // ── Génération HTML ─────────────────────────────────────────────────────────
@@ -358,7 +368,8 @@ serve(async (req: Request) => {
     try {
       await supabase.from("email_logs").update({
         statut:      result.ok ? "envoye" : "echoue",
-        motif_echec: result.ok ? null : result.erreur,
+        motif_echec: result.ok ? null     : result.erreur,
+        message_id:  result.ok ? (result as { ok: boolean; messageId?: string }).messageId ?? null : null,
       }).eq("id", logId);
     } catch (_) { /* non bloquant */ }
   }
