@@ -2435,8 +2435,8 @@ class SupabaseService {
     }
   }
 
-  /// Étape 1b : appelle l'Edge Function send-manager-pin via le SDK Supabase.
-  /// Utilise functions.invoke() — seul appel qui apparaît dans les Invocations Supabase.
+  /// Étape 1b : appelle l'Edge Function send-manager-pin via HTTP direct.
+  /// Evite les FunctionException du SDK Supabase qui masquent la vraie erreur.
   /// Retourne {success: true} ou {success: false, error: "message"}.
   static Future<Map<String, dynamic>> envoyerCodeResetPin({
     required String email,
@@ -2445,35 +2445,34 @@ class SupabaseService {
     required String codeClair,
   }) async {
     try {
-      final response = await Supabase.instance.client.functions
-          .invoke(
-            'send-manager-pin',
-            body: {
-              'email':       email.trim(),
-              'gestNom':     gestNom,
-              'tontineCode': tontineCode.toUpperCase(),
-              'code':        codeClair,
-            },
-          )
-          .timeout(const Duration(seconds: 25));
+      final uri = Uri.parse('$_url/functions/v1/send-manager-pin');
+      final response = await http.post(
+        uri,
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': 'Bearer $_key',
+          'apikey':        _key,
+        },
+        body: jsonEncode({
+          'email':       email.trim(),
+          'gestNom':     gestNom,
+          'tontineCode': tontineCode.toUpperCase(),
+          'code':        codeClair,
+        }),
+      ).timeout(const Duration(seconds: 30));
 
-      final data = response.data;
-      if (response.status == 200 && data is Map && data['success'] == true) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && data['success'] == true) {
         return {'success': true};
       }
-
-      final errMsg = (data is Map ? data['error'] as String? : null)
-          ?? "Impossible d'envoyer le code. Réessayez.";
+      final errMsg = data['error'] as String?
+          ?? "Impossible d'envoyer le code (statut ${response.statusCode})";
       return {'success': false, 'error': errMsg};
 
-    } on FunctionException catch (e) {
-      return {'success': false, 'error': 'Erreur serveur (${e.status}). Réessayez.'};
     } on TimeoutException {
       return {'success': false, 'error': 'Délai dépassé. Vérifiez votre connexion.'};
-    } on Exception {
+    } catch (e) {
       return {'success': false, 'error': 'Erreur réseau. Vérifiez votre connexion.'};
-    } catch (_) {
-      return {'success': false, 'error': "Impossible d'envoyer le code. Réessayez."};
     }
   }
 
@@ -2677,35 +2676,34 @@ class SupabaseService {
     required String codeClair,
   }) async {
     try {
-      final response = await Supabase.instance.client.functions
-          .invoke(
-            'send-manager-pin',
-            body: {
-              'email':       email.trim(),
-              'gestNom':     gestNom,
-              'tontineCode': tontineCode.toUpperCase(),
-              'code':        codeClair,
-            },
-          )
-          .timeout(const Duration(seconds: 25));
+      final uri = Uri.parse('$_url/functions/v1/send-manager-pin');
+      final response = await http.post(
+        uri,
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': 'Bearer $_key',
+          'apikey':        _key,
+        },
+        body: jsonEncode({
+          'email':       email.trim(),
+          'gestNom':     gestNom,
+          'tontineCode': tontineCode.toUpperCase(),
+          'code':        codeClair,
+        }),
+      ).timeout(const Duration(seconds: 30));
 
-      final data = response.data;
-      if (response.status == 200 && data is Map && data['success'] == true) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && data['success'] == true) {
         return {'success': true};
       }
-
-      final errMsg = (data is Map ? data['error'] as String? : null)
-          ?? "Impossible d'envoyer le code (statut ${response.status})";
+      final errMsg = data['error'] as String?
+          ?? "Impossible d'envoyer le code (statut ${response.statusCode})";
       return {'success': false, 'error': errMsg};
 
-    } on FunctionException catch (e) {
-      return {'success': false, 'error': 'Erreur serveur (${e.status}). Réessayez.'};
     } on TimeoutException {
       return {'success': false, 'error': 'Délai dépassé. Vérifiez votre connexion.'};
-    } on Exception {
+    } catch (e) {
       return {'success': false, 'error': 'Erreur réseau. Vérifiez votre connexion.'};
-    } catch (_) {
-      return {'success': false, 'error': "Impossible d'envoyer le code. Réessayez."};
     }
   }
 }
