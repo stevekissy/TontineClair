@@ -3,11 +3,14 @@ import 'package:url_launcher/url_launcher.dart';
 import '../utils/app_colors.dart';
 import '../widgets/app_widgets.dart';
 import '../models/tontine.dart';
+import '../models/kyc_model.dart';
+import '../services/kyc_service.dart';
+import 'kyc_screen.dart';
 
 /// Écran "Passer en Premium" — Gratuite → Premium IRRÉVERSIBLE.
 ///
-/// - Si cagnotte < 200 000 XOF : KYC optionnel (peut continuer sans).
-/// - Si cagnotte >= 200 000 XOF : KYC obligatoire avant accès Google Play.
+/// KYC obligatoire pour TOUT passage en Premium, sans condition de montant.
+/// Compte Gratuit → aucun KYC.
 class UpgradePremiumScreen extends StatefulWidget {
   final String  code;
   final int     montantCagnotte;
@@ -27,8 +30,10 @@ class UpgradePremiumScreen extends StatefulWidget {
 }
 
 class _UpgradePremiumScreenState extends State<UpgradePremiumScreen> {
-  bool    _checkboxLu  = false;
-  String? _kycStatut;   // mis à jour après soumission KYC
+  bool _checkboxLu     = false;
+  bool _kycVerifie     = false;   // true = Smile ID a confirmé verified
+  bool _kycEnCours     = false;   // spinner pendant le check
+  bool _kycEnAttente   = false;   // pending/processing après soumission
 
   static const _couleurPremium = Color(0xFFF59E0B);
   static const _googlePlayUrl =
@@ -37,20 +42,50 @@ class _UpgradePremiumScreenState extends State<UpgradePremiumScreen> {
   @override
   void initState() {
     super.initState();
-    _kycStatut = widget.kycStatut;
+    // Vérifier d'emblée le statut KYC depuis Supabase
+    _verifierKycInitial();
   }
 
-  bool get _kycRequis  => widget.montantCagnotte >= TontineData.kSeuilKyc;
-  bool get _kycValide  => _kycStatut == 'valide';
-  bool get _kycPending => _kycStatut == 'pending';
-  bool get _kycBloquant => _kycRequis && !_kycValide;
+  /// KYC toujours obligatoire pour tout passage Premium
+  bool get _peutProceder => _checkboxLu && _kycVerifie;
 
-  /// Bouton Google Play actif si :
-  ///   - checkbox cochée ET
-  ///   - KYC non bloquant (soit cagnotte < seuil, soit KYC valide)
-  bool get _peutProceder => _checkboxLu && !_kycBloquant;
+  Future<void> _verifierKycInitial() async {
+    setState(() => _kycEnCours = true);
+    final userId = widget.gestNom.isNotEmpty ? widget.gestNom : widget.code;
+    final kyc = await KycService.getStatus(userId);
+    if (!mounted) return;
+    final valide = !KycService.kycBloquantDepuisStatut(kyc);
+    final enAttente = kyc.status == KycStatus.pending ||
+                      kyc.status == KycStatus.processing;
+    setState(() {
+      _kycVerifie   = valide;
+      _kycEnAttente = enAttente && !valide;
+      _kycEnCours   = false;
+    });
+  }
+
+  Future<void> _lancerKyc() async {
+    final userId = widget.gestNom.isNotEmpty ? widget.gestNom : widget.code;
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => KycScreen(userId: userId)),
+    );
+    if (!mounted) return;
+    if (result == true) await _verifierKycInitial();
+  }
 
   Future<void> _ouvrirGooglePlay() async {
+    final userId = widget.gestNom.isNotEmpty ? widget.gestNom : widget.code;
+    final bloquant = await KycService.kycBloquantPourPremium(userId);
+    if (!mounted) return;
+    if (bloquant) {
+      setState(() => _kycVerifie = false);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Vérification d\'identité Smile ID requise avant le passage Premium.'),
+        backgroundColor: Colors.red,
+      ));
+      return;
+    }
     final uri = Uri.parse(_googlePlayUrl);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -233,17 +268,14 @@ class _UpgradePremiumScreenState extends State<UpgradePremiumScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // ── Bannière KYC (Premium uniquement) ─────────────────────
-                  BanniereKyc(
-                    kycStatut:       _kycStatut,
-                    montantCagnotte: widget.montantCagnotte,
-                    gestNom:         widget.gestNom,
-                    code:            widget.code,
-                    onSoumis: () async {
-                      // Recharger le statut KYC après soumission
-                      setState(() => _kycStatut = 'pending');
-                    },
+                  // ── Bannière KYC Smile ID — toujours obligatoire en Premium ──
+                  _BanniereKycSmileId(
+                    kycVerifie:   _kycVerifie,
+                    kycEnCours:   _kycEnCours,
+                    kycEnAttente: _kycEnAttente,
+                    onLancerKyc:  _lancerKyc,
                   ),
+                  const SizedBox(height: 8),
 
                   // ── Checkbox confirmation ──────────────────────────────────
                   GestureDetector(
@@ -337,23 +369,21 @@ class _UpgradePremiumScreenState extends State<UpgradePremiumScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    if (_kycBloquant)
-                      const Text(
-                        '🔒 Soumettez votre KYC ci-dessus avant de continuer (cagnotte ≥ 200 000 XOF).',
+                    if (!_kycVerifie && !_kycEnCours)
+                      Text(
+                        _kycEnAttente
+                            ? '⏳ Vérification Smile ID en cours d\'analyse. Vous pourrez continuer dès confirmation.'
+                            : '🔒 Vérification d\'identité Smile ID obligatoire avant le passage Premium.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 12,
-                          color: Color(0xFF991B1B),
+                          color: _kycEnAttente
+                              ? const Color(0xFF92400E)
+                              : const Color(0xFF991B1B),
                           fontWeight: FontWeight.w600,
                         ),
                       )
-                    else if (_kycPending)
-                      const Text(
-                        '⏳ KYC soumis — en attente de validation TontineClair. Vous pourrez continuer après validation.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 12, color: Color(0xFF92400E)),
-                      )
-                    else
+                    else if (_kycVerifie)
                       const Text(
                         'Le passage en Premium sera activé après validation du paiement Google Play.',
                         textAlign: TextAlign.center,
@@ -423,6 +453,143 @@ class _LigneComparaison extends StatelessWidget {
                     ? AppColors.texteDoux
                     : const Color(0xFFF59E0B),
                 fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Bannière KYC Smile ID ────────────────────────────────────────────────────
+class _BanniereKycSmileId extends StatelessWidget {
+  final bool       kycVerifie;
+  final bool       kycEnCours;
+  final bool       kycEnAttente;
+  final VoidCallback onLancerKyc;
+
+  const _BanniereKycSmileId({
+    required this.kycVerifie,
+    required this.kycEnCours,
+    required this.kycEnAttente,
+    required this.onLancerKyc,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (kycEnCours) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.fondSecondaire,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.lignes),
+        ),
+        child: const Row(children: [
+          SizedBox(width: 20, height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.or)),
+          SizedBox(width: 12),
+          Text('Vérification de votre identité…',
+            style: TextStyle(fontSize: 13.5, color: AppColors.texteDoux)),
+        ]),
+      );
+    }
+
+    if (kycVerifie) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFE3F1EA),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFF2E7D5B).withValues(alpha: 0.4)),
+        ),
+        child: const Row(children: [
+          Icon(Icons.verified_rounded, color: Color(0xFF2E7D5B), size: 22),
+          SizedBox(width: 12),
+          Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Identité vérifiée ✓',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14,
+                  color: Color(0xFF1B5E3B))),
+              Text('Votre identité a été confirmée par Smile ID.',
+                style: TextStyle(fontSize: 12.5, color: Color(0xFF2E7D5B))),
+            ],
+          )),
+        ]),
+      );
+    }
+
+    if (kycEnAttente) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFDF3E2),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.or.withValues(alpha: 0.4)),
+        ),
+        child: Row(children: [
+          const Icon(Icons.hourglass_top_rounded, color: AppColors.or, size: 22),
+          const SizedBox(width: 12),
+          const Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Vérification en cours (Smile ID)',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14,
+                  color: AppColors.encre)),
+              Text('Résultat attendu sous 24–48h. Vous serez notifié.',
+                style: TextStyle(fontSize: 12.5, color: AppColors.texteDoux)),
+            ],
+          )),
+          TextButton(
+            onPressed: null, // désactivé en attente
+            child: const Text('En attente',
+              style: TextStyle(color: AppColors.or, fontWeight: FontWeight.w600)),
+          ),
+        ]),
+      );
+    }
+
+    // Non vérifié → bouton lancer KYC
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF3CD),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(children: [
+            Icon(Icons.fingerprint_rounded, color: Color(0xFFF59E0B), size: 22),
+            SizedBox(width: 10),
+            Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Vérification d\'identité obligatoire',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14,
+                    color: Color(0xFF78350F))),
+                Text('Requis pour activer le mode Premium.',
+                  style: TextStyle(fontSize: 12.5, color: Color(0xFF92400E))),
+              ],
+            )),
+          ]),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: onLancerKyc,
+              icon: const Icon(Icons.verified_user_rounded, size: 18),
+              label: const Text('Vérifier mon identité (Smile ID)',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFF59E0B),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
               ),
             ),
           ),

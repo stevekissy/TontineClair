@@ -23,21 +23,23 @@ import 'supabase_service.dart';
 // CONFIGURATION
 // ─────────────────────────────────────────────────────────────────────────
 class KycConfig {
-  /// true  = MockKycProvider (simulation — aucun appel réseau Smile ID)
-  /// false = SmileIdKycProvider (production — nécessite les clés Smile ID)
+  /// false = SmileIdKycProvider actif (production)
+  /// true  = MockKycProvider (simulation locale — réservé aux tests unitaires)
   ///
-  /// ⚠️ BASCULER ICI quand les identifiants Smile ID sont reçus :
-  ///    KycConfig.useMock = false;
-  static bool useMock = true;
+  /// ⚠️ PRODUCTION : useMock = false — toute tontine Premium exige Smile ID.
+  /// Le compte Gratuit n'est JAMAIS soumis au KYC.
+  static bool useMock = false;
 
   /// URL de la Supabase Edge Function kyc-session
-  /// Format : https://<project-ref>.supabase.co/functions/v1/kyc-session
-  ///
-  /// ⚠️ À RENSEIGNER avec l'URL de ton projet Supabase :
   static String edgeFunctionBaseUrl = SupabaseService.supabaseUrl + '/functions/v1';
 
-  /// Seuil (XOF) à partir duquel le KYC est obligatoire
-  static const double kycThreshold = 50000;
+  /// Règle métier : KYC requis si et seulement si la tontine est Premium.
+  /// Indépendant du montant ou de la devise.
+  /// Compte Gratuit → jamais de KYC.
+  static bool kycRequisPourPremium = true;
+
+  /// Seuil montant (conservé pour compatibilité interne, non utilisé en logique principale)
+  static const double kycThreshold = 0;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -323,6 +325,35 @@ class KycService {
   }) => _p.submit(userId: userId, data: data);
 
   static Future<bool> reset(String userId) => _p.reset(userId);
+
+  // ── Règle métier Premium ────────────────────────────────────────────────
+
+  /// Vérifie si un utilisateur Premium doit passer le KYC avant de continuer.
+  /// Retourne true si le KYC est requis ET non encore validé.
+  ///
+  /// Règle :
+  ///   • Compte Gratuit → false (jamais de KYC)
+  ///   • Compte Premium → true si statut != verified
+  static Future<bool> kycBloquantPourPremium(String userId) async {
+    if (!KycConfig.kycRequisPourPremium) return false;
+    final kyc = await getStatus(userId);
+    if (kyc.status.isVerified) {
+      // Vérifier expiration
+      if (kyc.expiresAt == null || kyc.expiresAt!.isAfter(DateTime.now())) {
+        return false; // KYC valide → pas bloquant
+      }
+    }
+    return true; // non vérifié ou expiré → bloquant
+  }
+
+  /// Même chose mais synchrone depuis un statut déjà chargé.
+  static bool kycBloquantDepuisStatut(KycVerification? kyc) {
+    if (!KycConfig.kycRequisPourPremium) return false;
+    if (kyc == null) return true;
+    if (!kyc.status.isVerified) return true;
+    if (kyc.expiresAt != null && kyc.expiresAt!.isBefore(DateTime.now())) return true;
+    return false;
+  }
 
   // ── Vérification avant action financière ────────────────────────────────
   /// Retourne si l'utilisateur est autorisé à réaliser une action financière.

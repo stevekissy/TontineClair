@@ -6,9 +6,11 @@ import '../services/feature_gate_service.dart';
 import '../services/storage_service.dart';
 import '../services/echeance_service.dart';
 import '../services/devise_service.dart';
+import '../services/kyc_service.dart';
 import '../utils/app_colors.dart';
 import '../widgets/app_widgets.dart';
 import 'code_cree_screen.dart';
+import 'kyc_screen.dart';
 import '../utils/app_localizations.dart';
 
 class CreationScreen extends StatefulWidget {
@@ -38,18 +40,20 @@ class _CreationScreenState extends State<CreationScreen> {
   String? _erreur;
   String _typeTontine = 'gratuite'; // 'gratuite' | 'premium'
 
-  // ── KYC automatique ──────────────────────────────────────────
-  bool _kycSoumis = false;
+  // ── KYC Smile ID ─────────────────────────────────────────────
+  bool _kycValide = false;     // true une fois que Smile ID a confirmé verified
+  bool _kycEnCours = false;    // spinner pendant la vérification du statut
 
-  /// Cagnotte totale = montant × nombre de membres remplis
+  /// KYC obligatoire si et seulement si la tontine est de type Premium.
+  /// Compte Gratuit → jamais de KYC.
+  bool get _kycRequis => _typeTontine == 'premium';
+
+  /// Cagnotte totale (conservé pour affichage uniquement)
   int get _cagnotteTotale {
     final montant = int.tryParse(_montantCtrl.text.trim()) ?? 0;
     final nbMembres = _membresCtrl.where((c) => c.text.trim().isNotEmpty).length;
     return montant * nbMembres;
   }
-
-  /// KYC obligatoire si cagnotte ≥ 200 000 XOF
-  bool get _kycRequis => _cagnotteTotale >= TontineData.kSeuilKyc && _devise == 'XOF';
 
   @override
   void dispose() {
@@ -87,25 +91,45 @@ class _CreationScreenState extends State<CreationScreen> {
       return;
     }
 
-    // ── Gate KYC : cagnotte ≥ 200 000 XOF ───────────────────────
-    if (_kycRequis && !_kycSoumis) {
-      // gestNom = premier gestionnaire saisi (ou vide), code = nom tontine
+    // ── Gate KYC Smile ID : obligatoire pour toute tontine Premium ──────────
+    if (_kycRequis && !_kycValide) {
+      // Vérifier le statut KYC actuel depuis Supabase
       final gestNomKyc = _gestNomCtrl.isNotEmpty
           ? _gestNomCtrl.first.text.trim()
           : '';
-      final nomTontineKyc = _nomCtrl.text.trim();
-      final ok = await showModalBottomSheet<bool>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) => ModaleKyc(
-          code:    nomTontineKyc.isNotEmpty ? nomTontineKyc : 'KYC',
-          gestNom: gestNomKyc,
-        ),
-      );
-      if (!mounted) return;
-      if (ok != true) return; // annulé ou fermé
-      setState(() => _kycSoumis = true);
+      setState(() => _kycEnCours = true);
+      final userId = gestNomKyc.isNotEmpty ? gestNomKyc : 'unknown';
+      final bloquant = await KycService.kycBloquantPourPremium(userId);
+      if (!mounted) { setState(() => _kycEnCours = false); return; }
+      setState(() => _kycEnCours = false);
+
+      if (bloquant) {
+        // Lancer le parcours KYC Smile ID complet
+        final result = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => KycScreen(userId: userId),
+          ),
+        );
+        if (!mounted) return;
+        if (result != true) {
+          // L'utilisateur a fermé sans compléter
+          setState(() => _erreur =
+            'La vérification d\'identité est obligatoire pour créer une tontine Premium. '
+            'Vous devez compléter votre vérification Smile ID avant de continuer.');
+          return;
+        }
+        // Re-vérifier après le parcours KYC
+        final encoreBloquant = await KycService.kycBloquantPourPremium(userId);
+        if (!mounted) return;
+        if (encoreBloquant) {
+          setState(() => _erreur =
+            'Votre vérification est en cours d\'analyse (Smile ID). '
+            'Vous pourrez créer cette tontine Premium dès que votre identité sera confirmée.');
+          return;
+        }
+      }
+      setState(() => _kycValide = true);
     }
     if (montantStr.isEmpty || int.tryParse(montantStr) == null) {
       setState(() => _erreur = 'Montant invalide.');
@@ -273,39 +297,30 @@ class _CreationScreenState extends State<CreationScreen> {
     }
   }
 
-  /// Bannière orange KYC — recalculée à chaque rebuild
+  /// Bannière KYC — visible uniquement si type = Premium
   Widget _banniereKyc() {
     if (!_kycRequis) return const SizedBox.shrink();
-    final cagnotteStr = _cagnotteTotale
-        .toString()
-        .replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+$)'), (m) => '${m[1]} ');
-    final badge = _kycSoumis
-        ? Row(children: [
-            const Icon(Icons.verified_rounded, size: 14, color: Color(0xFF2E7D5B)),
-            const SizedBox(width: 5),
-            const Text('KYC validé ✓',
-                style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF2E7D5B))),
-          ])
-        : const Text(
-            'Vérification KYC obligatoire avant la création',
-            style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF92400E)),
-          );
+    if (_kycEnCours) {
+      return const Padding(
+        padding: EdgeInsets.only(bottom: 10),
+        child: Row(children: [
+          SizedBox(width: 18, height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.or)),
+          SizedBox(width: 10),
+          Text('Vérification identité en cours…',
+            style: TextStyle(fontSize: 13, color: AppColors.texteDoux)),
+        ]),
+      );
+    }
+    final valide = _kycValide;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
         decoration: BoxDecoration(
-          color: _kycSoumis
-              ? const Color(0xFFE3F1EA)
-              : const Color(0xFFFFF3CD),
+          color: valide ? const Color(0xFFE3F1EA) : const Color(0xFFFFF3CD),
           border: Border.all(
-            color: _kycSoumis
+            color: valide
                 ? const Color(0xFF2E7D5B).withValues(alpha: 0.4)
                 : const Color(0xFFF59E0B).withValues(alpha: 0.6),
             width: 1.5,
@@ -315,13 +330,9 @@ class _CreationScreenState extends State<CreationScreen> {
         child: Row(
           children: [
             Icon(
-              _kycSoumis
-                  ? Icons.shield_rounded
-                  : Icons.warning_amber_rounded,
+              valide ? Icons.shield_rounded : Icons.fingerprint_rounded,
               size: 20,
-              color: _kycSoumis
-                  ? const Color(0xFF2E7D5B)
-                  : const Color(0xFFF59E0B),
+              color: valide ? const Color(0xFF2E7D5B) : const Color(0xFFF59E0B),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -329,16 +340,29 @@ class _CreationScreenState extends State<CreationScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Cagnotte totale : $cagnotteStr XOF',
+                    valide
+                        ? 'Identité vérifiée ✓ (Smile ID)'
+                        : 'Vérification d\'identité obligatoire',
                     style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        color: _kycSoumis
-                            ? const Color(0xFF1B5E3B)
-                            : const Color(0xFF78350F)),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: valide
+                          ? const Color(0xFF1B5E3B)
+                          : const Color(0xFF78350F),
+                    ),
                   ),
-                  const SizedBox(height: 3),
-                  badge,
+                  const SizedBox(height: 2),
+                  Text(
+                    valide
+                        ? 'Votre identité a été confirmée par Smile ID.'
+                        : 'Tontine Premium — votre identité sera vérifiée avant la création.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: valide
+                          ? const Color(0xFF2E7D5B)
+                          : const Color(0xFF92400E),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -396,11 +420,8 @@ class _CreationScreenState extends State<CreationScreen> {
                     style: TextStyle(fontSize: 15, color: AppColors.texteDoux),
                   ),
                   SizedBox(height: 16),
-                  // ── Bannière KYC live ──────────────────────────────
-                  ValueListenableBuilder(
-                    valueListenable: _montantCtrl,
-                    builder: (_, __, ___) => _banniereKyc(),
-                  ),
+                  // ── Bannière KYC — visible si Premium ─────────────
+                  _banniereKyc(),
                   _SelecteurTypeTontine(
                     valeur: _typeTontine,
                     onChanged: (v) => setState(() {
