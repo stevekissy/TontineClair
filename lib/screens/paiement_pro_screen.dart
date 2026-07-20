@@ -101,11 +101,12 @@ class _PaiementProScreenState extends State<PaiementProScreen>
       if (!mounted) return;
       if (kDebugMode) debugPrint('[Wave] verifierImmediat → ${statut.statusNormalise} code=${statut.code}');
 
-      if (statut.estSucces || statut.statusNormalise == 'confirmed' || statut.code == 0) {
-        // Paiement Wave confirmé → créditer côté serveur
+      // ⚠️ SÉCURITÉ v5 : on N'utilise plus statut.estSucces ni code==0 pour créditer.
+      // verifierStatut retourne ok:false TOUJOURS. needsCredit:true = GetStatus a confirmé.
+      if (statut.needsCredit || statut.statusNormalise == 'confirmed') {
+        // GetStatus a confirmé → demander crédit côté serveur (confirmerEtCrediter)
         _timerPollWave?.cancel();
-        setState(() => _etape = _Etape.enregistrement);
-        // Étape 2 : créditer (confirmerEtCrediter gère l'idempotence)
+        setState(() => _etape = _Etape.attente);
         await _crediterWaveConfirme(numCmd, montant);
       } else if (statut.estEchec) {
         _timerPollWave?.cancel();
@@ -118,42 +119,15 @@ class _PaiementProScreenState extends State<PaiementProScreen>
     } catch (_) { /* réseau → polling continue */ }
   }
 
-  /// Crédite un paiement Wave confirmé.
-  /// L'action `statut` de l'Edge Function crédite automatiquement si confirmé,
-  /// donc on rappelle verifierStatut pour déclencher le crédit côté serveur.
+  /// Crédite un paiement Wave confirmé via confirmerEtCrediter (crédit côté serveur).
+  ///
+  /// ⚠️ SÉCURITÉ v5 : NE PLUS appeler verifierStatut pour créditer.
+  /// verifierStatut retourne ok:false toujours — uniquement confirmerEtCrediter crédite.
   Future<void> _crediterWaveConfirme(String numCmd, int montant) async {
     try {
-      if (kDebugMode) debugPrint('[Wave] _crediterWaveConfirme → verifierStatut pour crédit');
-      // L'action statut crédite automatiquement si status=confirmed dans la DB.
-      // On réessaie 3 fois pour s'assurer que le crédit est bien effectué.
-      SycaPayResultat? resultat;
-      for (int i = 0; i < 3; i++) {
-        resultat = await SycaPayService.verifierStatut(
-          numCmd,
-          transactionId: _transactionId,
-          tontineCode:   widget.code,
-        );
-        if (!mounted) return;
-        if (kDebugMode) debugPrint('[Wave] crédit tentative ${i+1} → ok=${resultat.ok} status=${resultat.statusNormalise}');
-        if (resultat.ok || resultat.statusNormalise == 'confirmed') break;
-        // Attendre 2s entre les tentatives
-        await Future<void>.delayed(const Duration(seconds: 2));
-      }
-
-      if (!mounted) return;
-
-      if (resultat != null && (resultat.ok || resultat.statusNormalise == 'confirmed')) {
-        _transactionId ??= resultat.transactionId;
-        await _rechargerEtSucces(montant);
-      } else {
-        // Crédit en cours côté serveur → afficher info + bouton vérifier
-        setState(() {
-          _etape                    = _Etape.saisie;
-          _peutVerifierManuellement = true;
-          _messageErreur = '\u26a0\ufe0f Paiement Wave reçu. Enregistrement en cours...\nRéf. : $numCmd';
-          _messageInfo   = 'Utilisez « Vérifier mon paiement » dans quelques secondes.';
-        });
-      }
+      if (kDebugMode) debugPrint('[Wave] _crediterWaveConfirme → confirmerEtCrediter (sécurisé)');
+      _numCommande = numCmd;
+      await _confirmerEtCrediterSecurise(montant);
     } catch (e) {
       if (!mounted) return;
       if (kDebugMode) debugPrint('[Wave] _crediterWaveConfirme erreur: $e');
@@ -162,6 +136,60 @@ class _PaiementProScreenState extends State<PaiementProScreen>
         _peutVerifierManuellement = true;
         _messageErreur = '\u26a0\ufe0f Paiement Wave reçu, vérification en cours.\nRéf. : $numCmd';
         _messageInfo   = 'Utilisez « Vérifier mon paiement » pour finaliser.';
+      });
+    }
+  }
+
+  /// Appelle confirmerEtCrediter côté serveur et gère la réponse.
+  ///
+  /// ⚠️ SÉCURITÉ v5 : SEULE méthode autorisant un crédit dans Flutter.
+  /// Le crédit est effectué uniquement si l'Edge Function confirme GetStatus code=0.
+  Future<void> _confirmerEtCrediterSecurise(int montant) async {
+    if (_numCommande == null) return;
+    final numCmd = _numCommande!;
+    try {
+      final confirmation = await SycaPayService.confirmerEtCrediter(
+        numCommande:   numCmd,
+        transactionId: _transactionId,
+        tontineCode:   widget.code,
+        typeOperation: 'cotisation',
+        montant:       montant,
+        operateur:     _operateur,
+        membreId:      widget.membre.id,
+      );
+
+      _watchdogTimer?.cancel();
+      _enTraitement = false;
+      if (!mounted) return;
+
+      if (kDebugMode) debugPrint('[PaiementPro] confirmerEtCrediter → $confirmation');
+
+      if (confirmation.ok) {
+        _transactionId ??= confirmation.transactionId;
+        setState(() => _etape = _Etape.enregistrement);
+        await _rechargerEtSucces(montant);
+      } else if (confirmation.estEnAttente || confirmation.timeout) {
+        setState(() {
+          _etape                    = _Etape.saisie;
+          _peutVerifierManuellement = true;
+          _messageErreur = '⏳ Confirmation en attente.\nRéf. : $numCmd';
+          _messageInfo   = 'Utilisez « Vérifier mon paiement » pour finaliser. Ne relancez pas.';
+        });
+      } else {
+        setState(() {
+          _etape                    = _Etape.saisie;
+          _messageErreur            = confirmation.messageFr;
+          _peutVerifierManuellement = confirmation.statusNormalise == 'unknown';
+        });
+      }
+    } catch (e) {
+      _enTraitement = false;
+      if (!mounted) return;
+      setState(() {
+        _etape                    = _Etape.saisie;
+        _peutVerifierManuellement = true;
+        _messageErreur = '⚠️ Erreur de connexion.\nRéf. : ${_numCommande ?? "—"}';
+        _messageInfo   = 'Si votre argent a été débité, utilisez « Vérifier mon paiement » avant de réessayer.';
       });
     }
   }
@@ -378,12 +406,22 @@ class _PaiementProScreenState extends State<PaiementProScreen>
       _enTraitement = false;
       if (!mounted) return;
 
-      if (kDebugMode) debugPrint('[PaiementPro] verif manuelle → $statut');
+      if (kDebugMode) debugPrint('[PaiementPro] verif manuelle → $statut needsCredit=${statut.needsCredit}');
 
-      if (statut.estSucces || statut.statusNormalise == 'credited') {
-        setState(() => _etape = _Etape.enregistrement);
+      // ⚠️ SÉCURITÉ v5 :
+      // action:statut retourne ok:false TOUJOURS.
+      // Si le backend a confirmé via GetStatus → needsCredit:true.
+      // On appelle alors confirmerEtCrediter() côté serveur pour le crédit réel.
+      // On N'effectue JAMAIS de crédit direct sur statut.estSucces.
+      if (statut.needsCredit) {
+        // GetStatus a confirmé — demander au serveur de créditer (vérification stricte)
+        if (kDebugMode) debugPrint('[PaiementPro] needsCredit=true → appel confirmerEtCrediter');
         _transactionId ??= statut.transactionId;
-        await _rechargerEtSucces(montant);
+        setState(() {
+          _etape       = _Etape.attente;
+          _messageInfo = '⏳ Confirmation en cours, ne fermez pas l’écran…';
+        });
+        await _confirmerEtCrediterSecurise(montant);
       } else if (statut.estEnAttente) {
         setState(() {
           _etape                    = _Etape.saisie;
@@ -449,10 +487,12 @@ class _PaiementProScreenState extends State<PaiementProScreen>
         if (!mounted) { timer.cancel(); return; }
         if (kDebugMode) debugPrint('[Wave poll] statut=${statut.statusNormalise} code=${statut.code}');
 
-        if (statut.estSucces || statut.statusNormalise == 'confirmed' || statut.code == 0) {
-          // Paiement Wave confirmé → créditer
+        // ⚠️ SÉCURITÉ v5 : on N'utilise plus statut.estSucces ni code==0.
+        // verifierStatut retourne ok:false toujours. needsCredit:true = GetStatus confirmé.
+        if (statut.needsCredit || statut.statusNormalise == 'confirmed') {
+          // GetStatus a confirmé → demander crédit côté serveur (confirmerEtCrediter)
           timer.cancel();
-          setState(() => _etape = _Etape.enregistrement);
+          setState(() => _etape = _Etape.attente);
           await _crediterWaveConfirme(numCmd, montant);
         } else if (statut.estEchec) {
           timer.cancel();

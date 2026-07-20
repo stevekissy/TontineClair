@@ -369,14 +369,21 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
       _enTraitement = false;
       if (!mounted) return;
 
-      if (kDebugMode) debugPrint('[CaissePro] verif manuelle → $statut');
+      if (kDebugMode) debugPrint('[CaissePro] verif manuelle → $statut needsCredit=${statut.needsCredit}');
 
-      if (statut.estSucces || statut.statusNormalise == 'credited') {
-        // L'Edge Function a crédité côté serveur → juste recharger
-        _enregistrerTentative('succes', message: 'Vérifié manuellement');
-        setState(() => _etape = _EtapeCaisse.enregistrement);
+      // ⚠️ SÉCURITÉ v5 :
+      // action:statut retourne ok:false TOUJOURS.
+      // Si GetStatus a confirmé → needsCredit:true → appeler confirmerEtCrediter.
+      // On N'effectue JAMAIS de crédit direct sur statut.estSucces.
+      if (statut.needsCredit) {
+        // GetStatus a confirmé — demander au serveur de créditer (vérification stricte)
+        if (kDebugMode) debugPrint('[CaissePro] needsCredit=true → appel confirmerEtCrediter');
         _transactionId ??= statut.transactionId;
-        await _rechargerEtSucces();
+        setState(() {
+          _etape       = _EtapeCaisse.attente;
+          _messageInfo = '⏳ Confirmation en cours, ne fermez pas l\'écran…';
+        });
+        await _confirmerEtCrediterSecurise();
       } else if (statut.estEnAttente) {
         _enregistrerTentative('attente', message: 'Toujours en attente');
         setState(() {
@@ -401,6 +408,69 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
         _etape                    = _EtapeCaisse.saisie;
         _messageErreur            = 'Vérification échouée: $e';
         _peutVerifierManuellement = true;
+      });
+    }
+  }
+
+  /// Appelle confirmerEtCrediter côté serveur et gère la réponse.
+  ///
+  /// ⚠️ SÉCURITÉ v5 : SEULE méthode autorisant un crédit dans Flutter.
+  /// Le crédit est effectué uniquement si l'Edge Function confirme GetStatus code=0.
+  Future<void> _confirmerEtCrediterSecurise() async {
+    if (_numCommande == null) return;
+    final numCmd = _numCommande!;
+    try {
+      final confirmation = await SycaPayService.confirmerEtCrediter(
+        numCommande:   numCmd,
+        transactionId: _transactionId,
+        tontineCode:   widget.code,
+        typeOperation: widget.typeOperation,
+        montant:       widget.montant,
+        operateur:     _operateur,
+        membreId:      widget.membreId,
+        membreNom:     widget.membreNom,
+        pretId:        widget.pretId,
+        description:   widget.description.isNotEmpty ? widget.description : null,
+        taux:          widget.taux,
+        dureesMois:    widget.dureesMois,
+        numeroTour:    widget.numeroTour,
+      );
+
+      _watchdogTimer?.cancel();
+      _enTraitement = false;
+      if (!mounted) return;
+
+      if (kDebugMode) debugPrint('[CaissePro] confirmerEtCrediter → $confirmation');
+
+      if (confirmation.ok) {
+        _transactionId ??= confirmation.transactionId;
+        _enregistrerTentative('succes', message: 'Crédité via confirmerEtCrediter');
+        setState(() => _etape = _EtapeCaisse.enregistrement);
+        await _rechargerEtSucces();
+      } else if (confirmation.estEnAttente || confirmation.timeout) {
+        _enregistrerTentative('attente', message: 'Confirmation en attente');
+        setState(() {
+          _etape                    = _EtapeCaisse.saisie;
+          _peutVerifierManuellement = true;
+          _messageErreur = '⏳ Confirmation en attente.\nRéf. : $numCmd';
+          _messageInfo   = 'Utilisez « Vérifier mon paiement » pour finaliser. Ne relancez pas.';
+        });
+      } else {
+        _enregistrerTentative('echec', message: confirmation.messageFr);
+        setState(() {
+          _etape                    = _EtapeCaisse.saisie;
+          _messageErreur            = confirmation.messageFr;
+          _peutVerifierManuellement = confirmation.statusNormalise == 'unknown';
+        });
+      }
+    } catch (e) {
+      _enTraitement = false;
+      if (!mounted) return;
+      setState(() {
+        _etape                    = _EtapeCaisse.saisie;
+        _peutVerifierManuellement = true;
+        _messageErreur = '⚠️ Erreur de connexion.\nRéf. : ${_numCommande ?? "—"}';
+        _messageInfo   = 'Si votre argent a été débité, utilisez « Vérifier mon paiement » avant de réessayer.';
       });
     }
   }

@@ -280,6 +280,9 @@ class SycaPayResultat {
   final bool    _timeout;        // true si Edge Fn a timeout
   final String? waveUrl;         // URL pay.wave.com à ouvrir (Wave uniquement)
   final String? waveImg;         // QR code base64 (Wave uniquement)
+  // ⚠️ SÉCURITÉ v5 : signal backend que GetStatus a confirmé mais crédit pas encore fait
+  // action:statut retourne needsCredit:true → Flutter doit appeler confirmer_et_crediter
+  final bool    needsCredit;     // true → appeler confirmerEtCrediter()
 
   const SycaPayResultat({
     required this.code,
@@ -297,12 +300,15 @@ class SycaPayResultat {
     bool timeout         = false,
     this.waveUrl,
     this.waveImg,
+    this.needsCredit     = false,
   })  : _ok      = ok,
         _timeout  = timeout;
 
   // ── Getters sémantiques ───────────────────────────────────────────────────
 
-  bool get estSucces      => (statusNormalise == 'confirmed' || code == 0) && ok;
+  // ⚠️ SÉCURITÉ v5 : estSucces exige ok=true (fourni uniquement par confirmer_et_crediter
+  // côté serveur). On N'accepte plus code==0 seul — évite les faux positifs client.
+  bool get estSucces      => statusNormalise == 'confirmed' && ok;
   bool get estEnAttente   => statusNormalise == 'pending'
                           || code == -200
                           || code == -9
@@ -349,11 +355,12 @@ class SycaPayResultat {
       else                                   status = 'failed';
     }
 
-    // ✅ FIX: lire ok depuis la réponse JSON (était toujours false avant)
-    // Nécessaire pour estSucces lors de l'action 'statut' avec code=0/confirmed
-    // Pour Wave (pending_wave), isOk = false — l'utilisateur n'a pas encore payé
+    // ⚠️ SÉCURITÉ v5 : isOk est UNIQUEMENT fourni par le backend (confirmer_et_crediter).
+    // On n'utilise PLUS code==0 pour déduire ok — seule la réponse serveur fait foi.
+    // action:statut retourne toujours ok:false → estSucces sera false en attente.
+    // action:confirmer_et_crediter retourne ok:true seulement après crédit vérifié.
     final isPendingWave = status == 'pending_wave';
-    final isOk = !isPendingWave && (j['ok'] == true || code == 0);
+    final isOk = !isPendingWave && j['ok'] == true;
 
     return SycaPayResultat(
       code:            code,
@@ -371,6 +378,7 @@ class SycaPayResultat {
       ok:              isOk,
       waveUrl:         j['waveUrl']    as String?,
       waveImg:         j['waveImg']    as String?,
+      needsCredit:     j['needsCredit'] == true,
     );
   }
 

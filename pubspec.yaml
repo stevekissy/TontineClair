@@ -1,7 +1,7 @@
 name: tontine
 description: TontineClair — Gestion de tontines communautaires pour la Côte d'Ivoire et l'Afrique de l'Ouest
 publish_to: 'none'
-version: 1.2.19+23
+version: 1.2.20+24
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
