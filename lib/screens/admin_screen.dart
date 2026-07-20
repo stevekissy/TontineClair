@@ -46,6 +46,12 @@ class _AdminScreenState extends State<AdminScreen> {
   int    _emailsOffset       = 0;
   bool   _emailsPlusDispos   = true;
   static const int _emailsPageSize = 30;
+  // Support / Messagerie
+  List<Map<String, dynamic>> _ticketsSupport = [];
+  String _filtreTicketStatut  = 'tous';
+  bool   _ticketsChargement   = false;
+  // Blocage tontines : code → true si l'opération est en cours
+  final Map<String, bool> _blocageLoading = {};
   String get _cle => _cleCtrl.text.trim();
 
   @override
@@ -74,21 +80,23 @@ class _AdminScreenState extends State<AdminScreen> {
           SupabaseService.adminListerKyc(cle, statut: 'tous'),
         ],
       );
-      final counts = await SupabaseService.adminTontineCounts(cle);
-      final emails = await SupabaseService.adminEmailLogs(cle, limit: _emailsPageSize, offset: 0);
+      final counts  = await SupabaseService.adminTontineCounts(cle);
+      final emails  = await SupabaseService.adminEmailLogs(cle, limit: _emailsPageSize, offset: 0);
+      final tickets = await SupabaseService.adminListerTickets(cle).catchError((_) => <Map<String, dynamic>>[]);
 
       setState(() {
-        _connecte       = true;
-        _demandes       = results[0];
-        _tontines       = results[1];
-        _depenses       = results[2];
-        _prets          = results[3];
-        _decaissements  = results[4];
-        _kycs           = results[5];
-        _counts         = counts;
-        _emails         = emails;
-        _emailsOffset   = emails.length;
+        _connecte        = true;
+        _demandes        = results[0];
+        _tontines        = results[1];
+        _depenses        = results[2];
+        _prets           = results[3];
+        _decaissements   = results[4];
+        _kycs            = results[5];
+        _counts          = counts;
+        _emails          = emails;
+        _emailsOffset    = emails.length;
         _emailsPlusDispos = emails.length >= _emailsPageSize;
+        _ticketsSupport  = tickets;
       });
     } catch (e) {
       setState(() => _erreur = 'Clé incorrecte ou erreur réseau.');
@@ -240,6 +248,157 @@ class _AdminScreenState extends State<AdminScreen> {
     }
   }
 
+  // ── Bloquer une tontine (Issue 10) ──────────────────────────────────────────
+  Future<void> _bloquerTontine(String code, String nomTontine) async {
+    final motifCtrl = TextEditingController();
+    String? motifErreur;
+
+    final motif = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (sCtx, setSt) => AlertDialog(
+          backgroundColor: AppColors.fondPapier,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(children: [
+            const Icon(Icons.lock_rounded, color: Color(0xFFD32F2F), size: 20),
+            const SizedBox(width: 8),
+            const Expanded(child: Text('Bloquer la tontine',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFFD32F2F)))),
+          ]),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF3F3),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFD32F2F).withValues(alpha: 0.3)),
+                ),
+                child: Row(children: [
+                  const Icon(Icons.warning_amber_rounded, color: Color(0xFFD32F2F), size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(
+                    'Bloquer $nomTontine ($code) empêchera tous les membres d\'y accéder.',
+                    style: const TextStyle(fontSize: 12.5, color: Color(0xFFD32F2F)),
+                  )),
+                ]),
+              ),
+              const SizedBox(height: 14),
+              const Text('Motif du blocage *',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5, color: AppColors.encre)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: motifCtrl,
+                maxLines: 2,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: InputDecoration(
+                  hintText: 'Ex: Suspicion de fraude, sécurité compromise...',
+                  filled: true, fillColor: Colors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.lignes)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.lignes)),
+                  errorText: motifErreur,
+                ),
+                onChanged: (_) { if (motifErreur != null) setSt(() => motifErreur = null); },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, null), child: const Text('Annuler')),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD32F2F)),
+              icon: const Icon(Icons.lock_rounded, size: 16, color: Colors.white),
+              onPressed: () {
+                final t = motifCtrl.text.trim();
+                if (t.length < 5) { setSt(() => motifErreur = 'Motif obligatoire (min 5 car.)'); return; }
+                Navigator.pop(ctx, t);
+              },
+              label: const Text('Bloquer', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (motif == null || !mounted) return;
+
+    setState(() => _blocageLoading[code] = true);
+    try {
+      final result = await SupabaseService.adminBloquerTontine(
+        cle: _cle, code: code, motif: motif,
+      );
+      if (!mounted) return;
+      if (result['ok'] == true) {
+        afficherToast(context, '🔒 Tontine $code bloquée avec succès.');
+        SupabaseService.envoyerNotification(
+          code:    code,
+          type:    'alerte_securite',
+          titre:   '🔒 Tontine temporairement bloquée',
+          message: 'Cette tontine a été suspendue par l\'administration pour vérification de sécurité.',
+        );
+        await _recharger();
+      } else {
+        afficherToast(context, result['erreur'] as String? ?? 'Erreur lors du blocage.', estErreur: true);
+      }
+    } finally {
+      if (mounted) setState(() => _blocageLoading.remove(code));
+    }
+  }
+
+  // ── Débloquer une tontine (Issue 10) ─────────────────────────────────────────
+  Future<void> _debloquerTontine(String code, String nomTontine) async {
+    final confirmer = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.fondPapier,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(children: [
+          const Icon(Icons.lock_open_rounded, color: AppColors.succes, size: 20),
+          const SizedBox(width: 8),
+          const Expanded(child: Text('Débloquer la tontine',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.succes))),
+        ]),
+        content: Text(
+          'Débloquer $nomTontine ($code) permettra de nouveau aux membres d\'y accéder normalement.\n\nConfirmer le déblocage ?',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.succes),
+            icon: const Icon(Icons.lock_open_rounded, size: 16, color: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            label: const Text('Débloquer', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (confirmer != true || !mounted) return;
+
+    setState(() => _blocageLoading[code] = true);
+    try {
+      final result = await SupabaseService.adminDebloquerTontine(cle: _cle, code: code);
+      if (!mounted) return;
+      if (result['ok'] == true) {
+        afficherToast(context, '🔓 Tontine $code débloquée — accès restauré.');
+        SupabaseService.envoyerNotification(
+          code:    code,
+          type:    'info',
+          titre:   '🔓 Tontine débloquée',
+          message: 'Votre tontine a été débloquée par l\'administration. Vous pouvez de nouveau y accéder.',
+        );
+        await _recharger();
+      } else {
+        afficherToast(context, result['erreur'] as String? ?? 'Erreur lors du déblocage.', estErreur: true);
+      }
+    } finally {
+      if (mounted) setState(() => _blocageLoading.remove(code));
+    }
+  }
+
   Future<void> _recharger() async {
     final cle = _cleCtrl.text.trim();
     final results = await Future.wait<List<Map<String, dynamic>>>(
@@ -252,15 +411,17 @@ class _AdminScreenState extends State<AdminScreen> {
         SupabaseService.adminListerKyc(cle, statut: 'tous'),
       ],
     );
-    final counts = await SupabaseService.adminTontineCounts(cle);
+    final counts  = await SupabaseService.adminTontineCounts(cle);
+    final tickets = await SupabaseService.adminListerTickets(cle).catchError((_) => <Map<String, dynamic>>[]);
     setState(() {
-      _demandes      = results[0];
-      _tontines      = results[1];
-      _depenses      = results[2];
-      _prets         = results[3];
-      _decaissements = results[4];
-      _kycs          = results[5];
-      _counts        = counts;
+      _demandes       = results[0];
+      _tontines       = results[1];
+      _depenses       = results[2];
+      _prets          = results[3];
+      _decaissements  = results[4];
+      _kycs           = results[5];
+      _counts         = counts;
+      _ticketsSupport = tickets;
     });
   }
 
@@ -593,7 +754,9 @@ class _AdminScreenState extends State<AdminScreen> {
     final totalAlertes = nbDemandesPending + nbDepensesPending + nbPretsPending +
         nbDecaissementsPending + nbKycPending;
 
-    // index : 0=Accueil 1=Demandes 2=Tontines 3=Stats 4=Dépenses 5=Prêts 6=Décaiss. 7=KYC 8=KYC ID 9=E-mails
+    // index : 0=Accueil 1=Demandes 2=Tontines 3=Stats 4=Dépenses 5=Prêts 6=Décaiss. 7=KYC 8=KYC ID 9=E-mails 10=Support
+    final nbTicketsPending = _ticketsSupport.where((t) =>
+        !['resolu','ferme'].contains((t['statut'] as String? ?? ''))).length;
     final onglets = [
       _OngletDef(icone: Icons.home_rounded,                   label: 'Accueil',   badge: 0),
       _OngletDef(icone: Icons.how_to_reg_rounded,             label: 'Demandes',  badge: nbDemandesPending),
@@ -605,6 +768,7 @@ class _AdminScreenState extends State<AdminScreen> {
       _OngletDef(icone: Icons.badge_outlined,                 label: 'KYC',       badge: nbKycPending),
       _OngletDef(icone: Icons.verified_user_outlined,         label: 'KYC ID',    badge: 0),
       _OngletDef(icone: Icons.email_outlined,                 label: 'E-mails',   badge: 0),
+      _OngletDef(icone: Icons.support_agent_rounded,          label: 'Support',   badge: nbTicketsPending),
     ];
 
     return Column(
@@ -641,7 +805,8 @@ class _AdminScreenState extends State<AdminScreen> {
             : _onglet == 6 ? _ListeDecaissements()
             : _onglet == 7 ? _ListeKyc()
             : _onglet == 8 ? KycAdminScreen(cleAdmin: _cle, modeOnglet: true)
-            : _ListeEmails(),
+            : _onglet == 9 ? _ListeEmails()
+            : _ListeSupport(),
         ),
       ],
     );
@@ -1075,6 +1240,8 @@ class _AdminScreenState extends State<AdminScreen> {
         _RaccourciAdmin(icone: Icons.badge_outlined,                 label: 'Dossiers KYC',                sousTitre: '$nbKycPending en attente · ${_kycs.length} total',               badge: nbKycPending,          onTap: () => onNaviguer(7)),
         const SizedBox(height: 6),
         _RaccourciAdmin(icone: Icons.bar_chart_rounded,              label: 'Tableau de bord analytics',  sousTitre: 'Statistiques et métriques globales',                              badge: 0,                     onTap: () => onNaviguer(3)),
+        const SizedBox(height: 6),
+        _RaccourciAdmin(icone: Icons.support_agent_rounded,          label: 'Support & Messagerie',        sousTitre: '${_ticketsSupport.length} ticket${_ticketsSupport.length > 1 ? "s" : ""} total', badge: _ticketsSupport.where((t) => !['resolu','ferme'].contains(t['statut'] as String? ?? '')).length, onTap: () => onNaviguer(10)),
         const SizedBox(height: 24),
 
         // ── Pied de page ───────────────────────────────────────────────────
@@ -1660,6 +1827,322 @@ class _AdminScreenState extends State<AdminScreen> {
       });
     } else {
       afficherToast(context, 'Impossible de relancer cet e-mail.', estErreur: true);
+    }
+  }
+
+  // ── Onglet 10 : Support / Messagerie ────────────────────────────────────────
+  Widget _ListeSupport() {
+    final filtered = _filtreTicketStatut == 'tous'
+        ? _ticketsSupport
+        : _ticketsSupport.where((t) {
+            final statut = t['statut'] as String? ?? '';
+            if (_filtreTicketStatut == 'actifs') return !['resolu','ferme'].contains(statut);
+            return statut == _filtreTicketStatut;
+          }).toList();
+
+    final nbActifs  = _ticketsSupport.where((t) => !['resolu','ferme'].contains(t['statut'] as String? ?? '')).length;
+    final nbResolus = _ticketsSupport.where((t) => (t['statut'] as String? ?? '') == 'resolu').length;
+
+    Color _couleurStatut(String s) => switch (s) {
+      'ouvert'    => AppColors.or,
+      'en_cours'  => AppColors.encreDoux,
+      'resolu'    => AppColors.succes,
+      'ferme'     => AppColors.texteDoux,
+      _           => AppColors.texteDoux,
+    };
+    String _labelStatut(String s) => switch (s) {
+      'ouvert'    => 'Ouvert',
+      'en_cours'  => 'En cours',
+      'resolu'    => 'Résolu',
+      'ferme'     => 'Fermé',
+      _           => s,
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── En-tête ──────────────────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          child: Row(children: [
+            Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.or.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.support_agent_rounded, size: 20, color: AppColors.orFonce),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Support & Messagerie',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.encre)),
+                Text(
+                  '$nbActifs actif${nbActifs > 1 ? 's' : ''} · $nbResolus résolu${nbResolus > 1 ? 's' : ''} · ${_ticketsSupport.length} total',
+                  style: const TextStyle(fontSize: 12, color: AppColors.texteDoux),
+                ),
+              ],
+            )),
+            if (_ticketsChargement)
+              const SizedBox(width: 20, height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.encre))
+            else
+              IconButton(
+                icon: const Icon(Icons.refresh_rounded, color: AppColors.encre, size: 20),
+                onPressed: () async {
+                  setState(() => _ticketsChargement = true);
+                  final t = await SupabaseService.adminListerTickets(_cle).catchError((_) => <Map<String, dynamic>>[]);
+                  if (mounted) setState(() { _ticketsSupport = t; _ticketsChargement = false; });
+                },
+                tooltip: 'Actualiser',
+              ),
+          ]),
+        ),
+
+        // ── Filtres ──────────────────────────────────────────────────────────
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(children: [
+            ...['tous', 'actifs', 'ouvert', 'en_cours', 'resolu', 'ferme'].map((s) {
+              final actif = _filtreTicketStatut == s;
+              String label = switch (s) {
+                'tous'     => 'Tous (${_ticketsSupport.length})',
+                'actifs'   => 'Actifs ($nbActifs)',
+                'ouvert'   => 'Ouverts',
+                'en_cours' => 'En cours',
+                'resolu'   => 'Résolus ($nbResolus)',
+                'ferme'    => 'Fermés',
+                _          => s,
+              };
+              return Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: GestureDetector(
+                  onTap: () => setState(() => _filtreTicketStatut = s),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: actif ? AppColors.encre : AppColors.fondCode,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: actif ? AppColors.encre : AppColors.lignes),
+                    ),
+                    child: Text(label,
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                            color: actif ? Colors.white : AppColors.encre)),
+                  ),
+                ),
+              );
+            }),
+          ]),
+        ),
+
+        // ── Liste des tickets ─────────────────────────────────────────────────
+        if (_ticketsSupport.isEmpty)
+          const Expanded(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.mark_chat_read_rounded, size: 44, color: AppColors.texteDoux),
+                  SizedBox(height: 12),
+                  Text('Aucun ticket de support',
+                      style: TextStyle(color: AppColors.texteDoux, fontSize: 15)),
+                  SizedBox(height: 6),
+                  Text('Les tickets créés par les utilisateurs apparaîtront ici.',
+                      style: TextStyle(color: AppColors.texteDoux, fontSize: 12.5),
+                      textAlign: TextAlign.center),
+                ],
+              ),
+            ),
+          )
+        else
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: filtered.length,
+              separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.lignes),
+              itemBuilder: (_, i) {
+                final ticket   = filtered[i];
+                final id       = ticket['id']?.toString() ?? '';
+                final sujet    = ticket['sujet'] as String? ?? 'Ticket sans sujet';
+                final gestNom  = ticket['gestionnaire'] as String? ?? '—';
+                final codeTon  = ticket['code_tontine'] as String? ?? '';
+                final statut   = ticket['statut'] as String? ?? 'ouvert';
+                final dateStr  = ticket['created_at'] as String? ?? '';
+                final reponse  = ticket['reponse_admin'] as String? ?? '';
+                final couleur  = _couleurStatut(statut);
+
+                String dateAff = dateStr;
+                try {
+                  final dt = DateTime.parse(dateStr).toLocal();
+                  dateAff = '${dt.day.toString().padLeft(2,'0')}/${dt.month.toString().padLeft(2,'0')}/${dt.year}';
+                } catch (_) {}
+
+                return ExpansionTile(
+                  tilePadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  leading: Container(
+                    width: 40, height: 40,
+                    decoration: BoxDecoration(
+                      color: couleur.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.support_agent_rounded, size: 20, color: couleur),
+                  ),
+                  title: Text(sujet,
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5, color: AppColors.encre),
+                      maxLines: 2, overflow: TextOverflow.ellipsis),
+                  subtitle: Row(children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: couleur.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(_labelStatut(statut),
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: couleur)),
+                    ),
+                    const SizedBox(width: 6),
+                    Text('$gestNom${codeTon.isNotEmpty ? ' · $codeTon' : ''} · $dateAff',
+                        style: const TextStyle(fontSize: 11, color: AppColors.texteDoux)),
+                  ]),
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (ticket['description'] != null) ...[
+                            const Text('Message du client :',
+                                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5, color: AppColors.encre)),
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: AppColors.fondCode,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: AppColors.lignes),
+                              ),
+                              child: Text(ticket['description'] as String? ?? '',
+                                  style: const TextStyle(fontSize: 13, color: AppColors.texte, height: 1.4)),
+                            ),
+                            const SizedBox(height: 10),
+                          ],
+                          if (reponse.isNotEmpty) ...[
+                            const Text('Votre réponse :',
+                                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5, color: AppColors.succes)),
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: AppColors.succes.withValues(alpha: 0.06),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: AppColors.succes.withValues(alpha: 0.3)),
+                              ),
+                              child: Text(reponse,
+                                  style: const TextStyle(fontSize: 13, color: AppColors.texte, height: 1.4)),
+                            ),
+                            const SizedBox(height: 10),
+                          ],
+                          // Bouton répondre
+                          if (!['resolu','ferme'].contains(statut))
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.encre,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                ),
+                                icon: const Icon(Icons.reply_rounded, size: 16),
+                                label: const Text('Répondre', style: TextStyle(fontWeight: FontWeight.w700)),
+                                onPressed: () => _repondreTicket(id, sujet, gestNom),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _repondreTicket(String ticketId, String sujet, String gestNom) async {
+    final ctrl = TextEditingController();
+    String? erreur;
+
+    final reponse = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (sCtx, setSt) => AlertDialog(
+          backgroundColor: AppColors.fondPapier,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Répondre au ticket',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.encre)),
+            const SizedBox(height: 4),
+            Text(sujet, style: const TextStyle(fontSize: 12.5, color: AppColors.texteDoux),
+                maxLines: 2, overflow: TextOverflow.ellipsis),
+          ]),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Destinataire : $gestNom',
+                  style: const TextStyle(fontSize: 12.5, color: AppColors.texteDoux)),
+              const SizedBox(height: 10),
+              TextField(
+                controller: ctrl,
+                maxLines: 4,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: InputDecoration(
+                  hintText: 'Votre réponse au client...',
+                  filled: true, fillColor: Colors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.lignes)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.lignes)),
+                  errorText: erreur,
+                ),
+                onChanged: (_) { if (erreur != null) setSt(() => erreur = null); },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, null), child: const Text('Annuler')),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.encre),
+              icon: const Icon(Icons.send_rounded, size: 16, color: Colors.white),
+              onPressed: () {
+                final t = ctrl.text.trim();
+                if (t.length < 5) { setSt(() => erreur = 'Réponse trop courte (min 5 car.)'); return; }
+                Navigator.pop(ctx, t);
+              },
+              label: const Text('Envoyer', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (reponse == null || !mounted) return;
+
+    final result = await SupabaseService.adminRepondreTicket(
+      cle: _cle, ticketId: ticketId, reponse: reponse,
+    );
+    if (!mounted) return;
+    if (result['ok'] == true) {
+      afficherToast(context, '✅ Réponse envoyée à $gestNom.');
+      await _recharger();
+    } else {
+      afficherToast(context, result['erreur'] as String? ?? 'Erreur envoi réponse.', estErreur: true);
     }
   }
 
@@ -2668,6 +3151,7 @@ class _AdminScreenState extends State<AdminScreen> {
     String categorie(Map<String, dynamic> t) {
       final st = (t['status'] as String? ?? 'active');
       if (st == 'deleted')   return 'deleted';
+      if (st == 'blocked')   return 'blocked';
       if (st == 'suspended') return 'suspended';
       if (st == 'inactive')  return 'inactive';
       final isPremium  = (t['plan'] as String? ?? '') == 'premium';
@@ -2799,6 +3283,14 @@ class _AdminScreenState extends State<AdminScreen> {
                     couleur: AppColors.orFonce,
                   ),
                 ],
+                // Toujours visible — tontines bloquées par l'admin
+                const SizedBox(width: 8),
+                _FiltreChip(
+                  label: '🔒 Bloquées (${_tontines.where((t) => (t['status'] as String? ?? '') == 'blocked').length})',
+                  selected: _filtreStatut == 'blocked',
+                  onTap: () => setState(() => _filtreStatut = 'blocked'),
+                  couleur: const Color(0xFFD32F2F),
+                ),
                 if (nbInactives > 0) ...[
                   const SizedBox(width: 8),
                   _FiltreChip(
@@ -2856,6 +3348,7 @@ class _AdminScreenState extends State<AdminScreen> {
                 final code        = t['code'] as String? ?? '';
                 final status      = (t['status'] as String? ?? 'active');
                 final isSupprimee = status == 'deleted';
+                final isBloquee   = status == 'blocked';
                 final isPremium   = (t['plan'] as String? ?? '') == 'premium';
                 final expireStr   = t['plan_expire'] as String? ?? t['expire'] as String?;
                 final expire      = expireStr != null ? DateTime.tryParse(expireStr) : null;
@@ -2976,24 +3469,49 @@ class _AdminScreenState extends State<AdminScreen> {
                             children: [
                               if (isSupprimee)
                                 _BadgeStatut(label: 'Supprimée', couleur: AppColors.alerte)
+                              else if (isBloquee)
+                                _BadgeStatut(label: '🔒 Bloquée', couleur: const Color(0xFFD32F2F))
                               else if (isExpire)
                                 _BadgeStatut(label: 'Expirée', couleur: AppColors.orFonce)
                               else
                                 BadgePlan(isPremium: isPremium),
                               if (!isSupprimee) ...[
                                 const SizedBox(height: 6),
-                                if (!isPremium)
+                                if (isBloquee)
                                   _BtnAction(
-                                    label: 'Activer',
-                                    couleur: AppColors.encre,
-                                    onTap: () => _activer(code),
+                                    label: '🔓 Débloquer',
+                                    couleur: AppColors.succes,
+                                    onTap: () => _debloquerTontine(code, nomAffich),
                                   )
-                                else
-                                  _BtnAction(
-                                    label: 'Désactiver',
-                                    couleur: AppColors.alerte,
-                                    onTap: () => _desactiver(code),
-                                  ),
+                                else ...[
+                                  if (!isPremium)
+                                    _BtnAction(
+                                      label: 'Activer',
+                                      couleur: AppColors.encre,
+                                      onTap: () => _activer(code),
+                                    )
+                                  else
+                                    _BtnAction(
+                                      label: 'Désactiver',
+                                      couleur: AppColors.alerte,
+                                      onTap: () => _desactiver(code),
+                                    ),
+                                  const SizedBox(height: 6),
+                                  _blocageLoading[code] == true
+                                    ? const SizedBox(
+                                        width: double.infinity,
+                                        child: Center(child: Padding(
+                                          padding: EdgeInsets.symmetric(vertical: 4),
+                                          child: SizedBox(width: 16, height: 16,
+                                            child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFD32F2F))),
+                                        )),
+                                      )
+                                    : _BtnAction(
+                                        label: '🔒 Bloquer',
+                                        couleur: const Color(0xFFD32F2F),
+                                        onTap: () => _bloquerTontine(code, nomAffich),
+                                      ),
+                                ],
                               ],
                             ],
                           ),

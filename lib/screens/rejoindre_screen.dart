@@ -57,7 +57,11 @@ class _RejoindreScreenState extends State<RejoindreScreen> {
         final errProvider = provider.erreur ?? '';
         if (!mounted) return;
         setState(() {
-          if (errProvider == 'TONTINE_DELETED' ||
+          if (errProvider == 'TONTINE_BLOCKED' ||
+              errProvider.contains('TONTINE_BLOCKED')) {
+            _erreur     = 'Cette tontine est temporairement bloquée par l\'administration.';
+            _typeErreur = _TypeErreur.bloquee;
+          } else if (errProvider == 'TONTINE_DELETED' ||
               errProvider.contains('TONTINE_DELETED') ||
               errProvider.contains('supprimée') ||
               errProvider.contains('supprimee')) {
@@ -90,6 +94,9 @@ class _RejoindreScreenState extends State<RejoindreScreen> {
             msg.contains('scripts')) {
           _erreur     = 'Base de données non initialisée.';
           _typeErreur = _TypeErreur.sqlManquant;
+        } else if (msg.contains('TONTINE_BLOCKED')) {
+          _erreur     = 'Cette tontine est temporairement bloquée par l\'administration de TontineClair.';
+          _typeErreur = _TypeErreur.bloquee;
         } else if (msg.contains('TONTINE_DELETED')) {
           _erreur     = 'Cette tontine a été supprimée par son gestionnaire.\n'
                         'Son code d\'invitation n\'est plus valide.';
@@ -266,6 +273,19 @@ class _RejoindreScreenState extends State<RejoindreScreen> {
           ),
         );
 
+      // ── Tontine bloquée par l'admin ──────────────────────────────────────
+      case _TypeErreur.bloquee:
+        return _CarteInfo(
+          icone: Icons.lock_rounded,
+          couleur: const Color(0xFFD32F2F),
+          titre: 'Tontine temporairement bloquée',
+          corps: 'Cette tontine a été suspendue par l\'administration de TontineClair '
+              'pour des raisons de sécurité.\n\n'
+              '• Accès temporairement interdit à tous les membres.\n'
+              '• Contactez le support TontineClair pour plus d\'informations.\n'
+              '• Le blocage sera levé après vérification par l\'administration.',
+        );
+
       // ── Tontine supprimée ──────────────────────────────────────────────────
       case _TypeErreur.supprimee:
         return _CarteInfo(
@@ -321,7 +341,7 @@ class _RejoindreScreenState extends State<RejoindreScreen> {
 }
 
 // ─── Types d'erreur ────────────────────────────────────────────────────────
-enum _TypeErreur { format, introuvable, supprimee, sqlManquant, mauvaiseBase, cle, autre }
+enum _TypeErreur { format, introuvable, bloquee, supprimee, sqlManquant, mauvaiseBase, cle, autre }
 
 // ─── Carte guide SQL ────────────────────────────────────────────────────────
 class _CarteErreurSQL extends StatefulWidget {

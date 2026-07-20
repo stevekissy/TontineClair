@@ -1254,6 +1254,9 @@ class Tontine {
   /// true si la tontine est accessible normalement
   bool get estActive => status == 'active';
 
+  /// true si la tontine est temporairement bloquée par l'admin (sécurité)
+  bool get estBloquee => status == 'blocked';
+
   /// true si la tontine est en version Premium (paiements SycaPay actifs).
   /// Source unique : data.tier (stocké dans Supabase).
   bool get isPremium => data.isPremium;

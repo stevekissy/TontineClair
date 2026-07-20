@@ -2704,6 +2704,165 @@ class SupabaseService {
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // BLOCAGE / DÉBLOCAGE DE TONTINE (Issue 10 — Sécurité Admin)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /// Bloque une tontine (status → 'blocked').
+  /// Les membres ne peuvent plus y accéder tant qu'elle est bloquée.
+  /// [motif] : raison du blocage (ex: suspicion de fraude, sécurité)
+  static Future<Map<String, dynamic>> adminBloquerTontine({
+    required String cle,
+    required String code,
+    required String motif,
+  }) async {
+    try {
+      // Tentative via RPC dédiée (si déployée)
+      final res = await rpc('admin_bloquer_tontine', {
+        'p_cle':   cle,
+        'p_code':  code.toUpperCase(),
+        'p_motif': motif.trim(),
+      });
+      if (res is Map) return Map<String, dynamic>.from(res);
+      return {'ok': true};
+    } catch (_) {
+      // Fallback : mise à jour directe via REST (si RPC non déployée)
+      try {
+        final tontine = await lireTontine(code);
+        final data    = tontine.data.toJson();
+        data['_blocage'] = {
+          'motif':  motif.trim(),
+          'date':   DateTime.now().toIso8601String(),
+          'auteur': 'admin',
+        };
+        final response = await http.patch(
+          Uri.parse('$_url/rest/v1/tontines?code=eq.${code.toUpperCase()}'),
+          headers: {
+            'apikey':        _key,
+            'Authorization': 'Bearer $_key',
+            'Content-Type':  'application/json',
+            'Prefer':        'return=minimal',
+          },
+          body: jsonEncode({'status': 'blocked', 'data': data}),
+        ).timeout(const Duration(seconds: 20));
+        if (response.statusCode == 204) return {'ok': true};
+        return {'ok': false, 'erreur': 'Erreur ${response.statusCode}'};
+      } catch (e) {
+        return {'ok': false, 'erreur': 'Erreur réseau : $e'};
+      }
+    }
+  }
+
+  /// Débloque une tontine (status → 'active').
+  static Future<Map<String, dynamic>> adminDebloquerTontine({
+    required String cle,
+    required String code,
+  }) async {
+    try {
+      final res = await rpc('admin_debloquer_tontine', {
+        'p_cle':  cle,
+        'p_code': code.toUpperCase(),
+      });
+      if (res is Map) return Map<String, dynamic>.from(res);
+      return {'ok': true};
+    } catch (_) {
+      // Fallback : mise à jour directe via REST
+      try {
+        final tontine = await lireTontine(code);
+        final data    = tontine.data.toJson();
+        data.remove('_blocage');
+        final response = await http.patch(
+          Uri.parse('$_url/rest/v1/tontines?code=eq.${code.toUpperCase()}'),
+          headers: {
+            'apikey':        _key,
+            'Authorization': 'Bearer $_key',
+            'Content-Type':  'application/json',
+            'Prefer':        'return=minimal',
+          },
+          body: jsonEncode({'status': 'active', 'data': data}),
+        ).timeout(const Duration(seconds: 20));
+        if (response.statusCode == 204) return {'ok': true};
+        return {'ok': false, 'erreur': 'Erreur ${response.statusCode}'};
+      } catch (e) {
+        return {'ok': false, 'erreur': 'Erreur réseau : $e'};
+      }
+    }
+  }
+
+  /// Envoie un message broadcast à tous les membres d'une tontine.
+  static Future<Map<String, dynamic>> adminEnvoyerMessageTontine({
+    required String cle,
+    required String code,
+    required String message,
+    required String type,
+  }) async {
+    try {
+      final res = await rpc('admin_message_tontine', {
+        'p_cle':     cle,
+        'p_code':    code.toUpperCase(),
+        'p_message': message.trim(),
+        'p_type':    type,
+      });
+      if (res is Map) return Map<String, dynamic>.from(res);
+      // Fallback : envoyer une notification push
+      await envoyerNotification(
+        code:    code,
+        type:    'alerte_securite',
+        titre:   '⚠️ Message de l\'administration',
+        message: message.trim(),
+      );
+      return {'ok': true};
+    } catch (e) {
+      return {'ok': false, 'erreur': 'Erreur : $e'};
+    }
+  }
+
+  /// Liste les tickets de support côté admin.
+  static Future<List<Map<String, dynamic>>> adminListerTickets(
+      String cle, {String statut = 'tous'}) async {
+    try {
+      final res = await rpc('admin_lister_tickets_support', {
+        'p_cle':    cle,
+        'p_statut': statut,
+      });
+      if (res is List) return res.cast<Map<String, dynamic>>();
+    } catch (_) {}
+    // Fallback : REST
+    try {
+      final query = statut == 'tous'
+          ? '$_url/rest/v1/support_tickets?order=created_at.desc&limit=100'
+          : '$_url/rest/v1/support_tickets?statut=eq.$statut&order=created_at.desc&limit=100';
+      final response = await http.get(
+        Uri.parse(query),
+        headers: {'apikey': _key, 'Authorization': 'Bearer $_key'},
+      ).timeout(const Duration(seconds: 20));
+      if (response.statusCode == 200) {
+        final list = jsonDecode(response.body);
+        if (list is List) return list.cast<Map<String, dynamic>>();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// Répondre à un ticket de support (admin).
+  static Future<Map<String, dynamic>> adminRepondreTicket({
+    required String cle,
+    required String ticketId,
+    required String reponse,
+  }) async {
+    try {
+      final res = await rpc('admin_repondre_ticket', {
+        'p_cle':      cle,
+        'p_ticket_id': ticketId,
+        'p_reponse':   reponse.trim(),
+      });
+      if (res is Map) return Map<String, dynamic>.from(res);
+      return {'ok': true};
+    } catch (e) {
+      return {'ok': false, 'erreur': 'Erreur : $e'};
+    }
+  }
+
   /// Étape 1 (Admin) : appelle la RPC admin_reinitialiser_pin_gestionnaire.
   /// Accepte un [emailOverride] pour les tontines sans email enregistré.
   /// La RPC génère un code hashé et retourne {ok, email, gest_nom, tontine_code, code_clair}.

@@ -251,6 +251,11 @@ class TontineProvider extends ChangeNotifier {
         notifyListeners();
         return false;
       }
+      if (t.estBloquee) {
+        _erreur = 'TONTINE_BLOCKED';
+        notifyListeners();
+        return false;
+      }
       if (!t.estActive) {
         _erreur = 'Cette tontine n\'est pas active (statut: ${t.status}).';
         notifyListeners();
