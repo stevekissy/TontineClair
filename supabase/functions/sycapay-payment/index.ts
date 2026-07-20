@@ -920,8 +920,9 @@ Deno.serve(async (req: Request) => {
           });
         }
         return json({
+          ok:              true,  // ✅ FIX: Flutter lit estSucces = (confirmed && ok) → doit être true
           code:            0,
-          message:         "Paiement confirmé",
+          message:         "Paiement reçu avec succès. Votre cotisation a été enregistrée.",
           statusNormalise: "confirmed",
           numcommande,
           fromCache:       true,
@@ -1097,12 +1098,7 @@ async function handleWebhook(req: Request): Promise<Response> {
   // Rebind numcommande avec la ref effective
   const numcommandeFinal = refEffective;
 
-  // Récupérer la transaction
-  const rows = await sbSelect(
-    "sycapay_transactions",
-    `internal_reference=eq.${encodeURIComponent(numcommande)}&select=*`,
-  ).catch(() => [] as Array<Record<string, unknown>>);
-
+  // Récupérer la transaction (utilise numcommandeFinal — ref enrichie du payload)
   const rows = await sbSelect(
     "sycapay_transactions",
     `internal_reference=eq.${encodeURIComponent(numcommandeFinal)}&select=*`,
