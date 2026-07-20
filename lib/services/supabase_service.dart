@@ -402,7 +402,15 @@ class SupabaseService {
       'p_pin': pin,
       'p_data': data,
     });
-    return result == true;
+    // Supabase peut retourner : true (bool), "true" (String), 1 (int), ou null.
+    // On normalise tous les cas positifs → true, comme ecrireTontineSansPIN.
+    if (result == null) return false;
+    if (result is bool) return result;
+    if (result is int) return result != 0;
+    if (result is String) return result.toLowerCase() == 'true';
+    // Map {ok: true} — certaines versions de la RPC retournent un objet
+    if (result is Map<String, dynamic>) return result['ok'] == true;
+    return false;
   }
 
   /// Écrit les données d'une tontine SANS vérification de PIN gestionnaire.
