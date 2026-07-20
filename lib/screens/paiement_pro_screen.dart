@@ -300,7 +300,7 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
       final t      = SupabaseService.notifTexte('cotisation', lang, vars: {
         'montant': Formatters.montant(montant, devise: devise),
         'nom':     widget.membre.nom,
-        'libelle': 'Cotisation Premium',,
+        'libelle': 'Cotisation Premium',
         'desc':    '',
       });
       SupabaseService.envoyerNotification(
