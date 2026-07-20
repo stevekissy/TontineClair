@@ -89,6 +89,8 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
   // Affichage progressif du bouton Vérifier pendant la phase attente (30s)
   bool         _boutonVerifierDansAttente = false;
   Timer?       _timerBoutonAttente;
+  // ── Tracking tentatives (toutes, succès + échecs) ─────────────────────
+  final List<TentativePaiement> _tentatives = [];
 
   @override
   void initState() {
@@ -109,6 +111,23 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
     _watchdogTimer?.cancel();
     _timerBoutonAttente?.cancel();
     super.dispose();
+  }
+
+  // ── Enregistrement d'une tentative ───────────────────────────────────────
+  /// Ajoute une tentative à l'historique local.
+  /// Appelé à chaque résultat final (succès, échec, timeout).
+  void _enregistrerTentative(String statut, {String? message}) {
+    if (_numCommande == null) return;
+    _tentatives.add(TentativePaiement(
+      numCommande:   _numCommande!,
+      transactionId: _transactionId,
+      montant:       widget.montant,
+      typeOperation: widget.typeOperation,
+      operateur:     _operateur,
+      statut:        statut,
+      message:       message,
+      date:          DateTime.now(),
+    ));
   }
 
   // ── Validation ────────────────────────────────────────────────────────────
@@ -200,6 +219,7 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
       if (resultat.dejaConfirme) {
         _watchdogTimer?.cancel();
         _enTraitement = false;
+        _enregistrerTentative('succes', message: 'Déjà crédité (idempotent)');
         setState(() => _etape = _EtapeCaisse.enregistrement);
         await _finaliserLocalement();
         return;
@@ -209,6 +229,7 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
       if (resultat.erreurReseau) {
         _watchdogTimer?.cancel();
         _enTraitement = false;
+        _enregistrerTentative('echec', message: 'Erreur réseau: ${resultat.messageFr}');
         setState(() {
           _etape                    = _EtapeCaisse.saisie;
           _messageErreur            = resultat.messageFr;
@@ -222,6 +243,7 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
       if (resultat.estEchec && !resultat.estEnAttente) {
         _watchdogTimer?.cancel();
         _enTraitement = false;
+        _enregistrerTentative('echec', message: resultat.messageFr);
         setState(() {
           _etape         = _EtapeCaisse.saisie;
           _messageErreur = resultat.messageFr;
@@ -268,10 +290,12 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
 
       if (confirmation.ok) {
         // ✅ Serveur a confirmé ET crédité → Flutter recharge et affiche succès
+        _enregistrerTentative('succes');
         setState(() => _etape = _EtapeCaisse.enregistrement);
         await _rechargerEtSucces();
       } else if (confirmation.estEnAttente || confirmation.timeout) {
         // Timeout Edge Fn → bouton Vérifier (sans "échec")
+        _enregistrerTentative('attente', message: 'Confirmation en attente');
         setState(() {
           _etape                    = _EtapeCaisse.saisie;
           _peutVerifierManuellement = true;
@@ -283,6 +307,7 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
         });
       } else {
         // Echec définitif confirmé par le serveur
+        _enregistrerTentative('echec', message: confirmation.messageFr);
         setState(() {
           _etape         = _EtapeCaisse.saisie;
           _messageErreur = confirmation.messageFr;
@@ -348,10 +373,12 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
 
       if (statut.estSucces || statut.statusNormalise == 'credited') {
         // L'Edge Function a crédité côté serveur → juste recharger
+        _enregistrerTentative('succes', message: 'Vérifié manuellement');
         setState(() => _etape = _EtapeCaisse.enregistrement);
         _transactionId ??= statut.transactionId;
         await _rechargerEtSucces();
       } else if (statut.estEnAttente) {
+        _enregistrerTentative('attente', message: 'Toujours en attente');
         setState(() {
           _etape                    = _EtapeCaisse.saisie;
           _peutVerifierManuellement = true;
@@ -359,6 +386,7 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
           _messageErreur = null;
         });
       } else {
+        _enregistrerTentative('echec', message: statut.messageFr);
         setState(() {
           _etape                    = _EtapeCaisse.saisie;
           _messageErreur            = statut.messageFr;
@@ -383,9 +411,21 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
 
   Future<void> _rechargerEtSucces() async {
     final provider = context.read<TontineProvider>();
-    try {
-      await provider.chargerTontine(widget.code).timeout(const Duration(seconds: 15));
-    } catch (_) {}
+    // FIX: retry robuste — 3 tentatives max, 8s chacune
+    // Le crédit est déjà fait côté serveur, on doit juste lire les nouvelles données
+    bool rechargementOk = false;
+    for (int i = 0; i < 3; i++) {
+      try {
+        await provider.chargerTontine(widget.code).timeout(const Duration(seconds: 8));
+        rechargementOk = true;
+        break;
+      } catch (_) {
+        if (i < 2) await Future.delayed(const Duration(seconds: 2));
+      }
+    }
+    if (kDebugMode) {
+      debugPrint('[CaissePro] rechargement après crédit: $rechargementOk');
+    }
     if (!mounted) return;
 
     // Notification push (non bloquante)
@@ -932,7 +972,10 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
             ],
             const SizedBox(height: 40),
             FilledButton(
-              onPressed: () => Navigator.pop(context, true),
+              onPressed: () => Navigator.pop(
+                context,
+                ResultatPaiementCaisse(succes: true, tentatives: _tentatives),
+              ),
               style: FilledButton.styleFrom(
                 backgroundColor: _couleurPro,
                 padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
@@ -954,6 +997,51 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
 // ── Enum étapes ───────────────────────────────────────────────────────────────
 
 enum _EtapeCaisse { saisie, enCours, enregistrement, attente, succes }
+
+// ── Résultat de l'écran de paiement ──────────────────────────────────────────
+/// Données retournées à la CaisseScreen lors du Navigator.pop()
+class ResultatPaiementCaisse {
+  final bool succes;
+  final List<TentativePaiement> tentatives;
+
+  const ResultatPaiementCaisse({
+    required this.succes,
+    required this.tentatives,
+  });
+}
+
+/// Représente une tentative de paiement (succès ou échec) pour l'historique
+class TentativePaiement {
+  final String numCommande;
+  final String? transactionId;
+  final int montant;
+  final String typeOperation;
+  final String operateur;
+  final String statut; // 'succes' | 'echec' | 'annule' | 'attente'
+  final String? message;
+  final DateTime date;
+
+  const TentativePaiement({
+    required this.numCommande,
+    this.transactionId,
+    required this.montant,
+    required this.typeOperation,
+    required this.operateur,
+    required this.statut,
+    this.message,
+    required this.date,
+  });
+
+  String get statutLibelle {
+    switch (statut) {
+      case 'succes':  return '✅ Succès';
+      case 'echec':   return '❌ Échec';
+      case 'attente': return '⏳ En attente';
+      case 'annule':  return '🚫 Annulé';
+      default:        return statut;
+    }
+  }
+}
 
 // ── Sélecteur opérateur ───────────────────────────────────────────────────────
 

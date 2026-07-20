@@ -13,13 +13,86 @@ import '../services/locale_service.dart';
 import 'paiement_caisse_pro_screen.dart';
 import 'kyc_screen.dart';
 
+// ─── Widget animé pour le solde caisse ────────────────────────────────────────
+/// Affiche le solde avec une animation de compteur fun quand la valeur change.
+class _SoldeAnime extends StatefulWidget {
+  final int solde;
+  final String devise;
+
+  const _SoldeAnime({required this.solde, required this.devise});
+
+  @override
+  State<_SoldeAnime> createState() => _SoldeAnimeState();
+}
+
+class _SoldeAnimeState extends State<_SoldeAnime>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _anim;
+  int _ancienSolde = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _ancienSolde = widget.solde;
+    _ctrl = AnimationController(
+      duration: const Duration(milliseconds: 1200),
+      vsync: this,
+    );
+    _anim = CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic);
+  }
+
+  @override
+  void didUpdateWidget(_SoldeAnime oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.solde != widget.solde) {
+      _ancienSolde = oldWidget.solde;
+      _ctrl.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _anim,
+      builder: (context, _) {
+        final valeurAffichee = (_ancienSolde +
+                (_anim.value * (widget.solde - _ancienSolde)))
+            .round();
+        return Text(
+          Formatters.montant(valeurAffichee, devise: widget.devise),
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 34,
+            color: Colors.white,
+          ),
+        );
+      },
+    );
+  }
+}
+
 // ─── Opérateurs Mobile Money disponibles ──────────────────────────────────────
 const _operateursMobileMoney = ['orange', 'moov', 'mtn', 'wave'];
 
-class CaisseScreen extends StatelessWidget {
+class CaisseScreen extends StatefulWidget {
   final String code;
 
   const CaisseScreen({super.key, required this.code});
+
+  @override
+  State<CaisseScreen> createState() => _CaisseScreenState();
+}
+
+class _CaisseScreenState extends State<CaisseScreen> {
+  // Tentatives de paiement reçues depuis PaiementCaisseProScreen
+  final List<TentativePaiement> _tentativesRecentes = [];
 
   @override
   Widget build(BuildContext context) {
@@ -82,13 +155,9 @@ class CaisseScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        Text(
-                          Formatters.montant(data.soldeCaisse, devise: data.devise),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 34,
-                            color: Colors.white,
-                          ),
+                        _SoldeAnime(
+                          solde: data.soldeCaisse,
+                          devise: data.devise,
                         ),
                       ],
                     ),
@@ -145,7 +214,7 @@ class CaisseScreen extends StatelessWidget {
                     ),
                   ),
                   SizedBox(height: 10),
-                  if (data.caisse.isEmpty)
+                  if (data.caisse.isEmpty && _tentativesRecentes.isEmpty)
                     Center(
                       child: Padding(
                         padding: EdgeInsets.all(24),
@@ -155,10 +224,48 @@ class CaisseScreen extends StatelessWidget {
                         ),
                       ),
                     )
-                  else
-                    ...data.caisse.reversed.map(
-                      (m) => _LigneMouvement(mouvement: m, devise: data.devise),
+                  else ...data.caisse.reversed.map(
+                    (m) => _LigneMouvement(mouvement: m, devise: data.devise),
+                  ),
+                  // ── Tentatives de paiement récentes (session courante) ─────────
+                  if (_tentativesRecentes.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        const Icon(Icons.history_toggle_off_rounded,
+                            size: 18, color: AppColors.texteDoux),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Tentatives récentes',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                            color: AppColors.texteDoux,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.fondCode,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${_tentativesRecentes.length}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.encre,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
+                    const SizedBox(height: 8),
+                    ..._tentativesRecentes.reversed.map(
+                      (t) => _LigneTentative(tentative: t, devise: data.devise),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -279,7 +386,8 @@ class CaisseScreen extends StatelessWidget {
     }
 
     // Ouvrir l'écran SycaPay pour apport caisse
-    await Navigator.push(
+    // FIX: recharger la tontine au retour + capturer les tentatives
+    final resultat = await Navigator.push<ResultatPaiementCaisse>(
       context,
       MaterialPageRoute(
         builder: (_) => PaiementCaisseProScreen(
@@ -289,6 +397,14 @@ class CaisseScreen extends StatelessWidget {
         ),
       ),
     );
+    // Ajouter les tentatives à l'historique de session
+    if (resultat != null && resultat.tentatives.isNotEmpty) {
+      setState(() => _tentativesRecentes.addAll(resultat.tentatives));
+    }
+    // Toujours recharger au retour pour rafraîchir le solde
+    if (context.mounted) {
+      provider.chargerTontine(tontine.code, silencieux: true);
+    }
   }
 
   // ── Dépense Premium : Mobile Money uniquement → statut pending → validation admin ──
@@ -513,7 +629,7 @@ class CaisseScreen extends StatelessWidget {
 
     if (!context.mounted) return;
 
-    await Navigator.push(
+    final resultatDep = await Navigator.push<ResultatPaiementCaisse>(
       context,
       MaterialPageRoute(
         builder: (_) => PaiementCaisseProScreen(
@@ -529,6 +645,14 @@ class CaisseScreen extends StatelessWidget {
         ),
       ),
     );
+    // Ajouter les tentatives à l'historique de session
+    if (resultatDep != null && resultatDep.tentatives.isNotEmpty) {
+      setState(() => _tentativesRecentes.addAll(resultatDep.tentatives));
+    }
+    // FIX: toujours recharger au retour pour rafraîchir le solde
+    if (context.mounted) {
+      provider.chargerTontine(tontine.code, silencieux: true);
+    }
   }
 
   // ── Pénalité Pro : sélection membre + montant → SycaPay ─────────────────────
@@ -669,7 +793,8 @@ class CaisseScreen extends StatelessWidget {
     if (!context.mounted) return;
 
     // Ouvrir l'écran SycaPay pour pénalité
-    await Navigator.push(
+    // FIX: recharger la tontine au retour + capturer les tentatives
+    final resultatPen = await Navigator.push<ResultatPaiementCaisse>(
       context,
       MaterialPageRoute(
         builder: (_) => PaiementCaisseProScreen(
@@ -682,6 +807,14 @@ class CaisseScreen extends StatelessWidget {
         ),
       ),
     );
+    // Ajouter les tentatives à l'historique de session
+    if (resultatPen != null && resultatPen.tentatives.isNotEmpty) {
+      setState(() => _tentativesRecentes.addAll(resultatPen.tentatives));
+    }
+    // FIX: toujours recharger au retour pour rafraîchir le solde
+    if (context.mounted) {
+      provider.chargerTontine(tontine.code, silencieux: true);
+    }
   }
 
   Future<void> _mouvement(
@@ -924,7 +1057,7 @@ class CaisseScreen extends StatelessWidget {
         'desc': _desc,
       });
       SupabaseService.envoyerNotification(
-        code: code,
+        code: widget.code,
         type: _typeNotif,
         titre: _t['titre']!,
         message: _t['message']!,
@@ -1079,6 +1212,158 @@ class _LigneMouvement extends StatelessWidget {
               fontSize: 15,
               color: _isEntree ? AppColors.succes : AppColors.alerte,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Ligne tentative de paiement (historique session) ─────────────────────────
+class _LigneTentative extends StatelessWidget {
+  final TentativePaiement tentative;
+  final String devise;
+
+  const _LigneTentative({required this.tentative, this.devise = 'XOF'});
+
+  Color get _couleurStatut {
+    switch (tentative.statut) {
+      case 'succes':  return AppColors.succes;
+      case 'echec':   return AppColors.alerte;
+      case 'attente': return AppColors.orFonce;
+      default:        return AppColors.texteDoux;
+    }
+  }
+
+  IconData get _iconeStatut {
+    switch (tentative.statut) {
+      case 'succes':  return Icons.check_circle_rounded;
+      case 'echec':   return Icons.cancel_rounded;
+      case 'attente': return Icons.hourglass_bottom_rounded;
+      default:        return Icons.help_outline_rounded;
+    }
+  }
+
+  String get _libelleOperation {
+    switch (tentative.typeOperation) {
+      case 'caisse':               return 'Apport caisse';
+      case 'penalite':             return 'Pénalité';
+      case 'depense_caisse':       return 'Dépense';
+      case 'remboursement_pret':   return 'Remboursement';
+      case 'pret_octroye':         return 'Prêt';
+      case 'decaissement_cagnotte':return 'Décaissement';
+      default:                     return tentative.typeOperation;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _couleurStatut.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _couleurStatut.withValues(alpha: 0.25),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: _couleurStatut.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(_iconeStatut, size: 18, color: _couleurStatut),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      _libelleOperation,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: AppColors.texte,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: _couleurStatut.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        tentative.statutLibelle,
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: _couleurStatut,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${tentative.operateur.toUpperCase()} · ${Formatters.dateFormatee(tentative.date)}',
+                  style: const TextStyle(fontSize: 11, color: AppColors.texteDoux),
+                ),
+                if (tentative.transactionId != null) ...[
+                  const SizedBox(height: 1),
+                  Text(
+                    'ID: ${tentative.transactionId}',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: AppColors.texteDoux,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ],
+                Text(
+                  'Réf: ${tentative.numCommande}',
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: AppColors.texteDoux,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+                if (tentative.message != null && tentative.statut == 'echec') ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    tentative.message!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: AppColors.alerte,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                Formatters.montant(tentative.montant, devise: devise),
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  color: _couleurStatut,
+                ),
+              ),
+            ],
           ),
         ],
       ),
