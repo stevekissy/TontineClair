@@ -251,7 +251,7 @@ class _PretsScreenState extends State<PretsScreen> {
                           SizedBox(width: 6),
                           Flexible(
                             child: Text(
-                              'Mobile Money — frais réseau 2,5% — paiement automatique SycaPay',
+                              'Mobile Money — frais réseau 2,5% — paiement automatisé',
                               style: TextStyle(fontSize: 12, color: Color(0xFFE65100)),
                             ),
                           ),
@@ -663,7 +663,7 @@ class _CartePret extends StatelessWidget {
                     onPressed: () => _rembourserPro(context),
                     icon: const Icon(Icons.account_balance_wallet_rounded, size: 18),
                     label: const Text(
-                      'Rembourser via SycaPay',
+                      'Rembourser (paiement automatisé)',
                       style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                     style: FilledButton.styleFrom(
@@ -856,7 +856,7 @@ class _CartePret extends StatelessWidget {
               )),
               const SizedBox(height: 16),
               const Text(
-                'Remboursement via SycaPay',
+                'Remboursement automatisé',
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20, color: AppColors.encre),
               ),
               const SizedBox(height: 4),
@@ -872,7 +872,7 @@ class _CartePret extends StatelessWidget {
                     SizedBox(width: 6),
                     Flexible(
                       child: Text(
-                        'Le paiement sera collecté via SycaPay Mobile Money',
+                        'Le paiement sera collecté automatiquement via Mobile Money',
                         style: TextStyle(fontSize: 12, color: Color(0xFF1A6B3C)),
                       ),
                     ),
@@ -898,7 +898,7 @@ class _CartePret extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               BtnPrincipal(
-                label: 'Continuer vers SycaPay',
+                label: 'Continuer vers le paiement',
                 onTap: () => Navigator.pop(ctx, true),
               ),
               const SizedBox(height: 8),

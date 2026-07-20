@@ -2003,7 +2003,7 @@ class _BarreDetail extends StatelessWidget {
                 child: Column(
                   children: [
                     _LigneRecapCloture('Montant versé',      Formatters.montant(montantVerse, devise: data.devise)),
-                    _LigneRecapCloture('Frais réseau SycaPay (2,5%)', '− ${Formatters.montant(commission, devise: data.devise)}', rouge: true),
+                    _LigneRecapCloture('Frais réseau (2,5%)', '− ${Formatters.montant(commission, devise: data.devise)}', rouge: true),
                     const Divider(height: 12, color: AppColors.lignes),
                     _LigneRecapCloture('Montant net à décaisser', Formatters.montant(montantNet, devise: data.devise), gras: true),
                   ],
@@ -2111,10 +2111,10 @@ class _BarreDetail extends StatelessWidget {
         (label: 'Opérateur',                  valeur: operateurLabel),
         (label: 'Numéro',                     valeur: numeroBenef),
         (label: 'Montant brut',               valeur: Formatters.montant(montantVerse, devise: data.devise)),
-        (label: 'Frais réseau SycaPay (2,5%)', valeur: '− ${Formatters.montant(commission, devise: data.devise)}'),
+        (label: 'Frais réseau (2,5%)', valeur: '− ${Formatters.montant(commission, devise: data.devise)}'),
         (label: 'Montant net à décaisser',    valeur: Formatters.montant(montantNet, devise: data.devise)),
         (label: 'Tour',                       valeur: 'N° $numerTourAffiche → N° ${numerTourAffiche + 1}'),
-        (label: '⚡ Mode',                    valeur: 'Paiement automatique SycaPay'),
+        (label: '⚡ Mode',                    valeur: 'Paiement automatisé'),
       ],
       onValider: (pin) async {
         // ── A. Avancer le tour dans le JSON (débiter la caisse immédiatement) ──

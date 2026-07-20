@@ -427,7 +427,7 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
         notifType = 'caisse';
         notifVars = {
           'montant': Formatters.montant(widget.montant, devise: devise),
-          'libelle': 'Apport caisse Premium SycaPay',
+          'libelle': 'Apport caisse Premium',
           'nom':     widget.membreNom ?? '',
           'desc':    widget.description.isNotEmpty ? ' — ${widget.description}' : '',
         };
@@ -466,10 +466,10 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
         backgroundColor: AppColors.fondPapier,
         elevation:       0,
         title: Text(
-          widget.typeOperation == 'penalite'            ? 'Pénalité SycaPay Premium'
-              : widget.typeOperation == 'pret_octroye'          ? 'Prêt via SycaPay'
-              : widget.typeOperation == 'depense_caisse'        ? 'Dépense via SycaPay'
-              : widget.typeOperation == 'decaissement_cagnotte' ? 'Décaissement SycaPay'
+          widget.typeOperation == 'penalite'            ? 'Pénalité Premium'
+              : widget.typeOperation == 'pret_octroye'          ? 'Prêt automatisé'
+              : widget.typeOperation == 'depense_caisse'        ? 'Dépense automatisée'
+              : widget.typeOperation == 'decaissement_cagnotte' ? 'Décaissement automatisé'
               : widget.typeOperation == 'remboursement_pret'    ? 'Remboursement prêt'
               : 'Apport de caisse Premium',
           style: const TextStyle(
@@ -560,7 +560,7 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
                       style: const TextStyle(fontSize: 12, color: AppColors.texteDoux)),
                 ],
                 const SizedBox(height: 4),
-                const Text('Paiement sécurisé via SycaPay',
+                const Text('Paiement automatisé sécurisé',
                     style: TextStyle(fontSize: 11, color: AppColors.texteDoux)),
               ],
             ),
@@ -687,11 +687,11 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
                   : widget.typeOperation == 'remboursement_pret'
                       ? 'Rembourser ${Formatters.montant(widget.montant, devise: 'XOF')} via Mobile Money'
                   : widget.typeOperation == 'pret_octroye'
-                      ? 'Verser prêt ${Formatters.montant(widget.montant, devise: 'XOF')} via SycaPay'
+                      ? 'Verser prêt ${Formatters.montant(widget.montant, devise: 'XOF')}'
                   : widget.typeOperation == 'depense_caisse'
-                      ? 'Payer ${Formatters.montant(widget.montant, devise: 'XOF')} via SycaPay'
+                      ? 'Payer ${Formatters.montant(widget.montant, devise: 'XOF')}'
                   : widget.typeOperation == 'decaissement_cagnotte'
-                      ? 'Décaisser ${Formatters.montant(widget.montant, devise: 'XOF')} via SycaPay'
+                      ? 'Décaisser ${Formatters.montant(widget.montant, devise: 'XOF')}'
                       : 'Verser ${Formatters.montant(widget.montant, devise: 'XOF')} via Mobile Money',
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
             ),
@@ -740,7 +740,7 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
           children: [
             const CircularProgressIndicator(color: _couleurPro),
             const SizedBox(height: 24),
-            const Text('Connexion à SycaPay…',
+            const Text('Connexion en cours…',
                 style: TextStyle(fontSize: 15, color: AppColors.texte)),
             const SizedBox(height: 8),
             const Text(
@@ -910,11 +910,11 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
                   ? 'La pénalité de ${Formatters.montant(widget.montant, devise: devise)}'
                     '\na été appliquée à ${widget.membreNom ?? 'ce membre'}.'
                   : widget.typeOperation == 'pret_octroye'
-                      ? '${Formatters.montant(widget.montant, devise: devise)} versés à ${widget.membreNom ?? 'l\'emprunteur'} via SycaPay.'
+                      ? '${Formatters.montant(widget.montant, devise: devise)} versés à ${widget.membreNom ?? 'l\'emprunteur'}. Paiement automatisé.'
                   : widget.typeOperation == 'depense_caisse'
-                      ? 'Dépense de ${Formatters.montant(widget.montant, devise: devise)} enregistrée via SycaPay.'
+                      ? 'Dépense de ${Formatters.montant(widget.montant, devise: devise)} enregistrée. Paiement automatisé.'
                   : widget.typeOperation == 'decaissement_cagnotte'
-                      ? '${Formatters.montant(widget.montant, devise: devise)} décaissés pour ${widget.membreNom ?? 'le bénéficiaire'} via SycaPay.'
+                      ? '${Formatters.montant(widget.montant, devise: devise)} décaissés pour ${widget.membreNom ?? 'le bénéficiaire'}. Paiement automatisé.'
                   : 'Votre apport de caisse a été enregistré.\n'
                     '${Formatters.montant(widget.montant, devise: devise)} versé dans la caisse.',
               textAlign: TextAlign.center,
@@ -922,7 +922,7 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
             ),
             if (_transactionId != null) ...[
               const SizedBox(height: 8),
-              Text('Réf. SycaPay : $_transactionId',
+              Text('Réf. transaction : $_transactionId',
                   style: const TextStyle(fontSize: 11, color: AppColors.texteDoux)),
             ],
             if (_numCommande != null) ...[

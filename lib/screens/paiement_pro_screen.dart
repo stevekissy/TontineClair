@@ -300,7 +300,7 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
       final t      = SupabaseService.notifTexte('cotisation', lang, vars: {
         'montant': Formatters.montant(montant, devise: devise),
         'nom':     widget.membre.nom,
-        'libelle': 'Cotisation Premium SycaPay',
+        'libelle': 'Cotisation Premium',,
         'desc':    '',
       });
       SupabaseService.envoyerNotification(
@@ -523,7 +523,7 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
           children: [
             const CircularProgressIndicator(color: _couleurPro),
             const SizedBox(height: 24),
-            const Text('Connexion à SycaPay…',
+            const Text('Connexion en cours…',
                 style: TextStyle(fontSize: 15, color: AppColors.texte)),
             const SizedBox(height: 8),
             const Text(
@@ -686,7 +686,7 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
             ),
             if (_transactionId != null) ...[
               const SizedBox(height: 8),
-              Text('Réf. SycaPay : $_transactionId',
+              Text('Réf. transaction : $_transactionId',
                   style: const TextStyle(fontSize: 11, color: AppColors.texteDoux)),
             ],
             if (_numCommande != null) ...[
@@ -744,7 +744,7 @@ class _CarteMontant extends StatelessWidget {
                 fontSize: 28, fontWeight: FontWeight.w800, color: Color(0xFF1A6B3C)),
           ),
           const SizedBox(height: 4),
-          const Text('Paiement sécurisé via SycaPay',
+          const Text('Paiement automatisé sécurisé',
               style: TextStyle(fontSize: 11, color: AppColors.texteDoux)),
         ],
       ),

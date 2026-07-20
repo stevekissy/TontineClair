@@ -1068,7 +1068,7 @@ class _SelecteurTypeTontine extends StatelessWidget {
             Expanded(
               child: _CarteOption(
                 titre: 'Premium',
-                sousTitre: 'Tontines illimitées\nMembres illimités\nSycaPay activé',
+                sousTitre: 'Tontines illimitées\nMembres illimités\nPaiement automatisé',
                 icone: '⭐',
                 selectionne: valeur == 'premium',
                 onTap: () => onChanged('premium'),

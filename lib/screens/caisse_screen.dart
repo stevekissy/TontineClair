@@ -230,7 +230,7 @@ class CaisseScreen extends StatelessWidget {
                     Icon(Icons.rocket_launch_rounded, size: 13, color: Color(0xFF1A6B3C)),
                     SizedBox(width: 6),
                     Text(
-                      'Le paiement sera effectué via SycaPay Mobile Money',
+                      'Le paiement sera effectué automatiquement via Mobile Money',
                       style: TextStyle(fontSize: 12, color: Color(0xFF1A6B3C)),
                     ),
                   ],
@@ -255,7 +255,7 @@ class CaisseScreen extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               BtnPrincipal(
-                label: 'Continuer vers SycaPay',
+                label: 'Continuer vers le paiement',
                 onTap: () => Navigator.pop(ctx, true),
               ),
               const SizedBox(height: 8),
@@ -410,7 +410,7 @@ class CaisseScreen extends StatelessWidget {
                       SizedBox(width: 6),
                       Flexible(
                         child: Text(
-                          'Paiement automatique SycaPay — frais réseau 2,5%',
+                          'Paiement automatisé — frais réseau 2,5%',
                           style: TextStyle(fontSize: 12, color: Color(0xFF1A6B3C)),
                         ),
                       ),
@@ -465,7 +465,7 @@ class CaisseScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 BtnPrincipal(
-                  label: 'Continuer vers SycaPay',
+                  label: 'Continuer vers le paiement',
                   icone: Icons.account_balance_wallet_rounded,
                   onTap: () => Navigator.pop(ctx, true),
                 ),
@@ -597,7 +597,7 @@ class CaisseScreen extends StatelessWidget {
                       SizedBox(width: 6),
                       Flexible(
                         child: Text(
-                          'Le paiement de la pénalité sera effectué via SycaPay',
+                          'Le paiement de la pénalité sera effectué automatiquement',
                           style: TextStyle(fontSize: 12, color: AppColors.orFonce),
                         ),
                       ),
@@ -637,7 +637,7 @@ class CaisseScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 BtnPrincipal(
-                  label: 'Continuer vers SycaPay',
+                  label: 'Continuer vers le paiement',
                   onTap: () => Navigator.pop(ctx, true),
                 ),
                 const SizedBox(height: 8),

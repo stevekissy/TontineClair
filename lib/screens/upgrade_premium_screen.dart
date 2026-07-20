@@ -160,12 +160,12 @@ class _UpgradePremiumScreenState extends State<UpgradePremiumScreen> {
                         _LigneComparaison(
                           fonctionnalite: 'Paiements',
                           gratuite: 'Manuels (PIN)',
-                          premium: 'SycaPay — Mobile Money',
+                          premium: 'Paiement automatisé',
                         ),
                         _LigneComparaison(
                           fonctionnalite: 'Caisse',
                           gratuite: 'Manuelle',
-                          premium: 'SycaPay activé',
+                          premium: 'Automatisé',
                         ),
                         _LigneComparaison(
                           fonctionnalite: 'PDF & export',

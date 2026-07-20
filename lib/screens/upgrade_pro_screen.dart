@@ -95,7 +95,7 @@ class _UpgradeProScreenState extends State<UpgradeProScreen> {
       (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
     );
     journal.insert(0, {
-      'quoi': '🚀 Tontine passée en version Pro — paiements réels activés via SycaPay',
+      'quoi': '🚀 Tontine passée en version Pro — paiements automatisés activés',
       'par':  gestNom,
       'le':   DateTime.now().millisecondsSinceEpoch,
     });
@@ -265,7 +265,7 @@ class _BandeauAvertissement extends StatelessWidget {
 
 class _CarteComparatif extends StatelessWidget {
   static const _lignes = [
-    ['Suivi cotisations',   '✅ Déclaratif',   '✅ Réel (SycaPay)'],
+    ['Suivi cotisations',   '✅ Déclaratif',   '✅ Réel (automatisé)'],
     ['Décaissement',        '✅ Déclaratif',   '✅ Demande validée'],
     ['Commission',          '❌ Aucune',        '✅ 2% (caisse)'],
     ['Paiement Mobile Money','❌',             '✅ Orange, Moov, MTN, Wave'],
