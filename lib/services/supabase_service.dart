@@ -2422,6 +2422,87 @@ class SupabaseService {
       // Silencieux — la notification n'est jamais bloquante
     }
   }
+
+  // ── BLOCAGE / DÉBLOCAGE DE TONTINE ─────────────────────────────────────────
+
+  /// Bloque une tontine pour raisons de sécurité.
+  /// status → 'blocked', data._blocage = {motif, date, auteur}
+  static Future<Map<String, dynamic>> adminBloquerTontine({
+    required String cle,
+    required String code,
+    required String motif,
+  }) async {
+    try {
+      // Tentative 1 : RPC (déployée sur Supabase)
+      final result = await rpc('admin_bloquer_tontine', {
+        'p_cle':   cle,
+        'p_code':  code.toUpperCase(),
+        'p_motif': motif,
+      });
+      if (result is Map<String, dynamic>) return result;
+    } catch (_) {}
+
+    // Tentative 2 : REST direct — UPDATE via PATCH
+    try {
+      final url = Uri.parse('$_url/rest/v1/tontines')
+          .replace(queryParameters: {'code': 'eq.${code.toUpperCase()}'});
+      final resp = await http.patch(
+        url,
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': 'Bearer $_key',
+          'apikey':        _key,
+          'Prefer':        'return=minimal',
+        },
+        body: jsonEncode({
+          'status': 'blocked',
+        }),
+      );
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        return {'ok': true};
+      }
+      return {'ok': false, 'erreur': 'Erreur HTTP ${resp.statusCode}'};
+    } catch (e) {
+      return {'ok': false, 'erreur': '$e'};
+    }
+  }
+
+  /// Débloque une tontine — status → 'active'.
+  static Future<Map<String, dynamic>> adminDebloquerTontine({
+    required String cle,
+    required String code,
+  }) async {
+    try {
+      // Tentative 1 : RPC
+      final result = await rpc('admin_debloquer_tontine', {
+        'p_cle':  cle,
+        'p_code': code.toUpperCase(),
+      });
+      if (result is Map<String, dynamic>) return result;
+    } catch (_) {}
+
+    // Tentative 2 : REST direct
+    try {
+      final url = Uri.parse('$_url/rest/v1/tontines')
+          .replace(queryParameters: {'code': 'eq.${code.toUpperCase()}'});
+      final resp = await http.patch(
+        url,
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': 'Bearer $_key',
+          'apikey':        _key,
+          'Prefer':        'return=minimal',
+        },
+        body: jsonEncode({'status': 'active'}),
+      );
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        return {'ok': true};
+      }
+      return {'ok': false, 'erreur': 'Erreur HTTP ${resp.statusCode}'};
+    } catch (e) {
+      return {'ok': false, 'erreur': '$e'};
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -30,8 +30,10 @@ class _AdminScreenState extends State<AdminScreen> {
   // Compteurs unifiés calculés depuis adminTontineCounts
   Map<String, dynamic> _counts = {};
   int _onglet = 0;
-  // Filtre tontines : null=toutes, 'active','deleted','suspended','inactive','premium','gratuit','expire'
+  // Filtre tontines : null=toutes, 'active','deleted','suspended','inactive','premium','gratuit','expire','blocked'
   String? _filtreStatut;
+  // État de chargement des boutons de blocage (clé = code tontine)
+  final Map<String, bool> _blocageLoading = {};
   // Filtre dépenses : 'tous' | 'pending' | 'validee' | 'rejetee'
   String _filtreDepense      = 'pending';
   // Filtre prêts : 'pending' | 'validee' | 'rejetee' | 'tous'
@@ -401,6 +403,105 @@ class _AdminScreenState extends State<AdminScreen> {
       await _recharger();
     } else {
       afficherToast(context, 'Erreur.', estErreur: true);
+    }
+  }
+
+  // ── BLOCAGE / DÉBLOCAGE D'UNE TONTINE ────────────────────────────────────────
+
+  Future<void> _bloquerTontine(String code, String nomTontine) async {
+    // Demander le motif via une dialog
+    String motif = '';
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(children: [
+          const Icon(Icons.lock_rounded, color: Color(0xFFD32F2F), size: 22),
+          const SizedBox(width: 8),
+          Expanded(child: Text('Bloquer $nomTontine', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
+        ]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Bloquer la tontine $code empêchera TOUS les membres d\'y accéder.',
+                style: const TextStyle(fontSize: 13)),
+            const SizedBox(height: 12),
+            TextField(
+              decoration: const InputDecoration(
+                labelText: 'Motif du blocage *',
+                hintText: 'Ex: suspicion de fraude, vérification...',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              maxLines: 2,
+              onChanged: (v) => motif = v.trim(),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD32F2F)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('🔒 Bloquer', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    if (motif.isEmpty) {
+      afficherToast(context, 'Le motif est obligatoire.', estErreur: true);
+      return;
+    }
+    setState(() => _blocageLoading[code] = true);
+    final result = await SupabaseService.adminBloquerTontine(
+      cle: _cleEffective, code: code, motif: motif,
+    );
+    if (!mounted) return;
+    setState(() => _blocageLoading.remove(code));
+    if (result['ok'] == true) {
+      afficherToast(context, '🔒 Tontine $code bloquée.');
+      await _recharger();
+    } else {
+      afficherToast(context, 'Erreur : ${result['erreur'] ?? 'Blocage échoué'}', estErreur: true);
+    }
+  }
+
+  Future<void> _debloquerTontine(String code, String nomTontine) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(children: [
+          const Icon(Icons.lock_open_rounded, color: Color(0xFF2E7D32), size: 22),
+          const SizedBox(width: 8),
+          Expanded(child: Text('Débloquer $nomTontine', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
+        ]),
+        content: Text(
+          'Débloquer $code permettra de nouveau à tous les membres d\'y accéder normalement.\n\nConfirmer le déblocage ?',
+          style: const TextStyle(fontSize: 13),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E7D32)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('🔓 Débloquer', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    setState(() => _blocageLoading[code] = true);
+    final result = await SupabaseService.adminDebloquerTontine(
+      cle: _cleEffective, code: code,
+    );
+    if (!mounted) return;
+    setState(() => _blocageLoading.remove(code));
+    if (result['ok'] == true) {
+      afficherToast(context, '🔓 Tontine $code débloquée.');
+      await _recharger();
+    } else {
+      afficherToast(context, 'Erreur : ${result['erreur'] ?? 'Déblocage échoué'}', estErreur: true);
     }
   }
 
@@ -2579,6 +2680,7 @@ class _AdminScreenState extends State<AdminScreen> {
     String categorie(Map<String, dynamic> t) {
       final st = (t['status'] as String? ?? 'active');
       if (st == 'deleted')   return 'deleted';
+      if (st == 'blocked')   return 'blocked';
       if (st == 'suspended') return 'suspended';
       if (st == 'inactive')  return 'inactive';
       final isPremium  = (t['plan'] as String? ?? '') == 'premium';
@@ -2621,11 +2723,13 @@ class _AdminScreenState extends State<AdminScreen> {
     final int nbSupprimees = rpcFiable
         ? ((_counts['supprimees'] ?? 0) as num).toInt()
         : _tontines.where((t) => categorie(t) == 'deleted').length;
+    final int nbBloquees   = _tontines.where((t) => categorie(t) == 'blocked').length;
 
     // ── Filtrage de la liste affichée ────────────────────────────────────────
     final tontinesFiltrees = _filtreStatut == null
         ? _tontines // Toutes (y compris supprimées pour la vue admin)
         : _tontines.where((t) {
+            if (_filtreStatut == 'blocked')  return categorie(t) == 'blocked';
             if (_filtreStatut == 'premium')  return categorie(t) == 'premium';
             if (_filtreStatut == 'gratuit')  return categorie(t) == 'gratuit';
             if (_filtreStatut == 'expire')   return categorie(t) == 'expire';
@@ -2719,6 +2823,16 @@ class _AdminScreenState extends State<AdminScreen> {
                     couleur: AppColors.texteDoux,
                   ),
                 ],
+                // Bloquées : visible si au moins une tontine bloquée (ou toujours pour alerte)
+                if (nbBloquees > 0) ...[
+                  const SizedBox(width: 8),
+                  _FiltreChip(
+                    label: '🔒 Bloquées ($nbBloquees)',
+                    selected: _filtreStatut == 'blocked',
+                    onTap: () => setState(() => _filtreStatut = 'blocked'),
+                    couleur: const Color(0xFFD32F2F),
+                  ),
+                ],
                 // Supprimées : toujours visible pour accès rapide Admin
                 const SizedBox(width: 8),
                 _FiltreChip(
@@ -2767,10 +2881,12 @@ class _AdminScreenState extends State<AdminScreen> {
                 final code        = t['code'] as String? ?? '';
                 final status      = (t['status'] as String? ?? 'active');
                 final isSupprimee = status == 'deleted';
+                final isBloquee   = status == 'blocked';
                 final isPremium   = (t['plan'] as String? ?? '') == 'premium';
                 final expireStr   = t['plan_expire'] as String? ?? t['expire'] as String?;
                 final expire      = expireStr != null ? DateTime.tryParse(expireStr) : null;
                 final isExpire    = isPremium && expire != null && expire.isBefore(now);
+                final isBlocLoading = _blocageLoading[code] == true;
 
                 // Nom : utiliser 'nom' en priorité, fallback 'code'
                 final nomBrut   = t['nom'] as String?;
@@ -2851,24 +2967,49 @@ class _AdminScreenState extends State<AdminScreen> {
                             children: [
                               if (isSupprimee)
                                 _BadgeStatut(label: 'Supprimée', couleur: AppColors.alerte)
+                              else if (isBloquee)
+                                _BadgeStatut(label: '🔒 Bloquée', couleur: const Color(0xFFD32F2F))
                               else if (isExpire)
                                 _BadgeStatut(label: 'Expirée', couleur: AppColors.orFonce)
                               else
                                 BadgePlan(isPremium: isPremium),
                               if (!isSupprimee) ...[
                                 const SizedBox(height: 6),
-                                if (!isPremium)
-                                  _BtnAction(
-                                    label: 'Activer',
-                                    couleur: AppColors.encre,
-                                    onTap: () => _activer(code),
-                                  )
-                                else
-                                  _BtnAction(
-                                    label: 'Désactiver',
-                                    couleur: AppColors.alerte,
-                                    onTap: () => _desactiver(code),
-                                  ),
+                                // ── Bouton Débloquer (prioritaire si bloquée) ──
+                                if (isBloquee)
+                                  isBlocLoading
+                                    ? const SizedBox(width: 24, height: 24,
+                                        child: CircularProgressIndicator(strokeWidth: 2))
+                                    : _BtnAction(
+                                        label: '🔓 Débloquer',
+                                        couleur: const Color(0xFF2E7D32),
+                                        onTap: () => _debloquerTontine(code, nomAffich),
+                                      )
+                                else ...[
+                                  // Bouton Activer/Désactiver premium
+                                  if (!isPremium)
+                                    _BtnAction(
+                                      label: 'Activer',
+                                      couleur: AppColors.encre,
+                                      onTap: () => _activer(code),
+                                    )
+                                  else
+                                    _BtnAction(
+                                      label: 'Désactiver',
+                                      couleur: AppColors.alerte,
+                                      onTap: () => _desactiver(code),
+                                    ),
+                                  const SizedBox(height: 4),
+                                  // Bouton Bloquer sécurité
+                                  isBlocLoading
+                                    ? const SizedBox(width: 24, height: 24,
+                                        child: CircularProgressIndicator(strokeWidth: 2))
+                                    : _BtnAction(
+                                        label: '🔒 Bloquer',
+                                        couleur: const Color(0xFFD32F2F),
+                                        onTap: () => _bloquerTontine(code, nomAffich),
+                                      ),
+                                ],
                               ],
                             ],
                           ),
