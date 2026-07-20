@@ -279,7 +279,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
           );
           caisse.add({
             'id': '${ref}C',
-            'type': 'apport',
+            'type': 'cotisation',
             'montant': data.montant,
             'description': 'Cotisation ${membre.nom} — Tour ${data.numerTour}',
             'gestionnaire': provider.gestActifNom ?? '',
@@ -333,7 +333,40 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
         }
       }
     } else {
-      // Annuler le paiement
+      // ── BLOQUER l'annulation si paiement SycaPay (automatique) ───────────
+      final isSycaPay = membre.methodePaiement == 'sycapay' ||
+          (membre.referencePaiement?.startsWith('TC_') ?? false);
+      if (isSycaPay) {
+        if (context.mounted) {
+          showDialog<void>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  Icon(Icons.lock_rounded, color: Colors.orange, size: 24),
+                  SizedBox(width: 10),
+                  Expanded(child: Text('Annulation impossible', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
+                ],
+              ),
+              content: Text(
+                'Ce paiement a été effectué automatiquement via SycaPay.\n\n'
+                'Les paiements SycaPay ne peuvent pas être annulés — ni par le membre, ni par le gestionnaire.\n\n'
+                'En cas de litige, contactez le support SycaPay.',
+                style: TextStyle(fontSize: 14, height: 1.5),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text('Compris', style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ],
+            ),
+          );
+        }
+        return;
+      }
+      // Annuler le paiement (non-SycaPay uniquement)
       final ok = await afficherModalePin(
         context,
         titre: context.tr('annuler_paiement'),

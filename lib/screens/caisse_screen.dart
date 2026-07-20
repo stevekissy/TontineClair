@@ -1153,6 +1153,7 @@ class _LigneMouvement extends StatelessWidget {
 
   bool get _isEntree =>
       mouvement.type == 'apport' ||
+      mouvement.type == 'cotisation' ||
       mouvement.type == 'penalite' ||
       mouvement.type == 'remboursement';
 

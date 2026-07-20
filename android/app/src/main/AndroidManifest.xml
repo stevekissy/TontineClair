@@ -84,6 +84,11 @@
         <package android:name="com.whatsapp.w4b"/>
         <!-- App Wave Mobile Money (pour ouvrir directement via App Links) -->
         <package android:name="com.wave.personal"/>
+        <!-- Scheme wave:// pour deep link natif Wave -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="wave"/>
+        </intent>
     </queries>
 </manifest>
 

@@ -87,19 +87,26 @@ class _PaiementProScreenState extends State<PaiementProScreen>
     }
   }
 
+  /// Vérification immédiate Wave au retour de l'app (foreground) :
+  /// → appelle d'abord GetStatus, si confirmé → confirmerEtCrediter pour créditer.
   Future<void> _verifierWaveImmediatement(String numCmd, int montant) async {
     if (!mounted || _etape != _Etape.attenteWave) return;
     try {
+      // Étape 1 : vérifier le statut chez SycaPay
       final statut = await SycaPayService.verifierStatut(
         numCmd,
         transactionId: _transactionId,
         tontineCode:   widget.code,
       );
       if (!mounted) return;
-      if (statut.estSucces || statut.statusNormalise == 'confirmed') {
+      if (kDebugMode) debugPrint('[Wave] verifierImmediat → ${statut.statusNormalise} code=${statut.code}');
+
+      if (statut.estSucces || statut.statusNormalise == 'confirmed' || statut.code == 0) {
+        // Paiement Wave confirmé → créditer côté serveur
         _timerPollWave?.cancel();
         setState(() => _etape = _Etape.enregistrement);
-        await _rechargerEtSucces(montant);
+        // Étape 2 : créditer (confirmerEtCrediter gère l'idempotence)
+        await _crediterWaveConfirme(numCmd, montant);
       } else if (statut.estEchec) {
         _timerPollWave?.cancel();
         setState(() {
@@ -109,6 +116,54 @@ class _PaiementProScreenState extends State<PaiementProScreen>
       }
       // pending → le polling continue
     } catch (_) { /* réseau → polling continue */ }
+  }
+
+  /// Crédite un paiement Wave confirmé.
+  /// L'action `statut` de l'Edge Function crédite automatiquement si confirmé,
+  /// donc on rappelle verifierStatut pour déclencher le crédit côté serveur.
+  Future<void> _crediterWaveConfirme(String numCmd, int montant) async {
+    try {
+      if (kDebugMode) debugPrint('[Wave] _crediterWaveConfirme → verifierStatut pour crédit');
+      // L'action statut crédite automatiquement si status=confirmed dans la DB.
+      // On réessaie 3 fois pour s'assurer que le crédit est bien effectué.
+      SycaPayResultat? resultat;
+      for (int i = 0; i < 3; i++) {
+        resultat = await SycaPayService.verifierStatut(
+          numCmd,
+          transactionId: _transactionId,
+          tontineCode:   widget.code,
+        );
+        if (!mounted) return;
+        if (kDebugMode) debugPrint('[Wave] crédit tentative ${i+1} → ok=${resultat.ok} status=${resultat.statusNormalise}');
+        if (resultat.ok || resultat.statusNormalise == 'confirmed') break;
+        // Attendre 2s entre les tentatives
+        await Future<void>.delayed(const Duration(seconds: 2));
+      }
+
+      if (!mounted) return;
+
+      if (resultat != null && (resultat.ok || resultat.statusNormalise == 'confirmed')) {
+        _transactionId ??= resultat.transactionId;
+        await _rechargerEtSucces(montant);
+      } else {
+        // Crédit en cours côté serveur → afficher info + bouton vérifier
+        setState(() {
+          _etape                    = _Etape.saisie;
+          _peutVerifierManuellement = true;
+          _messageErreur = '\u26a0\ufe0f Paiement Wave reçu. Enregistrement en cours...\nRéf. : $numCmd';
+          _messageInfo   = 'Utilisez « Vérifier mon paiement » dans quelques secondes.';
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      if (kDebugMode) debugPrint('[Wave] _crediterWaveConfirme erreur: $e');
+      setState(() {
+        _etape                    = _Etape.saisie;
+        _peutVerifierManuellement = true;
+        _messageErreur = '\u26a0\ufe0f Paiement Wave reçu, vérification en cours.\nRéf. : $numCmd';
+        _messageInfo   = 'Utilisez « Vérifier mon paiement » pour finaliser.';
+      });
+    }
   }
 
   @override
@@ -392,11 +447,13 @@ class _PaiementProScreenState extends State<PaiementProScreen>
         );
 
         if (!mounted) { timer.cancel(); return; }
+        if (kDebugMode) debugPrint('[Wave poll] statut=${statut.statusNormalise} code=${statut.code}');
 
-        if (statut.estSucces || statut.statusNormalise == 'confirmed') {
+        if (statut.estSucces || statut.statusNormalise == 'confirmed' || statut.code == 0) {
+          // Paiement Wave confirmé → créditer
           timer.cancel();
           setState(() => _etape = _Etape.enregistrement);
-          await _rechargerEtSucces(montant);
+          await _crediterWaveConfirme(numCmd, montant);
         } else if (statut.estEchec) {
           timer.cancel();
           setState(() {
@@ -938,24 +995,51 @@ class _PaiementProScreenState extends State<PaiementProScreen>
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: () async {
-                  final uri = Uri.tryParse(_waveUrl!);
-                  if (uri != null) {
-                    // Marquer que Wave a été ouvert → WidgetsBindingObserver
-                    // déclenchera une vérification immédiate au retour
-                    setState(() => _waveOuvert = true);
-                    bool ouvert = false;
+                  final waveUrlStr = _waveUrl!;
+                  final uri = Uri.tryParse(waveUrlStr);
+                  if (uri == null) return;
+
+                  // Marquer que Wave a été ouvert → WidgetsBindingObserver
+                  // déclenchera une vérification immédiate au retour
+                  setState(() => _waveOuvert = true);
+                  bool ouvert = false;
+
+                  // Stratégie 1 : essayer scheme wave:// (deep link natif)
+                  // pay.wave.com/c/xxx → wave://pay/c/xxx
+                  try {
+                    final wavePath = waveUrlStr.replaceFirst('https://pay.wave.com', 'wave://');
+                    final waveUri  = Uri.tryParse(wavePath);
+                    if (waveUri != null) {
+                      ouvert = await launchUrl(waveUri, mode: LaunchMode.externalApplication);
+                      if (kDebugMode) debugPrint('[Wave] scheme wave:// → ouvert=$ouvert');
+                    }
+                  } catch (_) {}
+
+                  // Stratégie 2 : externalNonBrowserApplication sur URL https
+                  if (!ouvert) {
                     try {
-                      // externalNonBrowserApplication → force l'ouverture dans Wave (pas Chrome)
                       ouvert = await launchUrl(uri,
                           mode: LaunchMode.externalNonBrowserApplication);
+                      if (kDebugMode) debugPrint('[Wave] externalNonBrowserApplication → ouvert=$ouvert');
                     } catch (_) {}
-                    if (!ouvert) {
-                      try {
-                        // Fallback : laisse Android choisir (Wave si installé)
-                        await launchUrl(uri, mode: LaunchMode.externalApplication);
-                      } catch (_) {
-                        if (mounted) setState(() => _waveOuvert = false);
-                      }
+                  }
+
+                  // Stratégie 3 : externalApplication (Android choisit Wave si installé)
+                  if (!ouvert) {
+                    try {
+                      ouvert = await launchUrl(uri, mode: LaunchMode.externalApplication);
+                      if (kDebugMode) debugPrint('[Wave] externalApplication → ouvert=$ouvert');
+                    } catch (_) {
+                      if (mounted) setState(() => _waveOuvert = false);
+                    }
+                  }
+
+                  // Si toujours pas ouvert → Chrome en dernier recours
+                  if (!ouvert) {
+                    try {
+                      await launchUrl(uri, mode: LaunchMode.platformDefault);
+                    } catch (_) {
+                      if (mounted) setState(() => _waveOuvert = false);
                     }
                   }
                 },
