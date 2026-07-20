@@ -1414,6 +1414,70 @@ class SupabaseService {
           'ar': 'المدير يطلب صرف الجولة {tour} لـ {nom} ({montant}). في انتظار موافقة الإدارة.',
         },
       },
+      'pret_octroye': {
+        'titre': {
+          'fr': '🤝 Prêt octroyé via SycaPay',
+          'en': '🤝 Loan granted via SycaPay',
+          'es': '🤝 Préstamo otorgado vía SycaPay',
+          'pt': '🤝 Empréstimo concedido via SycaPay',
+          'ar': '🤝 تم منح قرض عبر SycaPay',
+        },
+        'message': {
+          'fr': 'Prêt de {montant} accordé à {nom} ({taux}% — {duree} mois) via SycaPay.',
+          'en': 'Loan of {montant} granted to {nom} ({taux}% — {duree} months) via SycaPay.',
+          'es': 'Préstamo de {montant} concedido a {nom} ({taux}% — {duree} meses) via SycaPay.',
+          'pt': 'Empréstimo de {montant} concedido a {nom} ({taux}% — {duree} meses) via SycaPay.',
+          'ar': 'قرض {montant} لـ {nom} ({taux}% — {duree} أشهر) عبر SycaPay.',
+        },
+      },
+      'depense_caisse': {
+        'titre': {
+          'fr': '💸 Dépense caisse SycaPay',
+          'en': '💸 Cash expense via SycaPay',
+          'es': '💸 Gasto de caja vía SycaPay',
+          'pt': '💸 Despesa de caixa via SycaPay',
+          'ar': '💸 مصروف الصندوق عبر SycaPay',
+        },
+        'message': {
+          'fr': 'Dépense de {montant} vers {nom} via SycaPay — {desc}',
+          'en': 'Expense of {montant} to {nom} via SycaPay — {desc}',
+          'es': 'Gasto de {montant} a {nom} vía SycaPay — {desc}',
+          'pt': 'Despesa de {montant} para {nom} via SycaPay — {desc}',
+          'ar': 'مصروف {montant} لـ {nom} عبر SycaPay — {desc}',
+        },
+      },
+      'decaissement_cagnotte': {
+        'titre': {
+          'fr': '💸 Cagnotte versée via SycaPay',
+          'en': '💸 Jackpot paid via SycaPay',
+          'es': '💸 Premio pagado vía SycaPay',
+          'pt': '💸 Prêmio pago via SycaPay',
+          'ar': '💸 تم صرف الجائزة عبر SycaPay',
+        },
+        'message': {
+          'fr': 'Tour {tour} — {montant} versé à {nom} via SycaPay.',
+          'en': 'Round {tour} — {montant} paid to {nom} via SycaPay.',
+          'es': 'Turno {tour} — {montant} pagado a {nom} vía SycaPay.',
+          'pt': 'Rodada {tour} — {montant} pago a {nom} via SycaPay.',
+          'ar': 'الجولة {tour} — {montant} صُرف لـ {nom} عبر SycaPay.',
+        },
+      },
+      'securite': {
+        'titre': {
+          'fr': '🔒 Modification sécurité',
+          'en': '🔒 Security change',
+          'es': '🔒 Cambio de seguridad',
+          'pt': '🔒 Alteração de segurança',
+          'ar': '🔒 تغيير في الأمان',
+        },
+        'message': {
+          'fr': '{desc}',
+          'en': '{desc}',
+          'es': '{desc}',
+          'pt': '{desc}',
+          'ar': '{desc}',
+        },
+      },
     };
 
     String _sub(String? tpl) {

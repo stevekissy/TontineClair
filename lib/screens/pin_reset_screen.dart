@@ -891,6 +891,12 @@ class _EtapeNouveauPinState extends State<_EtapeNouveauPin> {
 
       if (result['ok'] == true) {
         setState(() => _succes = true);
+        SupabaseService.envoyerNotification(
+          code:    widget.tontineCode,
+          type:    'securite',
+          titre:   '🔑 PIN réinitialisé',
+          message: 'Le PIN de ${widget.gestNom} a été réinitialisé via email.',
+        );
         await Future.delayed(const Duration(seconds: 2));
         if (mounted) Navigator.of(context).pop();
       } else {

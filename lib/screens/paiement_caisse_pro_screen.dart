@@ -393,17 +393,46 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
       final data   = provider.courante?.data;
       final devise = data?.devise ?? 'XOF';
       final lang   = Provider.of<LocaleService>(context, listen: false).langue.code; // ignore: use_build_context_synchronously
-      final isPenalite = widget.typeOperation == 'penalite';
-      final notifType  = isPenalite ? 'penalite' : 'caisse';
-      final libelle    = isPenalite
-          ? 'Pénalité SycaPay — ${widget.membreNom ?? ''}'
-          : 'Apport caisse Premium SycaPay';
-      final t = SupabaseService.notifTexte(notifType, lang, vars: {
-        'montant': Formatters.montant(widget.montant, devise: devise),
-        'libelle': libelle,
-        'nom':     widget.membreNom ?? '',
-        'desc':    widget.description.isNotEmpty ? ' — ${widget.description}' : '',
-      });
+      final String notifType;
+      final Map<String, String> notifVars;
+      if (widget.typeOperation == 'penalite') {
+        notifType = 'penalite';
+        notifVars = {
+          'montant': Formatters.montant(widget.montant, devise: devise),
+          'nom':     widget.membreNom ?? '',
+        };
+      } else if (widget.typeOperation == 'pret_octroye') {
+        notifType = 'pret_octroye';
+        notifVars = {
+          'montant': Formatters.montant(widget.montant, devise: devise),
+          'nom':     widget.membreNom ?? '',
+          'taux':    widget.taux?.toString() ?? '0',
+          'duree':   widget.dureesMois?.toString() ?? '1',
+        };
+      } else if (widget.typeOperation == 'depense_caisse') {
+        notifType = 'depense_caisse';
+        notifVars = {
+          'montant': Formatters.montant(widget.montant, devise: devise),
+          'nom':     widget.membreNom ?? '',
+          'desc':    widget.description.isNotEmpty ? widget.description : '-',
+        };
+      } else if (widget.typeOperation == 'decaissement_cagnotte') {
+        notifType = 'decaissement_cagnotte';
+        notifVars = {
+          'montant': Formatters.montant(widget.montant, devise: devise),
+          'nom':     widget.membreNom ?? '',
+          'tour':    widget.numeroTour?.toString() ?? '-',
+        };
+      } else {
+        notifType = 'caisse';
+        notifVars = {
+          'montant': Formatters.montant(widget.montant, devise: devise),
+          'libelle': 'Apport caisse Premium SycaPay',
+          'nom':     widget.membreNom ?? '',
+          'desc':    widget.description.isNotEmpty ? ' — ${widget.description}' : '',
+        };
+      }
+      final t = SupabaseService.notifTexte(notifType, lang, vars: notifVars);
       SupabaseService.envoyerNotification(
         code:    widget.code,
         type:    notifType,
