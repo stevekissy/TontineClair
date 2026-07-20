@@ -16,9 +16,24 @@
 -- ============================================================
 -- ÉTAPE 1 : RÉVOQUER les droits directs sur les RPCs de crédit
 -- ============================================================
--- Sans ce REVOKE, n'importe quel utilisateur authentifié peut appeler
+-- Sans ce REVOKE, n'importe quel utilisateur peut appeler
 -- crediter_cotisation_sycapay via l'API REST Supabase sans passer par l'Edge Fn.
+--
+-- IMPORTANT : PostgreSQL accorde EXECUTE à PUBLIC par défaut pour les fonctions.
+-- Il faut révoquer PUBLIC (pas seulement anon/authenticated) car anon hérite
+-- automatiquement des droits de PUBLIC.
+-- Seuls postgres (owner) et service_role (Edge Function) conservent EXECUTE.
 
+-- Révoquer PUBLIC en premier (source principale du problème)
+REVOKE EXECUTE ON FUNCTION public.crediter_cotisation_sycapay(
+  text, text, integer, text, text, text, text
+) FROM PUBLIC;
+
+REVOKE EXECUTE ON FUNCTION public.crediter_caisse_sycapay(
+  text, integer, text, text, text, text, text
+) FROM PUBLIC;
+
+-- Révoquer explicitement anon et authenticated (défense en profondeur)
 REVOKE EXECUTE ON FUNCTION public.crediter_cotisation_sycapay(
   text, text, integer, text, text, text, text
 ) FROM anon, authenticated;
@@ -36,7 +51,7 @@ BEGIN
     JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public' AND p.proname = 'crediter_penalite_sycapay'
   ) THEN
-    EXECUTE 'REVOKE EXECUTE ON FUNCTION public.crediter_penalite_sycapay FROM anon, authenticated';
+    EXECUTE 'REVOKE EXECUTE ON FUNCTION public.crediter_penalite_sycapay FROM PUBLIC, anon, authenticated';
   END IF;
 
   -- crediter_remboursement_sycapay (si existe)
@@ -45,7 +60,7 @@ BEGIN
     JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public' AND p.proname = 'crediter_remboursement_sycapay'
   ) THEN
-    EXECUTE 'REVOKE EXECUTE ON FUNCTION public.crediter_remboursement_sycapay FROM anon, authenticated';
+    EXECUTE 'REVOKE EXECUTE ON FUNCTION public.crediter_remboursement_sycapay FROM PUBLIC, anon, authenticated';
   END IF;
 
   -- crediter_pret_sycapay (si existe)
@@ -54,7 +69,7 @@ BEGIN
     JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public' AND p.proname = 'crediter_pret_sycapay'
   ) THEN
-    EXECUTE 'REVOKE EXECUTE ON FUNCTION public.crediter_pret_sycapay FROM anon, authenticated';
+    EXECUTE 'REVOKE EXECUTE ON FUNCTION public.crediter_pret_sycapay FROM PUBLIC, anon, authenticated';
   END IF;
 END $$;
 
