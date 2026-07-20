@@ -273,11 +273,13 @@ class SycaPayResultat {
   final String? montant;
   final String? operateur;
   final bool    erreurReseau;
-  final String  statusNormalise; // 'confirmed'|'pending'|'failed'|'expired'|'unknown'
+  final String  statusNormalise; // 'confirmed'|'pending'|'pending_wave'|'failed'|'expired'|'unknown'
   final bool    fromCache;       // true si réponse vient de Supabase (pas SycaPay direct)
   final bool    dejaConfirme;    // true si idempotent (déjà traité)
   final bool    _ok;             // true si confirmer_et_crediter réussi
   final bool    _timeout;        // true si Edge Fn a timeout
+  final String? waveUrl;         // URL pay.wave.com à ouvrir (Wave uniquement)
+  final String? waveImg;         // QR code base64 (Wave uniquement)
 
   const SycaPayResultat({
     required this.code,
@@ -293,19 +295,23 @@ class SycaPayResultat {
     this.dejaConfirme    = false,
     bool ok              = false,
     bool timeout         = false,
+    this.waveUrl,
+    this.waveImg,
   })  : _ok      = ok,
         _timeout  = timeout;
 
   // ── Getters sémantiques ───────────────────────────────────────────────────
 
-  bool get estSucces    => (statusNormalise == 'confirmed' || code == 0) && ok;
-  bool get estEnAttente => statusNormalise == 'pending'
-                        || code == -200
-                        || code == -9
-                        || timeout;
-  bool get estEchec     => statusNormalise == 'failed'
-                        || (statusNormalise == 'unknown' && !estEnAttente && !estSucces);
-  bool get estExpire    => statusNormalise == 'expired' || code == -8;
+  bool get estSucces      => (statusNormalise == 'confirmed' || code == 0) && ok;
+  bool get estEnAttente   => statusNormalise == 'pending'
+                          || code == -200
+                          || code == -9
+                          || timeout;
+  bool get estEchec       => statusNormalise == 'failed'
+                          || (statusNormalise == 'unknown' && !estEnAttente && !estSucces);
+  bool get estExpire      => statusNormalise == 'expired' || code == -8;
+  /// Wave QR généré — l'utilisateur doit encore scanner/ouvrir l'URL
+  bool get estPendingWave => statusNormalise == 'pending_wave' || (waveUrl != null && waveUrl!.isNotEmpty);
 
   // true si c'est la réponse de confirmer_et_crediter avec ok:true
   bool get ok      => _ok;
@@ -345,7 +351,9 @@ class SycaPayResultat {
 
     // ✅ FIX: lire ok depuis la réponse JSON (était toujours false avant)
     // Nécessaire pour estSucces lors de l'action 'statut' avec code=0/confirmed
-    final isOk = j['ok'] == true || code == 0;
+    // Pour Wave (pending_wave), isOk = false — l'utilisateur n'a pas encore payé
+    final isPendingWave = status == 'pending_wave';
+    final isOk = !isPendingWave && (j['ok'] == true || code == 0);
 
     return SycaPayResultat(
       code:            code,
@@ -361,6 +369,8 @@ class SycaPayResultat {
       fromCache:       j['fromCache']  == true,
       dejaConfirme:    j['idempotent'] == true,
       ok:              isOk,
+      waveUrl:         j['waveUrl']    as String?,
+      waveImg:         j['waveImg']    as String?,
     );
   }
 
@@ -370,8 +380,9 @@ class SycaPayResultat {
     if (erreurReseau) return 'Connexion impossible. Vérifiez votre réseau et réessayez.';
     switch (statusNormalise) {
       case 'confirmed': return 'Paiement confirmé avec succès.';
-      case 'pending':   return 'Paiement en attente de confirmation Mobile Money.';
-      case 'expired':   return 'Session expirée. Veuillez réessayer.';
+      case 'pending':       return 'Paiement en attente de confirmation Mobile Money.';
+      case 'pending_wave':  return 'Ouvrez le lien Wave pour finaliser le paiement.';
+      case 'expired':       return 'Session expirée. Veuillez réessayer.';
       case 'failed':    return _messageEchecParCode();
       default:          return 'Statut en cours de vérification…';
     }

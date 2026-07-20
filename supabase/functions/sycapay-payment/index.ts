@@ -564,13 +564,23 @@ Deno.serve(async (req: Request) => {
 
       if (operateur.toLowerCase() === "wave") {
         payPayload["pays"]       = "CI";
-        payPayload["operateurs"] = "WaveSN";
+        payPayload["operateurs"] = "WaveCI";  // WaveCI pour Côte d'Ivoire (WaveSN = Sénégal)
       }
 
       // 4. Checkoutpay
       const resultat = await checkoutPay(payPayload);
       const code     = (resultat["code"] as number) ?? -999;
       const txId     = extractTxId(resultat);
+
+      // ── Détection Wave QR/URL ─────────────────────────────────────────────
+      // Pour Wave, SycaPay retourne code=0 + url="https://pay.wave.com/..."
+      // Ce code=0 signifie "QR généré avec succès", PAS "paiement confirmé".
+      // L'utilisateur doit encore scanner le QR ou cliquer l'URL pour payer.
+      // On détecte ce cas et on retourne statusNormalise="pending_wave".
+      const waveUrl = (resultat["url"] as string | undefined) ?? "";
+      const isWaveQr = operateur.toLowerCase() === "wave"
+                    && code === 0
+                    && (waveUrl.includes("pay.wave.com") || waveUrl.includes("wave.com"));
 
       console.log(`[payer] checkoutpay → code=${code} ref=${numcommande} txId=${txId ?? "n/a"}`, JSON.stringify(resultat).substring(0, 200));
 
@@ -580,7 +590,9 @@ Deno.serve(async (req: Request) => {
           ? telephone.substring(0, 2) + "****" + telephone.slice(-4)
           : telephone;
 
-        const txStatus = code === 0 ? "confirmed" : (code === -200 ? "pending" : "pending");
+        // Wave QR = pending (l'utilisateur n'a pas encore scanné)
+        // code=0 Orange/Moov/MTN = confirmed
+        const txStatus = isWaveQr ? "pending" : (code === 0 ? "confirmed" : "pending");
         // Note : on persiste même les "failed" comme pending initialement
         // car -1 peut être temporaire (Orange Money). Le polling serveur rectifiera.
 
@@ -619,18 +631,30 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      return json({
+      // Construire la réponse avec gestion Wave spéciale
+      const responseBase: Record<string, unknown> = {
         ...resultat,
         code,
-        message:         resultat["message"] ?? messageFr(code),
-        messageFr:       messageFr(code),
-        statusNormalise: code === 0 ? "confirmed" : "pending",
+        message:         isWaveQr ? "Scannez le QR Wave ou ouvrez le lien pour payer" : (resultat["message"] ?? messageFr(code)),
+        messageFr:       isWaveQr ? "Scannez le QR Wave ou appuyez sur le bouton pour payer" : messageFr(code),
+        statusNormalise: isWaveQr ? "pending_wave" : (code === 0 ? "confirmed" : "pending"),
         numcommande,
         transactionId:   txId,
         urlWebhook:      tontineCode
           ? `${SUPABASE_URL}/functions/v1/sycapay-payment?action=webhook&ref=${encodeURIComponent(numcommande)}`
           : undefined,
-      });
+      };
+
+      // Pour Wave : ajouter les champs spécifiques
+      if (isWaveQr) {
+        responseBase["waveUrl"]   = waveUrl;              // URL à ouvrir dans le navigateur
+        responseBase["waveImg"]   = resultat["img"] ?? null;  // QR code base64
+        responseBase["isWave"]    = true;
+        // Enlever l'image base64 du spread resultat pour alléger (elle est dans waveImg)
+        delete responseBase["img"];
+      }
+
+      return json(responseBase);
     }
 
     // ══════════════════════════════════════════════════════════════════════════

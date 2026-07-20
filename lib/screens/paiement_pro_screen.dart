@@ -57,6 +57,10 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
   // Affichage progressif du bouton Vérifier pendant la phase attente (30s)
   bool    _boutonVerifierDansAttente = false;
   Timer?  _timerBoutonAttente;
+  // Wave QR/URL
+  String? _waveUrl;
+  String? _waveImg;
+  Timer?  _timerPollWave;
 
   @override
   void dispose() {
@@ -64,6 +68,7 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
     _otpCtrl.dispose();
     _watchdogTimer?.cancel();
     _timerBoutonAttente?.cancel();
+    _timerPollWave?.cancel();
     super.dispose();
   }
 
@@ -158,7 +163,19 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
         return;
       }
 
-      // Étape 2 : polling + crédit serveur-side
+      // ── CAS WAVE : QR généré, utilisateur doit scanner/ouvrir l'URL ──────────
+      if (resultat.estPendingWave) {
+        _watchdogTimer?.cancel();
+        _enTraitement = false;
+        _waveUrl = resultat.waveUrl;
+        _waveImg = resultat.waveImg;
+        setState(() => _etape = _Etape.attenteWave);
+        // Lancer le polling toutes les 5 secondes (max 3 min)
+        _lancerPollWave(numCmd, montant);
+        return;
+      }
+
+      // Étape 2 : polling + crédit serveur-side (Orange/Moov/MTN)
       if (!mounted) return;
       // Démarrer le timer qui rend visible le bouton Vérifier après 30s d'attente
       _boutonVerifierDansAttente = false;
@@ -286,6 +303,58 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
         _peutVerifierManuellement = true;
       });
     }
+  }
+
+  // ── Polling Wave : vérifier toutes les 5s si l'utilisateur a payé ──────────
+
+  void _lancerPollWave(String numCmd, int montant) {
+    const dureeMax     = Duration(minutes: 3);
+    const intervalle   = Duration(seconds: 5);
+    final debut        = DateTime.now();
+    _timerPollWave?.cancel();
+
+    _timerPollWave = Timer.periodic(intervalle, (timer) async {
+      if (!mounted) { timer.cancel(); return; }
+      if (_etape != _Etape.attenteWave) { timer.cancel(); return; }
+
+      // Timeout 3 min
+      if (DateTime.now().difference(debut) > dureeMax) {
+        timer.cancel();
+        if (!mounted) return;
+        setState(() {
+          _etape                    = _Etape.saisie;
+          _peutVerifierManuellement = true;
+          _messageErreur = '⏱ Paiement Wave non détecté après 3 min.\nRéf. : $numCmd';
+          _messageInfo   = 'Si Wave vous a débité, utilisez « Vérifier mon paiement ».';
+        });
+        return;
+      }
+
+      try {
+        final statut = await SycaPayService.verifierStatut(
+          numCmd,
+          transactionId: _transactionId,
+          tontineCode:   widget.code,
+        );
+
+        if (!mounted) { timer.cancel(); return; }
+
+        if (statut.estSucces || statut.statusNormalise == 'confirmed') {
+          timer.cancel();
+          setState(() => _etape = _Etape.enregistrement);
+          await _rechargerEtSucces(montant);
+        } else if (statut.estEchec) {
+          timer.cancel();
+          setState(() {
+            _etape         = _Etape.saisie;
+            _messageErreur = statut.messageFr;
+          });
+        }
+        // pending → continuer le polling
+      } catch (_) {
+        // Erreur réseau → continuer le polling silencieusement
+      }
+    });
   }
 
   // ── Recharger et afficher succès ──────────────────────────────────────────
@@ -495,6 +564,7 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
         _Etape.enCours        => _vueEnCours(),
         _Etape.enregistrement => _vueEnregistrement(),
         _Etape.attente        => _vueAttente(),
+        _Etape.attenteWave    => _vueAttenteWave(montant),
         _Etape.succes         => _vueSucces(montant, devise),
       },
     );
@@ -764,6 +834,146 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
     );
   }
 
+  // ── Vue Wave : affiche le bouton + QR pour scanner ────────────────────────
+
+  Widget _vueAttenteWave(int montant) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const SizedBox(height: 16),
+          // En-tête Wave
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.lightBlue.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.lightBlue.withValues(alpha: 0.4)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: const [
+                Icon(Icons.waves_rounded, color: Colors.lightBlue, size: 28),
+                SizedBox(width: 10),
+                Text('Paiement Wave',
+                    style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.lightBlue)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'Appuyez sur le bouton ci-dessous pour\nfinaliser votre paiement sur Wave.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 15, color: AppColors.encre, height: 1.5),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Votre paiement sera automatiquement détecté\naprès validation sur Wave.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: AppColors.texteDoux, height: 1.5),
+          ),
+          const SizedBox(height: 24),
+
+          // Bouton principal : ouvrir URL Wave
+          if (_waveUrl != null && _waveUrl!.isNotEmpty)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  final uri = Uri.tryParse(_waveUrl!);
+                  if (uri != null) {
+                    try {
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    } catch (_) {
+                      await launchUrl(uri, mode: LaunchMode.platformDefault);
+                    }
+                  }
+                },
+                icon:  const Icon(Icons.open_in_new_rounded, size: 20),
+                label: const Text('Payer avec Wave',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.lightBlue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+
+          const SizedBox(height: 20),
+
+          // QR Code à scanner
+          if (_waveImg != null && _waveImg!.isNotEmpty) ...[
+            const Text('Ou scannez ce QR code :',
+                style: TextStyle(fontSize: 13, color: AppColors.texteDoux)),
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.memory(
+                Uri.parse(_waveImg!).data!.contentAsBytes(),
+                width:  180,
+                height: 180,
+                fit:    BoxFit.contain,
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 24),
+          // Indicateur polling
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: const [
+              SizedBox(
+                width: 16, height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2, color: _couleurPro),
+              ),
+              SizedBox(width: 10),
+              Text('Détection automatique en cours…',
+                  style: TextStyle(fontSize: 12, color: AppColors.texteDoux)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Ne relancez PAS un nouveau paiement.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                fontSize: 11,
+                color: AppColors.alerte,
+                fontStyle: FontStyle.italic),
+          ),
+          const SizedBox(height: 16),
+          if (_numCommande != null)
+            Text('Réf. : $_numCommande',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 10, color: AppColors.texteDoux)),
+          const SizedBox(height: 16),
+          // Bouton vérification manuelle
+          OutlinedButton.icon(
+            onPressed: () {
+              _timerPollWave?.cancel();
+              _verifierPaiementManuellement();
+            },
+            icon:  const Icon(Icons.search_rounded, color: _couleurPro, size: 18),
+            label: const Text('Vérifier le paiement',
+                style: TextStyle(color: _couleurPro, fontWeight: FontWeight.w600)),
+            style: OutlinedButton.styleFrom(
+              side:    const BorderSide(color: _couleurPro),
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+              shape:   RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _vueEnregistrement() {
     return Center(
       child: Padding(
@@ -864,7 +1074,7 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
 
 // ── Enum ──────────────────────────────────────────────────────────────────────
 
-enum _Etape { saisie, enCours, enregistrement, attente, succes }
+enum _Etape { saisie, enCours, enregistrement, attente, attenteWave, succes }
 
 // ── Widgets partagés ─────────────────────────────────────────────────────────
 
