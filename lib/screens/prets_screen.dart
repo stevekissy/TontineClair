@@ -175,7 +175,7 @@ class _PretsScreenState extends State<PretsScreen> {
   }
 
   // ── Nouveau prêt : formulaire complet ────────────────────────────────────
-  // • Mode Premium : Mobile Money + frais 2% + soumission pending → validation admin
+  // • Mode Premium : Mobile Money + frais réseau 2,5% + paiement direct via SycaPay
   // • Mode Lite    : PIN direct comme avant
   Future<void> _nouveauPret(
     BuildContext context,
@@ -200,7 +200,7 @@ class _PretsScreenState extends State<PretsScreen> {
     String operateur        = _operateursPret.first;
 
     // Frais calculés dynamiquement
-    int fraisCalcules()   => ((int.tryParse(montantCtrl.text.trim()) ?? 0) * 0.02).round();
+    int fraisCalcules()   => ((int.tryParse(montantCtrl.text.trim()) ?? 0) * 0.025).round();
     int montantNetCalc()  => (int.tryParse(montantCtrl.text.trim()) ?? 0) - fraisCalcules();
 
     final result = await showModalBottomSheet<bool>(
@@ -213,7 +213,7 @@ class _PretsScreenState extends State<PretsScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) {
           final montantSaisi = int.tryParse(montantCtrl.text.trim()) ?? 0;
-          final frais        = (montantSaisi * 0.02).round();
+          final frais        = (montantSaisi * 0.025).round();
           final net          = montantSaisi - frais;
           return Padding(
             padding: EdgeInsets.only(
@@ -251,7 +251,7 @@ class _PretsScreenState extends State<PretsScreen> {
                           SizedBox(width: 6),
                           Flexible(
                             child: Text(
-                              'Mobile Money — frais 2% — validation TontineClair requise',
+                              'Mobile Money — frais réseau 2,5% — paiement automatique SycaPay',
                               style: TextStyle(fontSize: 12, color: Color(0xFFE65100)),
                             ),
                           ),
@@ -281,7 +281,7 @@ class _PretsScreenState extends State<PretsScreen> {
                     decoration: const InputDecoration(hintText: '50 000'),
                     onChanged: (_) => setS(() {}),
                   ),
-                  // Frais 2% (Premium uniquement)
+                  // Frais réseau 2,5% (Premium uniquement)
                   if (isPremium && montantSaisi > 0) ...[
                     const SizedBox(height: 8),
                     Container(
@@ -296,7 +296,7 @@ class _PretsScreenState extends State<PretsScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Frais de transaction (2%) : ${Formatters.montant(frais, devise: data.devise)}\n'
+                              'Frais réseau (2,5%) : ${Formatters.montant(frais, devise: data.devise)}\n'
                               'Montant net versé : ${Formatters.montant(net, devise: data.devise)}',
                               style: const TextStyle(fontSize: 12, color: AppColors.orFonce, height: 1.5),
                             ),
@@ -390,7 +390,7 @@ class _PretsScreenState extends State<PretsScreen> {
     final emprunteur    = membresOrdre.where((m) => m.id == emprunteurId).firstOrNull;
     final nomEmprunteur = emprunteur?.nom ?? '—';
 
-    // ── MODE PREMIUM : flow pending Mobile Money ────────────────────────────
+    // ── MODE PREMIUM : SycaPay direct ──────────────────────────────────────
     if (isPremium) {
       if (numBenefCtrl.text.trim().isEmpty) {
         afficherToast(context, 'Numéro bénéficiaire requis', estErreur: true); return;
@@ -399,87 +399,36 @@ class _PretsScreenState extends State<PretsScreen> {
         afficherToast(context, 'Nom bénéficiaire requis', estErreur: true); return;
       }
 
-      final frais     = (montant * 0.02).round();
+      final frais      = (montant * 0.025).round();
       final montantNet = montant - frais;
 
-      if (montantNet > data.soldeCaisse) {
+      if (montant > data.soldeCaisse) {
         afficherToast(context,
           'Solde insuffisant — caisse : ${Formatters.montant(data.soldeCaisse, devise: data.devise)}',
           estErreur: true);
         return;
       }
 
-      // Récap + confirmation
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: AppColors.fondPapier,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text('Confirmer le prêt', style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.encre)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _RecapLigne('Emprunteur',    nomEmprunteur),
-              _RecapLigne('Montant brut',  Formatters.montant(montant, devise: data.devise)),
-              _RecapLigne('Frais (2%)',    Formatters.montant(frais, devise: data.devise)),
-              _RecapLigne('Montant net',   Formatters.montant(montantNet, devise: data.devise)),
-              _RecapLigne('Opérateur',     Formatters.methodePaiement(operateur)),
-              _RecapLigne('Bénéficiaire',  nomBenefCtrl.text.trim()),
-              _RecapLigne('Numéro',        numBenefCtrl.text.trim()),
-              _RecapLigne('Taux',          '$taux %'),
-              _RecapLigne('Durée',         '$durees mois'),
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppColors.orFonce.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  '⏳ Le prêt sera soumis à validation TontineClair.\nLa caisse ne sera débitée qu\'après approbation de TontineClair.',
-                  style: TextStyle(fontSize: 12, color: AppColors.orFonce, height: 1.4),
-                ),
-              ),
-            ],
+      if (!context.mounted) return;
+
+      // Naviguer directement vers SycaPay (paiement automatique — pas de validation TontineClair)
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PaiementCaisseProScreen(
+            code:          tontine.code,
+            montant:       montantNet,
+            description:   'Prêt à $nomEmprunteur (${taux}% / ${durees} mois)',
+            typeOperation: 'pret_octroye',
+            membreId:      emprunteurId ?? '',
+            membreNom:     nomEmprunteur,
+            telephone:     numBenefCtrl.text.trim(),
+            operateur:     operateur,
+            taux:          taux,
+            dureesMois:    durees,
           ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.encre),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Soumettre', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-            ),
-          ],
         ),
       );
-
-      if (ok != true || !context.mounted) return;
-
-      try {
-        final ref = Formatters.genererReference();
-        await SupabaseService.soumettrePretenPending(
-          code:                tontine.code,
-          emprunteurId:        emprunteurId!,
-          emprunteurNom:       nomEmprunteur,
-          montant:             montant,
-          fraisTransaction:    frais,
-          montantNet:          montantNet,
-          taux:                taux,
-          dureesMois:          durees,
-          operateur:           operateur,
-          numeroBeneficiaire:  numBenefCtrl.text.trim(),
-          nomBeneficiaire:     nomBenefCtrl.text.trim(),
-          gestionnaire:        provider.gestActifNom ?? '',
-          reference:           ref,
-          devise:              data.devise,
-        );
-        if (context.mounted) {
-          afficherToast(context, '✅ Prêt soumis ! En attente de validation TontineClair.');
-        }
-      } catch (e) {
-        if (context.mounted) afficherToast(context, 'Erreur : $e', estErreur: true);
-      }
       return;
     }
 

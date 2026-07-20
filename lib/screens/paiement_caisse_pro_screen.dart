@@ -31,14 +31,24 @@ class PaiementCaisseProScreen extends StatefulWidget {
   final String code;
   final int    montant;
   final String description;
-  /// 'caisse' (défaut) ou 'penalite'
+  /// 'caisse' | 'penalite' | 'remboursement_pret' | 'pret_octroye' | 'depense_caisse' | 'decaissement_cagnotte'
   final String typeOperation;
-  /// ID du membre concerné (pénalité ou emprunteur pour remboursement)
+  /// ID du membre concerné
   final String? membreId;
   /// Nom du membre concerné
   final String? membreNom;
   /// ID du prêt (uniquement si typeOperation == 'remboursement_pret')
   final String? pretId;
+  /// Numéro Mobile Money pré-rempli (dessaisissements)
+  final String? telephone;
+  /// Opérateur pré-sélectionné (dessaisissements)
+  final String? operateur;
+  /// Taux d’intérêt (prêt octroyé)
+  final int? taux;
+  /// Durée en mois (prêt octroyé)
+  final int? dureesMois;
+  /// Numéro du tour (décaissement cagnotte)
+  final int? numeroTour;
 
   const PaiementCaisseProScreen({
     super.key,
@@ -49,6 +59,11 @@ class PaiementCaisseProScreen extends StatefulWidget {
     this.membreId,
     this.membreNom,
     this.pretId,
+    this.telephone,
+    this.operateur,
+    this.taux,
+    this.dureesMois,
+    this.numeroTour,
   });
 
   @override
@@ -76,6 +91,18 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
   Timer?       _timerBoutonAttente;
 
   @override
+  void initState() {
+    super.initState();
+    // Pré-remplir depuis les paramètres optionnels (dessaisissements)
+    if (widget.telephone != null && widget.telephone!.isNotEmpty) {
+      _telCtrl.text = widget.telephone!;
+    }
+    if (widget.operateur != null && widget.operateur!.isNotEmpty) {
+      _operateur = widget.operateur!;
+    }
+  }
+
+  @override
   void dispose() {
     _telCtrl.dispose();
     _otpCtrl.dispose();
@@ -100,7 +127,11 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
     _enTraitement = true;
 
     // Générer la référence pivot AVANT setState
-    final suffix = widget.typeOperation == 'penalite' ? 'PENAL' : 'CAISSE';
+    final suffix = widget.typeOperation == 'penalite' ? 'PENAL'
+        : widget.typeOperation == 'pret_octroye'           ? 'PRET'
+        : widget.typeOperation == 'depense_caisse'         ? 'DEP'
+        : widget.typeOperation == 'decaissement_cagnotte'  ? 'CAGNOTTE'
+        : 'CAISSE';
     final numCmd = SycaPayService.genererNumCommande(
       widget.code,
       suffix,
@@ -144,13 +175,20 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
         operateur:     _operateur,
         tontineCode:   widget.code,
         otp:           _operateur == 'orange' ? _otpCtrl.text.trim() : null,
-        nomMembre:     widget.typeOperation == 'penalite' ? (widget.membreNom ?? 'Membre') : 'Apport',
-        prenomMembre:  widget.typeOperation == 'penalite' ? 'Pénalité' : 'Caisse',
+        nomMembre:     widget.membreNom ?? 'Bénéficiaire',
+        prenomMembre:  widget.typeOperation == 'penalite' ? 'Pénalité'
+            : widget.typeOperation == 'pret_octroye'           ? 'Prêt'
+            : widget.typeOperation == 'depense_caisse'         ? 'Dépense'
+            : widget.typeOperation == 'decaissement_cagnotte'  ? 'Cagnotte'
+            : 'Caisse',
         typeOperation: widget.typeOperation,
         membreId:      widget.membreId,
         membreNom:     widget.membreNom,
         pretId:        widget.pretId,
         description:   widget.description.isNotEmpty ? widget.description : null,
+        taux:          widget.taux,
+        dureesMois:    widget.dureesMois,
+        numeroTour:    widget.numeroTour,
       );
 
       if (kDebugMode) debugPrint('[CaissePro] initierPaiement → $resultat');
@@ -217,6 +255,9 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
         membreNom:     widget.membreNom,
         pretId:        widget.pretId,
         description:   widget.description.isNotEmpty ? widget.description : null,
+        taux:          widget.taux,
+        dureesMois:    widget.dureesMois,
+        numeroTour:    widget.numeroTour,
       );
 
       _watchdogTimer?.cancel();
@@ -396,8 +437,11 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
         backgroundColor: AppColors.fondPapier,
         elevation:       0,
         title: Text(
-          widget.typeOperation == 'penalite'
-              ? 'Pénalité SycaPay Premium'
+          widget.typeOperation == 'penalite'            ? 'Pénalité SycaPay Premium'
+              : widget.typeOperation == 'pret_octroye'          ? 'Prêt via SycaPay'
+              : widget.typeOperation == 'depense_caisse'        ? 'Dépense via SycaPay'
+              : widget.typeOperation == 'decaissement_cagnotte' ? 'Décaissement SycaPay'
+              : widget.typeOperation == 'remboursement_pret'    ? 'Remboursement prêt'
               : 'Apport de caisse Premium',
           style: const TextStyle(
             fontWeight: FontWeight.w700,
@@ -436,7 +480,7 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
             child: Column(
               children: [
                 // Badge membre pénalisé (uniquement pour pénalité)
-                if ((widget.typeOperation == 'penalite' || widget.typeOperation == 'remboursement_pret') && widget.membreNom != null) ...[
+                if (widget.membreNom != null && widget.membreNom!.isNotEmpty) ...[
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     margin: const EdgeInsets.only(bottom: 10),
@@ -451,8 +495,10 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
                         const Icon(Icons.person_rounded, size: 14, color: AppColors.orFonce),
                         const SizedBox(width: 6),
                         Text(
-                          widget.typeOperation == 'remboursement_pret'
-                              ? 'Emprunteur : ${widget.membreNom}'
+                          widget.typeOperation == 'remboursement_pret'   ? 'Emprunteur : ${widget.membreNom}'
+                              : widget.typeOperation == 'pret_octroye'          ? 'Emprunteur : ${widget.membreNom}'
+                              : widget.typeOperation == 'decaissement_cagnotte' ? 'Bénéficiaire : ${widget.membreNom}'
+                              : widget.typeOperation == 'depense_caisse'        ? 'Bénéficiaire : ${widget.membreNom}'
                               : 'Pénalité pour : ${widget.membreNom}',
                           style: const TextStyle(
                             fontSize: 13,
@@ -465,11 +511,12 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
                   ),
                 ],
                 Text(
-                  widget.typeOperation == 'penalite'
-                      ? 'Montant de la pénalité'
-                      : widget.typeOperation == 'remboursement_pret'
-                          ? 'Montant du remboursement'
-                          : 'Montant de l\'apport',
+                  widget.typeOperation == 'penalite'              ? 'Montant de la pénalité'
+                      : widget.typeOperation == 'remboursement_pret'    ? 'Montant du remboursement'
+                      : widget.typeOperation == 'pret_octroye'          ? 'Montant du prêt'
+                      : widget.typeOperation == 'depense_caisse'        ? 'Montant de la dépense'
+                      : widget.typeOperation == 'decaissement_cagnotte' ? 'Montant du décaissement'
+                      : 'Montant de l\'apport',
                   style: const TextStyle(fontSize: 13, color: AppColors.texteDoux),
                 ),
                 const SizedBox(height: 6),
@@ -610,6 +657,12 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
                   ? 'Payer pénalité ${Formatters.montant(widget.montant, devise: 'XOF')} via Mobile Money'
                   : widget.typeOperation == 'remboursement_pret'
                       ? 'Rembourser ${Formatters.montant(widget.montant, devise: 'XOF')} via Mobile Money'
+                  : widget.typeOperation == 'pret_octroye'
+                      ? 'Verser prêt ${Formatters.montant(widget.montant, devise: 'XOF')} via SycaPay'
+                  : widget.typeOperation == 'depense_caisse'
+                      ? 'Payer ${Formatters.montant(widget.montant, devise: 'XOF')} via SycaPay'
+                  : widget.typeOperation == 'decaissement_cagnotte'
+                      ? 'Décaisser ${Formatters.montant(widget.montant, devise: 'XOF')} via SycaPay'
                       : 'Verser ${Formatters.montant(widget.montant, devise: 'XOF')} via Mobile Money',
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
             ),
@@ -810,8 +863,11 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
             ),
             const SizedBox(height: 24),
             Text(
-              widget.typeOperation == 'penalite'
-                  ? 'Pénalité enregistrée !'
+              widget.typeOperation == 'penalite'              ? 'Pénalité enregistrée !'
+                  : widget.typeOperation == 'remboursement_pret'    ? 'Remboursement reçu !'
+                  : widget.typeOperation == 'pret_octroye'          ? 'Prêt versé avec succès !'
+                  : widget.typeOperation == 'depense_caisse'        ? 'Dépense effectuée !'
+                  : widget.typeOperation == 'decaissement_cagnotte' ? 'Cagnotte décaissée !'
                   : 'Paiement reçu avec succès.',
               textAlign: TextAlign.center,
               style: const TextStyle(
@@ -824,6 +880,12 @@ class _PaiementCaisseProScreenState extends State<PaiementCaisseProScreen> {
               widget.typeOperation == 'penalite'
                   ? 'La pénalité de ${Formatters.montant(widget.montant, devise: devise)}'
                     '\na été appliquée à ${widget.membreNom ?? 'ce membre'}.'
+                  : widget.typeOperation == 'pret_octroye'
+                      ? '${Formatters.montant(widget.montant, devise: devise)} versés à ${widget.membreNom ?? 'l\'emprunteur'} via SycaPay.'
+                  : widget.typeOperation == 'depense_caisse'
+                      ? 'Dépense de ${Formatters.montant(widget.montant, devise: devise)} enregistrée via SycaPay.'
+                  : widget.typeOperation == 'decaissement_cagnotte'
+                      ? '${Formatters.montant(widget.montant, devise: devise)} décaissés pour ${widget.membreNom ?? 'le bénéficiaire'} via SycaPay.'
                   : 'Votre apport de caisse a été enregistré.\n'
                     '${Formatters.montant(widget.montant, devise: devise)} versé dans la caisse.',
               textAlign: TextAlign.center,

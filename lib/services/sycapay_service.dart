@@ -17,7 +17,7 @@ import 'supabase_service.dart';
 ///   → utilisée pour GetStatus ET pour l'idempotence
 ///   → JAMAIS le transactionId SycaPay seul (instable)
 class SycaPayService {
-  static const double commissionPct = 0.02;
+  static const double commissionPct = 0.025;
   static const String _edgeFn      = 'sycapay-payment';
 
   static int calculerCommission(int montant) => (montant * commissionPct).round();
@@ -89,11 +89,15 @@ class SycaPayService {
     String?  otp,
     String?  nomMembre,
     String?  prenomMembre,
-    String?  typeOperation, // 'cotisation' | 'caisse' | 'penalite' | 'remboursement_pret'
+    String?  typeOperation, // 'cotisation' | 'caisse' | 'penalite' | 'remboursement_pret' | 'pret_octroye' | 'depense_caisse' | 'decaissement_cagnotte'
     String?  membreId,
     String?  membreNom,
     String?  pretId,
     String?  description,
+    // Champs supplémentaires pour dessaisissements
+    int?     taux,
+    int?     dureesMois,
+    int?     numeroTour,
   }) async {
     final payload = <String, dynamic>{
       'action':         'payer',
@@ -113,6 +117,9 @@ class SycaPayService {
       if (membreId     != null) 'emprunteur_id': membreId,
       if (membreNom    != null) 'emprunteur_nom':membreNom,
       if (description  != null) 'description':   description,
+      if (taux         != null) 'taux':          taux,
+      if (dureesMois   != null) 'durees_mois':   dureesMois,
+      if (numeroTour   != null) 'numero_tour':   numeroTour,
     };
 
     final rep = await _appelerEdge(payload, timeout: const Duration(seconds: 55));
@@ -186,7 +193,7 @@ class SycaPayService {
   static Future<SycaPayResultat> confirmerEtCrediter({
     required String numCommande,
     required String tontineCode,
-    required String typeOperation, // 'caisse' | 'cotisation' | 'penalite' | 'remboursement_pret'
+    required String typeOperation, // 'caisse' | 'cotisation' | 'penalite' | 'remboursement_pret' | 'pret_octroye' | 'depense_caisse' | 'decaissement_cagnotte'
     String?  transactionId,
     int?     montant,
     String?  operateur,
@@ -194,6 +201,10 @@ class SycaPayService {
     String?  membreNom,
     String?  pretId,
     String?  description,
+    // Champs supplémentaires pour dessaisissements
+    int?     taux,
+    int?     dureesMois,
+    int?     numeroTour,
   }) async {
     final rep = await _appelerEdge({
       'action':         'confirmer_et_crediter',
@@ -209,6 +220,9 @@ class SycaPayService {
       if (membreId      != null) 'emprunteur_id':   membreId,
       if (membreNom     != null) 'emprunteur_nom':  membreNom,
       if (description   != null) 'description':     description,
+      if (taux          != null) 'taux':            taux,
+      if (dureesMois    != null) 'durees_mois':     dureesMois,
+      if (numeroTour    != null) 'numero_tour':     numeroTour,
     // Timeout 170s : légèrement > 150s polling serveur, < 180s watchdog Flutter
     }, timeout: const Duration(seconds: 170));
 

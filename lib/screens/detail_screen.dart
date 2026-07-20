@@ -27,6 +27,7 @@ import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
 import 'kyc_screen.dart';
 import 'securite_screen.dart';
+import 'paiement_caisse_pro_screen.dart';
 
 class DetailScreen extends StatefulWidget {
   final String code;
@@ -1779,7 +1780,7 @@ class _BarreDetail extends StatelessWidget {
         : data.paiements.keys.toList();
     final nbPayesClot = payesIds.isNotEmpty ? payesIds.length : data.membres.length;
     final montantVerse = data.montant * data.membres.length;
-    final commission   = isPremium ? (montantVerse * 0.02).round() : 0;
+    final commission   = isPremium ? (montantVerse * 0.025).round() : 0;
     final montantNet   = montantVerse - commission;
 
     // ── Garde KYC — obligatoire pour les décaissements Premium ────────────
@@ -2002,7 +2003,7 @@ class _BarreDetail extends StatelessWidget {
                 child: Column(
                   children: [
                     _LigneRecapCloture('Montant versé',      Formatters.montant(montantVerse, devise: data.devise)),
-                    _LigneRecapCloture('Commission (2%)',     '− ${Formatters.montant(commission, devise: data.devise)}', rouge: true),
+                    _LigneRecapCloture('Frais réseau SycaPay (2,5%)', '− ${Formatters.montant(commission, devise: data.devise)}', rouge: true),
                     const Divider(height: 12, color: AppColors.lignes),
                     _LigneRecapCloture('Montant net à décaisser', Formatters.montant(montantNet, devise: data.devise), gras: true),
                   ],
@@ -2106,70 +2107,46 @@ class _BarreDetail extends StatelessWidget {
       titre:     'Confirmer la clôture',
       sousTitre: 'La demande de décaissement sera envoyée à l\'Admin.',
       recap: [
-        (label: 'Bénéficiaire',          valeur: benefNom),
-        (label: 'Opérateur',             valeur: operateurLabel),
-        (label: 'Numéro',                valeur: numeroBenef),
-        (label: 'Montant brut',          valeur: Formatters.montant(montantVerse, devise: data.devise)),
-        (label: 'Commission TontineClair (2%)', valeur: '− ${Formatters.montant(commission, devise: data.devise)}'),
-        (label: 'Montant net',           valeur: Formatters.montant(montantNet, devise: data.devise)),
-        (label: 'Tour',                  valeur: 'N° $numerTourAffiche → N° ${numerTourAffiche + 1}'),
-        (label: '📤 Mode',               valeur: 'Demande Admin — caisse non débitée'),
+        (label: 'Bénéficiaire',               valeur: benefNom),
+        (label: 'Opérateur',                  valeur: operateurLabel),
+        (label: 'Numéro',                     valeur: numeroBenef),
+        (label: 'Montant brut',               valeur: Formatters.montant(montantVerse, devise: data.devise)),
+        (label: 'Frais réseau SycaPay (2,5%)', valeur: '− ${Formatters.montant(commission, devise: data.devise)}'),
+        (label: 'Montant net à décaisser',    valeur: Formatters.montant(montantNet, devise: data.devise)),
+        (label: 'Tour',                       valeur: 'N° $numerTourAffiche → N° ${numerTourAffiche + 1}'),
+        (label: '⚡ Mode',                    valeur: 'Paiement automatique SycaPay'),
       ],
       onValider: (pin) async {
-        // ── A. Avancer le tour dans le JSON (sans débiter la caisse) ────────
+        // ── A. Avancer le tour dans le JSON (débiter la caisse immédiatement) ──
         final newData = _preparerNouvellesDonnees(
           data: data, membres: membres, payesIds: payesIds,
           nbPayesClot: nbPayesClot, numerTourAffiche: numerTourAffiche,
           ref: ref, gestNom: provider.gestActifNom ?? '',
-          debiterCaisse: false,   // Premium : caisse débitée après validation TontineClair
+          debiterCaisse: true,  // SycaPay : caisse débitée dès confirmation
           montantVerse: montantVerse,
           benefNom: benefNom,
         );
-        final ecrit = await provider.ecrire(newData, pin);
-        if (!ecrit) return false;
-
-        // ── B. Soumettre le décaissement en pending ─────────────────────────
-        try {
-          await SupabaseService.soumettreDecaissementPending(
-            code:             provider.courante!.code,
-            beneficiaireId:   benefId,
-            beneficiaireNom:  benefNom,
-            montant:          montantVerse,
-            commission:       commission,
-            montantNet:       montantNet,
-            numerTour:        numerTourAffiche,
-            operateur:        operateur!,
-            numeroBenef:      numeroBenef,
-            gestionnaire:     provider.gestActifNom ?? '',
-            reference:        ref,
-            devise:           data.devise,
-          );
-        } catch (e) {
-          // Non bloquant : le tour est déjà avancé. Logguer l'erreur.
-          if (kDebugMode) debugPrint('[Clôture] soumettreDecaissementPending erreur: $e');
-        }
-
-        return true;
+        return provider.ecrire(newData, pin);
       },
     );
 
     if (ok == true && context.mounted) {
-      afficherToast(
+      // ── B. Naviguer vers SycaPay pour le décaissement automatique ──────────
+      await Navigator.push(
         context,
-        '📤 Tour $numerTourAffiche clôturé — décaissement en attente de validation Admin.',
-      );
-      final lang = Provider.of<LocaleService>(context, listen: false).langue.code;
-      final t    = SupabaseService.notifTexte('decaissement_demande', lang, vars: {
-        'nom':    benefNom,
-        'tour':   numerTourAffiche.toString(),
-        'montant': Formatters.montant(montantNet, devise: data.devise),
-      });
-      SupabaseService.envoyerNotification(
-        code:         provider.courante!.code,
-        type:         'decaissement',
-        titre:        t['titre']!,
-        message:      t['message']!,
-        donneesExtra: {'beneficiaire': benefNom, 'mode': 'pro'},
+        MaterialPageRoute(
+          builder: (_) => PaiementCaisseProScreen(
+            code:          provider.courante!.code,
+            montant:       montantNet,
+            description:   'Cagnotte tour $numerTourAffiche → $benefNom',
+            typeOperation: 'decaissement_cagnotte',
+            membreId:      benefId,
+            membreNom:     benefNom,
+            telephone:     numeroBenef,
+            operateur:     op,
+            numeroTour:    numerTourAffiche,
+          ),
+        ),
       );
     }
   }

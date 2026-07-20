@@ -304,7 +304,7 @@ class CaisseScreen extends StatelessWidget {
       final kycResult = await KycService.canPerformFinancialAction(
         userId:     gestNom,
         actionType: 'withdrawal',
-        amount:     0,
+        amount:     data.soldeCaisse.toDouble(),
       );
       if (!kycResult.allowed && context.mounted) {
         final allerKyc = await showDialog<bool>(
@@ -355,6 +355,7 @@ class CaisseScreen extends StatelessWidget {
     final nomCtrl     = TextEditingController();
     String operateur  = _operateursMobileMoney.first;
 
+    // ── Formulaire dépense caisse ─────────────────────────────────────────
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -395,22 +396,22 @@ class CaisseScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 4),
-                // Badge info paiement
+                // Badge SycaPay
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFFF3E0),
+                    color: const Color(0xFFEAF4EE),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.phone_android_rounded, size: 13, color: Color(0xFFE65100)),
+                      Icon(Icons.rocket_launch_rounded, size: 13, color: Color(0xFF1A6B3C)),
                       SizedBox(width: 6),
                       Flexible(
                         child: Text(
-                          'Mobile Money — validation TontineClair requise',
-                          style: TextStyle(fontSize: 12, color: Color(0xFFE65100)),
+                          'Paiement automatique SycaPay — frais réseau 2,5%',
+                          style: TextStyle(fontSize: 12, color: Color(0xFF1A6B3C)),
                         ),
                       ),
                     ],
@@ -464,8 +465,8 @@ class CaisseScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 BtnPrincipal(
-                  label: 'Soumettre pour validation',
-                  icone: Icons.send_rounded,
+                  label: 'Continuer vers SycaPay',
+                  icone: Icons.account_balance_wallet_rounded,
                   onTap: () => Navigator.pop(ctx, true),
                 ),
                 const SizedBox(height: 8),
@@ -483,7 +484,7 @@ class CaisseScreen extends StatelessWidget {
 
     if (confirmed != true || !context.mounted) return;
 
-    // Validations
+    // ── Validations ──────────────────────────────────────────────────────
     final montant = int.tryParse(montantCtrl.text.trim());
     if (montant == null || montant <= 0) {
       afficherToast(context, 'Montant invalide', estErreur: true);
@@ -506,81 +507,28 @@ class CaisseScreen extends StatelessWidget {
       return;
     }
 
-    // Confirmation simple (pas de PIN — la validation sera faite par l'admin)
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.fondPapier,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          'Confirmer la dépense',
-          style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.encre),
+    // ── SycaPay direct — plus de validation TontineClair ────────────────
+    final frais      = (montant * 0.025).round();
+    final montantNet = montant - frais;
+
+    if (!context.mounted) return;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PaiementCaisseProScreen(
+          code:          tontine.code,
+          montant:       montantNet,
+          description:   descCtrl.text.trim().isNotEmpty
+              ? descCtrl.text.trim()
+              : 'Dépense caisse',
+          typeOperation: 'depense_caisse',
+          membreNom:     nomCtrl.text.trim(),
+          telephone:     numCtrl.text.trim(),
+          operateur:     operateur,
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _RecapLigne('Montant', Formatters.montant(montant, devise: data.devise)),
-            _RecapLigne('Opérateur', Formatters.methodePaiement(operateur)),
-            _RecapLigne('Bénéficiaire', nomCtrl.text.trim()),
-            _RecapLigne('Numéro', numCtrl.text.trim()),
-            if (descCtrl.text.trim().isNotEmpty)
-              _RecapLigne('Motif', descCtrl.text.trim()),
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppColors.orFonce.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Text(
-                '⏳ La dépense sera soumise à validation par TontineClair. La caisse ne sera débitée qu\'après approbation.',
-                style: TextStyle(fontSize: 12, color: AppColors.orFonce, height: 1.4),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Annuler'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.alerte),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Soumettre', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-          ),
-        ],
       ),
     );
-
-    if (ok != true || !context.mounted) return;
-
-    // Soumettre la dépense en pending dans Supabase
-    try {
-      final ref = Formatters.genererReference();
-      await SupabaseService.soumettreDepensePending(
-        code: tontine.code,
-        montant: montant,
-        description: descCtrl.text.trim(),
-        operateur: operateur,
-        numeroBeneficiaire: numCtrl.text.trim(),
-        nomBeneficiaire: nomCtrl.text.trim(),
-        gestionnaire: provider.gestActifNom ?? '',
-        reference: ref,
-        devise: data.devise,
-      );
-      if (context.mounted) {
-        afficherToast(
-          context,
-          '✅ Dépense soumise ! En attente de validation TontineClair.',
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        afficherToast(context, 'Erreur : $e', estErreur: true);
-      }
-    }
   }
 
   // ── Pénalité Pro : sélection membre + montant → SycaPay ─────────────────────

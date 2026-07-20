@@ -350,6 +350,55 @@ async function crediterCoteServeur(tx: Record<string, unknown>): Promise<{ ok: b
         p_description:      description.length > 0 ? description : `Remboursement prêt ${emprunteurNom} via SycaPay`,
         p_now:              now,
       });
+    } else if (typeOp === "pret_octroye") {
+      // Prêt octroyé via SycaPay — débite la caisse + crée le prêt dans JSON
+      const emprunteurId  = tx["emprunteur_id"]   as string ?? membreId ?? "";
+      const emprunteurNom = tx["emprunteur_nom"]  as string ?? membreNom;
+      const taux          = (tx["taux"]           as number) ?? 0;
+      const dureesMois    = (tx["durees_mois"]    as number) ?? 1;
+      await sbRpc("debiter_pret_sycapay", {
+        p_code:             tontineCode.toUpperCase(),
+        p_montant:          amount,
+        p_reference:        ref,
+        p_num_commande:     numcommande,
+        p_operateur:        operator,
+        p_emprunteur_id:    emprunteurId,
+        p_emprunteur_nom:   emprunteurNom,
+        p_taux:             taux,
+        p_durees_mois:      dureesMois,
+        p_description:      description.length > 0 ? description : `Prêt SycaPay → ${emprunteurNom}`,
+        p_now:              now,
+      });
+    } else if (typeOp === "depense_caisse") {
+      // Dépense caisse via SycaPay — débite la caisse
+      const benefNom = tx["membre_nom"]  as string ?? membreNom ?? "";
+      await sbRpc("debiter_depense_sycapay", {
+        p_code:             tontineCode.toUpperCase(),
+        p_montant:          amount,
+        p_reference:        ref,
+        p_num_commande:     numcommande,
+        p_operateur:        operator,
+        p_beneficiaire_nom: benefNom,
+        p_description:      description.length > 0 ? description : `Dépense SycaPay → ${benefNom}`,
+        p_now:              now,
+      });
+    } else if (typeOp === "decaissement_cagnotte") {
+      // Décaissement cagnotte (clôture tour) via SycaPay — débite la caisse + passe au tour suivant
+      const beneficiaireId  = tx["emprunteur_id"]   as string ?? membreId ?? "";
+      const beneficiaireNom = tx["emprunteur_nom"]  as string ?? membreNom;
+      const numerTour       = (tx["numero_tour"]    as number) ?? 1;
+      await sbRpc("debiter_decaissement_sycapay", {
+        p_code:               tontineCode.toUpperCase(),
+        p_montant:            amount,
+        p_reference:          ref,
+        p_num_commande:       numcommande,
+        p_operateur:          operator,
+        p_beneficiaire_id:    beneficiaireId,
+        p_beneficiaire_nom:   beneficiaireNom,
+        p_numero_tour:        numerTour,
+        p_description:        description.length > 0 ? description : `Décaissement tour ${numerTour} → ${beneficiaireNom}`,
+        p_now:                now,
+      });
     } else {
       // Créditer la cotisation via RPC
       await sbRpc("crediter_cotisation_sycapay", {
