@@ -1055,12 +1055,21 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                         return;
                       }
 
+                      // ── Fermer la dialog AVANT de recharger ─────────────────
+                      // Ordre important : on ferme d'abord, puis on recharge
+                      // l'écran parent. Inverser les deux provoquerait un setState
+                      // sur un widget démontant la dialog.
+                      if (sCtx.mounted) Navigator.pop(sCtx);
+
+                      // ── Réinitialiser _scoreDetail pour forcer l'affichage ──
+                      // du spinner pendant le rechargement (évite l'affichage
+                      // de l'ancien score si _charger() est lent).
+                      if (mounted) setState(() => _scoreDetail = null);
+
                       // ── Rechargement local (historique + recommandations) ───
                       // _charger() relit scores_historique et recalcule le score
                       // via ScoreService, qui utilisera scoreOverride.
                       await _charger();
-
-                      if (sCtx.mounted) Navigator.pop(sCtx);
                       if (mounted) {
                         // Utiliser context du State (pas ctx du builder) pour éviter async-gap warning
                         afficherToast(context,
@@ -1085,10 +1094,16 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                         );
                       }
                     } catch (e) {
-                      setSt(() {
-                        erreur  = 'Erreur : $e';
-                        loading = false;
-                      });
+                      // Si la dialog est encore ouverte, afficher l'erreur dedans
+                      // Sinon, afficher un toast dans l'écran parent
+                      if (sCtx.mounted) {
+                        setSt(() {
+                          erreur  = 'Erreur : $e';
+                          loading = false;
+                        });
+                      } else if (mounted) {
+                        afficherToast(context, 'Erreur : $e', estErreur: true);
+                      }
                     }
                   },
                 ),

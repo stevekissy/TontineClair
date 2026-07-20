@@ -10,6 +10,7 @@ import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
+import '../services/feature_gate_service.dart';
 
 class VotesScreen extends StatefulWidget {
   final String code;
@@ -729,6 +730,25 @@ class _VotesScreenState extends State<VotesScreen> {
           final membres = List<Map<String, dynamic>>.from(
             (newData['membres'] as List<dynamic>).cast<Map<String, dynamic>>(),
           );
+
+          // ── Vérification limite membres (Gratuit = 5 max) ─────────────
+          final tontineData = provider.courante!.data;
+          final peutAjouter = FeatureGate.peutAjouterMembre(
+            isPremium: tontineData.isPremium,
+            nbMembresActuels: membres.length,
+          );
+          if (!peutAjouter) {
+            if (context.mounted) {
+              afficherToast(
+                context,
+                'Limite atteinte : max ${FeatureGate.maxMembresGratuit} membres en formule Gratuite. '
+                'Passez en Premium pour des membres illimités.',
+                estErreur: true,
+              );
+            }
+            return false; // Annuler l'admission (limite membres atteinte)
+          }
+
           final newId = 'm${membres.length + 1}';
           membres.add({
             'id': newId,

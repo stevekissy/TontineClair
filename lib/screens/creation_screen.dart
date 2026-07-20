@@ -1098,33 +1098,7 @@ class _SelecteurTypeTontine extends StatelessWidget {
             ),
           ],
         ),
-        if (valeur == 'premium') ...[
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF8E7),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.4)),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFFF59E0B)),
-                SizedBox(width: 7),
-                Expanded(
-                  child: Text(
-                    'Commission 2 % sur les décaissements. Paiement via Google Play lors de la création.',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF92400E),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+
       ],
     );
   }
