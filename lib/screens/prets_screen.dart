@@ -424,7 +424,7 @@ class _PretsScreenState extends State<PretsScreen> {
             membreNom:     nomEmprunteur,
             telephone:     numBenefCtrl.text.trim(),
             operateur:     operateur,
-            taux:          taux,
+            taux:          taux.round(),
             dureesMois:    durees,
           ),
         ),
