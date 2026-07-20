@@ -336,9 +336,18 @@ class _VotesScreenState extends State<VotesScreen> {
           (newData['votes'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ??
               [],
         );
+        // FIX VOTE_INTROUVABLE : inclure TOUTES les clés — Supabase native + Flutter compat
+        // La RPC SQL cherche 'sujet', 'creePar', 'le' (ms), 'statut'='ouvert'
         final newVote = {
           'id': ref,
           'type': type,
+          // Clés Supabase native (attendues par la RPC SQL voter)
+          'sujet': question,
+          'creePar': provider.gestActifNom ?? '',
+          'le': DateTime.now().millisecondsSinceEpoch,
+          'statut': 'ouvert',
+          'voix': <String, dynamic>{},
+          // Clés Flutter compat (utilisées par Vote.fromJson côté Flutter)
           'question': question,
           'createur': provider.gestActifNom ?? '',
           'dateCreation': now,

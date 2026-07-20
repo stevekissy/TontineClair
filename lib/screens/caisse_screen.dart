@@ -332,13 +332,15 @@ class _CaisseScreenState extends State<CaisseScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Row(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.rocket_launch_rounded, size: 13, color: Color(0xFF1A6B3C)),
                     SizedBox(width: 6),
-                    Text(
-                      'Le paiement sera effectué automatiquement via Mobile Money',
-                      style: TextStyle(fontSize: 12, color: Color(0xFF1A6B3C)),
+                    Flexible(
+                      child: Text(
+                        'Le paiement sera effectué automatiquement via Mobile Money',
+                        style: TextStyle(fontSize: 12, color: Color(0xFF1A6B3C)),
+                        softWrap: true,
+                      ),
                     ),
                   ],
                 ),

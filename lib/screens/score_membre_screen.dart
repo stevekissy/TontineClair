@@ -845,11 +845,10 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
       (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
     );
     journal.insert(0, {
-      'le': now,
-      'par': gestNom,
-      'quoi':
-          'RETRAIT_PROPOSE:${widget.membre.id}:score=${_scoreDetail?.score ?? 0}'
-          ':quorum=${quorum}%:majorite=${majorite}%',
+      'quoi':         'RETRAIT_PROPOSE:${widget.membre.id}:score=${_scoreDetail?.score ?? 0}'
+                      ':quorum=${quorum}%:majorite=${majorite}%',
+      'gestionnaire': gestNom,
+      'quand':        now,
     });
     newData['journal'] = journal;
 

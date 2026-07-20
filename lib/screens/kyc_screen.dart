@@ -871,12 +871,13 @@ class _EtapeIdentite extends StatelessWidget {
         const ChampLabel(label: 'Date de naissance *'),
         GestureDetector(
           onTap: () async {
+            // FIX KYC : suppression de locale:'fr' (nécessite GlobalMaterialLocalizations absent)
+            // FIX KYC : protection if (d != null) — évite de réinitialiser la date si l'user annule
             final d = await showDatePicker(
               context: context,
               initialDate: dateNaissance ?? DateTime(1990),
               firstDate: DateTime(1900),
               lastDate: DateTime.now().subtract(const Duration(days: 365 * 18)),
-              locale: const Locale('fr'),
               builder: (ctx, child) => Theme(
                 data: Theme.of(ctx).copyWith(
                   colorScheme: const ColorScheme.light(primary: AppColors.or),
@@ -884,7 +885,7 @@ class _EtapeIdentite extends StatelessWidget {
                 child: child!,
               ),
             );
-            onDateChanged(d);
+            if (d != null) onDateChanged(d);
           },
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),

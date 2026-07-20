@@ -2230,10 +2230,10 @@ class _BarreDetail extends StatelessWidget {
     );
     final modeStr = debiterCaisse ? 'décaissement immédiat' : 'décaissement en attente TontineClair';
     journal.insert(0, {
-      'quoi':      'Tour $numerTourAffiche clôturé — ${Formatters.montant(montantVerse, devise: data.devise)} pour $benefNom ($modeStr)',
-      'par':       gestNom,
-      'le':        DateTime.now().millisecondsSinceEpoch,
-      'reference': ref,
+      'quoi':         'DECAISSEMENT — Tour $numerTourAffiche clôturé — ${Formatters.montant(montantVerse, devise: data.devise)} pour $benefNom ($modeStr)',
+      'gestionnaire': gestNom,
+      'quand':        DateTime.now().toIso8601String(),
+      'reference':    ref,
     });
     newData['journal'] = journal;
 

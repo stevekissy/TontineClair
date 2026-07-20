@@ -95,9 +95,9 @@ class _UpgradeProScreenState extends State<UpgradeProScreen> {
       (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
     );
     journal.insert(0, {
-      'quoi': '🚀 Tontine passée en version Pro — paiements automatisés activés',
-      'par':  gestNom,
-      'le':   DateTime.now().millisecondsSinceEpoch,
+      'quoi':         'UPGRADE_PRO — Tontine passée en version Pro — paiements automatisés activés',
+      'gestionnaire': gestNom,
+      'quand':        DateTime.now().toIso8601String(),
     });
     newData['journal'] = journal;
 
