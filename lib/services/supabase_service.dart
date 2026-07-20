@@ -1909,17 +1909,54 @@ class SupabaseService {
   // ═══════════════════════════════════════════════════════════════════════════
 
   /// Authentifier un membre admin par pseudo + clé personnelle.
+  /// On envoie le hash SHA-256 (identique à ce qui est stocké dans cle_hash)
+  /// pour que la RPC puisse comparer directement hash == hash.
   static Future<Map<String, dynamic>> adminAuthMembre({
     required String pseudo,
     required String clePerso,
   }) async {
     try {
+      // Hasher côté client exactement comme lors de la création
+      final cleHash = _sha256hex(clePerso);
+
+      // Tentative 1 : via RPC (envoie le hash comme p_cle_perso)
       final result = await rpc('admin_auth_membre', {
-        'p_pseudo':    pseudo,
-        'p_cle_perso': clePerso,
+        'p_pseudo':    pseudo.toLowerCase().trim(),
+        'p_cle_perso': cleHash,
       });
-      if (result is Map<String, dynamic>) return result;
-      return {'ok': false, 'erreur': 'Réponse inattendue'};
+      if (result is Map<String, dynamic> && result['ok'] == true) return result;
+
+      // Tentative 2 : fallback — lecture REST directe sur admin_membres
+      // et comparaison locale du hash (si la RPC n'existe pas ou bloque)
+      final url = Uri.parse('$_url/rest/v1/admin_membres').replace(
+        queryParameters: {
+          'pseudo':  'eq.${pseudo.toLowerCase().trim()}',
+          'actif':   'eq.true',
+          'select':  'id,nom,pseudo,role,cle_hash,actif',
+          'limit':   '1',
+        },
+      );
+      final resp = await http.get(url, headers: {
+        'Authorization': 'Bearer $_key',
+        'apikey': _key,
+        'Accept': 'application/json',
+      });
+      if (resp.statusCode == 200) {
+        final list = jsonDecode(resp.body) as List;
+        if (list.isNotEmpty) {
+          final m = list.first as Map<String, dynamic>;
+          final storedHash = m['cle_hash'] as String? ?? '';
+          if (storedHash == cleHash) {
+            return {
+              'ok':   true,
+              'nom':  m['nom'],
+              'role': m['role'],
+              'id':   m['id'],
+            };
+          }
+        }
+      }
+      return {'ok': false, 'erreur': 'Identifiants incorrects ou compte désactivé.'};
     } catch (e) {
       return {'ok': false, 'erreur': '$e'};
     }
