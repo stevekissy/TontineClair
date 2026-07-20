@@ -2432,17 +2432,25 @@ class SupabaseService {
     required String code,
     required String motif,
   }) async {
+    // Tentative 1 : RPC — SEULEMENT si elle retourne ok:true
+    // (la RPC peut retourner {'ok':false, 'erreur':'Clé invalide'} sans lever
+    // d'exception → on doit vérifier le résultat, pas juste le type)
     try {
-      // Tentative 1 : RPC (déployée sur Supabase)
       final result = await rpc('admin_bloquer_tontine', {
         'p_cle':   cle,
         'p_code':  code.toUpperCase(),
         'p_motif': motif,
       });
-      if (result is Map<String, dynamic>) return result;
-    } catch (_) {}
+      if (result is Map<String, dynamic> && result['ok'] == true) {
+        return result;
+      }
+      // RPC a répondu mais avec ok:false → on tombe dans le fallback REST
+    } catch (_) {
+      // Exception RPC → fallback REST
+    }
 
-    // Tentative 2 : REST direct — UPDATE via PATCH
+    // Tentative 2 : REST direct — UPDATE via PATCH (ne nécessite pas de clé admin)
+    // Cette méthode utilise uniquement la clé API interne (_key) dans les headers
     try {
       final url = Uri.parse('$_url/rest/v1/tontines')
           .replace(queryParameters: {'code': 'eq.${code.toUpperCase()}'});
@@ -2452,16 +2460,35 @@ class SupabaseService {
           'Content-Type':  'application/json',
           'Authorization': 'Bearer $_key',
           'apikey':        _key,
-          'Prefer':        'return=minimal',
+          'Prefer':        'return=representation',
         },
         body: jsonEncode({
-          'status': 'blocked',
+          'status':    'blocked',
+          'blocage':   {
+            'motif':  motif,
+            'date':   DateTime.now().toIso8601String(),
+            'auteur': 'admin',
+          },
         }),
       );
       if (resp.statusCode >= 200 && resp.statusCode < 300) {
         return {'ok': true};
       }
-      return {'ok': false, 'erreur': 'Erreur HTTP ${resp.statusCode}'};
+      // Essai simplifié sans champ blocage (table sans colonne JSON)
+      final resp2 = await http.patch(
+        url,
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': 'Bearer $_key',
+          'apikey':        _key,
+          'Prefer':        'return=minimal',
+        },
+        body: jsonEncode({'status': 'blocked'}),
+      );
+      if (resp2.statusCode >= 200 && resp2.statusCode < 300) {
+        return {'ok': true};
+      }
+      return {'ok': false, 'erreur': 'HTTP ${resp2.statusCode}: ${resp2.body}'};
     } catch (e) {
       return {'ok': false, 'erreur': '$e'};
     }
@@ -2472,14 +2499,19 @@ class SupabaseService {
     required String cle,
     required String code,
   }) async {
+    // Tentative 1 : RPC — SEULEMENT si elle retourne ok:true
     try {
-      // Tentative 1 : RPC
       final result = await rpc('admin_debloquer_tontine', {
         'p_cle':  cle,
         'p_code': code.toUpperCase(),
       });
-      if (result is Map<String, dynamic>) return result;
-    } catch (_) {}
+      if (result is Map<String, dynamic> && result['ok'] == true) {
+        return result;
+      }
+      // RPC a répondu ok:false → fallback REST
+    } catch (_) {
+      // Exception RPC → fallback REST
+    }
 
     // Tentative 2 : REST direct
     try {
@@ -2498,7 +2530,7 @@ class SupabaseService {
       if (resp.statusCode >= 200 && resp.statusCode < 300) {
         return {'ok': true};
       }
-      return {'ok': false, 'erreur': 'Erreur HTTP ${resp.statusCode}'};
+      return {'ok': false, 'erreur': 'HTTP ${resp.statusCode}: ${resp.body}'};
     } catch (e) {
       return {'ok': false, 'erreur': '$e'};
     }
