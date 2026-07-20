@@ -33,6 +33,16 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+
+            <!-- Deep link Wave SycaPay : tontineclair://sycapay/retour -->
+            <!-- Wave redirige ici après confirmation du paiement -->
+            <!-- → TontineClair revient au foreground, le polling détecte la confirmation -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="tontineclair"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
@@ -72,8 +82,12 @@
         <!-- Pour partage WhatsApp via ACTION_SEND -->
         <package android:name="com.whatsapp"/>
         <package android:name="com.whatsapp.w4b"/>
+        <!-- App Wave Mobile Money (pour ouvrir directement via App Links) -->
+        <package android:name="com.wave.personal"/>
     </queries>
 </manifest>
+
+
 
 
 

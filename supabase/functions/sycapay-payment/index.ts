@@ -542,8 +542,16 @@ Deno.serve(async (req: Request) => {
       // 1. Token SycaPay
       const token = await obtenirToken(montant);
 
-      // 2. URL webhook
+      // 2. URLs webhook et retour
       const webhookUrl = `${SUPABASE_URL}/functions/v1/sycapay-payment?action=webhook&ref=${encodeURIComponent(numcommande)}`;
+
+      // Pour Wave : urlretour = deep link TontineClair pour rouvrir l'app après paiement
+      // Quand l'user confirme dans Wave, Wave redirige vers cette URL
+      // → Android intercepte tontineclair://sycapay/retour → TontineClair revient au foreground
+      const isWaveOp = (operateur as string ?? "").toLowerCase() === "wave";
+      const urlRetour = isWaveOp
+        ? `tontineclair://sycapay/retour?ref=${encodeURIComponent(numcommande)}&statut=ok`
+        : webhookUrl;
 
       // 3. Payload checkoutpay
       const payPayload: Record<string, unknown> = {
@@ -555,14 +563,14 @@ Deno.serve(async (req: Request) => {
         numcommande,
         name:        body["name"]  ?? "Membre",
         pname:       body["pname"] ?? "TC",
-        urlnotif:    webhookUrl,
-        urlretour:   webhookUrl, // aussi sur urlretour pour certains opérateurs
+        urlnotif:    webhookUrl,   // SycaPay webhook (crédite toujours)
+        urlretour:   urlRetour,    // Wave deep link → rouvre TontineClair
       };
 
       const otp = body["otp"] as string | undefined;
       if (otp) payPayload["otp"] = otp;
 
-      if (operateur.toLowerCase() === "wave") {
+      if (isWaveOp) {
         payPayload["pays"]       = "CI";
         payPayload["operateurs"] = "WaveCI";  // WaveCI pour Côte d'Ivoire (WaveSN = Sénégal)
       }

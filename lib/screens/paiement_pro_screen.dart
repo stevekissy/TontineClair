@@ -39,7 +39,8 @@ class PaiementProScreen extends StatefulWidget {
   State<PaiementProScreen> createState() => _PaiementProScreenState();
 }
 
-class _PaiementProScreenState extends State<PaiementProScreen> {
+class _PaiementProScreenState extends State<PaiementProScreen>
+    with WidgetsBindingObserver {
   static const _couleurPro = Color(0xFF1A6B3C);
 
   String _operateur = 'moov';
@@ -61,6 +62,54 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
   String? _waveUrl;
   String? _waveImg;
   Timer?  _timerPollWave;
+  // Suivi retour foreground Wave
+  bool    _waveOuvert             = false; // true = l'app Wave a été ouverte
+  String? _waveNumCmd;                     // numCommande en cours pour Wave
+  int?    _waveMontant;                    // montant en cours pour Wave
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  /// Détecte le retour au foreground après paiement Wave
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed && _waveOuvert) {
+      _waveOuvert = false; // reset
+      if (_etape == _Etape.attenteWave && _waveNumCmd != null) {
+        if (kDebugMode) debugPrint('[Wave] Retour foreground → vérification immédiate');
+        // Vérification immédiate au retour de Wave (n'attend pas les 5s du polling)
+        _verifierWaveImmediatement(_waveNumCmd!, _waveMontant ?? 0);
+      }
+    }
+  }
+
+  Future<void> _verifierWaveImmediatement(String numCmd, int montant) async {
+    if (!mounted || _etape != _Etape.attenteWave) return;
+    try {
+      final statut = await SycaPayService.verifierStatut(
+        numCmd,
+        transactionId: _transactionId,
+        tontineCode:   widget.code,
+      );
+      if (!mounted) return;
+      if (statut.estSucces || statut.statusNormalise == 'confirmed') {
+        _timerPollWave?.cancel();
+        setState(() => _etape = _Etape.enregistrement);
+        await _rechargerEtSucces(montant);
+      } else if (statut.estEchec) {
+        _timerPollWave?.cancel();
+        setState(() {
+          _etape         = _Etape.saisie;
+          _messageErreur = statut.messageFr;
+        });
+      }
+      // pending → le polling continue
+    } catch (_) { /* réseau → polling continue */ }
+  }
 
   @override
   void dispose() {
@@ -69,6 +118,7 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
     _watchdogTimer?.cancel();
     _timerBoutonAttente?.cancel();
     _timerPollWave?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
@@ -308,6 +358,10 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
   // ── Polling Wave : vérifier toutes les 5s si l'utilisateur a payé ──────────
 
   void _lancerPollWave(String numCmd, int montant) {
+    // Sauvegarder pour WidgetsBindingObserver
+    _waveNumCmd  = numCmd;
+    _waveMontant = montant;
+
     const dureeMax     = Duration(minutes: 3);
     const intervalle   = Duration(seconds: 5);
     final debut        = DateTime.now();
@@ -886,15 +940,27 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
                 onPressed: () async {
                   final uri = Uri.tryParse(_waveUrl!);
                   if (uri != null) {
+                    // Marquer que Wave a été ouvert → WidgetsBindingObserver
+                    // déclenchera une vérification immédiate au retour
+                    setState(() => _waveOuvert = true);
+                    bool ouvert = false;
                     try {
-                      await launchUrl(uri, mode: LaunchMode.externalApplication);
-                    } catch (_) {
-                      await launchUrl(uri, mode: LaunchMode.platformDefault);
+                      // externalNonBrowserApplication → force l'ouverture dans Wave (pas Chrome)
+                      ouvert = await launchUrl(uri,
+                          mode: LaunchMode.externalNonBrowserApplication);
+                    } catch (_) {}
+                    if (!ouvert) {
+                      try {
+                        // Fallback : laisse Android choisir (Wave si installé)
+                        await launchUrl(uri, mode: LaunchMode.externalApplication);
+                      } catch (_) {
+                        if (mounted) setState(() => _waveOuvert = false);
+                      }
                     }
                   }
                 },
-                icon:  const Icon(Icons.open_in_new_rounded, size: 20),
-                label: const Text('Payer avec Wave',
+                icon:  const Icon(Icons.waves_rounded, size: 20),
+                label: const Text('Ouvrir Wave pour payer',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.lightBlue,
