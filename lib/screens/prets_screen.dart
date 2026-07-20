@@ -712,6 +712,49 @@ class _CartePret extends StatelessWidget {
     BuildContext context,
     Remboursement remb,
   ) async {
+    // ── BLOQUER si remboursement SycaPay (paiement automatique) ──────────────
+    final _methode = remb.methode.toLowerCase();
+    final _ref     = remb.reference.toLowerCase();
+    final isSycaPay = _methode == 'sycapay'
+        || _methode.contains('sycapay')
+        || _methode.contains('wave')
+        || _methode.contains('orange')
+        || _methode.contains('mtn')
+        || _ref.startsWith('tc_')
+        || _ref.contains('sycapay');
+
+    if (isSycaPay) {
+      if (context.mounted) {
+        showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Row(
+              children: [
+                Icon(Icons.lock_rounded, color: Colors.orange, size: 24),
+                SizedBox(width: 10),
+                Expanded(child: Text('Annulation impossible', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
+              ],
+            ),
+            content: const Text(
+              'Ce remboursement a été effectué automatiquement via Mobile Money (SycaPay).\n\n'
+              'Les paiements automatiques ne peuvent pas être annulés — '
+              'ni par le membre, ni par le gestionnaire.\n\n'
+              'En cas de litige, contactez le support.',
+              style: TextStyle(fontSize: 14, height: 1.5),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Compris', style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        );
+      }
+      return;
+    }
+    // ── Annulation autorisée (paiement manuel uniquement) ─────────────────────
     final ok = await afficherModalePin(
       context,
       titre: 'Annuler ce remboursement',

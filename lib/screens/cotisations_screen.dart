@@ -334,8 +334,16 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
       }
     } else {
       // ── BLOQUER l'annulation si paiement SycaPay (automatique) ───────────
-      final isSycaPay = membre.methodePaiement == 'sycapay' ||
-          (membre.referencePaiement?.startsWith('TC_') ?? false);
+      // Détection hermétique : methode OU référence TC_ OU mot "sycapay" dans ref
+      final _methode = (membre.methodePaiement ?? '').toLowerCase();
+      final _ref     = (membre.referencePaiement ?? '').toLowerCase();
+      final isSycaPay = _methode == 'sycapay'
+          || _methode.contains('sycapay')
+          || _methode.contains('wave')       // Wave via SycaPay
+          || _methode.contains('orange')     // Orange Money via SycaPay
+          || _methode.contains('mtn')        // MTN via SycaPay
+          || _ref.startsWith('tc_')          // Préfixe standard TontineClair SycaPay
+          || _ref.contains('sycapay');
       if (isSycaPay) {
         if (context.mounted) {
           showDialog<void>(
@@ -344,21 +352,22 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               title: Row(
                 children: [
-                  Icon(Icons.lock_rounded, color: Colors.orange, size: 24),
-                  SizedBox(width: 10),
-                  Expanded(child: Text('Annulation impossible', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
+                  const Icon(Icons.lock_rounded, color: Colors.orange, size: 24),
+                  const SizedBox(width: 10),
+                  const Expanded(child: Text('Annulation impossible', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
                 ],
               ),
-              content: Text(
-                'Ce paiement a été effectué automatiquement via SycaPay.\n\n'
-                'Les paiements SycaPay ne peuvent pas être annulés — ni par le membre, ni par le gestionnaire.\n\n'
-                'En cas de litige, contactez le support SycaPay.',
+              content: const Text(
+                'Ce paiement a été effectué automatiquement via Mobile Money (SycaPay).\n\n'
+                'Les paiements automatiques ne peuvent pas être annulés — '
+                'ni par le membre, ni par le gestionnaire.\n\n'
+                'En cas de litige, contactez le support.',
                 style: TextStyle(fontSize: 14, height: 1.5),
               ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  child: Text('Compris', style: TextStyle(fontWeight: FontWeight.w700)),
+                  child: const Text('Compris', style: TextStyle(fontWeight: FontWeight.w700)),
                 ),
               ],
             ),
