@@ -3,13 +3,17 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
 import '../services/sycapay_service.dart';
 import '../services/supabase_service.dart';
 import '../services/locale_service.dart';
+import '../services/pdf_service.dart';
 import '../utils/app_colors.dart';
+import '../utils/app_localizations.dart';
 import '../utils/formatters.dart';
+import '../widgets/app_widgets.dart';
 
 /// Écran de paiement Mobile Money pour une cotisation Premium.
 ///
@@ -293,8 +297,9 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
     } catch (_) {}
     if (!mounted) return;
 
+    // ── Notification push ─────────────────────────────────────────────────
     try {
-      final data  = provider.courante?.data;
+      final data   = provider.courante?.data;
       final devise = data?.devise ?? 'XOF';
       final lang   = Provider.of<LocaleService>(context, listen: false).langue.code; // ignore: use_build_context_synchronously
       final t      = SupabaseService.notifTexte('cotisation', lang, vars: {
@@ -315,7 +320,151 @@ class _PaiementProScreenState extends State<PaiementProScreen> {
       );
     } catch (_) {}
 
+    // ── Proposer le reçu avec les données SycaPay ─────────────────────────
+    // Après rechargement, extraire les détails réels depuis paiements{}
+    try {
+      final tontine = provider.courante;
+      if (tontine != null && mounted) {
+        final paiements = (tontine.data.toJson()['paiements'] as Map<String, dynamic>?) ?? {};
+        final paiementData = paiements[widget.membre.id] as Map<String, dynamic>?;
+
+        // Construire référence, méthode et date à partir des données SycaPay
+        final ref      = (paiementData?['reference']   as String?) ?? _numCommande ?? '—';
+        final methode  = (paiementData?['methode']     as String?) ?? 'sycapay';
+        final dateStr  = (paiementData?['date']        as String?) ?? DateTime.now().toIso8601String();
+
+        // Construire un Membre actualisé avec toutes les infos de paiement
+        final membreActualise = Membre(
+          id:                widget.membre.id,
+          nom:               widget.membre.nom,
+          tel:               widget.membre.tel,
+          role:              widget.membre.role,
+          paye:              true,
+          datePaiement:      dateStr,
+          methodePaiement:   methode,
+          referencePaiement: ref,
+          score:             widget.membre.score,
+        );
+
+        if (mounted) { // ignore: use_build_context_synchronously
+          await _proposerRecuSycaPay(context, tontine, membreActualise, ref, methode, dateStr);
+        }
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
     setState(() => _etape = _Etape.succes);
+  }
+
+  // ── Reçu SycaPay : dialog WhatsApp / PDF / Ignorer ───────────────────────
+
+  Future<void> _proposerRecuSycaPay(
+    BuildContext ctx,
+    dynamic tontine,
+    Membre membre,
+    String ref,
+    String methode,
+    String dateStr,
+  ) async {
+    if (!ctx.mounted) return;
+    await showDialog<void>(
+      context: ctx,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: AppColors.fondPapier,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text(
+          '📲 Envoyer le reçu ?',
+          style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.encre),
+        ),
+        content: Text(
+          'Cotisation de ${membre.nom} enregistrée '
+          '(${Formatters.montant(tontine.data.montant, devise: tontine.data.devise)}).\n\nComment souhaitez-vous partager le reçu ?',
+          style: const TextStyle(color: AppColors.texte),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: Text(ctx.tr('ignorer')),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogCtx);
+              if (ctx.mounted) {
+                await _genererRecuPdfSycaPay(ctx, tontine, membre, ref, methode, dateStr);
+              }
+            },
+            child: const Text(
+              '📄 PDF',
+              style: TextStyle(color: AppColors.encre, fontWeight: FontWeight.w700),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogCtx);
+              if (ctx.mounted) {
+                _envoyerRecuWhatsApp(ctx, tontine, membre, ref, methode, dateStr);
+              }
+            },
+            child: const Text(
+              'WhatsApp',
+              style: TextStyle(color: AppColors.whatsapp, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _envoyerRecuWhatsApp(
+    BuildContext ctx,
+    dynamic tontine,
+    Membre membre,
+    String ref,
+    String methode,
+    String dateStr,
+  ) {
+    final data = tontine.data;
+    final lignes = [
+      '✅ Reçu de cotisation — TontineClair',
+      'Tontine : ${data.nom}',
+      'Membre : ${membre.nom}',
+      'Montant : ${Formatters.montant(data.montant, devise: data.devise)}',
+      'Tour : ${data.numerTour}',
+      'Date : ${Formatters.dateHeure(DateTime.tryParse(dateStr))}',
+      'Méthode : ${Formatters.methodePaiement(methode)}',
+      'Réf. : $ref',
+      'Code tontine : ${tontine.code}',
+    ];
+    final msg = Uri.encodeComponent(lignes.join('\n'));
+    final tel = (membre.tel ?? '').replaceAll(RegExp(r'[^0-9+]'), '');
+    final url = tel.isNotEmpty
+        ? Uri.parse('https://wa.me/$tel?text=$msg')
+        : Uri.parse('https://wa.me/?text=$msg');
+    launchUrl(url, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _genererRecuPdfSycaPay(
+    BuildContext ctx,
+    dynamic tontine,
+    Membre membre,
+    String ref,
+    String methode,
+    String dateStr,
+  ) async {
+    try {
+      await PdfService.exporterRecuCotisation(
+        tontine:     tontine,
+        membre:      membre,
+        ref:         ref,
+        methode:     methode,
+        dateStr:     dateStr,
+        langueCode:  Provider.of<LocaleService>(ctx, listen: false).langue.code,
+      );
+    } catch (e) {
+      if (ctx.mounted) {
+        afficherToast(ctx, 'Erreur PDF : $e', estErreur: true);
+      }
+    }
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────

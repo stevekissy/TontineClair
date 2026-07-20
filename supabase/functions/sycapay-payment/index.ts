@@ -102,6 +102,23 @@ async function sbPatch(table: string, filter: string, data: Record<string, unkno
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Helper : message de succès selon la nature du paiement
+// ─────────────────────────────────────────────────────────────────────────────
+
+function messageSucces(typeOp: string | undefined | null): string {
+  switch (typeOp) {
+    case "cotisation":            return "Paiement reçu avec succès. Votre cotisation a été enregistrée.";
+    case "caisse":                return "Paiement reçu avec succès. Votre apport en caisse a été enregistré.";
+    case "penalite":              return "Paiement reçu avec succès. Votre pénalité a été enregistrée.";
+    case "remboursement_pret":    return "Paiement reçu avec succès. Votre remboursement a été enregistré.";
+    case "pret_octroye":          return "Paiement reçu avec succès. Votre prêt a été décaissé.";
+    case "depense_caisse":        return "Paiement reçu avec succès. La dépense a été enregistrée.";
+    case "decaissement_cagnotte": return "Paiement reçu avec succès. Le décaissement a été effectué.";
+    default:                      return "Paiement reçu avec succès. Votre paiement a été enregistré.";
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Helpers SycaPay
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -673,7 +690,7 @@ Deno.serve(async (req: Request) => {
             ok:              true,
             code:            0,
             statusNormalise: "confirmed",
-            message:         "Paiement reçu avec succès. Votre apport a été enregistré.",
+            message:         messageSucces(typeOp),
             numcommande,
             fromCache:       true,
           });
@@ -692,7 +709,7 @@ Deno.serve(async (req: Request) => {
           code:            creditResult.ok ? 0 : -1,
           statusNormalise: creditResult.ok ? "confirmed" : "failed",
           message:         creditResult.ok
-            ? "Paiement reçu avec succès. Votre apport a été enregistré."
+            ? messageSucces(typeOp)
             : `Paiement confirmé mais crédit échoué : ${creditResult.message}`,
           numcommande,
         });
@@ -729,7 +746,7 @@ Deno.serve(async (req: Request) => {
               ok:              true,
               code:            0,
               statusNormalise: "confirmed",
-              message:         "Paiement reçu avec succès. Votre apport a été enregistré.",
+              message:         messageSucces(typeOp),
               numcommande,
               transactionId:   confirmedTxId,
               fromWebhook:     true,
@@ -754,7 +771,7 @@ Deno.serve(async (req: Request) => {
                 code:            creditResult.ok ? 0 : -1,
                 statusNormalise: "confirmed",
                 message:         creditResult.ok
-                  ? "Paiement reçu avec succès. Votre apport a été enregistré."
+                  ? messageSucces(typeOp)
                   : `Confirmé SycaPay mais enregistrement échoué: ${creditResult.message}`,
                 numcommande,
                 transactionId:   confirmedTxId,
@@ -823,7 +840,7 @@ Deno.serve(async (req: Request) => {
                 code:            creditResult.ok ? 0 : -1,
                 statusNormalise: "confirmed",
                 message:         creditResult.ok
-                  ? "Paiement reçu avec succès. Votre apport a été enregistré."
+                  ? messageSucces(typeOp)
                   : `Confirmé SycaPay mais enregistrement échoué: ${creditResult.message}`,
                 numcommande,
                 transactionId:   confirmedTxId,
@@ -886,9 +903,10 @@ Deno.serve(async (req: Request) => {
     // Vérification ponctuelle (utilisé par le bouton "Vérifier mon paiement")
     // ══════════════════════════════════════════════════════════════════════════
     if (action === "statut") {
-      const numcommande = body["numcommande"]  as string | undefined;
-      const transId     = body["transactionId"] as string | undefined;
-      const tontineCode = body["tontine_code"] as string | undefined;
+      const numcommande  = body["numcommande"]  as string | undefined;
+      const transId      = body["transactionId"] as string | undefined;
+      const tontineCode  = body["tontine_code"] as string | undefined;
+      const typeOpStatut = (body["type_operation"] as string | undefined);
 
       if (!numcommande && !transId) {
         return json({ erreur: true, code: -400, message: "numcommande ou transactionId requis" }, 400);
@@ -906,6 +924,7 @@ Deno.serve(async (req: Request) => {
 
       // Cache hit : déjà credited/confirmed
       if (dbTx && (dbTx["status"] === "credited" || dbTx["status"] === "confirmed")) {
+        const txTypeOp = (dbTx["type_operation"] as string | undefined) ?? typeOpStatut;
         const shouldCredit = dbTx["status"] === "confirmed";
         if (shouldCredit) {
           const creditResult = await crediterCoteServeur(dbTx);
@@ -913,7 +932,7 @@ Deno.serve(async (req: Request) => {
             code:            0,
             statusNormalise: "confirmed",
             message:         creditResult.ok
-              ? "Paiement reçu avec succès. Votre apport a été enregistré."
+              ? messageSucces(txTypeOp)
               : "Paiement confirmé. Enregistrement en cours.",
             numcommande,
             fromCache:       true,
@@ -922,7 +941,7 @@ Deno.serve(async (req: Request) => {
         return json({
           ok:              true,  // ✅ FIX: Flutter lit estSucces = (confirmed && ok) → doit être true
           code:            0,
-          message:         "Paiement reçu avec succès. Votre cotisation a été enregistrée.",
+          message:         messageSucces(txTypeOp),
           statusNormalise: "confirmed",
           numcommande,
           fromCache:       true,
@@ -963,15 +982,16 @@ Deno.serve(async (req: Request) => {
 
       // 4. Si confirmé → créditer
       if (lastStatus === "confirmed" && dbTx) {
-        const freshTx = { ...dbTx, status: "confirmed", provider_transaction_id: newTxId };
+        const freshTx  = { ...dbTx, status: "confirmed", provider_transaction_id: newTxId };
         const creditResult = await crediterCoteServeur(freshTx);
+        const txTypeOp2 = (dbTx["type_operation"] as string | undefined) ?? typeOpStatut;
         // ok:true OBLIGATOIRE pour que Flutter détecte estSucces via fromJson
         return json({
           ok:              creditResult.ok,
           code:            0,
           statusNormalise: "confirmed",
           message:         creditResult.ok
-            ? "Paiement reçu avec succès. Votre apport a été enregistré."
+            ? messageSucces(txTypeOp2)
             : "Paiement confirmé. Enregistrement en cours.",
           numcommande,
           transactionId:   newTxId,
