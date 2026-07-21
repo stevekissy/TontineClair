@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'supabase_service.dart';
+import 'storage_service.dart';
 import 'rappel_service.dart';
 
 // ─── Handler background (top-level, hors classe) ───────────────────────────
@@ -146,30 +147,60 @@ class NotificationService {
       final prefs = await SharedPreferences.getInstance();
       // Sauvegarder localement
       await prefs.setString('fcm_token', token);
-      // Enregistrer dans Supabase pour toutes les tontines connues
-      final codes = prefs.getStringList('tontines_codes') ?? [];
-      for (final code in codes) {
+
+      // Source de vérité 1 : StorageService (tontines_liste) — persisté entre MAJ
+      final tontinesStockees = await StorageService.getListe();
+      final codesStorageService = tontinesStockees.map((t) => t.code.toUpperCase()).toList();
+
+      // Source de vérité 2 : tontines_codes (ancienne clé, filet de sécurité)
+      final codesAnciens = prefs.getStringList('tontines_codes') ?? [];
+
+      // Union des deux sources pour ne rater aucune tontine
+      final tousLesCodes = <String>{...codesStorageService, ...codesAnciens};
+
+      // Synchroniser tontines_codes avec StorageService (correction des incohérences)
+      if (codesStorageService.isNotEmpty) {
+        await prefs.setStringList('tontines_codes', codesStorageService);
+      }
+
+      // Enregistrer le token dans Supabase pour TOUTES les tontines
+      for (final code in tousLesCodes) {
         await SupabaseService.sauvegarderTokenFCM(code: code, token: token);
       }
-      if (kDebugMode) debugPrint('[FCM] Token enregistré: $token');
+
+      if (kDebugMode) {
+        debugPrint('[FCM] Token enregistré pour ${tousLesCodes.length} tontine(s): $tousLesCodes');
+      }
     } catch (_) {}
   }
 
-  /// Appelée quand l'utilisateur rejoint ou crée une tontine.
-  /// Associe son token FCM à ce code tontine dans Supabase.
+  /// Appelée quand l'utilisateur rejoint ou crée une tontine, et à chaque
+  /// chargement de tontine (chargerTontine) pour garantir la re-synchro après MAJ.
   static Future<void> abonnerATontine(String code) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      // Mémoriser le code localement
+      final codeUp = code.toUpperCase();
+
+      // Mémoriser le code dans tontines_codes (rétro-compat)
       final codes = prefs.getStringList('tontines_codes') ?? [];
-      if (!codes.contains(code.toUpperCase())) {
-        codes.add(code.toUpperCase());
+      if (!codes.contains(codeUp)) {
+        codes.add(codeUp);
         await prefs.setStringList('tontines_codes', codes);
       }
-      // Envoyer le token à Supabase
-      final token = prefs.getString('fcm_token');
+
+      // Envoyer le token actuel à Supabase
+      // Utiliser le token frais de FCM en priorité, fallback sur celui en cache
+      String? token = prefs.getString('fcm_token');
+      if (token == null) {
+        // Token absent du cache — le demander directement à FCM
+        token = await FirebaseMessaging.instance.getToken();
+        if (token != null) {
+          await prefs.setString('fcm_token', token);
+        }
+      }
       if (token != null) {
-        await SupabaseService.sauvegarderTokenFCM(code: code, token: token);
+        await SupabaseService.sauvegarderTokenFCM(code: codeUp, token: token);
+        if (kDebugMode) debugPrint('[FCM] Abonné à $codeUp');
       }
     } catch (_) {}
   }

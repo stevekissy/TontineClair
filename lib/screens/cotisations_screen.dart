@@ -252,6 +252,10 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
             membres[idx]['datePaiement'] = nowStr;
             membres[idx]['methodePaiement'] = methode;
             membres[idx]['referencePaiement'] = ref;
+            // Enregistrer qui a validé le paiement
+            if (provider.gestActifNom != null) {
+              membres[idx]['validePar'] = provider.gestActifNom;
+            }
           }
           newData['membres'] = membres;
 
@@ -264,6 +268,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
             'methode': methode,
             'reference': ref,
             'montant': data.montant,
+            if (provider.gestActifNom != null) 'validePar': provider.gestActifNom,
           };
           newData['paiements'] = paiements;
 
@@ -985,12 +990,23 @@ class _CarteMembre extends StatelessWidget {
                       ],
                     ),
                     if (membre.paye && membre.datePaiement != null)
-                      Text(
-                        '${Formatters.methodePaiement(membre.methodePaiement ?? '')} · ${Formatters.dateHeure(DateTime.tryParse(membre.datePaiement!))}',
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          color: AppColors.texteDoux,
-                        ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${Formatters.methodePaiement(membre.methodePaiement ?? '')} · ${Formatters.dateHeure(DateTime.tryParse(membre.datePaiement!))}',
+                            style: const TextStyle(fontSize: 11.5, color: AppColors.texteDoux),
+                          ),
+                          if (membre.validePar != null && membre.validePar!.isNotEmpty)
+                            Text(
+                              'Par ${membre.validePar}',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.texteDoux,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                        ],
                       )
                     else if (_enRetard)
                       const Text(
@@ -1005,17 +1021,78 @@ class _CarteMembre extends StatelessWidget {
                 ),
               ),
               // ── Bouton statut / toggle ──
-              // Priorité : Pro non-payé → bouton "Payer" SycaPay (tous)
-              //            Gest Lite non-payé → "Approuver" (toggle manuel)
-              //            Payé → badge vert
-              //            Sinon → badge "En attente"
-              if (!membre.paye && onPayer != null)
-                // ── Mode Pro : bouton "Payer" Mobile Money (gest ET membres)
+              // Logique :
+              //   Membre payé              → badge vert "✓ Payé"
+              //   Gest Premium non-payé    → colonne : "📱 Payer" (SycaPay) + "✏️ Manuel"
+              //   Gest Lite non-payé       → bouton "Approuver" (toggle manuel)
+              //   Membre non-gest non-payé → bouton "📱 Payer" (Premium) ou badge "En attente" (Lite)
+              if (membre.paye)
+                // ── Payé → badge vert
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.succesFond,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Text(
+                    '✓ Payé',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.succes,
+                    ),
+                  ),
+                )
+              else if (estGest && onPayer != null)
+                // ── Gestionnaire Premium non-payé : SycaPay + Manuel (les deux)
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    // Bouton SycaPay (Mobile Money)
+                    GestureDetector(
+                      onTap: onPayer,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0D8A4E),
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.phone_android_rounded, size: 11, color: Colors.white),
+                            SizedBox(width: 3),
+                            Text('📱 Payer', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    // Bouton Manuel (espèces / virement)
+                    GestureDetector(
+                      onTap: onToggle,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: AppColors.fondCode,
+                          borderRadius: BorderRadius.circular(9),
+                          border: Border.all(color: AppColors.lignes),
+                        ),
+                        child: const Text(
+                          '✏️ Manuel',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.encre),
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              else if (!membre.paye && onPayer != null)
+                // ── Membre non-gest Premium non-payé → SycaPay uniquement
                 GestureDetector(
                   onTap: onPayer,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: const Color(0xFF0D8A4E),
                       borderRadius: BorderRadius.circular(10),
@@ -1023,63 +1100,40 @@ class _CarteMembre extends StatelessWidget {
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.phone_android_rounded,
-                            size: 12, color: Colors.white),
+                        Icon(Icons.phone_android_rounded, size: 12, color: Colors.white),
                         SizedBox(width: 4),
-                        Text(
-                          'Payer',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                        ),
+                        Text('Payer', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
                       ],
                     ),
                   ),
                 )
               else if (estGest)
-                // ── Mode Lite gestionnaire : toggle manuel Approuver / ✓ Payé
+                // ── Gestionnaire Lite non-payé → toggle manuel
                 GestureDetector(
                   onTap: onToggle,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 7),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                     decoration: BoxDecoration(
-                      color: membre.paye
-                          ? AppColors.succesFond
-                          : AppColors.encre,
+                      color: AppColors.encre,
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Text(
-                      membre.paye ? '✓ Payé' : 'Approuver',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                        color: membre.paye ? AppColors.succes : Colors.white,
-                      ),
+                    child: const Text(
+                      'Approuver',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Colors.white),
                     ),
                   ),
                 )
               else
-                // ── Badge lecture seule
+                // ── Membre Lite non-gest → badge lecture seule
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: membre.paye
-                        ? AppColors.succesFond
-                        : AppColors.alerteFond,
+                    color: AppColors.alerteFond,
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Text(
-                    membre.paye ? '✓ Payé' : 'En attente',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color:
-                          membre.paye ? AppColors.succes : AppColors.alerte,
-                    ),
+                  child: const Text(
+                    'En attente',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.alerte),
                   ),
                 ),
             ],

@@ -50,6 +50,7 @@ class Membre {
   // Pré-remplies automatiquement lors de la clôture de tour (decaissements_pending).
   String? operateur;     // 'orange' | 'moov' | 'mtn' | 'wave'
   String? numeroBenef;   // numéro Mobile Money du bénéficiaire
+  String? validePar;     // nom du gestionnaire ayant enregistré le paiement
 
   Membre({
     required this.id,
@@ -68,6 +69,7 @@ class Membre {
     this.adminOverride,
     this.operateur,
     this.numeroBenef,
+    this.validePar,
   });
 
   /// Score effectif : scoreOverride s'il existe, sinon score calculé.
@@ -98,6 +100,7 @@ class Membre {
       // Mobile Money
       operateur:   json['operateur']   as String?,
       numeroBenef: json['numeroBenef'] as String?,
+      validePar:   json['validePar']   as String?,
     );
   }
 
@@ -120,6 +123,7 @@ class Membre {
         // Mobile Money
         if (operateur   != null) 'operateur':   operateur,
         if (numeroBenef != null) 'numeroBenef': numeroBenef,
+        if (validePar   != null) 'validePar':   validePar,
       };
 }
 
