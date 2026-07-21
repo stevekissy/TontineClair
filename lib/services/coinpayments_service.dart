@@ -6,21 +6,24 @@ import 'supabase_service.dart';
 
 /// Service Flutter pour les paiements CoinPayments (crypto).
 ///
-/// ⚠️  Les clés CoinPayments ne sont JAMAIS stockées côté Flutter.
-///     Tous les appels signés passent via la Supabase Edge Function
-///     `coinpayments-payment` (à déployer côté Supabase).
+/// ⚠️  Clés JAMAIS dans Flutter — tous les appels signés via Edge Function.
 ///
 /// Architecture :
-///   Flutter → Supabase Edge Function (sécurisée) → CoinPayments API
+///   Flutter → coinpayments-payment (Edge Fn) → CoinPayments API
+///   IPN     → coinpayments-ipn     (Edge Fn) → crédit RPC Supabase
 ///
-/// Référence pivot : [numCommande] (TC_CODE_MEMBREID_TIMESTAMP)
-///   → même format que SycaPay pour cohérence de traçabilité
+/// Référence pivot : [numCommande] format TCP_CODE_MID_TS
+/// custom field    : TC-TYPE-<numCommande> (routage IPN)
 ///
-/// Flux de paiement CoinPayments :
-///   1. createTransaction → obtient checkout_url + txid
-///   2. Utilisateur paie sur le checkout_url (navigateur/WebView)
-///   3. getTransactionInfo → vérifie le statut (polling)
-///   4. Statut 100 = complet → créditer via Supabase RPC
+/// Flux de paiement :
+///   1. creerTransaction   → checkout_url + txid (persist PENDING)
+///   2. Utilisateur paie   → CoinPayments checkout page
+///   3. IPN automatique    → coinpayments-ipn → crédit (voie principale)
+///   4. verifierStatut     → polling Flutter (affichage statut)
+///   5. confirmerEtCrediter → fallback si IPN non reçu (status=100 requis)
+///
+/// ⚠️  Crédit UNIQUEMENT après IPN ou confirmerEtCrediter serveur-side.
+///     success_url / retour utilisateur ne déclenche JAMAIS de crédit.
 ///
 /// Codes de statut CoinPayments :
 ///   -1  = annulé / timeout
@@ -93,24 +96,26 @@ class CoinPaymentsService {
     required int    montantXof,
     required String numCommande,
     required String tontineCode,
-    String?  typeOperation,  // 'cotisation' | 'caisse' | 'penalite' | 'remboursement_pret'
+    String?  typeOperation,  // 'cotisation'|'caisse'|'penalite'|'remboursement_pret'|'pret_octroye'
     String?  membreId,
     String?  membreNom,
     String?  pretId,
     String?  description,
-    String?  currency2,      // crypto cible : 'BTC' | 'ETH' | 'USDT' | 'LTC' (défaut: USDT.TRC20)
+    String?  currency2,  // 'USDT.TRC20'(défaut)|'USDT.ERC20'|'BTC'|'ETH'|'LTC'
   }) async {
     final payload = <String, dynamic>{
       'action':         'creer_transaction',
+      // Le champ 'montant' est utilisé par l'Edge Fn (+ fallback montant_xof)
+      'montant':        montantXof,
       'montant_xof':    montantXof,
       'numcommande':    numCommande,
       'tontine_code':   tontineCode,
       'type_operation': typeOperation ?? 'cotisation',
-      if (membreId    != null) 'membre_id':     membreId,
-      if (membreNom   != null) 'membre_nom':    membreNom,
-      if (pretId      != null) 'pret_id':       pretId,
-      if (description != null) 'description':   description,
-      if (currency2   != null) 'currency2':     currency2,
+      if (membreId    != null) 'membre_id':   membreId,
+      if (membreNom   != null) 'membre_nom':  membreNom,
+      if (pretId      != null) 'pret_id':     pretId,
+      if (description != null) 'description': description,
+      if (currency2   != null) 'currency2':   currency2,
     };
 
     final rep = await _appelerEdge(payload, timeout: const Duration(seconds: 30));
@@ -127,10 +132,11 @@ class CoinPaymentsService {
     required String numCommande,
     String?  tontineCode,
   }) async {
+    // L'action côté Edge Fn est 'statut' (lecture seule — jamais de crédit)
     final rep = await _appelerEdge({
-      'action':       'verifier_statut',
-      'txid':         txid,
-      'numcommande':  numCommande,
+      'action':      'statut',
+      'txid':        txid,
+      'numcommande': numCommande,
       if (tontineCode != null) 'tontine_code': tontineCode,
     }, timeout: const Duration(seconds: 25));
 
@@ -141,6 +147,9 @@ class CoinPaymentsService {
 
   /// Demande à l'Edge Function de poller CoinPayments et de créditer dès
   /// confirmation. Même pattern sécurisé que SycaPay v5.
+  /// Déclenche la vérification stricte côté serveur et crédite si status=100.
+  /// ⚠️  NE PAS APPELER depuis success_url ou retour utilisateur.
+  ///     Appeler uniquement si l'IPN n'est pas arrivé après le délai max de polling.
   static Future<CoinPaymentsResultat> confirmerEtCrediter({
     required String txid,
     required String numCommande,
@@ -157,10 +166,13 @@ class CoinPaymentsService {
       'numcommande':    numCommande,
       'tontine_code':   tontineCode,
       'type_operation': typeOperation,
-      if (montantXof != null) 'montant_xof':  montantXof,
-      if (membreId   != null) 'membre_id':    membreId,
-      if (membreNom  != null) 'membre_nom':   membreNom,
-      if (pretId     != null) 'pret_id':      pretId,
+      if (montantXof != null) ...{
+        'montant':     montantXof,
+        'montant_xof': montantXof,
+      },
+      if (membreId  != null) 'membre_id':  membreId,
+      if (membreNom != null) 'membre_nom': membreNom,
+      if (pretId    != null) 'pret_id':    pretId,
     }, timeout: const Duration(seconds: 120));
 
     return CoinPaymentsResultat.fromJson(rep, numCommande: numCommande);
@@ -168,7 +180,11 @@ class CoinPaymentsService {
 
   // ── Générer une référence de commande unique ──────────────────────────────
 
+  /// Génère une référence commande unique.
   /// Format : TCP_[CODE]_[SUFFIX]_[TIMESTAMP]  (TCP = TontineClair CoinPayments)
+  ///
+  /// Le champ custom envoyé à CoinPayments est construit côté Edge Function :
+  ///   TC-TYPE-<numCommande>  ex: TC-COTISATION-TCP_TONTINE1_MID_1720000000000
   static String genererNumCommande(String codeTontine, String suffix) {
     final ts = DateTime.now().millisecondsSinceEpoch;
     final safeSuffix = suffix.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toUpperCase();
@@ -224,8 +240,10 @@ class CoinPaymentsResultat {
       );
     }
 
-    final statusCode = (j['status'] as num?)?.toInt() ?? 0;
-    final rawNorm    = j['statusNormalise'] as String?;
+    final statusCode = (j['statusCode'] as num?)?.toInt()
+                    ?? (j['status']     as num?)?.toInt() ?? 0;
+    final rawNorm    = j['statusNorm'] as String?
+                   ?? j['statusNormalise'] as String?;
 
     final String norm;
     if (rawNorm != null && rawNorm.isNotEmpty) {
@@ -238,10 +256,12 @@ class CoinPaymentsResultat {
     return CoinPaymentsResultat(
       erreur:      false,
       message:     j['message']     as String? ?? '',
-      txid:        j['txid']        as String?,
-      checkoutUrl: j['checkout_url'] as String? ?? j['checkoutUrl'] as String?,
-      numCommande: j['numcommande'] as String? ?? numCommande,
-      statusText:  j['status_text'] as String?,
+      txid:        j['txid']         as String?,
+      checkoutUrl: j['checkoutUrl']  as String?
+                ?? j['checkout_url'] as String?,
+      numCommande: j['numcommande']  as String? ?? numCommande,
+      statusText:  j['statusText']   as String?
+                ?? j['status_text']  as String?,
       statusCode:  statusCode,
       statusNorm:  norm,
       ok:          j['ok'] == true,

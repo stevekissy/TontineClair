@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS public.coinpayments_transactions (
 
   -- Métadonnées CoinPayments
   cp_timeout                integer,         -- durée de vie tx en secondes (défaut 7200)
+  custom_ref                text,            -- champ custom envoyé : TC-TYPE-<numCommande>
   description               text,
 
   -- Diagnostic
