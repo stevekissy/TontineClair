@@ -1021,11 +1021,11 @@ class _CarteMembre extends StatelessWidget {
                 ),
               ),
               // ── Bouton statut / toggle ──
-              // Logique :
+              // Logique (RÈGLE : Premium = SycaPay uniquement, jamais de saisie manuelle) :
               //   Membre payé              → badge vert "✓ Payé"
-              //   Gest Premium non-payé    → colonne : "📱 Payer" (SycaPay) + "✏️ Manuel"
+              //   Tous utilisateurs Premium non-payés → bouton "📱 Payer" (SycaPay)
               //   Gest Lite non-payé       → bouton "Approuver" (toggle manuel)
-              //   Membre non-gest non-payé → bouton "📱 Payer" (Premium) ou badge "En attente" (Lite)
+              //   Membre Lite non-gest     → badge "En attente" (lecture seule)
               if (membre.paye)
                 // ── Payé → badge vert
                 Container(
@@ -1043,52 +1043,9 @@ class _CarteMembre extends StatelessWidget {
                     ),
                   ),
                 )
-              else if (estGest && onPayer != null)
-                // ── Gestionnaire Premium non-payé : SycaPay + Manuel (les deux)
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    // Bouton SycaPay (Mobile Money)
-                    GestureDetector(
-                      onTap: onPayer,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF0D8A4E),
-                          borderRadius: BorderRadius.circular(9),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.phone_android_rounded, size: 11, color: Colors.white),
-                            SizedBox(width: 3),
-                            Text('📱 Payer', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    // Bouton Manuel (espèces / virement)
-                    GestureDetector(
-                      onTap: onToggle,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: AppColors.fondCode,
-                          borderRadius: BorderRadius.circular(9),
-                          border: Border.all(color: AppColors.lignes),
-                        ),
-                        child: const Text(
-                          '✏️ Manuel',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.encre),
-                        ),
-                      ),
-                    ),
-                  ],
-                )
-              else if (!membre.paye && onPayer != null)
-                // ── Membre non-gest Premium non-payé → SycaPay uniquement
+              else if (onPayer != null)
+                // ── Premium non-payé (gest OU membre) → SycaPay UNIQUEMENT
+                // ✏️ Manuel supprimé : règle = paiements automatisés seulement en Premium
                 GestureDetector(
                   onTap: onPayer,
                   child: Container(
