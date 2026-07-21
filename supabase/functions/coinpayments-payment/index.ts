@@ -411,7 +411,11 @@ Deno.serve(async (req: Request) => {
           }
         }
       }
-      const customRef = buildCustom(typeOp, numcommande);
+      const customRef  = buildCustom(typeOp, numcommande);
+      // buyer_email : de Flutter si dispo, sinon fallback merchant (CoinPayments l'exige)
+      const buyerEmail = ((body["buyer_email"]   as string) ?? "").trim()
+                      || ((body["membre_email"]  as string) ?? "").trim()
+                      || "noreply@tontineclair.com";
       // deno-lint-ignore no-explicit-any
   let cpResult: any;
       try {
@@ -419,6 +423,7 @@ Deno.serve(async (req: Request) => {
           amount:      montant,
           currency1:   "XOF",
           currency2,
+          buyer_email: buyerEmail,
           item_name:   description,
           item_number: numcommande,
           custom:      customRef,

@@ -101,7 +101,8 @@ class CoinPaymentsService {
     String?  membreNom,
     String?  pretId,
     String?  description,
-    String?  currency2,  // 'USDT.TRC20'(défaut)|'USDT.ERC20'|'BTC'|'ETH'|'LTC'
+    String?  currency2,      // 'USDT.TRC20'(défaut)|'USDT.ERC20'|'BTC'|'ETH'|'LTC'
+    String?  buyerEmail,     // email acheteur — requis par CoinPayments (fallback géré côté Edge Fn)
   }) async {
     final payload = <String, dynamic>{
       'action':         'creer_transaction',
@@ -111,11 +112,13 @@ class CoinPaymentsService {
       'numcommande':    numCommande,
       'tontine_code':   tontineCode,
       'type_operation': typeOperation ?? 'cotisation',
-      if (membreId    != null) 'membre_id':   membreId,
-      if (membreNom   != null) 'membre_nom':  membreNom,
-      if (pretId      != null) 'pret_id':     pretId,
-      if (description != null) 'description': description,
-      if (currency2   != null) 'currency2':   currency2,
+      if (membreId    != null) 'membre_id':    membreId,
+      if (membreNom   != null) 'membre_nom':   membreNom,
+      if (pretId      != null) 'pret_id':      pretId,
+      if (description != null) 'description':  description,
+      if (currency2   != null) 'currency2':    currency2,
+      // buyer_email : transmis si dispo, sinon Edge Fn utilise noreply@tontineclair.com
+      if (buyerEmail  != null && buyerEmail.isNotEmpty) 'buyer_email': buyerEmail,
     };
 
     final rep = await _appelerEdge(payload, timeout: const Duration(seconds: 30));
