@@ -10,7 +10,7 @@ import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
-import 'paiement_caisse_pro_screen.dart';
+import 'paiement_choix_screen.dart';
 
 // ── Opérateurs Mobile Money disponibles ───────────────────────────────────────
 const _operateursPret = ['orange', 'moov', 'mtn', 'wave'];
@@ -411,21 +411,21 @@ class _PretsScreenState extends State<PretsScreen> {
 
       if (!context.mounted) return;
 
-      // Naviguer directement vers SycaPay (paiement automatique — pas de validation TontineClair)
+      // Sélecteur de paiement : SycaPay (Mobile Money) OU CoinPayments (Crypto)
       await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => PaiementCaisseProScreen(
-            code:          tontine.code,
-            montant:       montantNet,
-            description:   'Prêt à $nomEmprunteur (${taux}% / ${durees} mois)',
-            typeOperation: 'pret_octroye',
-            membreId:      emprunteurId ?? '',
-            membreNom:     nomEmprunteur,
-            telephone:     numBenefCtrl.text.trim(),
-            operateur:     operateur,
-            taux:          taux.round(),
-            dureesMois:    durees,
+          builder: (_) => PaiementChoixScreen(
+            code:        tontine.code,
+            typeFlux:    'pret_octroye',
+            montant:     montantNet,
+            description: 'Prêt à $nomEmprunteur (${taux}% / ${durees} mois)',
+            membreId:    emprunteurId ?? '',
+            membreNom:   nomEmprunteur,
+            telephone:   numBenefCtrl.text.trim(),
+            operateur:   operateur,
+            taux:        taux.round(),
+            dureesMois:  durees,
           ),
         ),
       );
@@ -964,18 +964,18 @@ class _CartePret extends StatelessWidget {
     }
     if (!context.mounted) return;
 
-    // Naviguer vers PaiementCaisseProScreen avec typeOperation = 'remboursement_pret'
+    // Sélecteur de paiement : SycaPay (Mobile Money) OU CoinPayments (Crypto)
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => PaiementCaisseProScreen(
-          code:          tontineCode,
-          montant:       montant,
-          description:   'Remboursement prêt ${pret.emprunteurNom}',
-          typeOperation: 'remboursement_pret',
-          membreId:      pret.emprunteurId,
-          membreNom:     pret.emprunteurNom,
-          pretId:        pret.id,
+        builder: (_) => PaiementChoixScreen(
+          code:        tontineCode,
+          typeFlux:    'remboursement_pret',
+          montant:     montant,
+          description: 'Remboursement prêt ${pret.emprunteurNom}',
+          membreId:    pret.emprunteurId,
+          membreNom:   pret.emprunteurNom,
+          pretId:      pret.id,
         ),
       ),
     );

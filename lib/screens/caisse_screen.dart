@@ -11,6 +11,7 @@ import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
 import 'paiement_caisse_pro_screen.dart';
+import 'paiement_choix_screen.dart';
 import 'kyc_screen.dart';
 
 // ─── Widget animé pour le solde caisse ────────────────────────────────────────
@@ -387,22 +388,21 @@ class _CaisseScreenState extends State<CaisseScreen> {
       return;
     }
 
-    // Ouvrir l'écran SycaPay pour apport caisse
-    // FIX: recharger la tontine au retour + capturer les tentatives
-    final resultat = await Navigator.push<ResultatPaiementCaisse>(
+    // Sélecteur de paiement : SycaPay (Mobile Money) OU CoinPayments (Crypto)
+    await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => PaiementCaisseProScreen(
-          code: tontine.code,
-          montant: montant,
-          description: descCtrl.text.trim(),
+        builder: (_) => PaiementChoixScreen(
+          code:        tontine.code,
+          typeFlux:    'caisse',
+          montant:     montant,
+          description: descCtrl.text.trim().isNotEmpty
+              ? descCtrl.text.trim()
+              : 'Apport en caisse',
         ),
       ),
     );
-    // Ajouter les tentatives à l'historique de session
-    if (resultat != null && resultat.tentatives.isNotEmpty) {
-      setState(() => _tentativesRecentes.addAll(resultat.tentatives));
-    }
+    // PaiementChoixScreen ne retourne pas de ResultatPaiementCaisse—rechargement direct ci-dessous
     // Toujours recharger au retour pour rafraîchir le solde
     if (context.mounted) {
       provider.chargerTontine(tontine.code, silencieux: true);
@@ -794,25 +794,23 @@ class _CaisseScreenState extends State<CaisseScreen> {
     final membre = membresOrdre.where((m) => m.id == membrePenaliteId).firstOrNull;
     if (!context.mounted) return;
 
-    // Ouvrir l'écran SycaPay pour pénalité
-    // FIX: recharger la tontine au retour + capturer les tentatives
-    final resultatPen = await Navigator.push<ResultatPaiementCaisse>(
+    // Sélecteur de paiement : SycaPay (Mobile Money) OU CoinPayments (Crypto)
+    await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => PaiementCaisseProScreen(
-          code:          tontine.code,
-          montant:       montant,
-          description:   descCtrl.text.trim(),
-          typeOperation: 'penalite',
-          membreId:      membrePenaliteId,
-          membreNom:     membre?.nom ?? '',
+        builder: (_) => PaiementChoixScreen(
+          code:        tontine.code,
+          typeFlux:    'penalite',
+          montant:     montant,
+          description: descCtrl.text.trim().isNotEmpty
+              ? descCtrl.text.trim()
+              : 'Pénalité',
+          membreId:    membrePenaliteId,
+          membreNom:   membre?.nom ?? '',
         ),
       ),
     );
-    // Ajouter les tentatives à l'historique de session
-    if (resultatPen != null && resultatPen.tentatives.isNotEmpty) {
-      setState(() => _tentativesRecentes.addAll(resultatPen.tentatives));
-    }
+    // PaiementChoixScreen ne retourne pas de ResultatPaiementCaisse—rechargement direct ci-dessous
     // FIX: toujours recharger au retour pour rafraîchir le solde
     if (context.mounted) {
       provider.chargerTontine(tontine.code, silencieux: true);

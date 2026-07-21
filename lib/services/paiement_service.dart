@@ -135,6 +135,14 @@ class PaiementService {
     // ── Australie / Océanie (AUD / NZD) ───────────────────────────────────────
     'payid':         MethodePaiement(code: 'payid',         label: 'PayID',               emoji: '🇦🇺'),
     'bpay':          MethodePaiement(code: 'bpay',          label: 'BPAY',                emoji: '💳'),
+
+    // ── CoinPayments (Crypto — universel) ─────────────────────────────────────
+    'coinpayments':     MethodePaiement(code: 'coinpayments',     label: 'CoinPayments',        emoji: '₿'),
+    'coinpayments_btc': MethodePaiement(code: 'coinpayments_btc', label: 'Bitcoin (CoinPayments)',    emoji: '₿'),
+    'coinpayments_eth': MethodePaiement(code: 'coinpayments_eth', label: 'Ethereum (CoinPayments)',   emoji: '⟠'),
+    'coinpayments_usdt_trc20': MethodePaiement(code: 'coinpayments_usdt_trc20', label: 'USDT TRC20 (CoinPayments)', emoji: '💎'),
+    'coinpayments_usdt_erc20': MethodePaiement(code: 'coinpayments_usdt_erc20', label: 'USDT ERC20 (CoinPayments)', emoji: '💎'),
+    'coinpayments_ltc': MethodePaiement(code: 'coinpayments_ltc', label: 'Litecoin (CoinPayments)', emoji: '🪙'),
   };
 
   // ── Mapping devise → liste de codes de méthodes ────────────────────────────
@@ -286,7 +294,12 @@ class PaiementService {
 
   /// Retourne le libellé d'une méthode par son code (fallback = code brut).
   static String label(String code) {
-    return catalogue[code]?.label ?? code;
+    if (catalogue.containsKey(code)) return catalogue[code]!.label;
+    // Reconnaissance générique CoinPayments (ex: coinpayments_usdt.trc20)
+    if (code.startsWith('coinpayments')) return 'CoinPayments Crypto';
+    // Reconnaissance générique SycaPay
+    if (code == 'sycapay') return 'SycaPay Mobile Money';
+    return code;
   }
 
   /// Retourne l'emoji d'une méthode par son code.

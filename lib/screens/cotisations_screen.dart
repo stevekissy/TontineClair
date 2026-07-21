@@ -15,6 +15,7 @@ import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
 import 'paiement_pro_screen.dart';
+import 'paiement_choix_screen.dart';
 
 // ── Bug #6 fix : StatefulWidget pour rechargement depuis Supabase à l'ouverture ──
 class CotisationsScreen extends StatefulWidget {
@@ -176,9 +177,12 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
                               ? () => Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => PaiementProScreen(
-                                        code: tontine.code,
-                                        membre: e.value,
+                                      // ── Sélecteur de paiement Premium ──
+                                      // SycaPay (Mobile Money) OU CoinPayments (Crypto)
+                                      builder: (_) => PaiementChoixScreen(
+                                        code:      tontine.code,
+                                        typeFlux:  'cotisation',
+                                        membre:    e.value,
                                       ),
                                     ),
                                   ).then((_) {
