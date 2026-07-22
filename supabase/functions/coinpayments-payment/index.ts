@@ -206,6 +206,52 @@ async function cpGetTxInfo(txid: string): Promise<Record<string, unknown>> {
     recv_amountf:     parseFloat((result["recv_amountf"] as string) ?? "0"),
   };
 }
+async function cpGetWalletInfo(checkoutUrl: string, currency2: string): Promise<Record<string, unknown>> {
+  // Scrape l'adresse de dépôt depuis la page checkout CoinPayments (pas besoin de get_tx_info)
+  const res = await fetch(checkoutUrl, {
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; TontineClair/1.0)" },
+  });
+  if (!res.ok) throw new Error(`Checkout page HTTP ${res.status}`);
+  const html = await res.text();
+
+  // Extraction adresse selon la crypto
+  let address = "";
+  const cur = currency2.toUpperCase();
+
+  if (cur.includes("TRC20") || cur === "TRX") {
+    // Adresse TRON : commence par T, 34 caractères alphanumériques
+    const m = html.match(/\bT[A-Za-z0-9]{33}\b/);
+    if (m) address = m[0];
+  } else if (cur === "BTC") {
+    const m = html.match(/\b(bc1[a-z0-9]{39,59}|[13][A-HJ-NP-Za-km-z1-9]{25,34})\b/);
+    if (m) address = m[0];
+  } else if (cur === "ETH" || cur.includes("ERC20")) {
+    const m = html.match(/\b0x[a-fA-F0-9]{40}\b/);
+    if (m) address = m[0];
+  } else if (cur === "LTC") {
+    const m = html.match(/\b[LMm][a-km-zA-HJ-NP-Z1-9]{26,33}\b/);
+    if (m) address = m[0];
+  } else {
+    // Fallback générique : chercher toute adresse crypto longue
+    const m = html.match(/\b[A-Za-z0-9]{25,60}\b/g);
+    if (m) address = m.find(a => a.length >= 30) ?? "";
+  }
+
+  // Extraction montant crypto
+  const amtMatch = html.match(/([\d]+\.[\d]+)\s*USDT|BTC|ETH|LTC/);
+  const amountf  = amtMatch ? parseFloat(amtMatch[1]) : 0;
+
+  // Extraction dest_tag (XRP, XLM, etc.)
+  const destMatch = html.match(/dest[_-]?tag["\s:>]+(\d+)/i);
+  const destTag   = destMatch ? destMatch[1] : "";
+
+  // Extraction temps restant (secondes)
+  const timeMatch = html.match(/time_left["\s:>]+(\d+)/i)
+                 ?? html.match(/data-time["\s:>]+(\d+)/i);
+  const timeLeft  = timeMatch ? parseInt(timeMatch[1]) : 7200;
+
+  return { address, amountf, dest_tag: destTag, timeout: timeLeft };
+}
 async function ecrireAudit(params: {
   numcommande:   string;
   ancienStatut?: string;
@@ -651,6 +697,48 @@ Deno.serve(async (req: Request) => {
         numcommande,
       });
     }
+    if (action === "info_wallet") {
+      // Retourne l'adresse de dépôt + montant crypto pour affichage 100% in-app
+      // Scrape depuis checkout_url stocké en DB — aucun appel get_tx_info (IP restriction)
+      const numcommande = body["numcommande"] as string | undefined;
+      const txid        = body["txid"]        as string | undefined;
+      if (!numcommande && !txid) {
+        return json({ erreur: true, message: "numcommande ou txid requis" }, 400);
+      }
+      // Charger depuis DB
+      let checkoutUrl = body["checkout_url"] as string | undefined;
+      let currency2   = (body["currency2"]   as string) ?? "USDT.TRC20";
+      let effectiveTxid = txid ?? "";
+      if (numcommande) {
+        const rows = await sbSelect(
+          "coinpayments_transactions",
+          `internal_reference=eq.${encodeURIComponent(numcommande)}&select=provider_transaction_id,checkout_url,currency2`,
+        );
+        if (rows.length === 0) return json({ erreur: true, message: "Transaction introuvable" }, 404);
+        const row   = rows[0];
+        effectiveTxid = effectiveTxid || (row["provider_transaction_id"] as string);
+        checkoutUrl   = checkoutUrl   || (row["checkout_url"]            as string);
+        currency2     = (row["currency2"] as string) || currency2;
+      }
+      if (!checkoutUrl) return json({ erreur: true, message: "checkout_url introuvable" }, 400);
+      try {
+        const info = await cpGetWalletInfo(checkoutUrl, currency2);
+        return json({
+          erreur:     false,
+          txid:       effectiveTxid,
+          address:    info.address,
+          dest_tag:   info.dest_tag,
+          currency2,
+          amountf:    info.amountf,
+          timeout:    info.timeout,
+          numcommande: numcommande ?? null,
+        });
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return json({ erreur: true, message: `Erreur wallet: ${msg}` }, 502);
+      }
+    }
+
     if (action === "verifier_ref") {
       const numcommande = body["numcommande"] as string;
       if (!numcommande) return json({ erreur: true, message: "numcommande requis" }, 400);

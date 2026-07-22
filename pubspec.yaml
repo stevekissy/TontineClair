@@ -52,6 +52,9 @@ dependencies:
   # Activé pour la structure — les achats réels nécessitent publication store
   in_app_purchase: ^3.2.0
 
+  # QR Code (paiement crypto in-app)
+  qr_flutter: ^4.1.0
+
   # Icons
   cupertino_icons: ^1.0.8
   image_picker: ^1.1.2

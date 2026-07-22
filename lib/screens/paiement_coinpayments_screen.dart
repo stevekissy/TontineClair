@@ -10,6 +10,7 @@ import '../services/supabase_service.dart';
 import '../services/locale_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
+import 'paiement_crypto_wallet_screen.dart';
 
 /// Écran de paiement CoinPayments (crypto) pour les membres Premium.
 ///
@@ -188,11 +189,35 @@ class _PaiementCoinPaymentsScreenState
       _txid        = resultat.txid;
       _checkoutUrl = resultat.checkoutUrl;
 
-      setState(() => _etape = _EtapeCrypto.attenteCheckout);
-      _lancerPolling(montant, numCmd);
-
-      // Ouvrir automatiquement le checkout
-      _ouvrirCheckout();
+      // ── Navigation vers l'écran in-app (plus de redirection navigateur) ──
+      final ok = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) => PaiementCryptoWalletScreen(
+            txid:          resultat.txid!,
+            checkoutUrl:   resultat.checkoutUrl!,
+            currency2:     _crypto,
+            numCommande:   numCmd,
+            montantXof:    montant,
+            tontineCode:   widget.code,
+            typeOperation: widget.typeFlux,
+            membreId:      _membreId.isNotEmpty ? _membreId : null,
+            membreNom:     _membreNom.isNotEmpty ? _membreNom : null,
+            pretId:        widget.pretId,
+          ),
+        ),
+      );
+      if (!mounted) return;
+      if (ok == true) {
+        // Paiement confirmé — on remonte au parent avec succès
+        Navigator.of(context).pop(true);
+      } else {
+        // Retour sans paiement — reset l'écran saisie
+        setState(() {
+          _etape         = _EtapeCrypto.saisie;
+          _messageErreur = null;
+          _messageInfo   = 'Paiement annulé ou en attente.';
+        });
+      }
 
     } catch (e) {
       _enTraitement = false;

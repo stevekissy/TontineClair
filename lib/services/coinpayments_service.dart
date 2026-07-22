@@ -125,6 +125,26 @@ class CoinPaymentsService {
     return CoinPaymentsResultat.fromJson(rep, numCommande: numCommande);
   }
 
+  // ── Récupérer les infos wallet pour affichage in-app ─────────────────────
+
+  /// Récupère l'adresse de dépôt crypto sans ouvrir le navigateur.
+  /// Appeler après creerTransaction() avec le txid + checkoutUrl retournés.
+  static Future<Map<String, dynamic>> infoWallet({
+    required String txid,
+    required String checkoutUrl,
+    required String currency2,
+    String? numCommande,
+  }) async {
+    final rep = await _appelerEdge({
+      'action':       'info_wallet',
+      'txid':         txid,
+      'checkout_url': checkoutUrl,
+      'currency2':    currency2,
+      if (numCommande != null) 'numcommande': numCommande,
+    }, timeout: const Duration(seconds: 20));
+    return rep;
+  }
+
   // ── Vérifier le statut d'une transaction ─────────────────────────────────
 
   /// Interroge CoinPayments pour obtenir le statut d'une transaction.
