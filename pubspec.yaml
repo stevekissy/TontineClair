@@ -46,6 +46,9 @@ dependencies:
   # QR Code (paiement crypto in-app)
   qr_flutter: ^4.1.0
 
+  # Fichiers temporaires (PDF/QR export)
+  path_provider: ^2.1.4
+
   # Icons
   cupertino_icons: ^1.0.8
 
