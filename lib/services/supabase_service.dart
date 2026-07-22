@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/tontine.dart';
 import '../models/kyc_model.dart' as kyc_model;
+import 'blockchain_service.dart';
 
 class SupabaseService {
   // ═══════════════════════════════════════════════════════════════════════════
@@ -424,6 +425,13 @@ class SupabaseService {
   static Future<bool> ecrireTontineSansPIN({
     required String code,
     required Map<String, dynamic> data,
+    // Paramètres optionnels pour l'ancrage blockchain (cotisation/apport)
+    String?  membreId,
+    String?  membreNom,
+    int?     montantXof,
+    String?  typeOperationBlockchain, // 'cotisation' | 'apport' | null
+    String?  refCoinpayments,
+    String?  refInterne,
   }) async {
     try {
       final result = await rpc('ecrire_tontine_sans_pin', {
@@ -436,17 +444,42 @@ class SupabaseService {
       }
 
       // Supabase peut retourner true, "true", 1, ou null
-      if (result == null) return false;
-      if (result is bool) return result;
-      if (result is int) return result != 0;
-      if (result is String) return result.toLowerCase() == 'true';
-      return false;
+      bool ok = false;
+      if (result == null)      ok = false;
+      else if (result is bool) ok = result;
+      else if (result is int)  ok = result != 0;
+      else if (result is String) ok = result.toLowerCase() == 'true';
+
+      // ── BLOCKCHAIN : ancrage cotisation/apport après succès (non-bloquant) ─
+      if (ok && typeOperationBlockchain != null && membreId != null && montantXof != null) {
+        final fn = typeOperationBlockchain == 'apport'
+            ? BlockchainService.enregistrerApport(
+                tontineCode    : code.toUpperCase(),
+                membreId       : membreId,
+                membreNom      : membreNom ?? '',
+                montantXof     : montantXof,
+                refCoinpayments: refCoinpayments,
+                refInterne     : refInterne,
+              )
+            : BlockchainService.enregistrerCotisation(
+                tontineCode    : code.toUpperCase(),
+                membreId       : membreId,
+                membreNom      : membreNom ?? '',
+                montantXof     : montantXof,
+                refCoinpayments: refCoinpayments,
+                refInterne     : refInterne,
+              );
+        fn.catchError((e) {
+          if (kDebugMode) debugPrint('[Blockchain] ecrireTontineSansPIN hook erreur: $e');
+        });
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
+      return ok;
     } catch (e) {
       if (kDebugMode) {
         debugPrint('[SycaPay] ecrire_tontine_sans_pin ERREUR: $e');
       }
-      // Si la RPC échoue (404 = fonction absente), lever une exception
-      // explicite pour que l'appelant puisse afficher le bon message
       rethrow;
     }
   }
@@ -1843,12 +1876,32 @@ class SupabaseService {
   static Future<Map<String, dynamic>> adminValiderDecaissement({
     required String cle,
     required int    id,
+    // Paramètres optionnels pour l'ancrage blockchain
+    String? tontineCode,
+    String? beneficiaireId,
+    String? beneficiaireNom,
+    int?    montant,
   }) async {
     try {
       final result = await rpc('admin_valider_decaissement', {
         'p_cle': cle,
         'p_id':  id,
       });
+      // ── BLOCKCHAIN : ancrage distribution validée (non-bloquant) ─────────
+      if (result is Map<String, dynamic> && result['ok'] == true) {
+        if (tontineCode != null && beneficiaireId != null && montant != null) {
+          BlockchainService.enregistrerDistribution(
+            tontineCode : tontineCode,
+            membreId    : beneficiaireId,
+            membreNom   : beneficiaireNom ?? '',
+            montantXof  : montant,
+            refInterne  : id.toString(),
+          ).catchError((e) {
+            if (kDebugMode) debugPrint('[Blockchain] distribution hook erreur: $e');
+          });
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────
       if (result is Map<String, dynamic>) return result;
       return {'ok': false, 'erreur': 'Réponse inattendue'};
     } catch (e) {

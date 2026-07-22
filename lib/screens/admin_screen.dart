@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../services/supabase_service.dart';
-import '../services/coinpayments_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
@@ -8,6 +7,7 @@ import 'admin_dashboard_screen.dart';
 import '../utils/app_localizations.dart';
 import 'kyc_admin_screen.dart';
 import 'coinpayments_admin_screen.dart';
+import 'blockchain_admin_screen.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -772,6 +772,7 @@ class _AdminScreenState extends State<AdminScreen> {
       _OngletDef(icone: Icons.email_outlined,                 label: 'E-mails',   badge: 0),
       _OngletDef(icone: Icons.support_agent_rounded,          label: 'Support',   badge: nbTicketsPending),
       _OngletDef(icone: Icons.currency_bitcoin,               label: 'Crypto',    badge: 0),
+      _OngletDef(icone: Icons.hexagon_outlined,                label: 'Blockchain', badge: 0),
     ];
 
     return Column(
@@ -810,7 +811,8 @@ class _AdminScreenState extends State<AdminScreen> {
             : _onglet == 8 ? KycAdminScreen(cleAdmin: _cle, modeOnglet: true)
             : _onglet == 9 ? _ListeEmails()
             : _onglet == 10 ? _ListeSupport()
-            : CoinPaymentsAdminScreen(cleAdmin: _cle),
+            : _onglet == 11 ? CoinPaymentsAdminScreen(cleAdmin: _cle)
+            : BlockchainAdminScreen(cleAdmin: _cle),
         ),
       ],
     );
@@ -1248,6 +1250,7 @@ class _AdminScreenState extends State<AdminScreen> {
         _RaccourciAdmin(icone: Icons.support_agent_rounded,          label: 'Support & Messagerie',        sousTitre: '${_ticketsSupport.length} ticket${_ticketsSupport.length > 1 ? "s" : ""} total', badge: _ticketsSupport.where((t) => !['resolu','ferme'].contains(t['statut'] as String? ?? '')).length, onTap: () => onNaviguer(10)),
         const SizedBox(height: 6),
         _RaccourciAdmin(icone: Icons.currency_bitcoin,                label: 'CoinPayments Crypto',         sousTitre: 'Transactions, IPN, rapprochement', badge: 0, onTap: () => onNaviguer(11)),
+        _RaccourciAdmin(icone: Icons.hexagon_outlined,                  label: 'Journal Blockchain',           sousTitre: 'Polygon Amoy · hash · signature', badge: 0, onTap: () => onNaviguer(12)),
         const SizedBox(height: 24),
 
         // ── Pied de page ───────────────────────────────────────────────────
