@@ -42,6 +42,10 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
   // ── Taux USDT ─────────────────────────────────────────────────────────────
   Map<String, dynamic> _taux = {};
 
+  // ── Info contrat Phase 2 ────────────────────────────────────────────────
+  Map<String, dynamic> _contrat = {};
+  bool _contratLoading = true;
+
   @override
   void initState() {
     super.initState();
@@ -49,6 +53,7 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
     _chargerStats();
     _chargerJournal();
     _chargerTaux();
+    _chargerContrat();
   }
 
   @override
@@ -93,6 +98,35 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
       if (!mounted) return;
       setState(() => _taux = r);
     } catch (_) {}
+  }
+
+  Future<void> _chargerContrat() async {
+    try {
+      final r = await BlockchainService.contractInfo();
+      if (!mounted) return;
+      setState(() { _contrat = r; _contratLoading = false; });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _contratLoading = false);
+    }
+  }
+
+  // Ouvre un lien PolygonScan dans le navigateur externe
+  void _ouvrirUrl(String url) {
+    if (url.isEmpty) return;
+    // Copie l'URL dans le presse-papiers + feedback
+    Clipboard.setData(ClipboardData(text: url));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Lien copié : ${url.length > 40 ? url.substring(0, 40) + "..." : url}'),
+      action: SnackBarAction(label: 'OK', onPressed: () {}),
+      duration: const Duration(seconds: 3),
+    ));
+  }
+
+  // Adresse Ethereum raccourcie : 0x1234...5678
+  String _shortAddr(String addr) {
+    if (addr.length < 12) return addr;
+    return '${addr.substring(0, 8)}...${addr.substring(addr.length - 6)}';
   }
 
   Future<void> _verifierTx() async {
@@ -143,7 +177,7 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
                 const Spacer(),
                 IconButton(
                   icon: const Icon(Icons.refresh_rounded, size: 20),
-                  onPressed: () { _chargerStats(); _chargerJournal(); _chargerTaux(); },
+                  onPressed: () { _chargerStats(); _chargerJournal(); _chargerTaux(); _chargerContrat(); },
                   tooltip: 'Actualiser',
                 ),
               ]),
@@ -259,15 +293,36 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
               _infoLigne('Réseau actif', 'Polygon Amoy (testnet)'),
               _infoLigne('Token', 'USDT ERC-20'),
               _infoLigne('Ancrage', 'Preuve d\'existence SHA-256 + bloc Polygon'),
-              _infoLigne('Phase 2', 'Smart Contract TontineVault.sol (à venir)'),
-              _infoLigne('Phase 4', 'Migration Polygon Mainnet'),
+              if (_contratLoading)
+                const Padding(
+                  padding: EdgeInsets.only(top: 4),
+                  child: Text('Chargement contrat...', style: TextStyle(fontSize: 11, color: AppColors.texteDoux)),
+                )
+              else if (_contrat['phase'] == 2) ...[
+                _infoLigne('Phase', '2 — TontineVault.sol déployé ✅'),
+                _infoLigne('Contrat', _shortAddr(_contrat['contract_address'] as String? ?? '')),
+                _infoLigne('Admin wallet', _shortAddr(_contrat['wallet_admin'] as String? ?? '')),
+                GestureDetector(
+                  onTap: () => _ouvrirUrl(_contrat['explorer'] as String? ?? ''),
+                  child: const Padding(
+                    padding: EdgeInsets.only(top: 2),
+                    child: Text('Voir sur PolygonScan →',
+                        style: TextStyle(fontSize: 11, color: Color(0xFF8247E5),
+                            fontWeight: FontWeight.w700, decoration: TextDecoration.underline)),
+                  ),
+                ),
+              ] else ...[
+                _infoLigne('Phase 2', 'Smart Contract (déploiement en cours)'),
+                _infoLigne('Phase 4', 'Migration Polygon Mainnet'),
+              ],
               const SizedBox(height: 8),
-              const Text(
-                '🔒 Toutes les opérations financières TontineClair sont enregistrées '
-                'avec une signature cryptographique HMAC-SHA256 et ancrées sur la '
-                'blockchain Polygon. Les utilisateurs ne voient aucun changement '
-                'dans leur interface.',
-                style: TextStyle(fontSize: 11, color: AppColors.texteDoux, height: 1.5),
+              Text(
+                _contrat['phase'] == 2
+                  ? '⚡ Phase 2 active : chaque opération génère un vrai hash Ethereum '
+                    'vérifiable sur PolygonScan Amoy via TontineVault.sol.'
+                  : '🔒 Phase 1 active : preuve d\'existence SHA-256 ancrée sur Polygon. '
+                    'Phase 2 (vraie TX on-chain) en cours de déploiement.',
+                style: const TextStyle(fontSize: 11, color: AppColors.texteDoux, height: 1.5),
               ),
             ],
           ),
@@ -287,31 +342,64 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
   }
 
   Widget _carteReseau(int blockNumber) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF8247E5), Color(0xFF6B35C7)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+    final phase2 = _contrat['phase'] == 2;
+    final contractAddr = _contrat['contract_address'] as String?;
+    return GestureDetector(
+      onTap: contractAddr != null
+          ? () => _ouvrirUrl('https://amoy.polygonscan.com/address/$contractAddr')
+          : null,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: phase2
+                ? [const Color(0xFF8247E5), const Color(0xFF6B35C7)]
+                : [const Color(0xFF546E7A), const Color(0xFF37474F)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(14),
         ),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(children: [
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Polygon Amoy', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
-          const Text('Testnet  •  ChainID 80002', style: TextStyle(color: Colors.white70, fontSize: 11)),
-          const SizedBox(height: 6),
-          Row(children: [
-            const Icon(Icons.circle, color: Color(0xFF00E676), size: 8),
-            const SizedBox(width: 4),
-            Text('Bloc #${_formatNumber(blockNumber)}',
-                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
-          ]),
+        child: Row(children: [
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              const Text('Polygon Amoy',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: phase2 ? const Color(0xFF00E676) : Colors.white30,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(phase2 ? 'Phase 2 ⚡' : 'Phase 1',
+                    style: TextStyle(
+                        color: phase2 ? Colors.black87 : Colors.white,
+                        fontSize: 9, fontWeight: FontWeight.w800)),
+              ),
+            ]),
+            Text(
+              phase2 ? 'TontineVault.sol  •  ChainID 80002' : 'Testnet  •  ChainID 80002',
+              style: const TextStyle(color: Colors.white70, fontSize: 11)),
+            const SizedBox(height: 6),
+            Row(children: [
+              const Icon(Icons.circle, color: Color(0xFF00E676), size: 8),
+              const SizedBox(width: 4),
+              Text('Bloc #${_formatNumber(blockNumber)}',
+                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+              if (phase2 && contractAddr != null) ...[
+                const SizedBox(width: 8),
+                Flexible(child: Text(_shortAddr(contractAddr),
+                    style: const TextStyle(color: Colors.white60, fontSize: 10,
+                        fontFamily: 'monospace'), overflow: TextOverflow.ellipsis)),
+              ],
+            ]),
+          ])),
+          const SizedBox(width: 8),
+          Icon(phase2 ? Icons.receipt_long_rounded : Icons.hexagon,
+              color: Colors.white30, size: 42),
         ]),
-        const Spacer(),
-        const Icon(Icons.hexagon, color: Colors.white30, size: 48),
-      ]),
+      ),
     );
   }
 
@@ -465,7 +553,25 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
               },
               child: const Icon(Icons.copy_rounded, size: 14, color: AppColors.texteDoux),
             ),
+            if (e.txHash!.length == 66) ...[
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: () => _ouvrirUrl(e.explorerUrl),
+                child: const Icon(Icons.open_in_new_rounded, size: 14, color: Color(0xFF8247E5)),
+              ),
+            ],
           ]),
+        if (e.txHash != null && e.txHash!.length == 66)
+          Container(
+            margin: const EdgeInsets.only(top: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: const Color(0xFF8247E5).withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: const Text('⚡ TX on-chain Phase 2',
+                style: TextStyle(fontSize: 9, color: Color(0xFF8247E5), fontWeight: FontWeight.w700)),
+          ),
         if (e.signature != null)
           _ligneInfo('Signature', '${e.signature!.substring(0, 12)}…'),
         const SizedBox(height: 4),

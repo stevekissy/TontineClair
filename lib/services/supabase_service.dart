@@ -471,6 +471,7 @@ class SupabaseService {
               );
         fn.catchError((e) {
           if (kDebugMode) debugPrint('[Blockchain] ecrireTontineSansPIN hook erreur: $e');
+          return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
         });
       }
       // ─────────────────────────────────────────────────────────────────────
@@ -1898,6 +1899,7 @@ class SupabaseService {
             refInterne  : id.toString(),
           ).catchError((e) {
             if (kDebugMode) debugPrint('[Blockchain] distribution hook erreur: $e');
+            return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
           });
         }
       }
