@@ -243,10 +243,14 @@ class CoinPaymentsResultat {
       );
     }
 
-    final statusCode = (j['statusCode'] as num?)?.toInt()
-                    ?? (j['status']     as num?)?.toInt() ?? 0;
-    final rawNorm    = j['statusNorm'] as String?
-                   ?? j['statusNormalise'] as String?;
+    // statusCode : peut être num (statut CoinPayments ex: 100) ou String ("pending")
+    // creer_transaction retourne status:"pending" (String) — on parse de façon safe
+    final rawStatus  = j['statusCode'] ?? j['status'];
+    final statusCode = rawStatus is num
+        ? rawStatus.toInt()
+        : (rawStatus is String ? int.tryParse(rawStatus) ?? 0 : 0);
+    final rawNorm    = j['statusNorm']      as String?
+                   ?? j['statusNormalise']  as String?;
 
     final String norm;
     if (rawNorm != null && rawNorm.isNotEmpty) {
