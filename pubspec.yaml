@@ -1,7 +1,7 @@
 name: tontine_admin
 description: TontineClair Admin — Espace d'administration réservé
 publish_to: 'none'
-version: 1.0.0+1
+version: 2.0.0+3
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -42,6 +42,9 @@ dependencies:
 
   # In-App Purchase (requis par subscription_service)
   in_app_purchase: ^3.2.0
+
+  # QR Code (paiement crypto in-app)
+  qr_flutter: ^4.1.0
 
   # Icons
   cupertino_icons: ^1.0.8

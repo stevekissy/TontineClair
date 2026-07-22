@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/supabase_service.dart';
+import '../services/coinpayments_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
@@ -7,6 +8,7 @@ import 'admin_dashboard_screen.dart';
 import 'equipe_screen.dart';
 import 'messagerie_screen.dart';
 import 'support_admin_screen.dart';
+import 'coinpayments_admin_screen.dart';
 import '../utils/app_localizations.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -757,6 +759,7 @@ class _AdminScreenState extends State<AdminScreen> {
       _OngletDef(icone: Icons.groups_outlined,         label: 'Équipe',    badge: 0,                  index: 3),
       _OngletDef(icone: Icons.forum_outlined,          label: 'Messages',  badge: 0,                  index: 4),
       _OngletDef(icone: Icons.support_agent_outlined,  label: 'Support',   badge: 0,                  index: 5),
+      _OngletDef(icone: Icons.currency_bitcoin,          label: 'Crypto',    badge: 0,                  index: 6),
     ];
 
     return Column(
@@ -796,7 +799,8 @@ class _AdminScreenState extends State<AdminScreen> {
                 clePerso: _clePersoMembre ?? _cleEffective,
                 nom:      _nomMembre      ?? (_pseudoMembre ?? 'Admin'),
               ),
-            _ => SupportAdminScreen(cle: _cleEffective),
+            5 => SupportAdminScreen(cle: _cleEffective),
+            _ => CoinPaymentsAdminScreen(cleAdmin: _cleEffective),
           },
         ),
       ],
