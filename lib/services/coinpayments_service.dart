@@ -121,7 +121,7 @@ class CoinPaymentsService {
       if (buyerEmail  != null && buyerEmail.isNotEmpty) 'buyer_email': buyerEmail,
     };
 
-    final rep = await _appelerEdge(payload, timeout: const Duration(seconds: 30));
+    final rep = await _appelerEdge(payload, timeout: const Duration(seconds: 55));
     return CoinPaymentsResultat.fromJson(rep, numCommande: numCommande);
   }
 

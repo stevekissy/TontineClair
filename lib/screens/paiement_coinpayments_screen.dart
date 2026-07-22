@@ -198,9 +198,11 @@ class _PaiementCoinPaymentsScreenState
       _enTraitement = false;
       if (!mounted) return;
       if (kDebugMode) debugPrint('[CoinPayments] creerTransaction EXCEPTION: $e');
+      // Affiche le vrai message d'erreur (pas un générique qui cache le problème)
+      final errMsg = e.toString().replaceAll('Exception: ', '').replaceAll('ClientException: ', '');
       setState(() {
         _etape         = _EtapeCrypto.saisie;
-        _messageErreur = '⚠️ Erreur de connexion. Vérifiez votre réseau.';
+        _messageErreur = '⚠️ $errMsg';
       });
     }
   }
