@@ -1,0 +1,10 @@
+{
+  "contract_address": "0xdD3aa7dcd20f3C5321CbFFf6EF2dc2a278cBA26a",
+  "tx_hash": "1d916a933b77f862cb2bb9d0981e3ac5113ca48f427d3274b79ffdbad2c18e39",
+  "block_number": 42939360,
+  "admin_address": "0xf2C1019814425f46E743a5492153C1a25bdfEEfd",
+  "network": "polygon-amoy",
+  "chain_id": 80002,
+  "deployed_at": "2026-07-22T22:02:47Z",
+  "polygonscan": "https://amoy.polygonscan.com/address/0xdD3aa7dcd20f3C5321CbFFf6EF2dc2a278cBA26a"
+}
