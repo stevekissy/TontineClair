@@ -201,6 +201,26 @@ class CoinPaymentsService {
     return CoinPaymentsResultat.fromJson(rep, numCommande: numCommande);
   }
 
+  // ── Actions d'administration (TC Admin) ──────────────────────────────────
+
+  /// Appelle l'Edge Function CoinPayments avec une action admin.
+  ///
+  /// [action] : 'admin_transactions' | 'admin_audit_log' | 'admin_config_status'
+  ///            | 'admin_reconciliation' | 'admin_verifier_tx' | 'info_wallet'
+  /// [params] : payload supplémentaire transmis à l'Edge Function.
+  ///
+  /// Toutes les clés API restent dans Supabase Secrets — jamais exposées côté Flutter.
+  static Future<Map<String, dynamic>> adminAction(
+    String action,
+    Map<String, dynamic> params, {
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
+    return _appelerEdge(
+      {'action': action, ...params},
+      timeout: timeout,
+    );
+  }
+
   // ── Générer une référence de commande unique ──────────────────────────────
 
   /// Génère une référence commande unique.

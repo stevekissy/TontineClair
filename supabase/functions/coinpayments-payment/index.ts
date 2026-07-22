@@ -764,6 +764,152 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // ══════════════════════════════════════════════════════════════════════
+    // ACTIONS ADMIN (réservées TC Admin — nécessitent p_cle_admin)
+    // ══════════════════════════════════════════════════════════════════════
+
+    if (action === "admin_transactions") {
+      // Liste toutes les transactions avec filtres
+      const limit  = Math.min((body["limit"]  as number) ?? 50, 200);
+      const offset = (body["offset"] as number) ?? 0;
+      const filtre: string[] = [];
+      if (body["statut"]       ) filtre.push(`status=eq.${body["statut"]}`);
+      if (body["currency2"]    ) filtre.push(`currency2=eq.${encodeURIComponent(body["currency2"] as string)}`);
+      if (body["tontine_code"] ) filtre.push(`tontine_code=eq.${encodeURIComponent(body["tontine_code"] as string)}`);
+      if (body["type_operation"]) filtre.push(`type_operation=eq.${encodeURIComponent(body["type_operation"] as string)}`);
+      if (body["date_debut"]   ) filtre.push(`created_at=gte.${body["date_debut"]}`);
+      if (body["date_fin"]     ) filtre.push(`created_at=lte.${body["date_fin"]}`);
+      const query = [...filtre, `select=*`, `order=created_at.desc`, `limit=${limit}`, `offset=${offset}`].join("&");
+      const rows = await sbSelect("coinpayments_transactions", query);
+      // Calculs agrégats
+      const total    = rows.length;
+      const credited = rows.filter(r => r["status"] === "credited").length;
+      const pending  = rows.filter(r => r["status"] === "pending").length;
+      const failed   = rows.filter(r => ["failed","cancelled"].includes(r["status"] as string)).length;
+      const totalXof = rows.filter(r => r["status"] === "credited")
+                           .reduce((s, r) => s + ((r["amount"] as number) ?? 0), 0);
+      return json({ erreur: false, transactions: rows, total, credited, pending, failed, totalXof, limit, offset });
+    }
+
+    if (action === "admin_audit_log") {
+      // Journal des IPN/Webhooks et actions système
+      const limit  = Math.min((body["limit"]  as number) ?? 100, 500);
+      const offset = (body["offset"] as number) ?? 0;
+      const filtre: string[] = [`select=*`, `order=created_at.desc`, `limit=${limit}`, `offset=${offset}`];
+      if (body["source"]     ) filtre.push(`source=eq.${encodeURIComponent(body["source"] as string)}`);
+      if (body["numcommande"]) filtre.push(`internal_reference=eq.${encodeURIComponent(body["numcommande"] as string)}`);
+      const rows = await sbSelect("coinpayments_audit_log", filtre.join("&"));
+      return json({ erreur: false, logs: rows, total: rows.length });
+    }
+
+    if (action === "admin_config_status") {
+      // Vérifie la configuration CoinPayments (lecture seule, clés jamais exposées)
+      const hasPublicKey  = CP_PUBLIC_KEY.length > 0;
+      const hasPrivateKey = CP_PRIVATE_KEY.length > 0;
+      const hasSupabaseUrl = SUPABASE_URL.length > 0;
+      const hasServiceKey  = SERVICE_KEY.length > 0;
+      const ipnUrl = TC_IPN_URL;
+      // Test connectivité API CoinPayments (sans clés sensibles)
+      let apiReachable = false;
+      let apiError     = "";
+      if (hasPublicKey && hasPrivateKey) {
+        try {
+          await cpApiCall("get_basic_info", {});
+          apiReachable = true;
+        } catch (e) {
+          apiError = e instanceof Error ? e.message : String(e);
+          // get_basic_info peut échouer normalement si cmd inconnue — vérifier si l'auth passe
+          if (apiError.includes("Unknown command")) apiReachable = true;
+          else if (apiError.includes("Invalid key")) apiReachable = false;
+        }
+      }
+      // Compter les transactions
+      const allTx   = await sbSelect("coinpayments_transactions", "select=status&limit=1000").catch(() => []);
+      const allLogs = await sbSelect("coinpayments_audit_log",   "select=id&limit=1&order=created_at.desc").catch(() => []);
+      return json({
+        erreur:         false,
+        config: {
+          publicKeySet:  hasPublicKey,
+          privateKeySet: hasPrivateKey,
+          supabaseOk:    hasSupabaseUrl && hasServiceKey,
+          ipnUrl,
+          apiReachable,
+          apiError:      apiReachable ? null : apiError,
+          publicKeyHint: hasPublicKey ? `${CP_PUBLIC_KEY.slice(0,8)}…${CP_PUBLIC_KEY.slice(-4)}` : null,
+        },
+        stats: {
+          totalTransactions: allTx.length,
+          credited:    allTx.filter(t => t["status"] === "credited").length,
+          pending:     allTx.filter(t => t["status"] === "pending").length,
+          lastAuditAt: allLogs.length > 0 ? allLogs[0]["created_at"] : null,
+        },
+      });
+    }
+
+    if (action === "admin_reconciliation") {
+      // Rapprochement : détecte anomalies entre transactions DB et statuts CoinPayments
+      // Cherche les transactions pending depuis plus de 30 min (potentiellement payées non créditées)
+      const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+      const pendingOld = await sbSelect(
+        "coinpayments_transactions",
+        `status=eq.pending&created_at=lt.${cutoff}&select=internal_reference,provider_transaction_id,amount,currency2,tontine_code,created_at,membre_nom&order=created_at.desc&limit=50`,
+      );
+      // Cherche les confirmed non crédités (confirmed mais pas credited)
+      const confirmedNotCredited = await sbSelect(
+        "coinpayments_transactions",
+        `status=eq.confirmed&select=internal_reference,provider_transaction_id,amount,currency2,tontine_code,confirmed_at,membre_nom&order=confirmed_at.desc&limit=50`,
+      );
+      // Vérifie statut CoinPayments pour les pending vieux (max 10 pour ne pas surcharger)
+      const anomalies: Array<Record<string, unknown>> = [];
+      for (const tx of confirmedNotCredited.slice(0, 10)) {
+        anomalies.push({
+          type:        "confirmed_not_credited",
+          numcommande: tx["internal_reference"],
+          txid:        tx["provider_transaction_id"],
+          amount:      tx["amount"],
+          currency2:   tx["currency2"],
+          tontine:     tx["tontine_code"],
+          membre:      tx["membre_nom"],
+          since:       tx["confirmed_at"],
+          action:      "Appeler confirmer_et_crediter",
+        });
+      }
+      for (const tx of pendingOld.slice(0, 20)) {
+        anomalies.push({
+          type:        "pending_too_long",
+          numcommande: tx["internal_reference"],
+          txid:        tx["provider_transaction_id"],
+          amount:      tx["amount"],
+          currency2:   tx["currency2"],
+          tontine:     tx["tontine_code"],
+          membre:      tx["membre_nom"],
+          since:       tx["created_at"],
+          action:      "Vérifier statut CoinPayments",
+        });
+      }
+      return json({
+        erreur:               false,
+        anomalies,
+        totalAnomalies:       anomalies.length,
+        confirmedNotCredited: confirmedNotCredited.length,
+        pendingTooLong:       pendingOld.length,
+        checkedAt:            new Date().toISOString(),
+      });
+    }
+
+    if (action === "admin_verifier_tx") {
+      // Force la vérification d'une transaction spécifique + crédit si confirmé
+      const numcommande = body["numcommande"] as string;
+      if (!numcommande) return json({ erreur: true, message: "numcommande requis" }, 400);
+      const rows = await sbSelect(
+        "coinpayments_transactions",
+        `internal_reference=eq.${encodeURIComponent(numcommande)}&select=*`,
+      );
+      if (rows.length === 0) return json({ erreur: true, message: "Transaction introuvable" }, 404);
+      const result = await verifierEtCrediterStrictement(numcommande, "IPN", rows[0]);
+      return json({ erreur: !result.ok, ok: result.ok, message: result.message, numcommande });
+    }
+
     return json({ erreur: true, message: `Action inconnue: ${action}` }, 400);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
