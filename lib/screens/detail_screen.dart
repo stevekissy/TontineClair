@@ -29,6 +29,8 @@ import 'kyc_screen.dart';
 import 'securite_screen.dart';
 import 'paiement_caisse_pro_screen.dart';
 import 'verification_publique_screen.dart';
+import 'certificat_blockchain_screen.dart';
+import 'qr_tontine_screen.dart';
 import '../services/blockchain_service.dart';
 
 class DetailScreen extends StatefulWidget {
@@ -2372,67 +2374,152 @@ class _BadgeBlockchainState extends State<_BadgeBlockchain> {
         _derniereTx?.txHash != null &&
         _derniereTx!.txHash!.length == 66;
 
-    return GestureDetector(
-      onTap: _ouvrir,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: estOnChain
-              ? const Color(0xFF00C853).withValues(alpha: 0.08)
-              : AppColors.fondCode,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: estOnChain
-                ? const Color(0xFF00C853).withValues(alpha: 0.4)
-                : AppColors.lignes,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              estOnChain ? Icons.verified : Icons.lock_outline,
-              size: 16,
-              color: estOnChain ? const Color(0xFF00C853) : AppColors.encre,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    estOnChain
-                        ? '✅ Vérifié Blockchain — Phase 2 On-chain'
-                        : '🔒 Journal Blockchain — Phase 1',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: estOnChain
-                          ? const Color(0xFF00C853)
-                          : AppColors.encre,
-                    ),
-                  ),
-                  if (_totalOps > 0)
-                    Text(
-                      '$_totalOps opération${_totalOps > 1 ? 's' : ''} enregistrée${_totalOps > 1 ? 's' : ''}',
-                      style: const TextStyle(
-                          fontSize: 11, color: AppColors.texteDoux),
-                    ),
-                  if (_derniereTx?.txHash != null && estOnChain)
-                    Text(
-                      'Dernier TX : ${_derniereTx!.txHashCourt}',
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: Color(0xFF00C853),
-                        fontFamily: 'monospace',
-                      ),
-                    ),
-                ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        GestureDetector(
+          onTap: _ouvrir,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: estOnChain
+                  ? const Color(0xFF00C853).withValues(alpha: 0.08)
+                  : AppColors.fondCode,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: estOnChain
+                    ? const Color(0xFF00C853).withValues(alpha: 0.4)
+                    : AppColors.lignes,
               ),
             ),
-            const Icon(Icons.chevron_right, size: 18, color: AppColors.texteDoux),
-          ],
+            child: Row(
+              children: [
+                Icon(
+                  estOnChain ? Icons.verified : Icons.lock_outline,
+                  size: 16,
+                  color: estOnChain ? const Color(0xFF00C853) : AppColors.encre,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        estOnChain
+                            ? '✅ Vérifié Blockchain — Phase 2 On-chain'
+                            : '🔒 Journal Blockchain — Phase 1',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: estOnChain
+                              ? const Color(0xFF00C853)
+                              : AppColors.encre,
+                        ),
+                      ),
+                      if (_totalOps > 0)
+                        Text(
+                          '$_totalOps opération${_totalOps > 1 ? 's' : ''} enregistrée${_totalOps > 1 ? 's' : ''}',
+                          style: const TextStyle(
+                              fontSize: 11, color: AppColors.texteDoux),
+                        ),
+                      if (_derniereTx?.txHash != null && estOnChain)
+                        Text(
+                          'Dernier TX : ${_derniereTx!.txHashCourt}',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Color(0xFF00C853),
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, size: 18, color: AppColors.texteDoux),
+              ],
+            ),
+          ),
         ),
-      ),
+        // ── Actions rapides Phase 4 ──────────────────────────────────────────
+        if (!_loading && (_totalOps > 0 || _derniereTx != null)) ...[
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => CertificatBlockchainScreen(
+                        codeTontine: widget.code,
+                        nomTontine : widget.nom,
+                      ),
+                    ),
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 7),
+                    decoration: BoxDecoration(
+                      color: AppColors.fondCode,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.lignes),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.workspace_premium,
+                            size: 13, color: AppColors.encre),
+                        SizedBox(width: 4),
+                        Text('Certificat PDF',
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.encre)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => QrTontineScreen(
+                        codeTontine: widget.code,
+                        nomTontine : widget.nom,
+                      ),
+                    ),
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 7),
+                    decoration: BoxDecoration(
+                      color: AppColors.whatsapp.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                          color: AppColors.whatsapp.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.qr_code,
+                            size: 13,
+                            color: AppColors.whatsapp.withValues(alpha: 0.9)),
+                        const SizedBox(width: 4),
+                        Text('QR Code',
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.whatsapp.withValues(alpha: 0.9))),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 }

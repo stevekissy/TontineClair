@@ -19,6 +19,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'supabase_service.dart';
+import 'notification_service.dart';
 
 // ── Modèle d'une entrée du journal blockchain ─────────────────────────────────
 class BlockchainEntry {
@@ -470,6 +471,21 @@ class BlockchainService {
         debugPrint('[Blockchain] $typeOperation phase=${res.phase} '
             'tx=${res.txHash?.substring(0,10)}... statut=${res.statut}');
       }
+
+      // ── Phase 4 Option Y : notification push locale ───────────────────────
+      // Non-bloquant — si la notif échoue, l'opération reste valide
+      if (res.ok) {
+        NotificationService.notifierOperationBlockchain(
+          tontineCode  : tontineCode,
+          nomTontine   : tontineCode, // code utilisé comme fallback (pas de nom ici)
+          typeOperation: typeOperation,
+          phase        : res.phase,
+          txHash       : res.txHash,
+          montantXof   : montantXof,
+          membreNom    : membreNom,
+        ).catchError((_) {});  // Non-bloquant
+      }
+
       return res;
     } catch (e) {
       if (kDebugMode) debugPrint('[Blockchain] _enregistrer ERREUR: $e');

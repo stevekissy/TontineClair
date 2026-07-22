@@ -10,6 +10,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/blockchain_service.dart';
 import '../utils/app_colors.dart';
+import 'certificat_blockchain_screen.dart';
+import 'qr_tontine_screen.dart';
 
 class VerificationPubliqueScreen extends StatefulWidget {
   /// Code tontine pré-rempli (optionnel — si null, l'utilisateur saisit)
@@ -178,6 +180,31 @@ class _VerificationPubliqueScreenState
             _BandeauContrat(
               address: _contratAddress!,
               onCopier: _copier,
+            ),
+
+            // ── Actions rapides Phase 4 ───────────────────────────────────
+          if (_recherche && !_loading && _entrees.isNotEmpty)
+            _BarreActionsPhase4(
+              codeTontine: _codeActif,
+              nomTontine : _codeActif,
+              onCertificat: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => CertificatBlockchainScreen(
+                    codeTontine: _codeActif,
+                    nomTontine : _codeActif,
+                  ),
+                ),
+              ),
+              onQr: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => QrTontineScreen(
+                    codeTontine: _codeActif,
+                    nomTontine : _codeActif,
+                  ),
+                ),
+              ),
             ),
 
           // ── Contenu ────────────────────────────────────────────────────────
@@ -884,5 +911,65 @@ class _CarteEntree extends StatelessWidget {
     if (diff.inDays == 1) return 'Hier';
     if (diff.inDays < 7) return 'Il y a ${diff.inDays} j';
     return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Barre d'actions Phase 4 — Certificat PDF + QR Code
+// ═══════════════════════════════════════════════════════════════════════════════
+class _BarreActionsPhase4 extends StatelessWidget {
+  final String codeTontine;
+  final String nomTontine;
+  final VoidCallback onCertificat;
+  final VoidCallback onQr;
+
+  const _BarreActionsPhase4({
+    required this.codeTontine,
+    required this.nomTontine,
+    required this.onCertificat,
+    required this.onQr,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.carte,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: onCertificat,
+              icon: const Icon(Icons.workspace_premium, size: 16),
+              label: const Text('Certificat PDF',
+                  style: TextStyle(fontSize: 12)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.encre,
+                side: const BorderSide(color: AppColors.encre),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: onQr,
+              icon: const Icon(Icons.qr_code, size: 16),
+              label: const Text('QR Code',
+                  style: TextStyle(fontSize: 12)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.whatsapp,
+                side: const BorderSide(color: AppColors.whatsapp),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

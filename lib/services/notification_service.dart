@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'supabase_service.dart';
@@ -213,5 +214,116 @@ class NotificationService {
     } catch (_) {
       return null;
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PHASE 4 — Option Y : Notifications blockchain on-chain
+  // Appelée après chaque opération blockchain confirmée (phase 1 ou 2)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Affiche une notification locale quand une opération blockchain est confirmée.
+  /// Appelée depuis BlockchainService._enregistrer() après succès.
+  static Future<void> notifierOperationBlockchain({
+    required String tontineCode,
+    required String nomTontine,
+    required String typeOperation,
+    required int    phase,
+    String?  txHash,
+    int?     montantXof,
+    String?  membreNom,
+  }) async {
+    try {
+      // Construire le titre selon le type d'opération
+      final typeLabel = _typeLabel(typeOperation);
+      final montantStr = montantXof != null
+          ? ' · ${_formatXof(montantXof)} XOF'
+          : '';
+      final phaseLabel = phase == 2 ? '⚡ On-chain' : '🔒 Signé';
+
+      final titre = '$phaseLabel — $typeLabel$montantStr';
+      final corps = _buildCorpsNotif(
+        tontineCode : tontineCode,
+        nomTontine  : nomTontine,
+        typeOperation: typeOperation,
+        phase       : phase,
+        txHash      : txHash,
+        membreNom   : membreNom,
+      );
+
+      await _local.show(
+        // ID unique basé sur timestamp pour ne pas écraser les notifs précédentes
+        DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        titre,
+        corps,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            _canal.id,
+            _canal.name,
+            channelDescription: _canal.description,
+            importance: Importance.defaultImportance,
+            priority: Priority.defaultPriority,
+            icon: '@mipmap/ic_launcher',
+            styleInformation: BigTextStyleInformation(corps),
+            // Couleur selon phase
+            color: phase == 2
+                ? const Color(0xFF00C853)
+                : const Color(0xFF1C2447),
+          ),
+        ),
+        payload: '{"code":"$tontineCode","type":"$typeOperation","phase":$phase}',
+      );
+
+      if (kDebugMode) {
+        debugPrint('[Notif Blockchain] $typeLabel phase=$phase tx=${txHash?.substring(0, 10)}...');
+      }
+    } catch (e) {
+      // Non-bloquant — ne jamais faire échouer une opération pour une notif
+      if (kDebugMode) debugPrint('[Notif Blockchain] ERREUR: $e');
+    }
+  }
+
+  static String _buildCorpsNotif({
+    required String tontineCode,
+    required String nomTontine,
+    required String typeOperation,
+    required int    phase,
+    String?  txHash,
+    String?  membreNom,
+  }) {
+    final sb = StringBuffer();
+    sb.write('Tontine $nomTontine ($tontineCode)\n');
+
+    if (membreNom != null && membreNom.isNotEmpty) {
+      sb.write('Membre : $membreNom\n');
+    }
+
+    if (phase == 2 && txHash != null && txHash.length == 66) {
+      final court = '${txHash.substring(0, 8)}…${txHash.substring(txHash.length - 6)}';
+      sb.write('TX Ethereum : $court\n');
+      sb.write('✅ Vérifiable sur PolygonScan');
+    } else {
+      sb.write('🔒 Preuve cryptographique enregistrée');
+    }
+    return sb.toString();
+  }
+
+  static String _typeLabel(String type) {
+    const map = {
+      'cotisation'   : 'Cotisation enregistrée',
+      'distribution' : 'Distribution enregistrée',
+      'pret'         : 'Prêt enregistré',
+      'remboursement': 'Remboursement enregistré',
+      'vote'         : 'Vote enregistré',
+      'creation'     : 'Création de tontine',
+      'apport'       : 'Apport enregistré',
+      'penalite'     : 'Pénalité enregistrée',
+    };
+    return map[type] ?? type.toUpperCase();
+  }
+
+  static String _formatXof(int xof) {
+    if (xof >= 1000000) return '${(xof / 1000000).toStringAsFixed(1)}M';
+    if (xof >= 1000) return '${(xof / 1000).toStringAsFixed(0)}k';
+    return '$xof';
   }
 }
