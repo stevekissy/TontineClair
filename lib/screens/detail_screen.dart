@@ -28,6 +28,8 @@ import '../services/locale_service.dart';
 import 'kyc_screen.dart';
 import 'securite_screen.dart';
 import 'paiement_caisse_pro_screen.dart';
+import 'verification_publique_screen.dart';
+import '../services/blockchain_service.dart';
 
 class DetailScreen extends StatefulWidget {
   final String code;
@@ -327,6 +329,9 @@ class _DetailScreenState extends State<DetailScreen> {
                         ),
                       ],
                     ),
+                    // Badge blockchain Phase 3
+                    const SizedBox(height: 8),
+                    _BadgeBlockchain(code: tontine.code, nom: data.nom),
                     // Bandeau échéance toujours visible (calcul auto si non définie)
                     const SizedBox(height: 4),
                     _BandeauEcheance(
@@ -2275,6 +2280,158 @@ class _LigneRecapCloture extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Badge Blockchain Phase 3 — affiché dans DetailScreen sous le titre
+// Charge le dernier TX on-chain et affiche un badge "Vérifié Blockchain"
+// ═══════════════════════════════════════════════════════════════════════════════
+class _BadgeBlockchain extends StatefulWidget {
+  final String code;
+  final String nom;
+  const _BadgeBlockchain({required this.code, required this.nom});
+
+  @override
+  State<_BadgeBlockchain> createState() => _BadgeBlockchainState();
+}
+
+class _BadgeBlockchainState extends State<_BadgeBlockchain> {
+  BlockchainEntry? _derniereTx;
+  int _totalOps = 0;
+  bool _loading = true;
+  int _phase = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _charger();
+  }
+
+  Future<void> _charger() async {
+    try {
+      final results = await Future.wait([
+        BlockchainService.lireJournal(tontineCode: widget.code, limit: 1),
+        BlockchainService.contractInfo(),
+      ]);
+      final entrees = results[0] as List<BlockchainEntry>;
+      final contrat = results[1] as Map<String, dynamic>;
+      if (!mounted) return;
+      setState(() {
+        _derniereTx = entrees.isNotEmpty ? entrees.first : null;
+        _phase      = (contrat['phase'] as num?)?.toInt() ?? 1;
+        _loading    = false;
+      });
+      // Charger le total en arrière-plan
+      final toutes = await BlockchainService.lireJournal(
+          tontineCode: widget.code, limit: 200);
+      if (mounted) setState(() => _totalOps = toutes.length);
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _ouvrir() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => VerificationPubliqueScreen(
+          codeTontine: widget.code,
+          nomTontine : widget.nom,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const SizedBox(
+        height: 36,
+        child: Row(
+          children: [
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.texteDoux,
+              ),
+            ),
+            SizedBox(width: 8),
+            Text('Chargement blockchain…',
+                style: TextStyle(fontSize: 12, color: AppColors.texteDoux)),
+          ],
+        ),
+      );
+    }
+
+    final estOnChain = _phase == 2 &&
+        _derniereTx?.txHash != null &&
+        _derniereTx!.txHash!.length == 66;
+
+    return GestureDetector(
+      onTap: _ouvrir,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: estOnChain
+              ? const Color(0xFF00C853).withValues(alpha: 0.08)
+              : AppColors.fondCode,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: estOnChain
+                ? const Color(0xFF00C853).withValues(alpha: 0.4)
+                : AppColors.lignes,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              estOnChain ? Icons.verified : Icons.lock_outline,
+              size: 16,
+              color: estOnChain ? const Color(0xFF00C853) : AppColors.encre,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    estOnChain
+                        ? '✅ Vérifié Blockchain — Phase 2 On-chain'
+                        : '🔒 Journal Blockchain — Phase 1',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: estOnChain
+                          ? const Color(0xFF00C853)
+                          : AppColors.encre,
+                    ),
+                  ),
+                  if (_totalOps > 0)
+                    Text(
+                      '$_totalOps opération${_totalOps > 1 ? 's' : ''} enregistrée${_totalOps > 1 ? 's' : ''}',
+                      style: const TextStyle(
+                          fontSize: 11, color: AppColors.texteDoux),
+                    ),
+                  if (_derniereTx?.txHash != null && estOnChain)
+                    Text(
+                      'Dernier TX : ${_derniereTx!.txHashCourt}',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Color(0xFF00C853),
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, size: 18, color: AppColors.texteDoux),
+          ],
+        ),
       ),
     );
   }
