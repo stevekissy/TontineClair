@@ -16,7 +16,7 @@ import '../utils/app_localizations.dart';
 // Écran principal Espace Admin — Redesign v2
 // Onglets : Dashboard (activité) | Tontines (gestion) | Équipe & Support
 // Supprimé : validation manuelle prêts, décaissements, KYC, dépenses
-// (paiements automatiques via SycaPay)
+// (paiements Premium via CoinPayments)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class AdminScreen extends StatefulWidget {

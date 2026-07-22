@@ -1153,7 +1153,7 @@ class TontineData {
     );
   }
 
-  /// Getter : true si la tontine est en mode Premium (paiements SycaPay actifs).
+  /// Getter : true si la tontine est en mode Premium.
   bool get isPremium => tier == 'premium';
 
   // ── KYC ──────────────────────────────────────────────────────────────────
@@ -1252,7 +1252,7 @@ class Tontine {
   /// true si la tontine est accessible normalement
   bool get estActive => status == 'active';
 
-  /// true si la tontine est en version Premium (paiements SycaPay actifs).
+  /// true si la tontine est en version Premium.
   /// Source unique : data.tier (stocké dans Supabase).
   bool get isPremium => data.isPremium;
 
