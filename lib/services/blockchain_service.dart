@@ -145,6 +145,8 @@ class BlockchainResultat {
   final String? signature;
   final String  statut;
   final String? erreur;
+  final int     phase;           // 1 = SHA-256 proof, 2 = vrai TX Ethereum
+  final String? contractAddress; // adresse TontineVault.sol (Phase 2)
 
   const BlockchainResultat({
     required this.ok,
@@ -157,20 +159,32 @@ class BlockchainResultat {
     this.signature,
     this.statut = 'pending',
     this.erreur,
+    this.phase   = 1,
+    this.contractAddress,
   });
+
+  /// true si c'est un vrai hash Ethereum on-chain (Phase 2)
+  bool get estOnChain => phase == 2 && txHash != null && txHash!.length == 66;
+
+  /// Lien PolygonScan vers le contrat
+  String? get explorerContrat => contractAddress != null
+      ? 'https://amoy.polygonscan.com/address/$contractAddress'
+      : null;
 
   factory BlockchainResultat.fromJson(Map<String, dynamic> j) {
     return BlockchainResultat(
-      ok          : j['ok'] == true,
-      journalId   : j['journal_id']?.toString(),
-      txHash      : j['tx_hash']     as String?,
-      blockNumber : j['block_number'] is num ? (j['block_number'] as num).toInt() : null,
-      explorerUrl : j['explorer_url'] as String?,
-      montantUsdt : j['montant_usdt'] is num ? (j['montant_usdt'] as num).toDouble() : null,
-      tauxXofUsdt : j['taux_xof_usdt'] is num ? (j['taux_xof_usdt'] as num).toDouble() : null,
-      signature   : j['signature']   as String?,
-      statut      : j['statut']      as String? ?? 'pending',
-      erreur      : j['message']     as String?,
+      ok             : j['ok'] == true,
+      journalId      : j['entry_id']?.toString() ?? j['journal_id']?.toString(),
+      txHash         : j['tx_hash']      as String?,
+      blockNumber    : j['block_number'] is num ? (j['block_number'] as num).toInt() : null,
+      explorerUrl    : j['explorer_url'] as String?,
+      montantUsdt    : j['montant_usdt'] is num ? (j['montant_usdt'] as num).toDouble() : null,
+      tauxXofUsdt    : j['taux_xof_usdt'] is num ? (j['taux_xof_usdt'] as num).toDouble() : null,
+      signature      : j['signature']    as String?,
+      statut         : j['statut']       as String? ?? 'pending',
+      erreur         : j['message']      as String?,
+      phase          : j['phase']        is num ? (j['phase'] as num).toInt() : 1,
+      contractAddress: j['contract']     as String?,
     );
   }
 
@@ -190,10 +204,14 @@ class BlockchainService {
 
   static String get _anonKey => SupabaseService.supabaseAnonKey;
 
+  // ── Timeout adapté Phase 2 (TX on-chain peut prendre jusqu'à 60s) ────────
+  static const Duration _timeoutPhase2 = Duration(seconds: 75);
+  static const Duration _timeoutLecture = Duration(seconds: 15);
+
   // ── Appel HTTP vers l'Edge Function ─────────────────────────────────────
   static Future<Map<String, dynamic>> _appeler(
     Map<String, dynamic> payload, {
-    Duration timeout = const Duration(seconds: 15),
+    Duration timeout = const Duration(seconds: 75),
   }) async {
     try {
       final res = await http.post(
@@ -389,7 +407,7 @@ class BlockchainService {
     });
 
     if (rep['ok'] != true) return [];
-    final rows = rep['rows'] as List<dynamic>? ?? [];
+    final rows = rep['journal'] as List<dynamic>? ?? (rep['rows'] as List<dynamic>? ?? []);
     return rows
         .whereType<Map<String, dynamic>>()
         .map(BlockchainEntry.fromJson)
@@ -408,7 +426,13 @@ class BlockchainService {
 
   /// Taux de conversion XOF/USDT actuel.
   static Future<Map<String, dynamic>> tauxUsdt() async {
-    return _appeler({'action': 'taux_usdt'});
+    return _appeler({'action': 'taux_usdt'}, timeout: _timeoutLecture);
+  }
+
+  /// Infos du smart contract TontineVault (Phase 2).
+  /// Retourne phase=1 si le contrat n'est pas encore déployé.
+  static Future<Map<String, dynamic>> contractInfo() async {
+    return _appeler({'action': 'contract_info'}, timeout: _timeoutLecture);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -439,9 +463,14 @@ class BlockchainService {
         if (walletTontine   != null) 'wallet_tontine'  : walletTontine,
         if (walletMembre    != null) 'wallet_membre'   : walletMembre,
         if (metadata        != null) 'metadata'        : metadata,
-      }, timeout: const Duration(seconds: 20));
+      }, timeout: _timeoutPhase2); // 75s pour laisser la TX se confirmer
 
-      return BlockchainResultat.fromJson(rep);
+      final res = BlockchainResultat.fromJson(rep);
+      if (kDebugMode) {
+        debugPrint('[Blockchain] $typeOperation phase=${res.phase} '
+            'tx=${res.txHash?.substring(0,10)}... statut=${res.statut}');
+      }
+      return res;
     } catch (e) {
       if (kDebugMode) debugPrint('[Blockchain] _enregistrer ERREUR: $e');
       // NON-BLOQUANT : retourne un résultat échec sans lever d'exception
