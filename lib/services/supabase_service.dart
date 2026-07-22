@@ -415,10 +415,10 @@ class SupabaseService {
   }
 
   /// Écrit les données d'une tontine SANS vérification de PIN gestionnaire.
-  /// Utilisé après confirmation de paiement SycaPay (cotisations + caisse).
+  /// Utilisé après confirmation de paiement (cotisations + caisse).
   ///
   /// Nécessite que la fonction SQL `ecrire_tontine_sans_pin` soit créée
-  /// dans Supabase (fichier : supabase-fix-sycapay-sans-pin.sql).
+  /// dans Supabase.
   ///
   /// Le retour de Supabase peut être : true (bool), "true" (string),
   /// 1 (int), ou null si la fonction est introuvable.
@@ -440,7 +440,7 @@ class SupabaseService {
       });
 
       if (kDebugMode) {
-        debugPrint('[SycaPay] ecrire_tontine_sans_pin → result=$result (${result.runtimeType})');
+        debugPrint('[Paiement] ecrire_tontine_sans_pin → result=$result (${result.runtimeType})');
       }
 
       // Supabase peut retourner true, "true", 1, ou null
@@ -479,7 +479,7 @@ class SupabaseService {
       return ok;
     } catch (e) {
       if (kDebugMode) {
-        debugPrint('[SycaPay] ecrire_tontine_sans_pin ERREUR: $e');
+        debugPrint('[Paiement] ecrire_tontine_sans_pin ERREUR: $e');
       }
       rethrow;
     }

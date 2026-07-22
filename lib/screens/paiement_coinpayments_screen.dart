@@ -160,6 +160,24 @@ class _PaiementCoinPaymentsScreenState
     try {
       if (kDebugMode) debugPrint('[CoinPayments] creerTransaction $numCmd crypto=$_crypto');
 
+      // ── MODE TEST (kDebugMode uniquement) ────────────────────────────────
+      // En mode debug, on simule une transaction confirmée sans appel réel à
+      // CoinPayments — permet de tester le flux complet sans payer.
+      if (kDebugMode) {
+        await Future.delayed(const Duration(seconds: 2));
+        _enTraitement = false;
+        if (!mounted) return;
+        setState(() {
+          _etape       = _EtapeCrypto.confirmation;
+          _messageInfo = '🧪 MODE TEST — Paiement simulé (aucune transaction réelle)';
+        });
+        // Simuler un retour succès au parent après 2s
+        await Future.delayed(const Duration(seconds: 2));
+        if (mounted) Navigator.of(context).pop(true);
+        return;
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
       final resultat = await CoinPaymentsService.creerTransaction(
         montantXof:    montant,
         numCommande:   numCmd,

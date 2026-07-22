@@ -10,7 +10,6 @@ import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
-import 'paiement_caisse_pro_screen.dart';
 import 'paiement_choix_screen.dart';
 import 'kyc_screen.dart';
 
@@ -92,8 +91,6 @@ class CaisseScreen extends StatefulWidget {
 }
 
 class _CaisseScreenState extends State<CaisseScreen> {
-  // Tentatives de paiement reçues depuis PaiementCaisseProScreen
-  final List<TentativePaiement> _tentativesRecentes = [];
 
   @override
   Widget build(BuildContext context) {
@@ -215,7 +212,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
                     ),
                   ),
                   SizedBox(height: 10),
-                  if (data.caisse.isEmpty && _tentativesRecentes.isEmpty)
+                  if (data.caisse.isEmpty)
                     Center(
                       child: Padding(
                         padding: EdgeInsets.all(24),
@@ -228,45 +225,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
                   else ...data.caisse.reversed.map(
                     (m) => _LigneMouvement(mouvement: m, devise: data.devise),
                   ),
-                  // ── Tentatives de paiement récentes (session courante) ─────────
-                  if (_tentativesRecentes.isNotEmpty) ...[
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        const Icon(Icons.history_toggle_off_rounded,
-                            size: 18, color: AppColors.texteDoux),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Tentatives récentes',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 15,
-                            color: AppColors.texteDoux,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppColors.fondCode,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            '${_tentativesRecentes.length}',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.encre,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    ..._tentativesRecentes.reversed.map(
-                      (t) => _LigneTentative(tentative: t, devise: data.devise),
-                    ),
-                  ],
+
                 ],
               ),
             ),
@@ -402,8 +361,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
         ),
       ),
     );
-    // PaiementChoixScreen ne retourne pas de ResultatPaiementCaisse—rechargement direct ci-dessous
-    // Toujours recharger au retour pour rafraîchir le solde
+    // Toujours recharger au retour
     if (context.mounted) {
       provider.chargerTontine(tontine.code, silencieux: true);
     }
@@ -625,33 +583,26 @@ class _CaisseScreenState extends State<CaisseScreen> {
       return;
     }
 
-    // ── SycaPay direct — plus de validation TontineClair ────────────────
-    final frais      = (montant * 0.025).round();
-    final montantNet = montant - frais;
-
+    // Paiement CoinPayments
     if (!context.mounted) return;
 
-    final resultatDep = await Navigator.push<ResultatPaiementCaisse>(
+    await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => PaiementCaisseProScreen(
-          code:          tontine.code,
-          montant:       montantNet,
-          description:   descCtrl.text.trim().isNotEmpty
+        builder: (_) => PaiementChoixScreen(
+          code:        tontine.code,
+          typeFlux:    'depense_caisse',
+          montant:     montant,
+          description: descCtrl.text.trim().isNotEmpty
               ? descCtrl.text.trim()
               : 'Dépense caisse',
-          typeOperation: 'depense_caisse',
-          membreNom:     nomCtrl.text.trim(),
-          telephone:     numCtrl.text.trim(),
-          operateur:     operateur,
+          membreNom:   nomCtrl.text.trim(),
+          telephone:   numCtrl.text.trim(),
+          operateur:   operateur,
         ),
       ),
     );
-    // Ajouter les tentatives à l'historique de session
-    if (resultatDep != null && resultatDep.tentatives.isNotEmpty) {
-      setState(() => _tentativesRecentes.addAll(resultatDep.tentatives));
-    }
-    // FIX: toujours recharger au retour pour rafraîchir le solde
+    // Toujours recharger au retour
     if (context.mounted) {
       provider.chargerTontine(tontine.code, silencieux: true);
     }
@@ -810,8 +761,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
         ),
       ),
     );
-    // PaiementChoixScreen ne retourne pas de ResultatPaiementCaisse—rechargement direct ci-dessous
-    // FIX: toujours recharger au retour pour rafraîchir le solde
+    // Toujours recharger au retour
     if (context.mounted) {
       provider.chargerTontine(tontine.code, silencieux: true);
     }
@@ -1220,154 +1170,3 @@ class _LigneMouvement extends StatelessWidget {
   }
 }
 
-// ─── Ligne tentative de paiement (historique session) ─────────────────────────
-class _LigneTentative extends StatelessWidget {
-  final TentativePaiement tentative;
-  final String devise;
-
-  const _LigneTentative({required this.tentative, this.devise = 'XOF'});
-
-  Color get _couleurStatut {
-    switch (tentative.statut) {
-      case 'succes':  return AppColors.succes;
-      case 'echec':   return AppColors.alerte;
-      case 'attente': return AppColors.orFonce;
-      default:        return AppColors.texteDoux;
-    }
-  }
-
-  IconData get _iconeStatut {
-    switch (tentative.statut) {
-      case 'succes':  return Icons.check_circle_rounded;
-      case 'echec':   return Icons.cancel_rounded;
-      case 'attente': return Icons.hourglass_bottom_rounded;
-      default:        return Icons.help_outline_rounded;
-    }
-  }
-
-  String get _libelleOperation {
-    switch (tentative.typeOperation) {
-      case 'caisse':               return 'Apport caisse';
-      case 'penalite':             return 'Pénalité';
-      case 'depense_caisse':       return 'Dépense';
-      case 'remboursement_pret':   return 'Remboursement';
-      case 'pret_octroye':         return 'Prêt';
-      case 'decaissement_cagnotte':return 'Décaissement';
-      default:                     return tentative.typeOperation;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: _couleurStatut.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: _couleurStatut.withValues(alpha: 0.25),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: _couleurStatut.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(_iconeStatut, size: 18, color: _couleurStatut),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      _libelleOperation,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                        color: AppColors.texte,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: _couleurStatut.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        tentative.statutLibelle,
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w700,
-                          color: _couleurStatut,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '${tentative.operateur.toUpperCase()} · ${Formatters.dateFormatee(tentative.date)}',
-                  style: const TextStyle(fontSize: 11, color: AppColors.texteDoux),
-                ),
-                if (tentative.transactionId != null) ...[
-                  const SizedBox(height: 1),
-                  Text(
-                    'ID: ${tentative.transactionId}',
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: AppColors.texteDoux,
-                      fontFamily: 'monospace',
-                    ),
-                  ),
-                ],
-                Text(
-                  'Réf: ${tentative.numCommande}',
-                  style: const TextStyle(
-                    fontSize: 10,
-                    color: AppColors.texteDoux,
-                    fontFamily: 'monospace',
-                  ),
-                ),
-                if (tentative.message != null && tentative.statut == 'echec') ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    tentative.message!,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      color: AppColors.alerte,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                Formatters.montant(tentative.montant, devise: devise),
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13,
-                  color: _couleurStatut,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}

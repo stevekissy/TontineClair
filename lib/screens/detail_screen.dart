@@ -27,7 +27,7 @@ import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
 import 'kyc_screen.dart';
 import 'securite_screen.dart';
-import 'paiement_caisse_pro_screen.dart';
+import 'paiement_choix_screen.dart';
 import 'verification_publique_screen.dart';
 import 'certificat_blockchain_screen.dart';
 import 'qr_tontine_screen.dart';
@@ -2129,7 +2129,7 @@ class _BarreDetail extends StatelessWidget {
           data: data, membres: membres, payesIds: payesIds,
           nbPayesClot: nbPayesClot, numerTourAffiche: numerTourAffiche,
           ref: ref, gestNom: provider.gestActifNom ?? '',
-          debiterCaisse: true,  // SycaPay : caisse débitée dès confirmation
+          debiterCaisse: true,
           montantVerse: montantVerse,
           benefNom: benefNom,
         );
@@ -2138,20 +2138,20 @@ class _BarreDetail extends StatelessWidget {
     );
 
     if (ok == true && context.mounted) {
-      // ── B. Naviguer vers SycaPay pour le décaissement automatique ──────────
+      // ── B. Naviguer vers CoinPayments pour le décaissement ──────────
       await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => PaiementCaisseProScreen(
-            code:          provider.courante!.code,
-            montant:       montantNet,
-            description:   'Cagnotte tour $numerTourAffiche → $benefNom',
-            typeOperation: 'decaissement_cagnotte',
-            membreId:      benefId,
-            membreNom:     benefNom,
-            telephone:     numeroBenef,
-            operateur:     op,
-            numeroTour:    numerTourAffiche,
+          builder: (_) => PaiementChoixScreen(
+            code:        provider.courante!.code,
+            typeFlux:    'decaissement_cagnotte',
+            montant:     montantNet,
+            description: 'Cagnotte tour $numerTourAffiche → $benefNom',
+            membreId:    benefId,
+            membreNom:   benefNom,
+            telephone:   numeroBenef,
+            operateur:   op,
+            numeroTour:  numerTourAffiche,
           ),
         ),
       );

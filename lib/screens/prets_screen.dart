@@ -175,7 +175,7 @@ class _PretsScreenState extends State<PretsScreen> {
   }
 
   // ── Nouveau prêt : formulaire complet ────────────────────────────────────
-  // • Mode Premium : Mobile Money + frais réseau 2,5% + paiement direct via SycaPay
+  // • Mode Premium : Crypto CoinPayments
   // • Mode Lite    : PIN direct comme avant
   Future<void> _nouveauPret(
     BuildContext context,
@@ -390,7 +390,7 @@ class _PretsScreenState extends State<PretsScreen> {
     final emprunteur    = membresOrdre.where((m) => m.id == emprunteurId).firstOrNull;
     final nomEmprunteur = emprunteur?.nom ?? '—';
 
-    // ── MODE PREMIUM : SycaPay direct ──────────────────────────────────────
+    // ── MODE PREMIUM : CoinPayments ──────────────────────────────────────
     if (isPremium) {
       if (numBenefCtrl.text.trim().isEmpty) {
         afficherToast(context, 'Numéro bénéficiaire requis', estErreur: true); return;
@@ -398,9 +398,6 @@ class _PretsScreenState extends State<PretsScreen> {
       if (nomBenefCtrl.text.trim().isEmpty) {
         afficherToast(context, 'Nom bénéficiaire requis', estErreur: true); return;
       }
-
-      final frais      = (montant * 0.025).round();
-      final montantNet = montant - frais;
 
       if (montant > data.soldeCaisse) {
         afficherToast(context,
@@ -411,14 +408,14 @@ class _PretsScreenState extends State<PretsScreen> {
 
       if (!context.mounted) return;
 
-      // Sélecteur de paiement : SycaPay (Mobile Money) OU CoinPayments (Crypto)
+      // Paiement CoinPayments
       await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => PaiementChoixScreen(
             code:        tontine.code,
             typeFlux:    'pret_octroye',
-            montant:     montantNet,
+            montant:     montant,
             description: 'Prêt à $nomEmprunteur (${taux}% / ${durees} mois)',
             membreId:    emprunteurId ?? '',
             membreNom:   nomEmprunteur,
@@ -712,49 +709,7 @@ class _CartePret extends StatelessWidget {
     BuildContext context,
     Remboursement remb,
   ) async {
-    // ── BLOQUER si remboursement SycaPay (paiement automatique) ──────────────
-    final _methode = remb.methode.toLowerCase();
-    final _ref     = remb.reference.toLowerCase();
-    final isSycaPay = _methode == 'sycapay'
-        || _methode.contains('sycapay')
-        || _methode.contains('wave')
-        || _methode.contains('orange')
-        || _methode.contains('mtn')
-        || _ref.startsWith('tc_')
-        || _ref.contains('sycapay');
-
-    if (isSycaPay) {
-      if (context.mounted) {
-        showDialog<void>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Row(
-              children: [
-                Icon(Icons.lock_rounded, color: Colors.orange, size: 24),
-                SizedBox(width: 10),
-                Expanded(child: Text('Annulation impossible', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
-              ],
-            ),
-            content: const Text(
-              'Ce remboursement a été effectué automatiquement via Mobile Money (SycaPay).\n\n'
-              'Les paiements automatiques ne peuvent pas être annulés — '
-              'ni par le membre, ni par le gestionnaire.\n\n'
-              'En cas de litige, contactez le support.',
-              style: TextStyle(fontSize: 14, height: 1.5),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Compris', style: TextStyle(fontWeight: FontWeight.w700)),
-              ),
-            ],
-          ),
-        );
-      }
-      return;
-    }
-    // ── Annulation autorisée (paiement manuel uniquement) ─────────────────────
+    // ── Annulation autorisée ─────────────────────────────────────────────────
     final ok = await afficherModalePin(
       context,
       titre: 'Annuler ce remboursement',
@@ -870,7 +825,7 @@ class _CartePret extends StatelessWidget {
     }
   }
 
-  // ── Remboursement Pro : SycaPay ─────────────────────────────────────────────
+  // ── Remboursement Pro : CoinPayments ─────────────────────────────────────────
   Future<void> _rembourserPro(BuildContext context) async {
     final montantCtrl = TextEditingController(text: pret.resteADu.toString());
 
@@ -964,7 +919,7 @@ class _CartePret extends StatelessWidget {
     }
     if (!context.mounted) return;
 
-    // Sélecteur de paiement : SycaPay (Mobile Money) OU CoinPayments (Crypto)
+    // Paiement CoinPayments
     await Navigator.push(
       context,
       MaterialPageRoute(

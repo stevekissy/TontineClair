@@ -298,7 +298,7 @@ class PaiementService {
     // Reconnaissance générique CoinPayments (ex: coinpayments_usdt.trc20)
     if (code.startsWith('coinpayments')) return 'CoinPayments Crypto';
     // Reconnaissance générique SycaPay
-    if (code == 'sycapay') return 'SycaPay Mobile Money';
+
     return code;
   }
 

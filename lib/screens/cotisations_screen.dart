@@ -14,7 +14,7 @@ import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
-import 'paiement_pro_screen.dart';
+
 import 'paiement_choix_screen.dart';
 
 // ── Bug #6 fix : StatefulWidget pour rechargement depuis Supabase à l'ouverture ──
@@ -178,7 +178,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
                                     context,
                                     MaterialPageRoute(
                                       // ── Sélecteur de paiement Premium ──
-                                      // SycaPay (Mobile Money) OU CoinPayments (Crypto)
+                                      // CoinPayments (Crypto)
                                       builder: (_) => PaiementChoixScreen(
                                         code:      tontine.code,
                                         typeFlux:  'cotisation',
@@ -342,49 +342,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
         }
       }
     } else {
-      // ── BLOQUER l'annulation si paiement SycaPay (automatique) ───────────
-      // Détection hermétique : methode OU référence TC_ OU mot "sycapay" dans ref
-      final _methode = (membre.methodePaiement ?? '').toLowerCase();
-      final _ref     = (membre.referencePaiement ?? '').toLowerCase();
-      final isSycaPay = _methode == 'sycapay'
-          || _methode.contains('sycapay')
-          || _methode.contains('wave')       // Wave via SycaPay
-          || _methode.contains('orange')     // Orange Money via SycaPay
-          || _methode.contains('mtn')        // MTN via SycaPay
-          || _ref.startsWith('tc_')          // Préfixe standard TontineClair SycaPay
-          || _ref.contains('sycapay');
-      if (isSycaPay) {
-        if (context.mounted) {
-          showDialog<void>(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              title: Row(
-                children: [
-                  const Icon(Icons.lock_rounded, color: Colors.orange, size: 24),
-                  const SizedBox(width: 10),
-                  const Expanded(child: Text('Annulation impossible', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
-                ],
-              ),
-              content: const Text(
-                'Ce paiement a été effectué automatiquement via Mobile Money (SycaPay).\n\n'
-                'Les paiements automatiques ne peuvent pas être annulés — '
-                'ni par le membre, ni par le gestionnaire.\n\n'
-                'En cas de litige, contactez le support.',
-                style: TextStyle(fontSize: 14, height: 1.5),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Compris', style: TextStyle(fontWeight: FontWeight.w700)),
-                ),
-              ],
-            ),
-          );
-        }
-        return;
-      }
-      // Annuler le paiement (non-SycaPay uniquement)
+      // Annuler le paiement
       final ok = await afficherModalePin(
         context,
         titre: context.tr('annuler_paiement'),
@@ -1025,9 +983,9 @@ class _CarteMembre extends StatelessWidget {
                 ),
               ),
               // ── Bouton statut / toggle ──
-              // Logique (RÈGLE : Premium = SycaPay uniquement, jamais de saisie manuelle) :
+              // Logique :
               //   Membre payé              → badge vert "✓ Payé"
-              //   Tous utilisateurs Premium non-payés → bouton "📱 Payer" (SycaPay)
+              //   Premium non-payé         → bouton "Payer" (CoinPayments)
               //   Gest Lite non-payé       → bouton "Approuver" (toggle manuel)
               //   Membre Lite non-gest     → badge "En attente" (lecture seule)
               if (membre.paye)
@@ -1048,20 +1006,19 @@ class _CarteMembre extends StatelessWidget {
                   ),
                 )
               else if (onPayer != null)
-                // ── Premium non-payé (gest OU membre) → SycaPay UNIQUEMENT
-                // ✏️ Manuel supprimé : règle = paiements automatisés seulement en Premium
+                // ── Premium non-payé → CoinPayments
                 GestureDetector(
                   onTap: onPayer,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF0D8A4E),
+                      color: const Color(0xFFF7931A),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.phone_android_rounded, size: 12, color: Colors.white),
+                        Icon(Icons.currency_bitcoin_rounded, size: 12, color: Colors.white),
                         SizedBox(width: 4),
                         Text('Payer', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
                       ],
