@@ -9,6 +9,7 @@ import 'equipe_screen.dart';
 import 'messagerie_screen.dart';
 import 'support_admin_screen.dart';
 import 'coinpayments_admin_screen.dart';
+import 'blockchain_admin_screen.dart';
 import '../utils/app_localizations.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -760,6 +761,7 @@ class _AdminScreenState extends State<AdminScreen> {
       _OngletDef(icone: Icons.forum_outlined,          label: 'Messages',  badge: 0,                  index: 4),
       _OngletDef(icone: Icons.support_agent_outlined,  label: 'Support',   badge: 0,                  index: 5),
       _OngletDef(icone: Icons.currency_bitcoin,          label: 'Crypto',    badge: 0,                  index: 6),
+      _OngletDef(icone: Icons.hexagon_outlined,           label: 'Blockchain', badge: 0,                 index: 7),
     ];
 
     return Column(
@@ -800,7 +802,8 @@ class _AdminScreenState extends State<AdminScreen> {
                 nom:      _nomMembre      ?? (_pseudoMembre ?? 'Admin'),
               ),
             5 => SupportAdminScreen(cle: _cleEffective),
-            _ => CoinPaymentsAdminScreen(cleAdmin: _cleEffective),
+            6 => CoinPaymentsAdminScreen(cleAdmin: _cleEffective),
+            _ => BlockchainAdminScreen(cleAdmin: _cleEffective),
           },
         ),
       ],
