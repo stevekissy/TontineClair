@@ -971,6 +971,309 @@ async function actionContractInfo(env: Record<string, string>): Promise<Record<s
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// V3 — TontineVaultV3.sol (Non-Custodial) — Helpers ABI
+// ════════════════════════════════════════════════════════════════════════════
+
+// Encode une adresse Ethereum (20 bytes → 32 bytes padded)
+function encodeAddress(addr: string): string {
+  const clean = addr.startsWith("0x") ? addr.slice(2) : addr;
+  return clean.toLowerCase().padStart(64, "0");
+}
+
+// Encode uint8 (enum)
+function encodeUint8(n: number): string {
+  return BigInt(n).toString(16).padStart(64, "0");
+}
+
+// Build calldata pour TontineVaultV3.creerTontine(string,string,uint256,uint256,uint8,uint8)
+function buildV3CreerTontineCalldata(
+  code        : string,
+  nom         : string,
+  montant     : bigint,
+  nbreMembres : number,
+  frequence   : number,
+  typeOrdre   : number
+): string {
+  const sel = functionSelector("creerTontine(string,string,uint256,uint256,uint8,uint8)");
+  const encoder = new TextEncoder();
+  const encStr = (s: string) => {
+    const b = encoder.encode(s);
+    return encodeUint256(b.length) + bytesToHex(b).padEnd(Math.ceil(b.length / 32) * 64, "0");
+  };
+  const str1 = encStr(code);
+  const str2 = encStr(nom);
+  const baseOffset = 6 * 32;
+  const o0 = baseOffset;
+  const o1 = o0 + str1.length / 2;
+  const staticPart =
+    encodeUint256(o0) + encodeUint256(o1) +
+    encodeUint256(montant) + encodeUint256(nbreMembres) +
+    encodeUint8(frequence) + encodeUint8(typeOrdre);
+  return sel + staticPart + str1 + str2;
+}
+
+// Build calldata pour TontineVaultV3.rejoindreTontine(string,string,string)
+function buildV3RejoindreCalldata(code: string, membreId: string, nom: string): string {
+  const sel = functionSelector("rejoindreTontine(string,string,string)");
+  const encoder = new TextEncoder();
+  const encStr = (s: string) => {
+    const b = encoder.encode(s);
+    return encodeUint256(b.length) + bytesToHex(b).padEnd(Math.ceil(b.length / 32) * 64, "0");
+  };
+  const str1 = encStr(code); const str2 = encStr(membreId); const str3 = encStr(nom);
+  const o0 = 3 * 32;
+  const o1 = o0 + str1.length / 2;
+  const o2 = o1 + str2.length / 2;
+  return sel + encodeUint256(o0) + encodeUint256(o1) + encodeUint256(o2) + str1 + str2 + str3;
+}
+
+// Build calldata pour string-only functions (cotiser, executerTour, reclamerDistribution, etc.)
+function buildV3StringOnlyCalldata(fnSig: string, code: string): string {
+  const sel = functionSelector(fnSig);
+  const encoder = new TextEncoder();
+  const b = encoder.encode(code);
+  const str = encodeUint256(b.length) + bytesToHex(b).padEnd(Math.ceil(b.length / 32) * 64, "0");
+  return sel + encodeUint256(32) + str;
+}
+
+// Build calldata pour USDT.approve(address,uint256)
+function buildUsdtApproveCalldata(spender: string, amount: bigint): string {
+  return functionSelector("approve(address,uint256)") + encodeAddress(spender) + encodeUint256(amount);
+}
+
+// Build calldata pour TontineVaultV3.getMembre(string,address)
+function buildV3GetMembreCalldata(code: string, wallet: string): string {
+  const sel = functionSelector("getMembre(string,address)");
+  const encoder = new TextEncoder();
+  const b = encoder.encode(code);
+  const str = encodeUint256(b.length) + bytesToHex(b).padEnd(Math.ceil(b.length / 32) * 64, "0");
+  return sel + encodeUint256(2 * 32) + encodeAddress(wallet) + str;
+}
+
+// Decode ABI-encoded string from eth_call result
+function decodeAbiString(hex: string, slotIndex: number): string {
+  try {
+    const data = hex.startsWith("0x") ? hex.slice(2) : hex;
+    const offsetHex = data.slice(slotIndex * 64, slotIndex * 64 + 64);
+    const strStart = parseInt(offsetHex, 16) * 2;
+    const len = parseInt(data.slice(strStart, strStart + 64), 16);
+    const strBytes = data.slice(strStart + 64, strStart + 64 + len * 2);
+    return new TextDecoder().decode(hexToBytes(strBytes));
+  } catch (_) { return ""; }
+}
+
+function decodeUint256(hex: string, slotIndex: number): bigint {
+  try {
+    const data = hex.startsWith("0x") ? hex.slice(2) : hex;
+    return BigInt("0x" + (data.slice(slotIndex * 64, (slotIndex + 1) * 64) || "0"));
+  } catch (_) { return 0n; }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// V3 — Action Functions
+// ════════════════════════════════════════════════════════════════════════════
+
+async function actionV3ContractInfo(env: Record<string, string>): Promise<Record<string, unknown>> {
+  const rpcUrl       = env.ALCHEMY_POLYGON_AMOY_URL || RPC_FALLBACK;
+  const contractAddr = env.TONTINE_CONTRACT_ADDRESS || "";
+  if (!contractAddr) return { ok: false, erreur: "TONTINE_CONTRACT_ADDRESS manquant", v3: false };
+  try {
+    const calldata = functionSelector("getContractInfo()");
+    const result = await rpcCall(rpcUrl, "eth_call", [{ to: contractAddr, data: calldata }, "latest"]) as string;
+    const version = decodeAbiString(result, 0);
+    return {
+      ok: true, v3: true,
+      contract_address: contractAddr,
+      version: version || "3.0.0",
+      usdt_address: "0xc2132D05D31c914a87C6611C10748AEb04B58e8F",
+      network: "polygon-mainnet", chain_id: CHAIN_ID,
+      explorer: `${EXPLORER_BASE}/address/${contractAddr}`,
+    };
+  } catch (err) { return { ok: false, erreur: String(err), contract: contractAddr }; }
+}
+
+async function actionV3GetTontine(body: Record<string, unknown>, env: Record<string, string>): Promise<Record<string, unknown>> {
+  const rpcUrl = env.ALCHEMY_POLYGON_AMOY_URL || RPC_FALLBACK;
+  const contractAddr = env.TONTINE_CONTRACT_ADDRESS || "";
+  const code = String(body.code || "").toUpperCase();
+  if (!code) return { ok: false, erreur: "code requis" };
+  if (!contractAddr) return { ok: false, erreur: "TONTINE_CONTRACT_ADDRESS manquant" };
+  try {
+    const calldata = buildV3StringOnlyCalldata("getTontine(string)", code);
+    const result = await rpcCall(rpcUrl, "eth_call", [{ to: contractAddr, data: calldata }, "latest"]) as string;
+    const data = result.startsWith("0x") ? result.slice(2) : result;
+    if (!data || data.length < 128) return { ok: true, found: false, code, tontine: null };
+    const tontineCode = decodeAbiString(result, 0);
+    const nom         = decodeAbiString(result, 32);
+    const gestionnaire = "0x" + data.slice(2 * 64 + 24, 2 * 64 + 64);
+    const montant      = decodeUint256(result, 3);
+    const nbreMax      = Number(decodeUint256(result, 4));
+    const nbreActuel   = Number(decodeUint256(result, 5));
+    const frequence    = Number(decodeUint256(result, 6));
+    const typeOrdre    = Number(decodeUint256(result, 7));
+    const tourActuel   = Number(decodeUint256(result, 8));
+    const dateProchain = Number(decodeUint256(result, 9));
+    const totalCollecte = decodeUint256(result, 10);
+    const soldeContrat  = decodeUint256(result, 11);
+    const statutNum    = Number(decodeUint256(result, 12));
+    const statutMap    = ["EN_ATTENTE", "ACTIVE", "TERMINEE", "ANNULEE"];
+    return {
+      ok: true, found: tontineCode.length > 0, code,
+      tontine: {
+        code: tontineCode, nom, gestionnaire,
+        montant_usdt_micro: montant.toString(),
+        montant_usdt: Number(montant) / 1_000_000,
+        nombre_membres_max: nbreMax, nombre_membres: nbreActuel,
+        frequence, type_ordre: typeOrdre,
+        tour_actuel: tourActuel, date_prochain_tour: dateProchain,
+        total_collecte_usdt: Number(totalCollecte) / 1_000_000,
+        solde_contrat_usdt: Number(soldeContrat) / 1_000_000,
+        statut: statutMap[statutNum] || "INCONNU",
+        explorer: `${EXPLORER_BASE}/address/${contractAddr}`,
+      }
+    };
+  } catch (err) { return { ok: false, erreur: String(err), code }; }
+}
+
+async function actionV3CreerTontine(body: Record<string, unknown>, env: Record<string, string>): Promise<Record<string, unknown>> {
+  const rpcUrl = env.ALCHEMY_POLYGON_AMOY_URL || RPC_FALLBACK;
+  const contractAddr = env.TONTINE_CONTRACT_ADDRESS || "";
+  const privKey = env.MASTER_WALLET_PRIVATE_KEY || "";
+  const fromAddr = env.MASTER_WALLET_ADDRESS || "";
+  const code = String(body.code || "").toUpperCase();
+  const nom = String(body.nom || code);
+  const montantUsdt = Number(body.montant_usdt) || 0;
+  const nbreMembres = Number(body.nombre_membres) || 0;
+  const frequence = Number(body.frequence ?? 1);
+  const typeOrdre = Number(body.type_ordre ?? 0);
+  if (!code || montantUsdt <= 0 || nbreMembres < 2) return { ok: false, erreur: "code, montant_usdt, nombre_membres requis" };
+  if (!contractAddr || !privKey || !fromAddr) return { ok: false, erreur: "Config serveur manquante" };
+  try {
+    const montantMicro = BigInt(Math.round(montantUsdt * 1_000_000));
+    const calldata = buildV3CreerTontineCalldata(code, nom, montantMicro, nbreMembres, frequence, typeOrdre);
+    const onChain = await sendOnChainTx(rpcUrl, contractAddr, calldata, privKey, fromAddr);
+    if (!onChain) return { ok: false, erreur: "Échec TX creerTontine" };
+    return { ok: true, action: "creer_tontine_v3", code, tx_hash: onChain.txHash, block_number: onChain.blockNumber, explorer: `${EXPLORER_BASE}/tx/${onChain.txHash}`, statut: onChain.blockNumber > 0 ? "confirmed" : "pending" };
+  } catch (err) { return { ok: false, erreur: String(err) }; }
+}
+
+async function actionV3RejoindreToontine(body: Record<string, unknown>, env: Record<string, string>): Promise<Record<string, unknown>> {
+  const rpcUrl = env.ALCHEMY_POLYGON_AMOY_URL || RPC_FALLBACK;
+  const contractAddr = env.TONTINE_CONTRACT_ADDRESS || "";
+  const privKey = env.MASTER_WALLET_PRIVATE_KEY || "";
+  const fromAddr = env.MASTER_WALLET_ADDRESS || "";
+  const code = String(body.code || "").toUpperCase();
+  const membreId = String(body.membre_id || "");
+  const nom = String(body.nom || membreId);
+  if (!code || !membreId) return { ok: false, erreur: "code et membre_id requis" };
+  if (!contractAddr || !privKey || !fromAddr) return { ok: false, erreur: "Config serveur manquante" };
+  try {
+    const calldata = buildV3RejoindreCalldata(code, membreId, nom);
+    const onChain = await sendOnChainTx(rpcUrl, contractAddr, calldata, privKey, fromAddr);
+    if (!onChain) return { ok: false, erreur: "Échec TX rejoindreTontine" };
+    return { ok: true, action: "rejoindre_tontine_v3", code, membre_id: membreId, tx_hash: onChain.txHash, block_number: onChain.blockNumber, explorer: `${EXPLORER_BASE}/tx/${onChain.txHash}`, statut: onChain.blockNumber > 0 ? "confirmed" : "pending" };
+  } catch (err) { return { ok: false, erreur: String(err) }; }
+}
+
+async function actionV3Cotiser(body: Record<string, unknown>, env: Record<string, string>): Promise<Record<string, unknown>> {
+  const rpcUrl = env.ALCHEMY_POLYGON_AMOY_URL || RPC_FALLBACK;
+  const contractAddr = env.TONTINE_CONTRACT_ADDRESS || "";
+  const privKey = env.MASTER_WALLET_PRIVATE_KEY || "";
+  const fromAddr = env.MASTER_WALLET_ADDRESS || "";
+  const supabaseUrl = env.SUPABASE_URL;
+  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
+  const code = String(body.code || "").toUpperCase();
+  const membreId = String(body.membre_id || "");
+  if (!code) return { ok: false, erreur: "code requis" };
+  if (!contractAddr || !privKey || !fromAddr) return { ok: false, erreur: "Config serveur manquante" };
+  try {
+    const calldata = buildV3StringOnlyCalldata("cotiser(string)", code);
+    const onChain = await sendOnChainTx(rpcUrl, contractAddr, calldata, privKey, fromAddr);
+    if (!onChain) return { ok: false, erreur: "Échec TX cotiser" };
+    await supabaseInsert(supabaseUrl, serviceKey, "blockchain_journal", {
+      tontine_code: code, type_operation: "cotisation_v3", membre_id: membreId,
+      montant_xof: Number(body.montant_xof) || 0, montant_usdt: Number(body.montant_usdt) || 0,
+      taux_xof_usdt: 600, reseau: "polygon-mainnet",
+      tx_hash: onChain.txHash, block_number: onChain.blockNumber || null,
+      wallet_tontine: fromAddr, statut: onChain.blockNumber > 0 ? "confirmed" : "pending",
+      metadata: { v3: true, contract_address: contractAddr, explorer_url: `${EXPLORER_BASE}/tx/${onChain.txHash}` },
+    });
+    return { ok: true, action: "cotiser_v3", code, membre_id: membreId, tx_hash: onChain.txHash, block_number: onChain.blockNumber, explorer: `${EXPLORER_BASE}/tx/${onChain.txHash}`, statut: onChain.blockNumber > 0 ? "confirmed" : "pending" };
+  } catch (err) { return { ok: false, erreur: String(err) }; }
+}
+
+async function actionV3ExecuterTour(body: Record<string, unknown>, env: Record<string, string>): Promise<Record<string, unknown>> {
+  const rpcUrl = env.ALCHEMY_POLYGON_AMOY_URL || RPC_FALLBACK;
+  const contractAddr = env.TONTINE_CONTRACT_ADDRESS || "";
+  const privKey = env.MASTER_WALLET_PRIVATE_KEY || "";
+  const fromAddr = env.MASTER_WALLET_ADDRESS || "";
+  const supabaseUrl = env.SUPABASE_URL;
+  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
+  const code = String(body.code || "").toUpperCase();
+  if (!code) return { ok: false, erreur: "code requis" };
+  if (!contractAddr || !privKey || !fromAddr) return { ok: false, erreur: "Config serveur manquante" };
+  try {
+    const calldata = buildV3StringOnlyCalldata("executerTour(string)", code);
+    const onChain = await sendOnChainTx(rpcUrl, contractAddr, calldata, privKey, fromAddr);
+    if (!onChain) return { ok: false, erreur: "Échec TX executerTour" };
+    await supabaseInsert(supabaseUrl, serviceKey, "blockchain_journal", {
+      tontine_code: code, type_operation: "tour_execute_v3", membre_id: "system",
+      montant_xof: Number(body.montant_xof) || 0, montant_usdt: Number(body.montant_usdt) || 0,
+      taux_xof_usdt: 600, reseau: "polygon-mainnet",
+      tx_hash: onChain.txHash, block_number: onChain.blockNumber || null,
+      wallet_tontine: fromAddr, statut: onChain.blockNumber > 0 ? "confirmed" : "pending",
+      metadata: { v3: true, beneficiaire: body.beneficiaire || null, tour: body.tour || null, contract_address: contractAddr, explorer_url: `${EXPLORER_BASE}/tx/${onChain.txHash}` },
+    });
+    return { ok: true, action: "executer_tour_v3", code, tx_hash: onChain.txHash, block_number: onChain.blockNumber, explorer: `${EXPLORER_BASE}/tx/${onChain.txHash}`, statut: onChain.blockNumber > 0 ? "confirmed" : "pending" };
+  } catch (err) { return { ok: false, erreur: String(err) }; }
+}
+
+async function actionV3ReclamerDistribution(body: Record<string, unknown>, env: Record<string, string>): Promise<Record<string, unknown>> {
+  const rpcUrl = env.ALCHEMY_POLYGON_AMOY_URL || RPC_FALLBACK;
+  const contractAddr = env.TONTINE_CONTRACT_ADDRESS || "";
+  const privKey = env.MASTER_WALLET_PRIVATE_KEY || "";
+  const fromAddr = env.MASTER_WALLET_ADDRESS || "";
+  const supabaseUrl = env.SUPABASE_URL;
+  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
+  const code = String(body.code || "").toUpperCase();
+  const membreId = String(body.membre_id || "");
+  if (!code) return { ok: false, erreur: "code requis" };
+  if (!contractAddr || !privKey || !fromAddr) return { ok: false, erreur: "Config serveur manquante" };
+  try {
+    const calldata = buildV3StringOnlyCalldata("reclamerDistribution(string)", code);
+    const onChain = await sendOnChainTx(rpcUrl, contractAddr, calldata, privKey, fromAddr);
+    if (!onChain) return { ok: false, erreur: "Échec TX reclamerDistribution" };
+    await supabaseInsert(supabaseUrl, serviceKey, "blockchain_journal", {
+      tontine_code: code, type_operation: "distribution_reclamee_v3", membre_id: membreId || "unknown",
+      montant_xof: Number(body.montant_xof) || 0, montant_usdt: Number(body.montant_usdt) || 0,
+      taux_xof_usdt: 600, reseau: "polygon-mainnet",
+      tx_hash: onChain.txHash, block_number: onChain.blockNumber || null,
+      wallet_tontine: fromAddr, statut: onChain.blockNumber > 0 ? "confirmed" : "pending",
+      metadata: { v3: true, contract_address: contractAddr, explorer_url: `${EXPLORER_BASE}/tx/${onChain.txHash}` },
+    });
+    return { ok: true, action: "reclamer_distribution_v3", code, membre_id: membreId, tx_hash: onChain.txHash, block_number: onChain.blockNumber, explorer: `${EXPLORER_BASE}/tx/${onChain.txHash}`, statut: onChain.blockNumber > 0 ? "confirmed" : "pending" };
+  } catch (err) { return { ok: false, erreur: String(err) }; }
+}
+
+async function actionV3ApprouverUsdt(body: Record<string, unknown>, env: Record<string, string>): Promise<Record<string, unknown>> {
+  const rpcUrl = env.ALCHEMY_POLYGON_AMOY_URL || RPC_FALLBACK;
+  const contractAddr = env.TONTINE_CONTRACT_ADDRESS || "";
+  const privKey = env.MASTER_WALLET_PRIVATE_KEY || "";
+  const fromAddr = env.MASTER_WALLET_ADDRESS || "";
+  const USDT_ADDR = "0xc2132D05D31c914a87C6611C10748AEb04B58e8F";
+  const montantUsdt = Number(body.montant_usdt) || 0;
+  if (montantUsdt <= 0) return { ok: false, erreur: "montant_usdt requis" };
+  if (!contractAddr || !privKey || !fromAddr) return { ok: false, erreur: "Config serveur manquante" };
+  try {
+    const amount = BigInt(Math.round(montantUsdt * 1_000_000));
+    const calldata = buildUsdtApproveCalldata(contractAddr, amount);
+    const onChain = await sendOnChainTx(rpcUrl, USDT_ADDR, calldata, privKey, fromAddr);
+    if (!onChain) return { ok: false, erreur: "Échec approve USDT" };
+    return { ok: true, action: "approuver_usdt_v3", spender: contractAddr, montant_usdt: montantUsdt, tx_hash: onChain.txHash, block_number: onChain.blockNumber, explorer: `${EXPLORER_BASE}/tx/${onChain.txHash}`, statut: onChain.blockNumber > 0 ? "confirmed" : "pending" };
+  } catch (err) { return { ok: false, erreur: String(err) }; }
+}
+
 // ── Main handler ───────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -1017,6 +1320,31 @@ Deno.serve(async (req) => {
         break;
       case "contract_info":
         result = await actionContractInfo(env);
+        break;
+      // ── V3 Actions ────────────────────────────────────────────────────────
+      case "v3_contract_info":
+        result = await actionV3ContractInfo(env);
+        break;
+      case "v3_get_tontine":
+        result = await actionV3GetTontine(body, env);
+        break;
+      case "v3_creer_tontine":
+        result = await actionV3CreerTontine(body, env);
+        break;
+      case "v3_rejoindre_tontine":
+        result = await actionV3RejoindreToontine(body, env);
+        break;
+      case "v3_cotiser":
+        result = await actionV3Cotiser(body, env);
+        break;
+      case "v3_executer_tour":
+        result = await actionV3ExecuterTour(body, env);
+        break;
+      case "v3_reclamer_distribution":
+        result = await actionV3ReclamerDistribution(body, env);
+        break;
+      case "v3_approuver_usdt":
+        result = await actionV3ApprouverUsdt(body, env);
         break;
       default:
         result = { ok: false, erreur: `Action inconnue: ${action}` };

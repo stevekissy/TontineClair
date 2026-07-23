@@ -437,6 +437,131 @@ class BlockchainService {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // V3 — TontineVaultV3 Non-Custodial Methods
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Adresse V3 : 0xdfD620Bb026776571c8A7ced5171FcfCE9528b77
+  // Réseau     : Polygon Mainnet (chainId 137)
+  // Architecture: Non-custodial — fonds USDT détenus par le contrat
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Infos du contrat V3 on-chain (version, USDT address, frais, etc.)
+  static Future<Map<String, dynamic>> v3ContractInfo() async {
+    return _appeler({'action': 'v3_contract_info'}, timeout: _timeoutLecture);
+  }
+
+  /// Lit l'état on-chain d'une tontine V3.
+  static Future<Map<String, dynamic>> v3GetTontine(String code) async {
+    return _appeler({
+      'action': 'v3_get_tontine',
+      'code': code.toUpperCase(),
+    }, timeout: _timeoutLecture);
+  }
+
+  /// Crée une tontine V3 on-chain.
+  /// [montantUsdt]  : montant de cotisation par tour (en USDT, ex: 10.0)
+  /// [nombreMembres]: nombre de membres (2-50)
+  /// [frequence]    : 0=hebdo, 1=mensuel, 2=bimensuel, 3=trimestriel
+  /// [typeOrdre]    : 0=fixe, 1=tirage, 2=vote
+  static Future<Map<String, dynamic>> v3CreerTontine({
+    required String code,
+    required String nom,
+    required double montantUsdt,
+    required int    nombreMembres,
+    int frequence = 1,
+    int typeOrdre = 0,
+  }) async {
+    return _appeler({
+      'action'         : 'v3_creer_tontine',
+      'code'           : code.toUpperCase(),
+      'nom'            : nom,
+      'montant_usdt'   : montantUsdt,
+      'nombre_membres' : nombreMembres,
+      'frequence'      : frequence,
+      'type_ordre'     : typeOrdre,
+    }, timeout: _timeoutPhase2);
+  }
+
+  /// Rejoint une tontine V3 on-chain.
+  static Future<Map<String, dynamic>> v3RejoindreToontine({
+    required String code,
+    required String membreId,
+    required String nom,
+  }) async {
+    return _appeler({
+      'action'    : 'v3_rejoindre_tontine',
+      'code'      : code.toUpperCase(),
+      'membre_id' : membreId,
+      'nom'       : nom,
+    }, timeout: _timeoutPhase2);
+  }
+
+  /// Envoie la cotisation USDT pour le tour actuel d'une tontine V3.
+  /// Prérequis : le wallet admin doit avoir approuvé le contrat via v3ApprouverUsdt().
+  /// [montantXof]  : équivalent XOF (pour le journal)
+  /// [montantUsdt] : montant USDT exact (pour le journal)
+  static Future<Map<String, dynamic>> v3Cotiser({
+    required String code,
+    required String membreId,
+    int?    montantXof,
+    double? montantUsdt,
+  }) async {
+    return _appeler({
+      'action'       : 'v3_cotiser',
+      'code'         : code.toUpperCase(),
+      'membre_id'    : membreId,
+      if (montantXof   != null) 'montant_xof'  : montantXof,
+      if (montantUsdt  != null) 'montant_usdt' : montantUsdt,
+    }, timeout: _timeoutPhase2);
+  }
+
+  /// Exécute le tour actuel d'une tontine V3 (appelable par quiconque).
+  /// Le contrat V3 vérifie lui-même les conditions (80% quorum, date, etc.)
+  static Future<Map<String, dynamic>> v3ExecuterTour({
+    required String code,
+    String?  beneficiaire,
+    int?     tour,
+    int?     montantXof,
+    double?  montantUsdt,
+  }) async {
+    return _appeler({
+      'action'      : 'v3_executer_tour',
+      'code'        : code.toUpperCase(),
+      if (beneficiaire != null) 'beneficiaire': beneficiaire,
+      if (tour         != null) 'tour'         : tour,
+      if (montantXof   != null) 'montant_xof'  : montantXof,
+      if (montantUsdt  != null) 'montant_usdt' : montantUsdt,
+    }, timeout: _timeoutPhase2);
+  }
+
+  /// Réclame la distribution USDT du tour (pull pattern).
+  /// Le bénéficiaire du tour reçoit ses USDT depuis le contrat.
+  static Future<Map<String, dynamic>> v3ReclamerDistribution({
+    required String code,
+    required String membreId,
+    int?    montantXof,
+    double? montantUsdt,
+  }) async {
+    return _appeler({
+      'action'       : 'v3_reclamer_distribution',
+      'code'         : code.toUpperCase(),
+      'membre_id'    : membreId,
+      if (montantXof   != null) 'montant_xof'  : montantXof,
+      if (montantUsdt  != null) 'montant_usdt' : montantUsdt,
+    }, timeout: _timeoutPhase2);
+  }
+
+  /// Approuve le contrat V3 pour retirer [montantUsdt] USDT du wallet admin.
+  /// À appeler avant v3Cotiser() si le wallet est géré server-side.
+  static Future<Map<String, dynamic>> v3ApprouverUsdt({
+    required double montantUsdt,
+  }) async {
+    return _appeler({
+      'action'       : 'v3_approuver_usdt',
+      'montant_usdt' : montantUsdt,
+    }, timeout: _timeoutPhase2);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // MÉTHODE INTERNE COMMUNE
   // ═══════════════════════════════════════════════════════════════════════════
   static Future<BlockchainResultat> _enregistrer({
