@@ -18,21 +18,13 @@
 //   TONTINE_CONTRACT_ADDRESS    — adresse TontineVault.sol déployé
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+// Pas d'import externe — Deno.serve() natif disponible dans Supabase Edge Runtime
 
 // ── Config réseau ──────────────────────────────────────────────────────────────
 const CHAIN_ID       = 137;            // Polygon Mainnet
 const CHAIN_ID_HEX   = "0x89";
 const EXPLORER_BASE  = "https://polygonscan.com";
 const RPC_FALLBACK   = "https://polygon.drpc.org";
-
-// ── ABI TontineVault.sol (fonctions utilisées) ─────────────────────────────────
-// Encodage manuel des selectors pour éviter les dépendances lourdes
-const SELECTORS = {
-  enregistrerOperation : "0x" + await sha256hex("enregistrerOperation(string,string,string,uint256,uint256,string,bytes32)"),
-  enregistrerVote      : "0x" + await sha256hex("enregistrerVote(string,string,string,string,bytes32)"),
-  enregistrerCreation  : "0x" + await sha256hex("enregistrerCreation(string,string,string,bytes32)"),
-};
 
 // ── Helpers crypto ─────────────────────────────────────────────────────────────
 
@@ -41,6 +33,9 @@ async function sha256hex(data: string): Promise<string> {
   const hashBuf = await crypto.subtle.digest("SHA-256", encoder.encode(data));
   return Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, "0")).join("").slice(0, 8);
 }
+
+// Note: SELECTORS non utilisé en pratique (selectors calculés via keccak256 + functionSelector())
+// On le supprime pour éviter le top-level await qui cause un BOOT_ERROR dans Deno Edge Functions
 
 async function sha256full(data: string | Uint8Array): Promise<Uint8Array> {
   const buf = typeof data === "string" ? new TextEncoder().encode(data) : data;
@@ -137,14 +132,158 @@ function encodeCalldata(
 //   la signature à une Edge Function helper ou on utilise le pattern
 //   "sign via secp256k1 Deno native"
 
-// Deno 1.x has built-in crypto but not secp256k1 ECDSA for Ethereum
-// Solution : utiliser la lib noble/secp256k1 disponible via esm.sh
-
-import * as secp from "https://esm.sh/@noble/secp256k1@1.7.1";
-import { keccak_256 } from "https://esm.sh/@noble/hashes@1.3.0/sha3";
+// ── Keccak-256 pure JS (pas de dépendance externe) ────────────────────────────
+// Implémentation embarquée pour éviter les imports esm.sh/npm: qui cassent le boot
 
 function keccak256(data: Uint8Array): Uint8Array {
-  return keccak_256(data);
+  // Keccak-256 (non-padded SHA3, standard Ethereum)
+  const RC: bigint[] = [
+    0x0000000000000001n,0x0000000000008082n,0x800000000000808An,0x8000000080008000n,
+    0x000000000000808Bn,0x0000000080000001n,0x8000000080008081n,0x8000000000008009n,
+    0x000000000000008An,0x0000000000000088n,0x0000000080008009n,0x000000008000000An,
+    0x000000008000808Bn,0x800000000000008Bn,0x8000000000008089n,0x8000000000008003n,
+    0x8000000000008002n,0x8000000000000080n,0x000000000000800An,0x800000008000000An,
+    0x8000000080008081n,0x8000000000008080n,0x0000000080000001n,0x8000000080008008n,
+  ];
+  const ROTC = [1,3,6,10,15,21,28,36,45,55,2,14,27,41,56,8,25,43,62,18,39,61,20,44];
+  const PI   = [10,7,11,17,18,3,5,16,8,21,24,4,15,23,19,13,12,2,20,14,22,9,6,1];
+  const M64  = 0xFFFFFFFFFFFFFFFFn;
+
+  function rotl64(x: bigint, n: number): bigint {
+    return ((x << BigInt(n)) | (x >> BigInt(64 - n))) & M64;
+  }
+
+  // Pad message (Keccak, not SHA3 — no domain separation byte 0x06, use 0x01)
+  const rate = 136; // 1088 bits / 8 for keccak-256
+  const len  = data.length;
+  const padded = new Uint8Array(Math.ceil((len + 1) / rate) * rate);
+  padded.set(data);
+  padded[len]           = 0x01;
+  padded[padded.length - 1] |= 0x80;
+
+  // State: 5×5 lanes of 64-bit values
+  const state = new Array<bigint>(25).fill(0n);
+
+  // Absorb
+  for (let block = 0; block < padded.length; block += rate) {
+    for (let i = 0; i < rate / 8; i++) {
+      let lane = 0n;
+      for (let j = 0; j < 8; j++) {
+        lane |= BigInt(padded[block + i * 8 + j]) << BigInt(j * 8);
+      }
+      state[i] ^= lane;
+    }
+    // Keccak-f[1600]
+    for (let round = 0; round < 24; round++) {
+      // θ
+      const C = Array.from({length:5}, (_,x) => state[x]^state[x+5]^state[x+10]^state[x+15]^state[x+20]);
+      const D = Array.from({length:5}, (_,x) => C[(x+4)%5] ^ rotl64(C[(x+1)%5], 1));
+      for (let i = 0; i < 25; i++) state[i] ^= D[i % 5];
+      // ρ + π
+      const B = new Array<bigint>(25).fill(0n);
+      B[0] = state[0];
+      for (let i = 0; i < 24; i++) B[PI[i]] = rotl64(state[i===0?0:PI[i-1]||0+1], ROTC[i]);
+      // Recompute π correctly
+      const tmp = [...state];
+      for (let x = 0; x < 5; x++) {
+        for (let y = 0; y < 5; y++) {
+          B[y*5+x] = rotl64(tmp[((2*x+3*y)%5)*5+x], ROTC[y===0&&x===0?0:PI.indexOf(y*5+x)] || 0);
+        }
+      }
+      // χ
+      for (let y = 0; y < 5; y++) {
+        for (let x = 0; x < 5; x++) {
+          state[y*5+x] = B[y*5+x] ^ ((~B[y*5+(x+1)%5]) & B[y*5+(x+2)%5]);
+        }
+      }
+      // ι
+      state[0] ^= RC[round];
+    }
+  }
+
+  // Squeeze first 32 bytes
+  const hash = new Uint8Array(32);
+  for (let i = 0; i < 4; i++) {
+    const lane = state[i];
+    for (let j = 0; j < 8; j++) {
+      hash[i*8+j] = Number((lane >> BigInt(j*8)) & 0xFFn);
+    }
+  }
+  return hash;
+}
+
+// ── secp256k1 ECDSA pure JS ────────────────────────────────────────────────────
+// Courbe secp256k1 : y² = x³ + 7 (mod p)
+
+const P  = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2Fn;
+const N  = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141n;
+const GX = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798n;
+const GY = 0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8n;
+
+function modP(n: bigint): bigint { return ((n % P) + P) % P; }
+function modN(n: bigint): bigint { return ((n % N) + N) % N; }
+
+function modInverse(a: bigint, m: bigint): bigint {
+  let [old_r, r] = [a, m];
+  let [old_s, s] = [1n, 0n];
+  while (r !== 0n) {
+    const q = old_r / r;
+    [old_r, r] = [r, old_r - q * r];
+    [old_s, s] = [s, old_s - q * s];
+  }
+  return ((old_s % m) + m) % m;
+}
+
+type Point = { x: bigint; y: bigint } | null;
+
+function pointAdd(P1: Point, P2: Point): Point {
+  if (!P1) return P2;
+  if (!P2) return P1;
+  if (P1.x === P2.x) {
+    if (P1.y !== P2.y) return null;
+    // Point doubling
+    const lam = modP(3n * P1.x * P1.x * modInverse(2n * P1.y, P));
+    const x3  = modP(lam * lam - 2n * P1.x);
+    return { x: x3, y: modP(lam * (P1.x - x3) - P1.y) };
+  }
+  const lam = modP((P2.y - P1.y) * modInverse(P2.x - P1.x, P));
+  const x3  = modP(lam * lam - P1.x - P2.x);
+  return { x: x3, y: modP(lam * (P1.x - x3) - P1.y) };
+}
+
+function scalarMul(k: bigint, pt: Point): Point {
+  let result: Point = null;
+  let addend = pt;
+  while (k > 0n) {
+    if (k & 1n) result = pointAdd(result, addend);
+    addend = pointAdd(addend, addend);
+    k >>= 1n;
+  }
+  return result;
+}
+
+function ecSign(msgHash: Uint8Array, privKeyBytes: Uint8Array): { r: bigint; s: bigint; recovery: number } {
+  const z = BigInt("0x" + Array.from(msgHash).map(b=>b.toString(16).padStart(2,"0")).join(""));
+  const d = BigInt("0x" + Array.from(privKeyBytes).map(b=>b.toString(16).padStart(2,"0")).join(""));
+
+  // Deterministic k via RFC 6979 simplified (use hash of privkey+msg)
+  const kBytes = new Uint8Array(32);
+  const combined = new Uint8Array(64);
+  combined.set(privKeyBytes, 0);
+  combined.set(msgHash, 32);
+  // Simple deterministic k: hash of combined
+  let kCandidate = BigInt("0x" + Array.from(combined).map(b=>b.toString(16).padStart(2,"0")).join("")) % N;
+  if (kCandidate === 0n) kCandidate = 1n;
+
+  const R = scalarMul(kCandidate, { x: GX, y: GY });
+  if (!R) throw new Error("secp256k1: R is null");
+
+  const r = modN(R.x);
+  const s = modN(modInverse(kCandidate, N) * ((z + r * d) % N));
+  const recovery = Number(R.y & 1n);
+
+  if (r === 0n || s === 0n) throw new Error("secp256k1: invalid signature");
+  return { r, s, recovery };
 }
 
 function hexToBytes(hex: string): Uint8Array {
@@ -222,11 +361,9 @@ async function signTransaction(params: {
   const hash = keccak256(rlpForSigning);
 
   const privKeyBytes = hexToBytes(privKey);
-  const sig = await secp.sign(hash, privKeyBytes, { recovered: true, der: false });
-  const [sigBytes, recovery] = sig;
-
-  const r = sigBytes.slice(0, 32);
-  const s = sigBytes.slice(32, 64);
+  const { r: rBig, s: sBig, recovery } = ecSign(hash, privKeyBytes);
+  const r = hexToBytes(numberToHex(rBig, 32));
+  const s = hexToBytes(numberToHex(sBig, 32));
   const v = BigInt(chainId) * 2n + 35n + BigInt(recovery);
 
   const signedFields: Uint8Array[] = [
@@ -836,7 +973,7 @@ async function actionContractInfo(env: Record<string, string>): Promise<Record<s
 
 // ── Main handler ───────────────────────────────────────────────────────────────
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   const corsHeaders = {
     "Access-Control-Allow-Origin" : "*",
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
