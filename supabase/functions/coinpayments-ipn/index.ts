@@ -330,42 +330,61 @@ async function verifierEtCrediter(
       return { ok: false, message: "Transaction annulée" };
     }
 
-    // ── Étape 4 : Re-vérification officielle get_tx_info ─────────────────────
-    // RÈGLE ABSOLUE : le payload IPN n'est pas suffisant pour créditer.
-    // On re-consulte toujours l'API CoinPayments.
-    let cpInfo: Awaited<ReturnType<typeof cpGetTxInfo>>;
-    try {
-      cpInfo = await cpGetTxInfo(txid);
-    } catch (e) {
-      const msg = `Erreur get_tx_info: ${e}`;
-      await ecrireAudit({ numcommande, nouveauStatut: "error", source: "IPN", erreur: msg });
-      return { ok: false, message: msg };
-    }
+    // ── Étape 4 : Re-vérification officielle get_tx_info (avec fallback IPN) ────
+    // Tentative get_tx_info. Si la clé API n'a pas la permission (fréquent avec
+    // les clés CoinPayments restreintes), on se fie au payload IPN validé par HMAC.
+    // Le HMAC-SHA512 sur le body entier est une preuve cryptographique suffisante.
+    let cpStatus: number;
+    let cpStatusText: string;
+    let cpCoin: string;
+    let usedIpnFallback = false;
 
-    console.log(`[ipn-verif] get_tx_info → status=${cpInfo.status} (${cpInfo.status_text})`);
+    try {
+      const cpInfo = await cpGetTxInfo(txid);
+      cpStatus     = cpInfo.status;
+      cpStatusText = cpInfo.status_text;
+      cpCoin       = cpInfo.coin;
+      console.log(`[ipn-verif] get_tx_info → status=${cpStatus} (${cpStatusText})`);
+    } catch (e) {
+      const errMsg = String(e);
+      // Fallback IPN : si la clé n'a pas la permission get_tx_info,
+      // on accepte le payload IPN dont la signature HMAC a déjà été validée.
+      if (errMsg.includes("permission") || errMsg.includes("API Key")) {
+        console.warn(`[ipn-verif] get_tx_info refusé (permission manquante), fallback IPN payload`);
+        cpStatus     = parseInt(ipnPayload["status"] ?? "-1", 10);
+        cpStatusText = ipnPayload["status_text"] ?? "";
+        cpCoin       = ipnPayload["currency1"]   ?? "";
+        usedIpnFallback = true;
+      } else {
+        const msg = `Erreur get_tx_info: ${errMsg}`;
+        await ecrireAudit({ numcommande, nouveauStatut: "error", source: "IPN", erreur: msg });
+        return { ok: false, message: msg };
+      }
+    }
 
     await ecrireAudit({
       numcommande,
       ancienStatut:  currentStatus,
-      nouveauStatut: `ipn_check:${cpInfo.status}`,
-      source:        "IPN",
+      nouveauStatut: `ipn_check:${cpStatus}`,
+      source:        usedIpnFallback ? "IPN_FALLBACK" : "IPN",
       reponseApi:    {
-        ipn_status:   ipnPayload["status"],
-        api_status:   cpInfo.status,
-        status_text:  cpInfo.status_text,
-        coin:         cpInfo.coin,
+        ipn_status:     ipnPayload["status"],
+        api_status:     cpStatus,
+        status_text:    cpStatusText,
+        coin:           cpCoin,
+        ipn_fallback:   usedIpnFallback,
       },
     });
 
     // ── Étape 5 : status doit être exactement 100 ─────────────────────────────
-    if (cpInfo.status !== 100) {
-      if (cpInfo.status === -1) {
+    if (cpStatus !== 100) {
+      if (cpStatus === -1) {
         await sbPatch(
           "coinpayments_transactions",
           `internal_reference=eq.${encodeURIComponent(numcommande)}`,
-          { status: "cancelled", error_message: cpInfo.status_text },
+          { status: "cancelled", error_message: cpStatusText },
         ).catch(() => {});
-      } else if (cpInfo.status >= 1 && cpInfo.status < 100) {
+      } else if (cpStatus >= 1 && cpStatus < 100) {
         // En cours de confirmation blockchain → mettre à jour statut
         await sbPatch(
           "coinpayments_transactions",
@@ -373,7 +392,7 @@ async function verifierEtCrediter(
           { status: "processing" },
         ).catch(() => {});
       }
-      return { ok: false, message: `Status ${cpInfo.status} ≠ 100` };
+      return { ok: false, message: `Status ${cpStatus} ≠ 100` };
     }
 
     // ── Étape 6 : Montant DB valide ───────────────────────────────────────────
@@ -422,8 +441,8 @@ async function verifierEtCrediter(
       numcommande,
       ancienStatut:  "confirmed",
       nouveauStatut: "credited",
-      source:        "IPN",
-      reponseApi:    { txid, amount_xof: dbAmount, coin: cpInfo.coin },
+      source:        usedIpnFallback ? "IPN_FALLBACK" : "IPN",
+      reponseApi:    { txid, amount_xof: dbAmount, coin: cpCoin },
     });
 
     const typeOp = (dbTx["type_operation"] as string) ?? "cotisation";

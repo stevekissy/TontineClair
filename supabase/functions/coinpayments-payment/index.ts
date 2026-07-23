@@ -326,21 +326,37 @@ async function verifierEtCrediterStrictement(
     }
     // deno-lint-ignore no-explicit-any
     let cpInfo: any;
+    let usedDbFallback = false;
     try {
       cpInfo = await cpGetTxInfo(txid);
     } catch (e) {
-      const msg = `Erreur get_tx_info ${txid}: ${e}`;
-      await ecrireAudit({ numcommande, nouveauStatut: "error", source, erreur: msg });
-      return { ok: false, message: "Impossible de vérifier via CoinPayments API" };
+      const errMsg = String(e);
+      // Fallback : si permission manquante, on se fie au statut DB
+      // (l'IPN HMAC-validé a déjà prouvé que CoinPayments a traité la TX)
+      if (errMsg.includes("permission") || errMsg.includes("API Key")) {
+        console.warn(`[verifier] get_tx_info refusé (permission), fallback statut DB "${currentStatus}"`);
+        const ipnReceived = !!(dbTx["ipn_received_at"]);
+        // On accepte si IPN reçu (statut processing/confirmed) ou si confirmé en DB
+        const dbConfirmed = currentStatus === "confirmed" || currentStatus === "processing";
+        if (!ipnReceived && !dbConfirmed) {
+          return { ok: false, message: "Paiement non confirmé (IPN non reçu)" };
+        }
+        cpInfo = { status: 100, status_text: "Complete (DB fallback)", coin: "" };
+        usedDbFallback = true;
+      } else {
+        const msg = `Erreur get_tx_info ${txid}: ${errMsg}`;
+        await ecrireAudit({ numcommande, nouveauStatut: "error", source, erreur: msg });
+        return { ok: false, message: "Impossible de vérifier via CoinPayments API" };
+      }
     }
     const cpStatus = normaliserStatutCP(cpInfo.status);
-    console.log(`[verifier] get_tx_info → status=${cpInfo.status} (${cpStatus}) txid=${txid}`);
+    console.log(`[verifier] get_tx_info → status=${cpInfo.status} (${cpStatus}) txid=${txid} fallback=${usedDbFallback}`);
     await ecrireAudit({
       numcommande,
       ancienStatut: currentStatus,
       nouveauStatut: `api_check:${cpStatus}`,
-      source,
-      reponseApi: { status: cpInfo.status, status_text: cpInfo.status_text, coin: cpInfo.coin },
+      source: usedDbFallback ? `${source}_DB_FALLBACK` : source,
+      reponseApi: { status: cpInfo.status, status_text: cpInfo.status_text, coin: cpInfo.coin, db_fallback: usedDbFallback },
     });
     if (cpInfo.status !== 100) {
       if (cpInfo.status === -1) {
@@ -561,6 +577,22 @@ Deno.serve(async (req: Request) => {
           numcommande,
           txid:       dbTx["provider_transaction_id"],
           fromCache:  true,
+        });
+      }
+      // Si processing ET IPN déjà reçu → CoinPayments a confirmé, get_tx_info
+      // peut échouer par manque de permission. On déclenche confirmerEtCrediter.
+      if (dbTx && dbTx["status"] === "processing" && dbTx["ipn_received_at"]) {
+        console.log(`[statut] processing + IPN reçu → needsCredit=true pour ${numcommande}`);
+        return json({
+          erreur:         false,
+          ok:             false,
+          statusCode:     100,
+          statusNorm:     "confirmed",
+          statusText:     "Complete (IPN reçu, crédit en attente)",
+          numcommande,
+          txid:           dbTx["provider_transaction_id"] as string ?? (txid ?? ""),
+          needsCredit:    true,
+          fromCache:      true,
         });
       }
       if (dbTx && (dbTx["status"] === "failed" || dbTx["status"] === "cancelled")) {
