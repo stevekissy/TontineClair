@@ -139,6 +139,64 @@ class _PaiementCoinPaymentsScreenState
     }
   }
 
+  // ── Mode Test : simule un paiement confirmé sans appel CoinPayments ────────
+  Future<void> _simulerPaiementTest() async {
+    if (_enTraitement) return;
+
+    // Confirmation dialog avant de simuler
+    final confirme = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.science_rounded, color: Color(0xFF7B61FF), size: 22),
+            SizedBox(width: 10),
+            Text('Mode test', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          ],
+        ),
+        content: const Text(
+          'Cette action simule un paiement confirmé.\n\n'
+          '⚠️ Aucun vrai argent ne sera débité.\n'
+          'Utilisez uniquement pour tester le flux de l\'application.',
+          style: TextStyle(fontSize: 14, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF7B61FF)),
+            child: const Text('Simuler'),
+          ),
+        ],
+      ),
+    );
+    if (confirme != true || !mounted) return;
+
+    _enTraitement = true;
+    setState(() {
+      _etape         = _EtapeCrypto.creation;
+      _messageErreur = null;
+      _messageInfo   = null;
+    });
+
+    // Simule le délai de traitement
+    await Future.delayed(const Duration(milliseconds: 1500));
+    if (!mounted) return;
+
+    setState(() {
+      _etape       = _EtapeCrypto.confirmation;
+      _messageInfo = '🧪 MODE TEST — Aucune transaction réelle effectuée';
+    });
+
+    await Future.delayed(const Duration(milliseconds: 1800));
+    _enTraitement = false;
+    if (mounted) Navigator.of(context).pop(true);
+  }
+
   // ── Créer la transaction ──────────────────────────────────────────────────
 
   Future<void> _creerTransaction() async {
@@ -159,24 +217,6 @@ class _PaiementCoinPaymentsScreenState
 
     try {
       if (kDebugMode) debugPrint('[CoinPayments] creerTransaction $numCmd crypto=$_crypto');
-
-      // ── MODE TEST (kDebugMode uniquement) ────────────────────────────────
-      // En mode debug, on simule une transaction confirmée sans appel réel à
-      // CoinPayments — permet de tester le flux complet sans payer.
-      if (kDebugMode) {
-        await Future.delayed(const Duration(seconds: 2));
-        _enTraitement = false;
-        if (!mounted) return;
-        setState(() {
-          _etape       = _EtapeCrypto.confirmation;
-          _messageInfo = '🧪 MODE TEST — Paiement simulé (aucune transaction réelle)';
-        });
-        // Simuler un retour succès au parent après 2s
-        await Future.delayed(const Duration(seconds: 2));
-        if (mounted) Navigator.of(context).pop(true);
-        return;
-      }
-      // ─────────────────────────────────────────────────────────────────────
 
       final resultat = await CoinPaymentsService.creerTransaction(
         montantXof:    montant,
@@ -611,7 +651,7 @@ class _PaiementCoinPaymentsScreenState
             onPressed: _enTraitement ? null : _creerTransaction,
             icon:  const Icon(Icons.currency_bitcoin_rounded),
             label: Text(
-              'Payer ${Formatters.montant(montant, devise: devise)} en crypto',
+              'Payer \${Formatters.montant(montant, devise: devise)} en crypto',
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
             ),
             style: FilledButton.styleFrom(
@@ -621,6 +661,33 @@ class _PaiementCoinPaymentsScreenState
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14)),
             ),
+          ),
+          // ── Bouton Mode Test (visible dans tous les builds) ───────────────
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: _enTraitement ? null : _simulerPaiementTest,
+            icon: const Icon(Icons.science_rounded, size: 16,
+                color: Color(0xFF7B61FF)),
+            label: const Text(
+              '🧪 Simuler un paiement (test)',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize:   13,
+                color:      Color(0xFF7B61FF),
+              ),
+            ),
+            style: OutlinedButton.styleFrom(
+              side:    const BorderSide(color: Color(0xFF7B61FF), width: 1.2),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape:   RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Aucune vraie transaction — pour tester le flux uniquement',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 10, color: AppColors.texteDoux),
           ),
 
           // Bouton vérifier (si transaction déjà créée)
