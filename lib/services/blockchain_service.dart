@@ -11,7 +11,7 @@
 //   • L'utilisateur ne voit jamais la blockchain → expérience identique.
 //   • Le journal sert à l'audit, à la transparence et à la conformité.
 //
-// Réseau : Polygon Amoy (testnet) → Polygon Mainnet (Phase 4)
+// Réseau : Polygon MAINNET (chainId 137) — Phase 4 production
 // Token  : USDT ERC-20
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -53,7 +53,7 @@ class BlockchainEntry {
     this.montantXof,
     this.montantUsdt,
     this.tauxXofUsdt,
-    this.reseau       = 'polygon_amoy',
+    this.reseau       = 'polygon-mainnet',
     this.txHash,
     this.blockNumber,
     this.walletTontine,
@@ -77,7 +77,7 @@ class BlockchainEntry {
       montantXof     : j['montant_xof']     is num ? (j['montant_xof'] as num).toInt() : null,
       montantUsdt    : j['montant_usdt']    is num ? (j['montant_usdt'] as num).toDouble() : null,
       tauxXofUsdt    : j['taux_xof_usdt']   is num ? (j['taux_xof_usdt'] as num).toDouble() : null,
-      reseau         : j['reseau']          as String? ?? 'polygon_amoy',
+      reseau         : j['reseau']          as String? ?? 'polygon-mainnet',
       txHash         : j['tx_hash']         as String?,
       blockNumber    : j['block_number']    is num ? (j['block_number'] as num).toInt() : null,
       walletTontine  : j['wallet_tontine']  as String?,
@@ -101,7 +101,7 @@ class BlockchainEntry {
   bool get estEchec    => statut == 'failed';
 
   String get explorerUrl =>
-      txHash != null ? 'https://amoy.polygonscan.com/tx/$txHash' : '';
+      txHash != null ? 'https://polygonscan.com/tx/$txHash' : '';
 
   String get typeLabel {
     const map = {
@@ -169,7 +169,7 @@ class BlockchainResultat {
 
   /// Lien PolygonScan vers le contrat
   String? get explorerContrat => contractAddress != null
-      ? 'https://amoy.polygonscan.com/address/$contractAddress'
+      ? 'https://polygonscan.com/address/$contractAddress'
       : null;
 
   factory BlockchainResultat.fromJson(Map<String, dynamic> j) {

@@ -1,10 +1,12 @@
 {
   "contract_address": "0xdD3aa7dcd20f3C5321CbFFf6EF2dc2a278cBA26a",
-  "tx_hash": "1d916a933b77f862cb2bb9d0981e3ac5113ca48f427d3274b79ffdbad2c18e39",
-  "block_number": 42939360,
+  "tx_hash": "e89710b02448777ee0e2a00d12272ba03e30e50a65f138e10f0415da3c69a9db",
+  "block_number": 90715853,
   "admin_address": "0xf2C1019814425f46E743a5492153C1a25bdfEEfd",
-  "network": "polygon-amoy",
-  "chain_id": 80002,
-  "deployed_at": "2026-07-22T22:02:47Z",
-  "polygonscan": "https://amoy.polygonscan.com/address/0xdD3aa7dcd20f3C5321CbFFf6EF2dc2a278cBA26a"
+  "network": "polygon-mainnet",
+  "chain_id": 137,
+  "deployed_at": "2026-07-23T03:52:59Z",
+  "polygonscan": "https://polygonscan.com/address/0xdD3aa7dcd20f3C5321CbFFf6EF2dc2a278cBA26a",
+  "gas_used": 694912,
+  "deploy_cost_matic": 0.192102
 }

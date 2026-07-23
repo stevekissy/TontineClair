@@ -21,10 +21,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 // ── Config réseau ──────────────────────────────────────────────────────────────
-const CHAIN_ID       = 80002;          // Polygon Amoy
-const CHAIN_ID_HEX   = "0x13882";
-const EXPLORER_BASE  = "https://amoy.polygonscan.com";
-const RPC_FALLBACK   = "https://polygon-amoy-bor-rpc.publicnode.com";
+const CHAIN_ID       = 137;            // Polygon Mainnet
+const CHAIN_ID_HEX   = "0x89";
+const EXPLORER_BASE  = "https://polygonscan.com";
+const RPC_FALLBACK   = "https://polygon.drpc.org";
 
 // ── ABI TontineVault.sol (fonctions utilisées) ─────────────────────────────────
 // Encodage manuel des selectors pour éviter les dépendances lourdes
@@ -609,7 +609,7 @@ async function actionEnregistrerOperation(
     montant_xof    : montantXof,
     montant_usdt   : montantUsdt / 1_000_000,
     taux_xof_usdt  : TAUX_XOF_USDT,
-    reseau         : "polygon-amoy",
+    reseau         : "polygon-mainnet",
     tx_hash        : txHash,
     block_number   : blockNumber || null,
     wallet_tontine : fromAddr || "phase1",
@@ -744,7 +744,7 @@ async function actionStats(env: Record<string, string>): Promise<Record<string, 
     ok            : true,
     stats,
     current_block : currentBlock,
-    network       : "polygon-amoy",
+    network       : "polygon-mainnet",
     contract      : contractAddr || null,
     explorer_contract: contractAddr
       ? `${EXPLORER_BASE}/address/${contractAddr}`
@@ -820,7 +820,7 @@ async function actionContractInfo(env: Record<string, string>): Promise<Record<s
       phase           : 2,
       contract_address: contractAddr,
       wallet_admin    : fromAddr,
-      network         : "polygon-amoy",
+      network         : "polygon-mainnet",
       chain_id        : CHAIN_ID,
       explorer        : `${EXPLORER_BASE}/address/${contractAddr}`,
       raw_result      : result?.slice(0, 40) + "...",
