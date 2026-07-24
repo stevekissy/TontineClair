@@ -1281,7 +1281,7 @@ class _EtatVoteAccepteState extends State<_EtatVoteAccepte> {
                 const SizedBox(height: 12),
                 const ChampLabel(label: 'Périodicité'),
                 DropdownButtonFormField<String>(
-                  value: _config.periodicite,
+                  initialValue: _config.periodicite,
                   decoration: const InputDecoration(),
                   items: EcheanceService.periodiciteOptions.entries.map((e) =>
                     DropdownMenuItem(value: e.key, child: Text(e.value)),
@@ -1291,7 +1291,7 @@ class _EtatVoteAccepteState extends State<_EtatVoteAccepte> {
                 const SizedBox(height: 12),
                 const ChampLabel(label: "Méthode d'ordre"),
                 DropdownButtonFormField<String>(
-                  value: _config.methodeOrdre,
+                  initialValue: _config.methodeOrdre,
                   decoration: const InputDecoration(),
                   items: const [
                     DropdownMenuItem(value: 'tirage', child: Text('🎲 Tirage au sort')),

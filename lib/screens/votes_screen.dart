@@ -263,7 +263,7 @@ class _VotesScreenState extends State<VotesScreen> {
                 ),
                 ChampLabel(label: context.tr('type_vote')),
                 DropdownButtonFormField<String>(
-                  value: type,
+                  initialValue: type,
                   decoration: InputDecoration(),
                   items: [
                     DropdownMenuItem(value: 'libre', child: Text(context.tr('vote_libre'))),
@@ -507,7 +507,7 @@ class _VotesScreenState extends State<VotesScreen> {
                 ChampLabel(label: context.tr('qui_etes_vous')),
                 // CORRECTION : DropdownButtonFormField avec valeur initiale non-nulle
                 DropdownButtonFormField<String>(
-                  value: membreId,
+                  initialValue: membreId,
                   decoration: InputDecoration(),
                   isExpanded: true,
                   items: restants

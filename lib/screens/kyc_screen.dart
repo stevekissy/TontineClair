@@ -965,7 +965,7 @@ class _EtapeDocument extends StatelessWidget {
 
         const ChampLabel(label: 'Pays d\'émission *'),
         DropdownButtonFormField<String>(
-          value: pays,
+          initialValue: pays,
           decoration: _inputDecoration('Sélectionner le pays'),
           items: _pays.entries.map((e) => DropdownMenuItem(
             value: e.key,

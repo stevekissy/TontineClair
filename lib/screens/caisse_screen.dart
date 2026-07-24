@@ -518,7 +518,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
                 // Opérateur
                 ChampLabel(label: 'Opérateur Mobile Money'),
                 DropdownButtonFormField<String>(
-                  value: operateur,
+                  initialValue: operateur,
                   decoration: const InputDecoration(),
                   items: _operateursMobileMoney
                       .map((op) => DropdownMenuItem(
@@ -688,7 +688,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
                 // Membre à pénaliser
                 ChampLabel(label: 'Membre à pénaliser'),
                 DropdownButtonFormField<String>(
-                  value: membrePenaliteId,
+                  initialValue: membrePenaliteId,
                   decoration: const InputDecoration(),
                   items: membresOrdre.map((m) => DropdownMenuItem(
                     value: m.id,
@@ -833,7 +833,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
                 if (type == 'penalite' && membresOrdre.isNotEmpty) ...[
                   ChampLabel(label: context.tr('membre_penalise')),
                   DropdownButtonFormField<String>(
-                    value: membrePenaliteId,
+                    initialValue: membrePenaliteId,
                     isExpanded: true,
                     decoration: const InputDecoration(),
                     items: membresOrdre
@@ -866,7 +866,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
                 if (type != 'penalite') ...[
                   ChampLabel(label: context.tr('mode_paiement_label')),
                   DropdownButtonFormField<String>(
-                    value: methode,
+                    initialValue: methode,
                     decoration: InputDecoration(),
                     items: ['especes', 'orange', 'mtn', 'moov', 'wave']
                         .map((m) => DropdownMenuItem(

@@ -263,7 +263,7 @@ class _PretsScreenState extends State<PretsScreen> {
                   // Emprunteur
                   ChampLabel(label: context.tr('emprunteur')),
                   DropdownButtonFormField<String>(
-                    value: emprunteurId,
+                    initialValue: emprunteurId,
                     decoration: const InputDecoration(),
                     isExpanded: true,
                     items: membresOrdre.map((m) => DropdownMenuItem(
@@ -338,7 +338,7 @@ class _PretsScreenState extends State<PretsScreen> {
                     const SizedBox(height: 8),
                     ChampLabel(label: 'Opérateur Mobile Money'),
                     DropdownButtonFormField<String>(
-                      value: operateur,
+                      initialValue: operateur,
                       decoration: const InputDecoration(),
                       items: _operateursPret.map((op) => DropdownMenuItem(
                         value: op,
@@ -1012,7 +1012,7 @@ class _CartePret extends StatelessWidget {
               ),
               const ChampLabel(label: 'Méthode'),
               DropdownButtonFormField<String>(
-                value: methode,
+                initialValue: methode,
                 decoration: const InputDecoration(),
                 items: ['especes', 'orange', 'mtn', 'moov', 'wave']
                     .map((m) => DropdownMenuItem(
