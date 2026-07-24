@@ -65,6 +65,10 @@ class SupabaseService {
       debugPrint('[RPC]   message: $raw');
       debugPrint('[RPC]   stack: $stack');
     }
+    // Déjà classifié avec le corps SQL réel — propager tel quel
+    if (raw.contains('SERVEUR:5') || raw.contains('SERVEUR:4')) {
+      return raw.replaceFirst('Exception: ', '');
+    }
     if (e is SocketException) {
       return 'RESEAU:INTERNET';
     }
@@ -155,7 +159,14 @@ class SupabaseService {
             'Vérifiez Settings › API › anon public dans votre projet Supabase.');
       }
       if (resp.statusCode >= 500) {
-        throw Exception('RESEAU:SERVEUR');
+        // Extraire le message SQL réel pour faciliter le diagnostic
+        String sqlMsg = txt;
+        try {
+          final j = jsonDecode(txt);
+          sqlMsg = j['message'] as String? ?? j['hint'] as String? ?? j['details'] as String? ?? txt;
+        } catch (_) {}
+        if (kDebugMode) debugPrint('[RPC] ✗ SQL body: $sqlMsg');
+        throw Exception('SERVEUR:${resp.statusCode}:$sqlMsg');
       }
       throw Exception('RESEAU:SERVEUR');
     }

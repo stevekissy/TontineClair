@@ -642,7 +642,26 @@ class _VotesScreenState extends State<VotesScreen> {
       }
     } catch (e) {
       if (!context.mounted) return;
-      afficherToast(context, 'Erreur : $e', estErreur: true);
+      final raw = e.toString();
+      final String msg;
+      if (raw.contains('RESEAU:INTERNET') || raw.contains('RESEAU:DNS')) {
+        msg = 'Pas de connexion internet. Vérifie ta connexion et réessaie.';
+      } else if (raw.contains('RESEAU:TIMEOUT')) {
+        msg = 'Le serveur met trop de temps à répondre. Réessaie dans quelques secondes.';
+      } else if (raw.contains('RESEAU:SSL') || raw.contains('RESEAU:CONNEXION')) {
+        msg = 'Connexion au serveur impossible. Réessaie plus tard.';
+      } else if (raw.contains('Could not find the function') || raw.contains('SQL:')) {
+        msg = 'Fonction voter introuvable. Contacte l\'administrateur.';
+      } else if (raw.contains('SERVEUR:')) {
+        // Extraire le message SQL réel pour aider au diagnostic
+        final parts = raw.split(':');
+        final sqlDetail = parts.length >= 3 ? parts.sublist(2).join(':').trim() : raw;
+        if (kDebugMode) debugPrint('[voter] SQL error: $sqlDetail');
+        msg = 'Erreur serveur lors du vote. Réessaie ou contacte l\'administrateur.';
+      } else {
+        msg = 'Erreur inattendue. Réessaie.';
+      }
+      afficherToast(context, msg, estErreur: true);
     }
   }
 
