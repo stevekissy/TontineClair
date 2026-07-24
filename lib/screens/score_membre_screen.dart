@@ -901,6 +901,27 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
     });
     // ────────────────────────────────────────────────────────────────────
 
+    // ── NOTIFICATION : retrait proposé ───────────────────────────────────
+    {
+      final _langRP = Provider.of<LocaleService>(ctx, listen: false).langue.code;
+      final _tRP = SupabaseService.notifTexte(
+        'retrait_propose',
+        _langRP,
+        vars: {
+          'nom'  : widget.membre.nom,
+          'score': '${_scoreDetail?.score ?? 0}',
+        },
+      );
+      SupabaseService.envoyerNotification(
+        code    : widget.code,
+        type    : 'retrait_propose',
+        titre   : _tRP['titre']!,
+        message : _tRP['message']!,
+        donneesExtra: {'membre_id': widget.membre.id},
+      );
+    }
+    // ─────────────────────────────────────────────────────────────────────
+
     await provider.chargerTontine(widget.code);
     await _charger();
 

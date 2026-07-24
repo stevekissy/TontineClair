@@ -1407,6 +1407,22 @@ class SupabaseService {
           'ar': 'تم تعديل نقاط {nom}: {ancien} → {nouveau}/100',
         },
       },
+      'retrait_propose': {
+        'titre': {
+          'fr': '🗳️ Vote de retrait ouvert',
+          'en': '🗳️ Withdrawal vote opened',
+          'es': '🗳️ Votación de retiro abierta',
+          'pt': '🗳️ Votação de retirada aberta',
+          'ar': '🗳️ تم فتح تصويت الانسحاب',
+        },
+        'message': {
+          'fr': 'Un vote de retrait est ouvert pour {nom} (score : {score}/100).',
+          'en': 'A withdrawal vote is open for {nom} (score: {score}/100).',
+          'es': 'Una votación de retiro está abierta para {nom} (puntuación: {score}/100).',
+          'pt': 'Uma votação de retirada está aberta para {nom} (pontuação: {score}/100).',
+          'ar': 'تم فتح تصويت الانسحاب لـ {nom} (النقاط: {score}/100).',
+        },
+      },
       // ── Lite/Pro ────────────────────────────────────────────────────────────
       'passage_pro': {
         'titre': {
