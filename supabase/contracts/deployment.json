@@ -1,38 +1,12 @@
 {
-  "v3": {
-    "contract_address": "0xdfD620Bb026776571c8A7ced5171FcfCE9528b77",
-    "contract_version": "3.0.0",
-    "tx_hash": "0x1b9dc612a0f0e9bee39f85091e13cb4a33b59c962f1fceef393e16cb54d3c7f9",
-    "block_number": 90723649,
-    "admin_address": "0xf2C1019814425f46E743a5492153C1a25bdfEEfd",
-    "usdt_address": "0xc2132D05D31c914a87C6611C10748AEb04B58e8F",
-    "network": "polygon-mainnet",
-    "chain_id": 137,
-    "deployed_at": "2026-07-24T00:00:00Z",
-    "polygonscan": "https://polygonscan.com/address/0xdfD620Bb026776571c8A7ced5171FcfCE9528b77",
-    "gas_used": 3540241,
-    "deploy_cost_matic": 0.988108,
-    "architecture": "non-custodial",
-    "features": [
-      "USDT custody on-chain",
-      "approve+transferFrom cotisation",
-      "automatic executerTour()",
-      "pull-pattern reclamerDistribution()",
-      "ReentrancyGuard + Pausable",
-      "multisig 2-of-3 + timelock 48h",
-      "SafeERC20 inline",
-      "Fisher-Yates shuffle for TIRAGE"
-    ]
-  },
-  "v2": {
-    "contract_address": "0xdD3aa7dcd20f3C5321CbFFf6EF2dc2a278cBA26a",
-    "contract_version": "2.0.0",
-    "block_number": 90715853,
-    "admin_address": "0xf2C1019814425f46E743a5492153C1a25bdfEEfd",
-    "network": "polygon-mainnet",
-    "chain_id": 137,
-    "deployed_at": "2026-07-23T03:52:59Z",
-    "architecture": "journal-only (deprecated)",
-    "status": "deprecated"
-  }
+  "contract_address": "0xdD3aa7dcd20f3C5321CbFFf6EF2dc2a278cBA26a",
+  "tx_hash": "e89710b02448777ee0e2a00d12272ba03e30e50a65f138e10f0415da3c69a9db",
+  "block_number": 90715853,
+  "admin_address": "0xf2C1019814425f46E743a5492153C1a25bdfEEfd",
+  "network": "polygon-mainnet",
+  "chain_id": 137,
+  "deployed_at": "2026-07-23T03:52:59Z",
+  "polygonscan": "https://polygonscan.com/address/0xdD3aa7dcd20f3C5321CbFFf6EF2dc2a278cBA26a",
+  "gas_used": 694912,
+  "deploy_cost_matic": 0.192102
 }
