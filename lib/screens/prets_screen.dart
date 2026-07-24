@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -5,6 +6,7 @@ import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
 import '../services/devise_service.dart';
 import '../services/supabase_service.dart';
+import '../services/blockchain_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
@@ -504,6 +506,21 @@ class _PretsScreenState extends State<PretsScreen> {
       },
     );
 
+    // ── BLOCKCHAIN : prêt octroyé (non-bloquant) ──────────────────────────
+    if (ok == true && emprunteur != null) {
+      BlockchainService.enregistrerPret(
+        tontineCode: widget.code,
+        membreId   : emprunteur.id,
+        membreNom  : nomEmprunteur,
+        montantXof : montant,
+        metadata   : {'taux': taux, 'durees_mois': durees},
+      ).catchError((e) {
+        if (kDebugMode) debugPrint('[Blockchain] pret erreur: $e');
+        return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+      });
+    }
+    // ──────────────────────────────────────────────────────────────────────
+
     if (ok == true && context.mounted) {
       afficherToast(context, 'Prêt créé avec succès !');
       final lang = Provider.of<LocaleService>(context, listen: false).langue.code;
@@ -805,6 +822,21 @@ class _CartePret extends StatelessWidget {
       },
     );
 
+    // ── BLOCKCHAIN : annulation remboursement (non-bloquant) ──────────────
+    if (ok == true) {
+      BlockchainService.enregistrerAnnulationRemboursement(
+        tontineCode: provider.courante?.code ?? '',
+        membreId   : pret.emprunteurId,
+        membreNom  : pret.emprunteurNom,
+        montantXof : remb.montant,
+        refInterne : remb.reference,
+      ).catchError((e) {
+        if (kDebugMode) debugPrint('[Blockchain] annulation_remboursement erreur: $e');
+        return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+      });
+    }
+    // ──────────────────────────────────────────────────────────────────────
+
     if (ok == true && context.mounted) {
       afficherToast(context, 'Remboursement annulé et caisse corrigée.');
       final tontineCode = provider.courante?.code ?? '';
@@ -1022,6 +1054,7 @@ class _CartePret extends StatelessWidget {
     final resteAvant = pret.resteADu;
     final resteApres = (resteAvant - montant).clamp(0, resteAvant);
 
+    String _refRembCapture = '';
     final ok = await afficherModalePin(
       context,
       titre: 'Confirmer le remboursement',
@@ -1035,6 +1068,7 @@ class _CartePret extends StatelessWidget {
       ],
       onValider: (pin) async {
         final ref = Formatters.genererReference();
+        _refRembCapture = ref;
         refRemboursement = ref;
         final now = DateTime.now().toIso8601String();
         final newData = data.toJson();
@@ -1130,6 +1164,21 @@ class _CartePret extends StatelessWidget {
         return provider.ecrire(newData, pin);
       },
     );
+
+    // ── BLOCKCHAIN : remboursement (non-bloquant) ──────────────────────────
+    if (ok == true) {
+      BlockchainService.enregistrerRemboursement(
+        tontineCode: provider.courante?.code ?? '',
+        membreId   : pret.emprunteurId,
+        membreNom  : pret.emprunteurNom,
+        montantXof : montant,
+        refInterne : _refRembCapture,
+      ).catchError((e) {
+        if (kDebugMode) debugPrint('[Blockchain] remboursement erreur: $e');
+        return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+      });
+    }
+    // ──────────────────────────────────────────────────────────────────────
 
     if (ok == true && context.mounted) {
       afficherToast(

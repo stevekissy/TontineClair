@@ -3,6 +3,7 @@
 // TontineClair — Système d'aide à la décision complet
 // ─────────────────────────────────────────────────────────────────────────────
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/tontine.dart';
@@ -10,6 +11,7 @@ import '../models/score_modeles.dart';
 import '../services/score_service.dart';
 import '../services/supabase_service.dart';
 import '../services/tontine_provider.dart';
+import '../services/blockchain_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
@@ -886,6 +888,18 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
       description: 'Proposition de retrait soumise au vote. Motif : $motif',
       gestionnaire: gestNom,
     );
+
+    // ── BLOCKCHAIN : retrait proposé (non-bloquant) ───────────────────
+    BlockchainService.enregistrerRetraitPropose(
+      tontineCode: widget.code,
+      membreId   : widget.membre.id,
+      membreNom  : widget.membre.nom,
+      score      : _scoreDetail?.score ?? 0,
+    ).catchError((e) {
+      if (kDebugMode) debugPrint('[Blockchain] retrait_propose erreur: $e');
+      return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+    });
+    // ────────────────────────────────────────────────────────────────────
 
     await provider.chargerTontine(widget.code);
     await _charger();

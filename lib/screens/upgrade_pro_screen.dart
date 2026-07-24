@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
 import '../services/supabase_service.dart';
+import '../services/blockchain_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
@@ -115,6 +117,16 @@ class _UpgradeProScreenState extends State<UpgradeProScreen> {
       afficherToast(context, 'PIN incorrect ou erreur réseau.', estErreur: true);
       return;
     }
+
+    // ── BLOCKCHAIN : passage Pro (non-bloquant) ──────────────────────
+    BlockchainService.enregistrerUpgradePro(
+      tontineCode : widget.code,
+      gestionnaire: gestNom,
+    ).catchError((e) {
+      if (kDebugMode) debugPrint('[Blockchain] upgrade_pro erreur: $e');
+      return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+    });
+    // ──────────────────────────────────────────────────────────────────
 
     // Recharger + notification
     await provider.chargerTontine(widget.code);

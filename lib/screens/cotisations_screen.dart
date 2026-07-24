@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -14,6 +15,7 @@ import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
+import '../services/blockchain_service.dart';
 
 import 'paiement_choix_screen.dart';
 
@@ -343,6 +345,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
       }
     } else {
       // Annuler le paiement
+      String _refAnnuleCapture = '';
       final ok = await afficherModalePin(
         context,
         titre: context.tr('annuler_paiement'),
@@ -361,6 +364,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
           );
           final refAnnule = membres
               .firstWhere((m) => m['id'] == membre.id, orElse: () => {})['referencePaiement'] as String? ?? '?';
+          _refAnnuleCapture = refAnnule;
           final idx = membres.indexWhere((m) => m['id'] == membre.id);
           if (idx >= 0) {
             membres[idx]['paye'] = false;
@@ -413,6 +417,22 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
           return provider.ecrire(newData, pin);
         },
       );
+
+      // ── BLOCKCHAIN : annulation cotisation (non-bloquant) ─────────────────
+      if (ok == true) {
+        BlockchainService.enregistrerAnnulationCotisation(
+          tontineCode: provider.courante!.code,
+          membreId   : membre.id,
+          membreNom  : membre.nom,
+          montantXof : data.montant,
+          numerTour  : data.numerTour,
+          refInterne : 'ANNUL_$_refAnnuleCapture',
+        ).catchError((e) {
+          if (kDebugMode) debugPrint('[Blockchain] annulation_cotisation erreur: $e');
+          return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+        });
+      }
+      // ─────────────────────────────────────────────────────────────────────
 
       if (ok == true && context.mounted) {
         afficherToast(context, 'Paiement annulé et journal mis à jour.');

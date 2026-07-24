@@ -15,6 +15,7 @@ import 'package:provider/provider.dart';
 import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
 import '../services/supabase_service.dart';
+import '../services/blockchain_service.dart';
 import '../services/devise_service.dart';
 import '../services/echeance_service.dart';
 import '../utils/app_colors.dart';
@@ -403,6 +404,16 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
 
     if (result['ok'] == true) {
       final cycleNum = result['cycleNum'] as int? ?? 2;
+      // ── BLOCKCHAIN : nouveau cycle démarré (non-bloquant) ─────────────────
+      BlockchainService.enregistrerNouveauCycle(
+        tontineCode : widget.code,
+        gestionnaire: provider.gestActifNom ?? '',
+        cycleNum    : cycleNum,
+      ).catchError((e) {
+        if (kDebugMode) debugPrint('[Blockchain] nouveau_cycle erreur: $e');
+        return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+      });
+      // ──────────────────────────────────────────────────────────────────────
       // Retourner à l'écran précédent — le cycle est démarré
       if (mounted) {
         afficherToast(context, '🎉 Cycle $cycleNum démarré ! Tour 1 en cours.');

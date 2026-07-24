@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -5,6 +6,7 @@ import '../models/tontine.dart';
 import '../services/pdf_service.dart';
 import '../services/tontine_provider.dart';
 import '../services/supabase_service.dart';
+import '../services/blockchain_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
@@ -374,6 +376,20 @@ class _VotesScreenState extends State<VotesScreen> {
         return provider.ecrire(newData, pin);
       },
     );
+
+    // ── BLOCKCHAIN : vote créé (non-bloquant) ─────────────────────────
+    if (ok == true) {
+      BlockchainService.enregistrerVoteCree(
+        tontineCode : provider.courante!.code,
+        gestionnaire: provider.gestActifNom ?? '',
+        typeVote    : type,
+        question    : question,
+      ).catchError((e) {
+        if (kDebugMode) debugPrint('[Blockchain] vote_cree erreur: $e');
+        return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+      });
+    }
+    // ────────────────────────────────────────────────────────────────────
 
     if (ok == true && context.mounted) {
       afficherToast(context, 'Vote ouvert !');
@@ -850,6 +866,21 @@ class _VotesScreenState extends State<VotesScreen> {
         return provider.ecrire(newData, pin);
       },
     );
+
+    // ── BLOCKCHAIN : vote clôturé (non-bloquant) ───────────────────────────
+    if (ok == true) {
+      BlockchainService.enregistrerVoteClos(
+        tontineCode : widget.code,
+        gestionnaire: provider.gestActifNom ?? '',
+        typeVote    : estVoteRetrait ? 'retrait' : vote.type,
+        voteId      : vote.id,
+        adopte      : adopte,
+      ).catchError((e) {
+        if (kDebugMode) debugPrint('[Blockchain] vote_clos erreur: $e');
+        return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+      });
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     if (ok == true && context.mounted) {
       String message;

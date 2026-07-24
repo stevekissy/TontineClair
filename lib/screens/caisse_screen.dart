@@ -1,9 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
 import '../services/devise_service.dart';
 import '../services/supabase_service.dart';
+import '../services/blockchain_service.dart';
 import '../services/kyc_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
@@ -992,6 +994,32 @@ class _CaisseScreenState extends State<CaisseScreen> {
         return provider.ecrire(newData, pin);
       },
     );
+
+    // ── BLOCKCHAIN : pénalité / dépense caisse (non-bloquant) ────────────
+    if (ok == true) {
+      if (type == 'penalite' && membrePenaliteId != null) {
+        BlockchainService.enregistrerPenalite(
+          tontineCode: widget.code,
+          membreId   : membrePenaliteId!,
+          membreNom  : nomMembre,
+          montantXof : montant,
+        ).catchError((e) {
+          if (kDebugMode) debugPrint('[Blockchain] penalite erreur: $e');
+          return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+        });
+      } else if (type == 'depense') {
+        BlockchainService.enregistrerDepenseCaisse(
+          tontineCode : widget.code,
+          montantXof  : montant,
+          description : descFinale.isNotEmpty ? descFinale : 'Dépense caisse',
+          gestionnaire: provider.gestActifNom,
+        ).catchError((e) {
+          if (kDebugMode) debugPrint('[Blockchain] depense_caisse erreur: $e');
+          return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+        });
+      }
+    }
+    // ────────────────────────────────────────────────────────────────────
 
     if (ok == true && context.mounted) {
       afficherToast(context,

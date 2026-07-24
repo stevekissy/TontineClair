@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
 import '../services/supabase_service.dart';
+import '../services/blockchain_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
@@ -178,6 +180,7 @@ class _TirageScreenState extends State<TirageScreen> {
     TontineProvider provider,
     TontineData data,
   ) async {
+    String _empreinteCapture = '';
     final ok = await afficherModalePin(
       context,
       titre: context.tr('verrouiller_tirage'),
@@ -191,6 +194,7 @@ class _TirageScreenState extends State<TirageScreen> {
             .toString()
             .substring(0, 16)
             .toUpperCase();
+        _empreinteCapture = empreinte;
 
         final newData = data.toJson();
         // IMPORTANT : on conserve les IDs Supabase originaux des membres.
@@ -222,6 +226,19 @@ class _TirageScreenState extends State<TirageScreen> {
         return provider.ecrire(newData, pin);
       },
     );
+
+    // ── BLOCKCHAIN : tirage verrouillé (non-bloquant) ────────────────────
+    if (ok == true) {
+      BlockchainService.enregistrerTirageVerrouille(
+        tontineCode : provider.courante?.code ?? widget.code,
+        gestionnaire: provider.gestActifNom ?? '',
+        empreinte   : _empreinteCapture,
+      ).catchError((e) {
+        if (kDebugMode) debugPrint('[Blockchain] tirage_verrouille erreur: $e');
+        return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+      });
+    }
+    // ────────────────────────────────────────────────────────────────────
 
     if (ok == true && context.mounted) {
       setState(() => _tirageFait = false);

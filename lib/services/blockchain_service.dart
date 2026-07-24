@@ -105,14 +105,24 @@ class BlockchainEntry {
 
   String get typeLabel {
     const map = {
-      'cotisation'        : 'Cotisation',
-      'distribution'      : 'Distribution',
-      'pret'              : 'Prêt',
-      'remboursement'     : 'Remboursement',
-      'vote'              : 'Vote',
-      'creation'          : 'Création tontine',
-      'apport'            : 'Apport caisse',
-      'penalite'          : 'Pénalité',
+      'cotisation'            : 'Cotisation',
+      'distribution'          : 'Distribution',
+      'pret'                  : 'Prêt',
+      'remboursement'         : 'Remboursement',
+      'vote'                  : 'Vote',
+      'creation'              : 'Création tontine',
+      'apport'                : 'Apport caisse',
+      'penalite'              : 'Pénalité',
+      'depense_caisse'        : 'Dépense caisse',
+      'annulation_cotisation' : 'Annulation cotisation',
+      'annulation_remboursement': 'Annulation remboursement',
+      'tirage_verrouille'     : 'Tirage verrouillé',
+      'vote_cree'             : 'Vote créé',
+      'vote_clos'             : 'Vote clôturé',
+      'score_modifie'         : 'Score modifié',
+      'retrait_propose'       : 'Retrait proposé',
+      'upgrade_pro'           : 'Passage Pro',
+      'nouveau_cycle'         : 'Nouveau cycle',
     };
     return map[typeOperation] ?? typeOperation.toUpperCase();
   }
@@ -363,6 +373,195 @@ class BlockchainService {
       membreNom    : gestionnaire,
       montantXof   : cotisationMensuelle,
       metadata     : {'nom_tontine': nomTontine},
+    );
+  }
+
+  /// Enregistre une PÉNALITÉ appliquée à un membre.
+  static Future<BlockchainResultat> enregistrerPenalite({
+    required String tontineCode,
+    required String membreId,
+    required String membreNom,
+    required int    montantXof,
+    String? refInterne,
+  }) async {
+    return _enregistrer(
+      tontineCode  : tontineCode,
+      typeOperation: 'penalite',
+      membreId     : membreId,
+      membreNom    : membreNom,
+      montantXof   : montantXof,
+      refInterne   : refInterne,
+    );
+  }
+
+  /// Enregistre une DÉPENSE CAISSE (hors pénalité).
+  static Future<BlockchainResultat> enregistrerDepenseCaisse({
+    required String tontineCode,
+    required int    montantXof,
+    required String description,
+    String? refInterne,
+    String? gestionnaire,
+  }) async {
+    return _enregistrer(
+      tontineCode  : tontineCode,
+      typeOperation: 'depense_caisse',
+      membreNom    : gestionnaire,
+      montantXof   : montantXof,
+      refInterne   : refInterne,
+      metadata     : {'description': description},
+    );
+  }
+
+  /// Enregistre une ANNULATION DE COTISATION.
+  static Future<BlockchainResultat> enregistrerAnnulationCotisation({
+    required String tontineCode,
+    required String membreId,
+    required String membreNom,
+    required int    montantXof,
+    required int    numerTour,
+    String? refInterne,
+  }) async {
+    return _enregistrer(
+      tontineCode  : tontineCode,
+      typeOperation: 'annulation_cotisation',
+      membreId     : membreId,
+      membreNom    : membreNom,
+      montantXof   : montantXof,
+      refInterne   : refInterne,
+      metadata     : {'tour': numerTour},
+    );
+  }
+
+  /// Enregistre une ANNULATION DE REMBOURSEMENT.
+  static Future<BlockchainResultat> enregistrerAnnulationRemboursement({
+    required String tontineCode,
+    required String membreId,
+    required String membreNom,
+    required int    montantXof,
+    String? refInterne,
+  }) async {
+    return _enregistrer(
+      tontineCode  : tontineCode,
+      typeOperation: 'annulation_remboursement',
+      membreId     : membreId,
+      membreNom    : membreNom,
+      montantXof   : montantXof,
+      refInterne   : refInterne,
+    );
+  }
+
+  /// Enregistre le VERROUILLAGE DU TIRAGE.
+  static Future<BlockchainResultat> enregistrerTirageVerrouille({
+    required String tontineCode,
+    required String gestionnaire,
+    required String empreinte,
+  }) async {
+    return _enregistrer(
+      tontineCode  : tontineCode,
+      typeOperation: 'tirage_verrouille',
+      membreNom    : gestionnaire,
+      montantXof   : null,
+      metadata     : {'empreinte': empreinte},
+    );
+  }
+
+  /// Enregistre la CRÉATION D'UN VOTE.
+  static Future<BlockchainResultat> enregistrerVoteCree({
+    required String tontineCode,
+    required String gestionnaire,
+    required String typeVote,
+    required String question,
+    String? refInterne,
+  }) async {
+    return _enregistrer(
+      tontineCode  : tontineCode,
+      typeOperation: 'vote_cree',
+      membreNom    : gestionnaire,
+      montantXof   : null,
+      refInterne   : refInterne,
+      metadata     : {'type_vote': typeVote, 'question': question},
+    );
+  }
+
+  /// Enregistre la CLÔTURE D'UN VOTE (adopté ou rejeté).
+  static Future<BlockchainResultat> enregistrerVoteClos({
+    required String tontineCode,
+    required String gestionnaire,
+    required String typeVote,
+    required String voteId,
+    required bool   adopte,
+  }) async {
+    return _enregistrer(
+      tontineCode  : tontineCode,
+      typeOperation: 'vote_clos',
+      membreNom    : gestionnaire,
+      montantXof   : null,
+      refInterne   : voteId,
+      metadata     : {'type_vote': typeVote, 'adopte': adopte, 'vote_id': voteId},
+    );
+  }
+
+  /// Enregistre une MODIFICATION DE SCORE de confiance.
+  static Future<BlockchainResultat> enregistrerScoreModifie({
+    required String tontineCode,
+    required String membreId,
+    required String membreNom,
+    required int    ancienScore,
+    required int    nouveauScore,
+    required String motif,
+  }) async {
+    return _enregistrer(
+      tontineCode  : tontineCode,
+      typeOperation: 'score_modifie',
+      membreId     : membreId,
+      membreNom    : membreNom,
+      montantXof   : null,
+      metadata     : {'ancien': ancienScore, 'nouveau': nouveauScore, 'motif': motif},
+    );
+  }
+
+  /// Enregistre une PROPOSITION DE RETRAIT d'un membre.
+  static Future<BlockchainResultat> enregistrerRetraitPropose({
+    required String tontineCode,
+    required String membreId,
+    required String membreNom,
+    required int    score,
+  }) async {
+    return _enregistrer(
+      tontineCode  : tontineCode,
+      typeOperation: 'retrait_propose',
+      membreId     : membreId,
+      membreNom    : membreNom,
+      montantXof   : null,
+      metadata     : {'score': score},
+    );
+  }
+
+  /// Enregistre le PASSAGE EN FORMULE PRO.
+  static Future<BlockchainResultat> enregistrerUpgradePro({
+    required String tontineCode,
+    required String gestionnaire,
+  }) async {
+    return _enregistrer(
+      tontineCode  : tontineCode,
+      typeOperation: 'upgrade_pro',
+      membreNom    : gestionnaire,
+      montantXof   : null,
+    );
+  }
+
+  /// Enregistre le DÉMARRAGE D'UN NOUVEAU CYCLE.
+  static Future<BlockchainResultat> enregistrerNouveauCycle({
+    required String tontineCode,
+    required String gestionnaire,
+    required int    cycleNum,
+  }) async {
+    return _enregistrer(
+      tontineCode  : tontineCode,
+      typeOperation: 'nouveau_cycle',
+      membreNom    : gestionnaire,
+      montantXof   : null,
+      metadata     : {'cycle_num': cycleNum},
     );
   }
 

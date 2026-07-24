@@ -5,6 +5,7 @@ import '../services/storage_service.dart';
 import '../services/echeance_service.dart';
 import '../services/notification_service.dart';
 import '../services/rappel_service.dart';
+import '../services/blockchain_service.dart';
 
 class TontineProvider extends ChangeNotifier {
   List<TontineLocale> _mesTontines = [];
@@ -349,6 +350,20 @@ class TontineProvider extends ChangeNotifier {
             pin: pin,
             data: newData,
           );
+
+          // ── BLOCKCHAIN : score modifié (non-bloquant) ──────────────────────
+          BlockchainService.enregistrerScoreModifie(
+            tontineCode : _courante!.code,
+            membreId    : membreId,
+            membreNom   : membreNom,
+            ancienScore : ancienScore,
+            nouveauScore: nouveau,
+            motif       : motif,
+          ).catchError((e) {
+            if (kDebugMode) debugPrint('[Blockchain] score_modifie erreur: $e');
+            return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+          });
+          // ───────────────────────────────────────────────────────────────────
         } catch (_) {
           // Échec silencieux : le score a bien été modifié, seul le journal JSONB a échoué
         }
