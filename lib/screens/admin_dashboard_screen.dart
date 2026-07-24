@@ -609,9 +609,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         formule: 'mensuel',
         montant: 2500,
       );
+      if (!mounted) return;
       afficherToast(context, 'Premium activé pour $code !');
       await _recharger();
     } else {
+      if (!mounted) return;
       afficherToast(context, 'Erreur lors de l\'activation.', estErreur: true);
     }
   }

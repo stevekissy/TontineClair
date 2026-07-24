@@ -902,7 +902,7 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
     // ────────────────────────────────────────────────────────────────────
 
     // ── NOTIFICATION : retrait proposé ───────────────────────────────────
-    {
+    if (ctx.mounted) {
       final _langRP = Provider.of<LocaleService>(ctx, listen: false).langue.code;
       final _tRP = SupabaseService.notifTexte(
         'retrait_propose',

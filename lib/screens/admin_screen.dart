@@ -4355,7 +4355,8 @@ class _AdminScreenState extends State<AdminScreen> {
                           email:       emailSaisi,
                         );
                         if (res['ok'] == true) {
-                          Navigator.pop(dCtx);
+                          if (dCtx.mounted) Navigator.pop(dCtx);
+                          if (!context.mounted) return;
                           _afficherResultatPinReset(
                             ctx, true,
                             'E-mail mis à jour : $emailSaisi',
@@ -4443,7 +4444,7 @@ class _AdminScreenState extends State<AdminScreen> {
       ),
     );
 
-    if (ok != true || !mounted) return;
+    if (ok != true || !context.mounted) return;
     if (motifCtrl.text.trim().length < 5) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Le motif est obligatoire (minimum 5 caractères).')),
@@ -4458,7 +4459,7 @@ class _AdminScreenState extends State<AdminScreen> {
         code:  code,
         motif: motifCtrl.text.trim(),
       );
-      if (!mounted) return;
+      if (!context.mounted) return;
       if (result['ok'] == true) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -4468,7 +4469,8 @@ class _AdminScreenState extends State<AdminScreen> {
         );
         // Recharger la liste
         final tontines = await SupabaseService.adminListerTontines(_cle);
-        if (mounted) setState(() { _tontines = tontines; _loading = false; });
+        if (!context.mounted) return;
+        setState(() { _tontines = tontines; _loading = false; });
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -4479,7 +4481,7 @@ class _AdminScreenState extends State<AdminScreen> {
         setState(() => _loading = false);
       }
     } catch (e) {
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Erreur : $e'), backgroundColor: AppColors.alerte),
         );

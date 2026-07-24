@@ -434,6 +434,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
     String operateur  = _operateursMobileMoney.first;
 
     // ── Formulaire dépense caisse ─────────────────────────────────────────
+    if (!context.mounted) return;
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,

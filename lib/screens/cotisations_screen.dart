@@ -834,7 +834,9 @@ class _BoutonRecapWhatsApp extends StatelessWidget {
           // Fallback : copie dans le presse-papiers
           if (!ouvert && context.mounted) {
             await Clipboard.setData(ClipboardData(text: _construireMessage()));
-            afficherToast(context, '📋 Message copié ! Collez-le dans WhatsApp.');
+            if (context.mounted) {
+              afficherToast(context, '📋 Message copié ! Collez-le dans WhatsApp.');
+            }
           }
         },
         icon: const Icon(Icons.share_outlined, size: 18, color: Colors.white),

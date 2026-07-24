@@ -221,7 +221,7 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
 
     // Choisir son vote
     String? choix = await _choisirChoix(context, membre.nom);
-    if (choix == null || !mounted) return;
+    if (choix == null || !mounted || !context.mounted) return;
 
     // PIN du membre
     final pinCtrl = TextEditingController();

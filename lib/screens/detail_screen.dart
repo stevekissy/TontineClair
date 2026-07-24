@@ -1844,6 +1844,7 @@ class _BarreDetail extends StatelessWidget {
     }
 
     // ── Branchement Premium / Lite ─────────────────────────────────────────
+    if (!context.mounted) return;
     if (isPremium) {
       await _cloturerTourPremium(
         context:           context,
