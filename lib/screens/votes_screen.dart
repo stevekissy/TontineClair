@@ -660,6 +660,8 @@ class _VotesScreenState extends State<VotesScreen> {
         msg = 'Le serveur met trop de temps à répondre. Réessaie dans quelques secondes.';
       } else if (raw.contains('RESEAU:SSL') || raw.contains('RESEAU:CONNEXION')) {
         msg = 'Connexion au serveur impossible. Réessaie plus tard.';
+      } else if (raw.contains('RESEAU:SERVEUR')) {
+        msg = 'Connexion au serveur impossible. Réessaie dans quelques secondes.';
       } else if (raw.contains('Could not find the function') || raw.contains('SQL:')) {
         msg = 'Fonction voter introuvable. Contacte l\'administrateur.';
       } else if (raw.contains('SERVEUR:')) {
@@ -669,9 +671,8 @@ class _VotesScreenState extends State<VotesScreen> {
         if (kDebugMode) debugPrint('[voter] SQL error: $sqlDetail');
         msg = 'Erreur serveur lors du vote. Réessaie ou contacte l\'administrateur.';
       } else {
-        // Afficher l'exception brute pour diagnostic — sera nettoyée après identification
-        debugPrint('[voter] exception non classifiée: $raw');
-        msg = 'Erreur: $raw';
+        if (kDebugMode) debugPrint('[voter] exception non classifiée: $raw');
+        msg = 'Erreur inattendue. Réessaie.';
       }
       afficherToast(context, msg, estErreur: true);
     }
