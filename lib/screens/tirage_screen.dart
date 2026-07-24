@@ -180,7 +180,7 @@ class _TirageScreenState extends State<TirageScreen> {
     TontineProvider provider,
     TontineData data,
   ) async {
-    String _empreinteCapture = '';
+    String empreinteCapture = '';
     final ok = await afficherModalePin(
       context,
       titre: context.tr('verrouiller_tirage'),
@@ -194,7 +194,7 @@ class _TirageScreenState extends State<TirageScreen> {
             .toString()
             .substring(0, 16)
             .toUpperCase();
-        _empreinteCapture = empreinte;
+        empreinteCapture = empreinte;
 
         final newData = data.toJson();
         // IMPORTANT : on conserve les IDs Supabase originaux des membres.
@@ -232,7 +232,7 @@ class _TirageScreenState extends State<TirageScreen> {
       BlockchainService.enregistrerTirageVerrouille(
         tontineCode : provider.courante?.code ?? widget.code,
         gestionnaire: provider.gestActifNom ?? '',
-        empreinte   : _empreinteCapture,
+        empreinte   : empreinteCapture,
       ).catchError((e) {
         if (kDebugMode) debugPrint('[Blockchain] tirage_verrouille erreur: $e');
         return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
@@ -245,13 +245,13 @@ class _TirageScreenState extends State<TirageScreen> {
       afficherToast(context, 'Tirage verrouillé et signé !');
       final tontineCode = provider.courante?.code ?? widget.code;
       final ordreNoms = _membresOrdonnes.map((m) => m.nom).join(', ');
-      final _lang = Provider.of<LocaleService>(context, listen: false).langue.code;
-      final _t = SupabaseService.notifTexte('tirage_verrouille', _lang, vars: {'ordre': ordreNoms});
+      final lang = Provider.of<LocaleService>(context, listen: false).langue.code;
+      final t = SupabaseService.notifTexte('tirage_verrouille', lang, vars: {'ordre': ordreNoms});
       SupabaseService.envoyerNotification(
         code: tontineCode,
         type: 'tirage_verrouille',
-        titre: _t['titre']!,
-        message: _t['message']!,
+        titre: t['titre']!,
+        message: t['message']!,
       );
     }
   }

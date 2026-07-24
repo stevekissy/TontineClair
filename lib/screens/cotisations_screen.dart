@@ -317,13 +317,13 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
       if (ok == true && context.mounted) {
         afficherToast(context, 'Paiement de ${membre.nom} enregistré !');
         // Notification push à tous les membres
-        final _lang = Provider.of<LocaleService>(context, listen: false).langue.code;
-        final _t = SupabaseService.notifTexte('cotisation', _lang, vars: {'nom': membre.nom});
+        final lang = Provider.of<LocaleService>(context, listen: false).langue.code;
+        final t = SupabaseService.notifTexte('cotisation', lang, vars: {'nom': membre.nom});
         SupabaseService.envoyerNotification(
           code: provider.courante!.code,
           type: 'cotisation',
-          titre: _t['titre']!,
-          message: _t['message']!,
+          titre: t['titre']!,
+          message: t['message']!,
           donneesExtra: {'membre': membre.nom},
         );
 
@@ -345,7 +345,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
       }
     } else {
       // Annuler le paiement
-      String _refAnnuleCapture = '';
+      String refAnnuleCapture = '';
       final ok = await afficherModalePin(
         context,
         titre: context.tr('annuler_paiement'),
@@ -364,7 +364,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
           );
           final refAnnule = membres
               .firstWhere((m) => m['id'] == membre.id, orElse: () => {})['referencePaiement'] as String? ?? '?';
-          _refAnnuleCapture = refAnnule;
+          refAnnuleCapture = refAnnule;
           final idx = membres.indexWhere((m) => m['id'] == membre.id);
           if (idx >= 0) {
             membres[idx]['paye'] = false;
@@ -426,7 +426,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
           membreNom  : membre.nom,
           montantXof : data.montant,
           numerTour  : data.numerTour,
-          refInterne : 'ANNUL_$_refAnnuleCapture',
+          refInterne : 'ANNUL_$refAnnuleCapture',
         ).catchError((e) {
           if (kDebugMode) debugPrint('[Blockchain] annulation_cotisation erreur: $e');
           return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
@@ -797,11 +797,11 @@ class _BoutonRecapWhatsApp extends StatelessWidget {
     }
     buf.writeln('');
     buf.writeln('✅ Ont cotisé (${payes.length}/${membres.length})');
-    for (final m in payes) buf.writeln('  ✓ ${m.nom}');
+    for (final m in payes) { buf.writeln('  ✓ ${m.nom}'); }
     if (nonPayes.isNotEmpty) {
       buf.writeln('');
       buf.writeln('⏳ En attente (${nonPayes.length}/${membres.length})');
-      for (final m in nonPayes) buf.writeln('  · ${m.nom}');
+      for (final m in nonPayes) { buf.writeln('  · ${m.nom}'); }
     }
     buf.writeln('');
     buf.writeln('💰 Cagnotte : ${Formatters.montant(montantTotal, devise: data.devise)} / ${Formatters.montant(totalAttendu, devise: data.devise)}');

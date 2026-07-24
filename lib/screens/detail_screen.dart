@@ -518,38 +518,6 @@ class _BandeauEcheanceState extends State<_BandeauEcheance> {
     );
   }
 
-  Future<String?> _demanderPin() async {
-    final ctrl = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(context.tr('confirmer_pin')),
-        content: TextField(
-          controller: ctrl,
-          obscureText: true,
-          keyboardType: TextInputType.number,
-          maxLength: 6,
-          decoration: InputDecoration(
-            hintText: 'PIN gestionnaire',
-            counterText: '',
-          ),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(context.tr('annuler')),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            child: Text(context.tr('confirmer'),
-                style: TextStyle(fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final prochaineDate = EcheanceService.prochaineEcheance(
@@ -867,12 +835,10 @@ class _DialogCalendrierState extends State<_DialogCalendrier> {
 class _LegendePuce extends StatelessWidget {
   final Color couleur;
   final String label;
-  final Color? texte;
 
   const _LegendePuce({
     required this.couleur,
     required this.label,
-    this.texte,
   });
 
   @override
@@ -897,7 +863,7 @@ class _LegendePuce extends StatelessWidget {
           label,
           style: TextStyle(
             fontSize: 10,
-            color: texte ?? AppColors.encre,
+            color: AppColors.encre,
           ),
         ),
       ],

@@ -28,7 +28,7 @@ class PdfService {
   // Seuls les labels fixes du document sont traduits ici.
   // Les données (noms, montants, dates) ne sont JAMAIS traduits.
   static String _t(String key, String langueCode) {
-    const Map<String, Map<String, String>> _pdf = {
+    const Map<String, Map<String, String>> pdf = {
       'releve_titre':          {'fr': 'Relevé de la tontine', 'en': 'Tontine statement', 'es': 'Estado de la tontina', 'pt': 'Extrato da tontina', 'ar': 'كشف التونتين'},
       'releve_genere':         {'fr': 'Relevé généré le', 'en': 'Statement generated on', 'es': 'Estado generado el', 'pt': 'Extrato gerado em', 'ar': 'تم إنشاء الكشف في'},
       'membres':               {'fr': 'membres', 'en': 'members', 'es': 'miembros', 'pt': 'membros', 'ar': 'أعضاء'},
@@ -93,7 +93,7 @@ class PdfService {
       'non':                   {'fr': 'Non', 'en': 'No', 'es': 'No', 'pt': 'Não', 'ar': 'لا'},
       'abstention':            {'fr': 'Abst.', 'en': 'Abst.', 'es': 'Abst.', 'pt': 'Abst.', 'ar': 'امتناع'},
     };
-    final lang = _pdf[key];
+    final lang = pdf[key];
     if (lang == null) return key;
     return lang[langueCode] ?? lang['fr'] ?? key;
   }

@@ -13,7 +13,7 @@ import 'supabase_service.dart';
 ///   IPN     → coinpayments-ipn     (Edge Fn) → crédit RPC Supabase
 ///
 /// Référence pivot : [numCommande] format TCP_CODE_MID_TS
-/// custom field    : TC-TYPE-<numCommande> (routage IPN)
+/// custom field    : TC-TYPE-{numCommande} (routage IPN)
 ///
 /// Flux de paiement :
 ///   1. creerTransaction   → checkout_url + txid (persist PENDING)
@@ -227,7 +227,7 @@ class CoinPaymentsService {
   /// Format : TCP_[CODE]_[SUFFIX]_[TIMESTAMP]  (TCP = TontineClair CoinPayments)
   ///
   /// Le champ custom envoyé à CoinPayments est construit côté Edge Function :
-  ///   TC-TYPE-<numCommande>  ex: TC-COTISATION-TCP_TONTINE1_MID_1720000000000
+  ///   TC-TYPE-{numCommande}  ex: TC-COTISATION-TCP_TONTINE1_MID_1720000000000
   static String genererNumCommande(String codeTontine, String suffix) {
     final ts = DateTime.now().millisecondsSinceEpoch;
     final safeSuffix = suffix.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toUpperCase();

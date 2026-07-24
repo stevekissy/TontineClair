@@ -31,7 +31,7 @@ class KycConfig {
   static bool useMock = false;
 
   /// URL de la Supabase Edge Function kyc-session
-  static String edgeFunctionBaseUrl = SupabaseService.supabaseUrl + '/functions/v1';
+  static String edgeFunctionBaseUrl = '${SupabaseService.supabaseUrl}/functions/v1';
 
   /// Règle métier : KYC requis si et seulement si la tontine est Premium.
   /// Indépendant du montant ou de la devise.

@@ -839,8 +839,8 @@ class _CartePret extends StatelessWidget {
       afficherToast(context, 'Remboursement annulé et caisse corrigée.');
       final tontineCode = provider.courante?.code ?? '';
       if (tontineCode.isNotEmpty) {
-        final _lang = Provider.of<LocaleService>(context, listen: false).langue.code;
-        final _t = SupabaseService.notifTexte('annulation_remboursement', _lang, vars: {
+        final lang = Provider.of<LocaleService>(context, listen: false).langue.code;
+        final t = SupabaseService.notifTexte('annulation_remboursement', lang, vars: {
           'montant': Formatters.montant(remb.montant, devise: data.devise),
           'nom': pret.emprunteurNom,
           'ref': remb.reference,
@@ -848,8 +848,8 @@ class _CartePret extends StatelessWidget {
         SupabaseService.envoyerNotification(
           code: tontineCode,
           type: 'annulation_remboursement',
-          titre: _t['titre']!,
-          message: _t['message']!,
+          titre: t['titre']!,
+          message: t['message']!,
         );
       }
     }
@@ -1052,7 +1052,7 @@ class _CartePret extends StatelessWidget {
     final resteAvant = pret.resteADu;
     final resteApres = (resteAvant - montant).clamp(0, resteAvant);
 
-    String _refRembCapture = '';
+    String refRembCapture = '';
     final ok = await afficherModalePin(
       context,
       titre: 'Confirmer le remboursement',
@@ -1066,7 +1066,7 @@ class _CartePret extends StatelessWidget {
       ],
       onValider: (pin) async {
         final ref = Formatters.genererReference();
-        _refRembCapture = ref;
+        refRembCapture = ref;
         refRemboursement = ref;
         final now = DateTime.now().toIso8601String();
         final newData = data.toJson();
@@ -1170,7 +1170,7 @@ class _CartePret extends StatelessWidget {
         membreId   : pret.emprunteurId,
         membreNom  : pret.emprunteurNom,
         montantXof : montant,
-        refInterne : _refRembCapture,
+        refInterne : refRembCapture,
       ).catchError((e) {
         if (kDebugMode) debugPrint('[Blockchain] remboursement erreur: $e');
         return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
@@ -1187,9 +1187,9 @@ class _CartePret extends StatelessWidget {
       );
       final tontineCode = provider.courante?.code ?? '';
       if (tontineCode.isNotEmpty) {
-        final _lang = Provider.of<LocaleService>(context, listen: false).langue.code;
-        final _typeNotif2 = pretSolde ? 'pret_solde' : 'remboursement';
-        final _t2 = SupabaseService.notifTexte(_typeNotif2, _lang, vars: {
+        final lang2 = Provider.of<LocaleService>(context, listen: false).langue.code;
+        final typeNotif2 = pretSolde ? 'pret_solde' : 'remboursement';
+        final t2 = SupabaseService.notifTexte(typeNotif2, lang2, vars: {
           'nom': pret.emprunteurNom,
           'montant': pretSolde
               ? Formatters.montant(pret.totalDu, devise: data.devise)
@@ -1198,9 +1198,9 @@ class _CartePret extends StatelessWidget {
         });
         SupabaseService.envoyerNotification(
           code: tontineCode,
-          type: _typeNotif2,
-          titre: _t2['titre']!,
-          message: _t2['message']!,
+          type: typeNotif2,
+          titre: t2['titre']!,
+          message: t2['message']!,
         );
       }
 

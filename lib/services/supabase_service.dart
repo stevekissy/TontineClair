@@ -131,7 +131,7 @@ class SupabaseService {
 
     if (kDebugMode) {
       debugPrint('[RPC] ← HTTP ${resp.statusCode} $fn');
-      debugPrint('[RPC]   body=${resp.body.length > 300 ? resp.body.substring(0, 300) + "..." : resp.body}');
+      debugPrint('[RPC]   body=${resp.body.length > 300 ? '${resp.body.substring(0, 300)}...' : resp.body}');
     }
 
     // ── Status 0 = réponse jamais reçue ─────────────────────────────────────
@@ -444,10 +444,15 @@ class SupabaseService {
 
       // Supabase peut retourner true, "true", 1, ou null
       bool ok = false;
-      if (result == null)      ok = false;
-      else if (result is bool) ok = result;
-      else if (result is int)  ok = result != 0;
-      else if (result is String) ok = result.toLowerCase() == 'true';
+      if (result == null) {
+        ok = false;
+      } else if (result is bool) {
+        ok = result;
+      } else if (result is int) {
+        ok = result != 0;
+      } else if (result is String) {
+        ok = result.toLowerCase() == 'true';
+      }
 
       // ── BLOCKCHAIN : ancrage cotisation/apport après succès (non-bloquant) ─
       if (ok && typeOperationBlockchain != null && membreId != null && montantXof != null) {
@@ -1126,7 +1131,7 @@ class SupabaseService {
     String langueCode, {
     Map<String, String> vars = const {},
   }) {
-    const _n = <String, Map<String, Map<String, String>>>{
+    const n = <String, Map<String, Map<String, String>>>{
       'cotisation': {
         'titre': {
           'fr': '💰 Cotisation reçue',
@@ -1537,7 +1542,7 @@ class SupabaseService {
       },
     };
 
-    String _sub(String? tpl) {
+    String sub(String? tpl) {
       if (tpl == null) return '';
       var s = tpl;
       vars.forEach((k, v) => s = s.replaceAll('{$k}', v));
@@ -1545,11 +1550,11 @@ class SupabaseService {
     }
 
     final lang = ['fr', 'en', 'es', 'pt', 'ar'].contains(langueCode) ? langueCode : 'fr';
-    final bloc = _n[type];
+    final bloc = n[type];
     if (bloc == null) return {'titre': '', 'message': ''};
 
-    final titre = _sub(bloc['titre']?[lang] ?? bloc['titre']?['fr']);
-    final message = _sub(bloc['message']?[lang] ?? bloc['message']?['fr']);
+    final titre = sub(bloc['titre']?[lang] ?? bloc['titre']?['fr']);
+    final message = sub(bloc['message']?[lang] ?? bloc['message']?['fr']);
     return {'titre': titre, 'message': message};
   }
 

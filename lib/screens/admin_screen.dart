@@ -1392,21 +1392,21 @@ class _AdminScreenState extends State<AdminScreen> {
     }).toList();
 
     // Couleurs par statut
-    Color _couleurStatut(String s) => switch (s) {
+    Color couleurStatut(String s) => switch (s) {
       'envoye'  => AppColors.succes,
       'pending' => AppColors.or,
       'echoue'  => AppColors.alerte,
       _         => AppColors.texteDoux,
     };
 
-    String _labelStatut(String s) => switch (s) {
+    String labelStatut(String s) => switch (s) {
       'envoye'  => 'Envoyé',
       'pending' => 'En attente',
       'echoue'  => 'Échoué',
       _         => s,
     };
 
-    String _labelType(String t) => switch (t) {
+    String labelType(String t) => switch (t) {
       'code_verification'    => 'Code vérif.',
       'pin_reset'            => 'Reset PIN',
       'pin_change_confirme'  => 'Modif. PIN',
@@ -1508,7 +1508,7 @@ class _AdminScreenState extends State<AdminScreen> {
                         ),
                       ),
                       child: Text(
-                        s == 'tous' ? 'Tous' : _labelStatut(s),
+                        s == 'tous' ? 'Tous' : labelStatut(s),
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -1539,7 +1539,7 @@ class _AdminScreenState extends State<AdminScreen> {
                         ),
                       ),
                       child: Text(
-                        t.isEmpty ? 'Tous types' : _labelType(t),
+                        t.isEmpty ? 'Tous types' : labelType(t),
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -1618,7 +1618,7 @@ class _AdminScreenState extends State<AdminScreen> {
                           '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
                     } catch (_) {}
 
-                    final couleur = _couleurStatut(statut);
+                    final couleur = couleurStatut(statut);
 
                     return ListTile(
                       contentPadding:
@@ -1662,7 +1662,7 @@ class _AdminScreenState extends State<AdminScreen> {
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Text(
-                              _labelStatut(statut),
+                              labelStatut(statut),
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
@@ -1688,7 +1688,7 @@ class _AdminScreenState extends State<AdminScreen> {
                           Row(
                             children: [
                               Text(
-                                _labelType(type),
+                                labelType(type),
                                 style: const TextStyle(
                                   fontSize: 11,
                                   color: AppColors.texteDoux,
@@ -1852,14 +1852,14 @@ class _AdminScreenState extends State<AdminScreen> {
     final nbActifs  = _ticketsSupport.where((t) => !['resolu','ferme'].contains(t['statut'] as String? ?? '')).length;
     final nbResolus = _ticketsSupport.where((t) => (t['statut'] as String? ?? '') == 'resolu').length;
 
-    Color _couleurStatut(String s) => switch (s) {
+    Color couleurStatut2(String s) => switch (s) {
       'ouvert'    => AppColors.or,
       'en_cours'  => AppColors.encreDoux,
       'resolu'    => AppColors.succes,
       'ferme'     => AppColors.texteDoux,
       _           => AppColors.texteDoux,
     };
-    String _labelStatut(String s) => switch (s) {
+    String labelStatut2(String s) => switch (s) {
       'ouvert'    => 'Ouvert',
       'en_cours'  => 'En cours',
       'resolu'    => 'Résolu',
@@ -1981,7 +1981,7 @@ class _AdminScreenState extends State<AdminScreen> {
                 final statut   = ticket['statut'] as String? ?? 'ouvert';
                 final dateStr  = ticket['created_at'] as String? ?? '';
                 final reponse  = ticket['reponse_admin'] as String? ?? '';
-                final couleur  = _couleurStatut(statut);
+                final couleur  = couleurStatut2(statut);
 
                 String dateAff = dateStr;
                 try {
@@ -2009,7 +2009,7 @@ class _AdminScreenState extends State<AdminScreen> {
                         color: couleur.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Text(_labelStatut(statut),
+                      child: Text(labelStatut2(statut),
                           style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: couleur)),
                     ),
                     const SizedBox(width: 6),

@@ -119,8 +119,8 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
       final membreFrais = data.membres.where((m) => m.id == widget.membre.id).firstOrNull
                           ?? widget.membre;
       final detail = ScoreService.calculerScore(data, membreFrais.id, voixMembre);
-      final _langIA = context.read<LocaleService>().langue.code;
-      final recs   = ScoreService.genererRecommandations(data, membreFrais, detail, voixMembre, langueCode: _langIA);
+      final langIA = context.read<LocaleService>().langue.code;
+      final recs   = ScoreService.genererRecommandations(data, membreFrais, detail, voixMembre, langueCode: langIA);
 
       // ── Historique des scores (v6) ───────────────────────────────────────
       List<HistoriqueScore> historique = [];
@@ -903,10 +903,10 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
 
     // ── NOTIFICATION : retrait proposé ───────────────────────────────────
     if (ctx.mounted) {
-      final _langRP = Provider.of<LocaleService>(ctx, listen: false).langue.code;
-      final _tRP = SupabaseService.notifTexte(
+      final langRP = Provider.of<LocaleService>(ctx, listen: false).langue.code;
+      final tRP = SupabaseService.notifTexte(
         'retrait_propose',
-        _langRP,
+        langRP,
         vars: {
           'nom'  : widget.membre.nom,
           'score': '${_scoreDetail?.score ?? 0}',
@@ -915,8 +915,8 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
       SupabaseService.envoyerNotification(
         code    : widget.code,
         type    : 'retrait_propose',
-        titre   : _tRP['titre']!,
-        message : _tRP['message']!,
+        titre   : tRP['titre']!,
+        message : tRP['message']!,
         donneesExtra: {'membre_id': widget.membre.id},
       );
     }

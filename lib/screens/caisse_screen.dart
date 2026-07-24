@@ -1025,21 +1025,21 @@ class _CaisseScreenState extends State<CaisseScreen> {
     if (ok == true && context.mounted) {
       afficherToast(context,
           type == 'penalite' ? 'Pénalité appliquée !' : 'Mouvement enregistré !');
-      final _lang = Provider.of<LocaleService>(context, listen: false).langue.code;
-      final _typeNotif = type == 'penalite' ? 'penalite' : 'caisse';
-      final _montantStr = Formatters.montant(montant, devise: data.devise);
-      final _desc = descFinale.isNotEmpty ? ' — $descFinale' : '';
-      final _t = SupabaseService.notifTexte(_typeNotif, _lang, vars: {
+      final lang = Provider.of<LocaleService>(context, listen: false).langue.code;
+      final typeNotif = type == 'penalite' ? 'penalite' : 'caisse';
+      final montantStr = Formatters.montant(montant, devise: data.devise);
+      final desc = descFinale.isNotEmpty ? ' — $descFinale' : '';
+      final t = SupabaseService.notifTexte(typeNotif, lang, vars: {
         'nom': nomMembre,
-        'montant': _montantStr,
+        'montant': montantStr,
         'libelle': libelleType,
-        'desc': _desc,
+        'desc': desc,
       });
       SupabaseService.envoyerNotification(
         code: widget.code,
-        type: _typeNotif,
-        titre: _t['titre']!,
-        message: _t['message']!,
+        type: typeNotif,
+        titre: t['titre']!,
+        message: t['message']!,
       );
     }
   }

@@ -117,7 +117,7 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
     // Copie l'URL dans le presse-papiers + feedback
     Clipboard.setData(ClipboardData(text: url));
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('Lien copié : ${url.length > 40 ? url.substring(0, 40) + "..." : url}'),
+      content: Text('Lien copié : ${url.length > 40 ? '${url.substring(0, 40)}...' : url}'),
       action: SnackBarAction(label: 'OK', onPressed: () {}),
       duration: const Duration(seconds: 3),
     ));

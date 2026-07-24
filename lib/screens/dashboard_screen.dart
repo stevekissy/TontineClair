@@ -145,8 +145,8 @@ class DashboardScreen extends StatelessWidget {
         final paye = ech['paye'] as bool? ?? false;
         if (!paye && dateRaw != null) {
           DateTime? d;
-          if (dateRaw is int) d = DateTime.fromMillisecondsSinceEpoch(dateRaw);
-          else if (dateRaw is String) d = DateTime.tryParse(dateRaw);
+          if (dateRaw is int) { d = DateTime.fromMillisecondsSinceEpoch(dateRaw); }
+          else if (dateRaw is String) { d = DateTime.tryParse(dateRaw); }
           if (d != null && d.isBefore(maintenant)) {
             enRetard = true;
             break;
@@ -178,8 +178,8 @@ class DashboardScreen extends StatelessWidget {
         final paye = ech['paye'] as bool? ?? false;
         if (paye || dateRaw == null) continue;
         DateTime? d;
-        if (dateRaw is int) d = DateTime.fromMillisecondsSinceEpoch(dateRaw);
-        else if (dateRaw is String) d = DateTime.tryParse(dateRaw);
+        if (dateRaw is int) { d = DateTime.fromMillisecondsSinceEpoch(dateRaw); }
+        else if (dateRaw is String) { d = DateTime.tryParse(dateRaw); }
         if (d == null) continue;
         final diff = d.difference(maintenant).inDays;
         if (diff >= 0 && diff <= _seuilJoursEcheancePret) {
@@ -908,8 +908,8 @@ class _BoutonPartagerRecap extends StatelessWidget {
             ?? n * data.montant;
         final dateRaw = h['date'];
         DateTime? dateD;
-        if (dateRaw is int) dateD = DateTime.fromMillisecondsSinceEpoch(dateRaw);
-        else if (dateRaw is String) dateD = DateTime.tryParse(dateRaw);
+        if (dateRaw is int) { dateD = DateTime.fromMillisecondsSinceEpoch(dateRaw); }
+        else if (dateRaw is String) { dateD = DateTime.tryParse(dateRaw); }
         buf.writeln('• Tour $tour → $benef — ${Formatters.montant(montant, devise: data.devise)}'
             '${dateD != null ? ' (${Formatters.dateFormatee(dateD)})' : ''}');
       }

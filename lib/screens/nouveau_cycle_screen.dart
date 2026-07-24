@@ -417,13 +417,13 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
       // Retourner à l'écran précédent — le cycle est démarré
       if (mounted) {
         afficherToast(context, '🎉 Cycle $cycleNum démarré ! Tour 1 en cours.');
-        final _lang = Provider.of<LocaleService>(context, listen: false).langue.code;
-        final _t = SupabaseService.notifTexte('nouveau_cycle', _lang, vars: {'num': cycleNum.toString()});
+        final lang = Provider.of<LocaleService>(context, listen: false).langue.code;
+        final t = SupabaseService.notifTexte('nouveau_cycle', lang, vars: {'num': cycleNum.toString()});
         SupabaseService.envoyerNotification(
           code: widget.code,
           type: 'nouveau_cycle',
-          titre: _t['titre']!,
-          message: _t['message']!,
+          titre: t['titre']!,
+          message: t['message']!,
         );
         Navigator.of(context).pop();
       }
@@ -820,8 +820,8 @@ class _EtatPeutProposer extends StatelessWidget {
                     ?? data.membres.length * data.montant;
                 final dateRaw = h['date'];
                 DateTime? dateD;
-                if (dateRaw is int) dateD = DateTime.fromMillisecondsSinceEpoch(dateRaw);
-                else if (dateRaw is String) dateD = DateTime.tryParse(dateRaw);
+                if (dateRaw is int) { dateD = DateTime.fromMillisecondsSinceEpoch(dateRaw); }
+                else if (dateRaw is String) { dateD = DateTime.tryParse(dateRaw); }
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 5),
                   child: Row(

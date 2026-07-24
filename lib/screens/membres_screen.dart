@@ -118,7 +118,7 @@ class _MembresScreenState extends State<MembresScreen> {
     TontineData data,
   ) async {
     final lang = Provider.of<LocaleService>(ctx, listen: false).langue.code;
-    const _pinMsgs = {
+    const pinMsgs = {
       'fr': '🔑 *TON PIN DE VOTE*\n'
           'Bonjour {nom}, voici ton PIN de vote personnel : *{pin}*\n'
           'Tontine : {tontine}\n'
@@ -160,7 +160,7 @@ class _MembresScreenState extends State<MembresScreen> {
           '3. اختر اسمك، أدخل هذا الرمز المؤقت ثم رمزك السري الجديد\n'
           'بعد ذلك، أنت وحدك تعرف رمزك. لا يمكن لأحد آخر التصويت بدلاً عنك. 🔒',
     };
-    final msg = (_pinMsgs[lang] ?? _pinMsgs['fr']!)
+    final msg = (pinMsgs[lang] ?? pinMsgs['fr']!)
         .replaceAll('{nom}', membre.nom)
         .replaceAll('{pin}', pin)
         .replaceAll('{tontine}', data.nom)

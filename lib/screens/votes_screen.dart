@@ -394,13 +394,13 @@ class _VotesScreenState extends State<VotesScreen> {
     if (ok == true && context.mounted) {
       afficherToast(context, 'Vote ouvert !');
       // Notification push à tous les membres
-      final _langVote = Provider.of<LocaleService>(context, listen: false).langue.code;
-      final _tVoteOuvert = SupabaseService.notifTexte('vote_ouvert', _langVote, vars: {'question': question});
+      final langVote = Provider.of<LocaleService>(context, listen: false).langue.code;
+      final tVoteOuvert = SupabaseService.notifTexte('vote_ouvert', langVote, vars: {'question': question});
       SupabaseService.envoyerNotification(
         code: provider.courante!.code,
         type: 'vote',
-        titre: _tVoteOuvert['titre']!,
-        message: _tVoteOuvert['message']!,
+        titre: tVoteOuvert['titre']!,
+        message: tVoteOuvert['message']!,
       );
       await _chargerVoix();
     }
@@ -620,13 +620,13 @@ class _VotesScreenState extends State<VotesScreen> {
       if (res == 'OK') {
         afficherToast(context, 'Vote enregistré !');
         // Notification push à tous les membres
-        final _langVoter = Provider.of<LocaleService>(context, listen: false).langue.code;
-        final _tVoter = SupabaseService.notifTexte('vote_enregistre', _langVoter, vars: {'question': vote.question});
+        final langVoter = Provider.of<LocaleService>(context, listen: false).langue.code;
+        final tVoter = SupabaseService.notifTexte('vote_enregistre', langVoter, vars: {'question': vote.question});
         SupabaseService.envoyerNotification(
           code: provider.courante!.code,
           type: 'vote',
-          titre: _tVoter['titre']!,
-          message: _tVoter['message']!,
+          titre: tVoter['titre']!,
+          message: tVoter['message']!,
           donneesExtra: {'vote_id': vote.id},
         );
         await _chargerVoix();
@@ -790,13 +790,13 @@ class _VotesScreenState extends State<VotesScreen> {
           newData['ordre'] = ordre;
 
           // Notification nouveau membre admis
-          final _langMembre = Provider.of<LocaleService>(context, listen: false).langue.code;
-          final _tMembre = SupabaseService.notifTexte('nouveau_membre', _langMembre, vars: {'nom': vote.nouveauMembreNom ?? ''});
+          final langMembre = Provider.of<LocaleService>(context, listen: false).langue.code;
+          final tMembre = SupabaseService.notifTexte('nouveau_membre', langMembre, vars: {'nom': vote.nouveauMembreNom ?? ''});
           SupabaseService.envoyerNotification(
             code: widget.code,
             type: 'nouveau_membre',
-            titre: _tMembre['titre']!,
-            message: _tMembre['message']!,
+            titre: tMembre['titre']!,
+            message: tMembre['message']!,
           );
         }
 
@@ -897,21 +897,21 @@ class _VotesScreenState extends State<VotesScreen> {
       }
       afficherToast(context, message);
       // Notification push résultat du vote
-      final _langClos = Provider.of<LocaleService>(context, listen: false).langue.code;
-      final _tClos = SupabaseService.notifTexte('vote_clos', _langClos, vars: {
+      final langClos = Provider.of<LocaleService>(context, listen: false).langue.code;
+      final tClos = SupabaseService.notifTexte('vote_clos', langClos, vars: {
         'question': vote.question,
         'resultat': adopte
-            ? SupabaseService.notifTexte('vote_clos', _langClos)['titre'] ?? 'adoptée'
-            : SupabaseService.notifTexte('vote_clos', _langClos)['titre_rejete'] ?? 'rejetée',
+            ? SupabaseService.notifTexte('vote_clos', langClos)['titre'] ?? 'adoptée'
+            : SupabaseService.notifTexte('vote_clos', langClos)['titre_rejete'] ?? 'rejetée',
       });
-      final _titreClos = adopte
-          ? (SupabaseService.notifTexte('vote_clos', _langClos)['titre'] ?? '✅ Vote adopté')
-          : (SupabaseService.notifTexte('vote_clos', _langClos)['titre_rejete'] ?? '❌ Vote rejeté');
+      final titreClos = adopte
+          ? (SupabaseService.notifTexte('vote_clos', langClos)['titre'] ?? '✅ Vote adopté')
+          : (SupabaseService.notifTexte('vote_clos', langClos)['titre_rejete'] ?? '❌ Vote rejeté');
       SupabaseService.envoyerNotification(
         code: provider.courante!.code,
         type: 'vote',
-        titre: _titreClos,
-        message: _tClos['message']!,
+        titre: titreClos,
+        message: tClos['message']!,
         donneesExtra: {'vote_id': vote.id},
       );
       await _chargerVoix();
