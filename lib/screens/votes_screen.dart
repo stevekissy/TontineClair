@@ -605,9 +605,16 @@ class _VotesScreenState extends State<VotesScreen> {
       return;
     }
 
+    // Capturer le code AVANT le premier await — provider.courante peut devenir null
+    final codeTontine = provider.courante?.code;
+    if (codeTontine == null) {
+      afficherToast(context, 'Tontine non disponible. Rechargez l\'application.', estErreur: true);
+      return;
+    }
+
     try {
       final res = await SupabaseService.voter(
-        code: provider.courante!.code,
+        code: codeTontine,
         voteId: vote.id,
         membreId: membreId!,
         pinMembre: pinCtrl.text.trim(),
@@ -622,13 +629,16 @@ class _VotesScreenState extends State<VotesScreen> {
         // Notification push à tous les membres
         final langVoter = Provider.of<LocaleService>(context, listen: false).langue.code;
         final tVoter = SupabaseService.notifTexte('vote_enregistre', langVoter, vars: {'question': vote.question});
-        SupabaseService.envoyerNotification(
-          code: provider.courante!.code,
-          type: 'vote',
-          titre: tVoter['titre']!,
-          message: tVoter['message']!,
-          donneesExtra: {'vote_id': vote.id},
-        );
+        final codeNotif = provider.courante?.code;
+        if (codeNotif != null) {
+          SupabaseService.envoyerNotification(
+            code: codeNotif,
+            type: 'vote',
+            titre: tVoter['titre'] ?? '',
+            message: tVoter['message'] ?? '',
+            donneesExtra: {'vote_id': vote.id},
+          );
+        }
         await _chargerVoix();
       } else {
         final msgErreur = res == 'PIN_INCORRECT'
@@ -659,7 +669,9 @@ class _VotesScreenState extends State<VotesScreen> {
         if (kDebugMode) debugPrint('[voter] SQL error: $sqlDetail');
         msg = 'Erreur serveur lors du vote. Réessaie ou contacte l\'administrateur.';
       } else {
-        msg = 'Erreur inattendue. Réessaie.';
+        // Afficher l'exception brute pour diagnostic — sera nettoyée après identification
+        debugPrint('[voter] exception non classifiée: $raw');
+        msg = 'Erreur: $raw';
       }
       afficherToast(context, msg, estErreur: true);
     }
