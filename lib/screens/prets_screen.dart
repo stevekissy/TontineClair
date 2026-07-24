@@ -201,8 +201,6 @@ class _PretsScreenState extends State<PretsScreen> {
     final nomBenefCtrl      = TextEditingController();
     String operateur        = _operateursPret.first;
 
-    // Frais calculés dynamiquement
-    int fraisCalcules()   => ((int.tryParse(montantCtrl.text.trim()) ?? 0) * 0.025).round();
     final result = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -416,7 +414,7 @@ class _PretsScreenState extends State<PretsScreen> {
             code:        tontine.code,
             typeFlux:    'pret_octroye',
             montant:     montant,
-            description: 'Prêt à $nomEmprunteur (${taux}% / ${durees} mois)',
+            description: 'Prêt à $nomEmprunteur ($taux% / $durees mois)',
             membreId:    emprunteurId ?? '',
             membreNom:   nomEmprunteur,
             telephone:   numBenefCtrl.text.trim(),

@@ -357,7 +357,7 @@ class _PaiementCryptoWalletScreenState
         title: Column(
           children: [
             Text(
-              'Paiement ${_cryptoLabel}',
+              'Paiement $_cryptoLabel',
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const Text(

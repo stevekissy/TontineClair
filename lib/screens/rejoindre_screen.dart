@@ -353,7 +353,7 @@ class _CarteErreurSQL extends StatefulWidget {
 }
 
 class _CarteErreurSQLState extends State<_CarteErreurSQL> {
-  int _etape = 0; // 0 = intro, 1..5 = chaque script SQL
+  final int _etape = 0; // 0 = intro, 1..5 = chaque script SQL
 
   final List<_ScriptSQL> _scripts = const [
     _ScriptSQL(nom: 'supabase.sql',    version: 'Base',  desc: 'Crée la table tontines + fonctions de base'),

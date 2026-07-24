@@ -848,7 +848,7 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
     );
     journal.insert(0, {
       'quoi':         'RETRAIT_PROPOSE:${widget.membre.id}:score=${_scoreDetail?.score ?? 0}'
-                      ':quorum=${quorum}%:majorite=${majorite}%',
+                      ':quorum=$quorum%:majorite=$majorite%',
       'gestionnaire': gestNom,
       'quand':        now,
     });

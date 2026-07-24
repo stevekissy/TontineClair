@@ -679,6 +679,8 @@ class _FiltreChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<String>(
+      onSelected: onChanged,
+      itemBuilder: (_) => options.map((o) => PopupMenuItem(value: o, child: Text(o))).toList(),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
@@ -693,8 +695,6 @@ class _FiltreChip extends StatelessWidget {
           const Icon(Icons.arrow_drop_down, size: 14),
         ]),
       ),
-      onSelected: onChanged,
-      itemBuilder: (_) => options.map((o) => PopupMenuItem(value: o, child: Text(o))).toList(),
     );
   }
 }

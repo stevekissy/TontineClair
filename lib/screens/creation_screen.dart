@@ -27,14 +27,14 @@ class _CreationScreenState extends State<CreationScreen> {
   String _methode = 'tirage';
   String _devise = 'XOF'; // devise par défaut : FCFA
 
-  List<TextEditingController> _membresCtrl = [
+  final List<TextEditingController> _membresCtrl = [
     TextEditingController(),
     TextEditingController(),
   ];
 
-  List<TextEditingController> _gestNomCtrl   = [TextEditingController()];
-  List<TextEditingController> _gestPinCtrl   = [TextEditingController()];
-  List<TextEditingController> _gestEmailCtrl = [TextEditingController()];
+  final List<TextEditingController> _gestNomCtrl   = [TextEditingController()];
+  final List<TextEditingController> _gestPinCtrl   = [TextEditingController()];
+  final List<TextEditingController> _gestEmailCtrl = [TextEditingController()];
 
   bool _loading = false;
   String? _erreur;

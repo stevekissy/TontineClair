@@ -87,9 +87,6 @@ class _PaiementCoinPaymentsScreenState
   bool    _peutVerifier      = false;
   Timer?  _watchdog;
   Timer?  _pollTimer;
-  int     _pollCount         = 0;
-  static const int _maxPolls = 90;  // 90 × 10s = 15 min
-
   @override
   void initState() {
     super.initState();

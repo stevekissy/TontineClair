@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/tontine.dart';
@@ -879,7 +878,7 @@ class _ActionsRapides extends StatelessWidget {
   final String code;
   final String gestNom;
 
-  _ActionsRapides({
+  const _ActionsRapides({
     required this.data,
     required this.estGest,
     required this.isPremium,
@@ -1116,7 +1115,7 @@ class _ZoneDangereuse extends StatelessWidget {
   final String code;
   final String nomTontine;
 
-  _ZoneDangereuse({required this.code, required this.nomTontine});
+  const _ZoneDangereuse({required this.code, required this.nomTontine});
 
   @override
   Widget build(BuildContext context) {
