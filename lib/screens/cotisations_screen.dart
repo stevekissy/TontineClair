@@ -285,7 +285,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
                 ? ((caisseMap['mouvements'] as List<dynamic>?)
                         ?.cast<Map<String, dynamic>>() ?? [])
                 : caisseMap is List
-                    ? (caisseMap as List<dynamic>).cast<Map<String, dynamic>>()
+                    ? caisseMap.cast<Map<String, dynamic>>()
                     : [],
           );
           caisse.add({
@@ -388,7 +388,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
                 ? ((caisseMap['mouvements'] as List<dynamic>?)
                         ?.cast<Map<String, dynamic>>() ?? [])
                 : caisseMap is List
-                    ? (caisseMap as List<dynamic>).cast<Map<String, dynamic>>()
+                    ? caisseMap.cast<Map<String, dynamic>>()
                     : [],
           );
           caisse.add({

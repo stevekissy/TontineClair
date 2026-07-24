@@ -3856,7 +3856,7 @@ class _AdminScreenState extends State<AdminScreen> {
     final messageErr   = ValueNotifier<String>('');
     final emailAbsent  = emailEnBase.isEmpty;
 
-    final ok = await showDialog<bool>(
+    await showDialog<bool>(
       context: ctx,
       barrierDismissible: false,
       builder: (dCtx) => StatefulBuilder(

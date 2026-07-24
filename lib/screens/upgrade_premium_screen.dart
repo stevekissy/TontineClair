@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../utils/app_colors.dart';
 import '../widgets/app_widgets.dart';
-import '../models/tontine.dart';
 import '../models/kyc_model.dart';
 import '../services/kyc_service.dart';
 import 'kyc_screen.dart';

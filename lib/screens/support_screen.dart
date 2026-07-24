@@ -473,7 +473,6 @@ class _BulleClient extends StatelessWidget {
   Widget build(BuildContext context) {
     final estAdmin = message['est_admin'] as bool? ?? false;
     final corps    = message['corps']    as String? ?? '';
-    final auteur   = message['auteur']   as String? ?? '';
     final date     = DateTime.tryParse(message['envoye_le'] as String? ?? '');
     final estMoi   = !estAdmin;  // côté client, "moi" = non-admin
 

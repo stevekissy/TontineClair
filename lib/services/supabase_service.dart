@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/tontine.dart';
 import '../models/kyc_model.dart' as kyc_model;
 import 'blockchain_service.dart';
@@ -2075,7 +2074,7 @@ class SupabaseService {
         return Map<String, dynamic>.from(result.first as Map);
       }
       if (result is Map && result.isNotEmpty) {
-        return Map<String, dynamic>.from(result as Map);
+        return Map<String, dynamic>.from(result);
       }
       return null;
     } catch (e) {

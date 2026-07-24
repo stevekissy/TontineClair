@@ -394,7 +394,7 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                         ),
                         // ── Badge "Score modifié manuellement" ─────────────
                         Builder(builder: (bCtx) {
-                          final m = (data?.membres ?? <Membre>[])
+                          final m = data.membres
                               .where((x) => x.id == widget.membre.id)
                               .firstOrNull;
                           if (m == null || !m.aScoreOverride) {

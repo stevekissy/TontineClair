@@ -48,13 +48,6 @@ class _CreationScreenState extends State<CreationScreen> {
   /// Compte Gratuit → jamais de KYC.
   bool get _kycRequis => _typeTontine == 'premium';
 
-  /// Cagnotte totale (conservé pour affichage uniquement)
-  int get _cagnotteTotale {
-    final montant = int.tryParse(_montantCtrl.text.trim()) ?? 0;
-    final nbMembres = _membresCtrl.where((c) => c.text.trim().isNotEmpty).length;
-    return montant * nbMembres;
-  }
-
   @override
   void dispose() {
     _nomCtrl.dispose();

@@ -1,12 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
 import '../services/supabase_service.dart';
 import '../services/blockchain_service.dart';
 import '../utils/app_colors.dart';
-import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 
 /// Écran "Passer en Pro" — migration Lite → Pro IRRÉVERSIBLE.

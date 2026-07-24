@@ -6,7 +6,6 @@
 // Partageable via share_plus.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
@@ -46,8 +45,6 @@ class _CertificatBlockchainScreenState
   // Couleurs PDF
   static const _pdfEncre    = PdfColor.fromInt(0xFF1C2447);
   static const _pdfOr       = PdfColor.fromInt(0xFFD99A2B);
-  static const _pdfVert     = PdfColor.fromInt(0xFF2E7D5B);
-  static const _pdfVertClair= PdfColor.fromInt(0xFFE3F1EA);
   static const _pdfGris     = PdfColor.fromInt(0xFFF7F7F4);
   static const _pdfLignes   = PdfColor.fromInt(0xFFE4E1D6);
   static const _pdfTexte    = PdfColor.fromInt(0xFF26251F);

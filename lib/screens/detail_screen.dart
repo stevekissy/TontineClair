@@ -509,7 +509,6 @@ class _BandeauEcheance extends StatefulWidget {
 }
 
 class _BandeauEcheanceState extends State<_BandeauEcheance> {
-  bool _enSauvegarde = false;
 
   // ── Dialogue calendrier avec jours restants en orange ────────────────────────
   void _afficherCalendrier(DateTime echeance) {
@@ -517,76 +516,6 @@ class _BandeauEcheanceState extends State<_BandeauEcheance> {
       context: context,
       builder: (ctx) => _DialogCalendrier(echeance: echeance),
     );
-  }
-
-  Future<void> _choisirEtSauvegarder() async {
-    final now = DateTime.now();
-    if (!mounted) return;
-
-    final DateTime? picked;
-    if (kIsWeb) {
-      picked = await showDatePicker(
-        context: context,
-        initialDate: now.add(const Duration(days: 1)),
-        firstDate: now,
-        lastDate: now.add(const Duration(days: 365 * 5)),
-        builder: (ctx, child) => Theme(
-          data: Theme.of(ctx).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: AppColors.encre,
-              onPrimary: Colors.white,
-              surface: Colors.white,
-              onSurface: AppColors.encre,
-            ),
-          ),
-          child: child!,
-        ),
-      );
-    } else {
-      picked = await showDatePicker(
-        context: context,
-        initialDate: now.add(const Duration(days: 1)),
-        firstDate: now,
-        lastDate: now.add(const Duration(days: 365 * 5)),
-        locale: const Locale('fr', 'FR'),
-        builder: (ctx, child) => Theme(
-          data: Theme.of(ctx).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: AppColors.encre,
-              onPrimary: Colors.white,
-              surface: Colors.white,
-              onSurface: AppColors.encre,
-            ),
-          ),
-          child: child!,
-        ),
-      );
-    }
-
-    if (picked == null || !mounted) return;
-
-    // Demander le PIN du gestionnaire
-    final pin = await _demanderPin();
-    if (pin == null || pin.isEmpty || !mounted) return;
-
-    setState(() => _enSauvegarde = true);
-    final echeanceIso = picked.toIso8601String();
-    final ok = await SupabaseService.majEcheance(
-      code: widget.code,
-      nom: widget.gestNom ?? '',
-      pin: pin,
-      echeance: echeanceIso,
-    );
-    if (!mounted) return;
-    setState(() => _enSauvegarde = false);
-
-    if (ok) {
-      // Recharger la tontine pour rafraîchir l'échéance
-      context.read<TontineProvider>().chargerTontine(widget.code);
-      afficherToast(context, 'Échéance mise à jour.');
-    } else {
-      afficherToast(context, 'PIN incorrect ou erreur réseau.', estErreur: true);
-    }
   }
 
   Future<String?> _demanderPin() async {

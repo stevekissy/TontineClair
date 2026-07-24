@@ -305,64 +305,6 @@ class _PaiementCoinPaymentsScreenState
     }
   }
 
-  // ── Polling : vérifier toutes les 10s ────────────────────────────────────
-
-  void _lancerPolling(int montant, String numCmd) {
-    _pollCount = 0;
-    _pollTimer?.cancel();
-
-    _watchdog = Timer(const Duration(minutes: 16), () {
-      if (!mounted || _etape != _EtapeCrypto.attenteCheckout) return;
-      _pollTimer?.cancel();
-      setState(() {
-        _etape        = _EtapeCrypto.saisie;
-        _peutVerifier = true;
-        _messageErreur = '⏱ Délai dépassé (15 min).\nRéf. : $numCmd';
-        _messageInfo   = 'Si vous avez payé, utilisez "Vérifier" pour finaliser.';
-      });
-    });
-
-    _pollTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
-      if (!mounted || _etape != _EtapeCrypto.attenteCheckout) {
-        timer.cancel(); return;
-      }
-      _pollCount++;
-      if (_pollCount > _maxPolls) {
-        timer.cancel(); return;
-      }
-
-      if (_txid == null) return;
-
-      try {
-        final statut = await CoinPaymentsService.verifierStatut(
-          txid:        _txid!,
-          numCommande: numCmd,
-          tontineCode: widget.code,
-        );
-
-        if (!mounted) { timer.cancel(); return; }
-        if (kDebugMode) debugPrint('[CoinPayments] poll #$_pollCount → ${statut.statusNorm} (code=${statut.statusCode})');
-
-        if (statut.estConfirme) {
-          timer.cancel();
-          _watchdog?.cancel();
-          setState(() => _etape = _EtapeCrypto.confirmation);
-          await _confirmerEtCrediter(montant, numCmd);
-        } else if (statut.estEchec) {
-          timer.cancel();
-          _watchdog?.cancel();
-          setState(() {
-            _etape         = _EtapeCrypto.saisie;
-            _messageErreur = statut.messageFr;
-          });
-        }
-        // pending / processing → continuer le polling
-      } catch (_) {
-        // Erreur réseau silencieuse → polling continue
-      }
-    });
-  }
-
   // ── Vérification immédiate (retour foreground ou bouton manuel) ───────────
 
   Future<void> _verifierStatutImmediatement() async {

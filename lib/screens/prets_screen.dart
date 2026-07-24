@@ -203,8 +203,6 @@ class _PretsScreenState extends State<PretsScreen> {
 
     // Frais calculés dynamiquement
     int fraisCalcules()   => ((int.tryParse(montantCtrl.text.trim()) ?? 0) * 0.025).round();
-    int montantNetCalc()  => (int.tryParse(montantCtrl.text.trim()) ?? 0) - fraisCalcules();
-
     final result = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -473,7 +471,7 @@ class _PretsScreenState extends State<PretsScreen> {
           caisseMapO is Map<String, dynamic>
               ? ((caisseMapO['mouvements'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [])
               : caisseMapO is List
-                  ? (caisseMapO as List<dynamic>).cast<Map<String, dynamic>>()
+                  ? caisseMapO.cast<Map<String, dynamic>>()
                   : [],
         );
         caisse.add({
@@ -792,7 +790,7 @@ class _CartePret extends StatelessWidget {
               ? ((caisseMap['mouvements'] as List<dynamic>?)
                       ?.cast<Map<String, dynamic>>() ?? [])
               : caisseMap is List
-                  ? (caisseMap as List<dynamic>).cast<Map<String, dynamic>>()
+                  ? caisseMap.cast<Map<String, dynamic>>()
                   : [],
         );
         caisse.add({
@@ -1081,7 +1079,7 @@ class _CartePret extends StatelessWidget {
                       ?.cast<Map<String, dynamic>>() ??
                   [])
               : caisseMap is List
-                  ? (caisseMap as List<dynamic>).cast<Map<String, dynamic>>()
+                  ? caisseMap.cast<Map<String, dynamic>>()
                   : [],
         );
         caisse.add({
@@ -1298,43 +1296,6 @@ class _StatPret extends StatelessWidget {
               fontWeight: FontWeight.w700,
               fontSize: 13,
               color: couleur ?? AppColors.texte,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Widget récap ligne (confirmation prêt Premium) ────────────────────────────
-class _RecapLigne extends StatelessWidget {
-  final String label;
-  final String valeur;
-  const _RecapLigne(this.label, this.valeur);
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 5),
-      child: Row(
-        children: [
-          Text(
-            '$label : ',
-            style: const TextStyle(
-              fontSize: 12,
-              color: AppColors.texteDoux,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          Expanded(
-            child: Text(
-              valeur,
-              textAlign: TextAlign.end,
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.encre,
-                fontWeight: FontWeight.w700,
-              ),
             ),
           ),
         ],

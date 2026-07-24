@@ -946,7 +946,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
                       ?.cast<Map<String, dynamic>>() ??
                   [])
               : caisseMap is List
-                  ? (caisseMap as List<dynamic>).cast<Map<String, dynamic>>()
+                  ? caisseMap.cast<Map<String, dynamic>>()
                   : [],
         );
         final entree = {
@@ -1042,39 +1042,6 @@ class _CaisseScreenState extends State<CaisseScreen> {
         message: _t['message']!,
       );
     }
-  }
-}
-
-// ─── Ligne récap dialog de confirmation ───────────────────────────────────────
-class _RecapLigne extends StatelessWidget {
-  final String label;
-  final String valeur;
-  const _RecapLigne(this.label, this.valeur);
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 5),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '$label : ',
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: AppColors.texteDoux,
-            ),
-          ),
-          Expanded(
-            child: Text(
-              valeur,
-              style: const TextStyle(fontSize: 13, color: AppColors.encre),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 
