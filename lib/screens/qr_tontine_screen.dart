@@ -39,16 +39,18 @@ class _QrTontineScreenState extends State<QrTontineScreen> {
   bool _sharing = false;
 
   // URL encodée dans le QR
-  // Deep link vers l'écran de vérification publique
+  // Deep link vers l'écran de vérification publique dans l'app
+  // NOTE : tontineclair.com n'existe pas encore — on encode une URL de fallback
+  // qui affiche le code à saisir dans TontineClair
   String get _urlVerification =>
-      'https://tontineclair.com/verifier?code=${widget.codeTontine}';
+      'https://app.tontineclair.com/verifier/${widget.codeTontine}';
 
   // Texte WhatsApp complet
   String get _messageWhatsapp =>
       '🔗 *Vérifiez la tontine "${widget.nomTontine}" sur la blockchain*\n\n'
       '📋 Code : *${widget.codeTontine}*\n'
-      '⚡ $_totalOps opération${_totalOps > 1 ? "s" : ""} enregistrée${_totalOps > 1 ? "s" : ""} on-chain\n'
-      '🌐 Réseau : Polygon Amoy\n\n'
+      '📋 $_totalOps opération${_totalOps > 1 ? "s" : ""} enregistrée${_totalOps > 1 ? "s" : ""} dans le journal\n'
+      '🔒 Sécurisé par TontineClair (Phase 1 — SHA-256)\n\n'
       '👉 Scannez le QR code ci-joint ou ouvrez TontineClair\n'
       '→ Vérifier blockchain → Code : ${widget.codeTontine}';
 
@@ -67,10 +69,15 @@ class _QrTontineScreenState extends State<QrTontineScreen> {
       final entrees = results[0] as List<BlockchainEntry>;
       final contrat = results[1] as Map<String, dynamic>;
       if (!mounted) return;
+      final phaseRecu = (contrat['phase'] as num?)?.toInt() ?? 1;
       setState(() {
+        _phase    = phaseRecu;
         _totalOps = entrees.length;
-        _onChain  = entrees.where((e) => e.txHash != null && e.txHash!.length == 66).length;
-        _phase    = (contrat['phase'] as num?)?.toInt() ?? 1;
+        // Phase 1 : tx_hash = proof SHA-256 local, PAS un vrai TX Polygon
+        // Phase 2 : vrais TX Ethereum v\u00e9rifiables sur Polygon
+        _onChain  = phaseRecu == 2
+            ? entrees.where((e) => e.txHash != null && e.txHash!.length == 66).length
+            : 0;
         _loading  = false;
       });
     } catch (_) {
@@ -260,7 +267,7 @@ class _QrTontineScreenState extends State<QrTontineScreen> {
                       _loading
                           ? 'Chargement…'
                           : '$_totalOps opération${_totalOps > 1 ? "s" : ""} · '
-                              '${_phase == 2 ? "$_onChain on-chain ⚡" : "Phase 1 🔒"}',
+                              '${_phase == 2 ? "$_onChain on-chain ⚡" : "SHA-256 🔒"}',
                       style: const TextStyle(
                           fontSize: 11, color: AppColors.texteDoux),
                     ),
@@ -283,12 +290,12 @@ class _QrTontineScreenState extends State<QrTontineScreen> {
                     couleur: AppColors.encre),
                 const SizedBox(width: 8),
                 _StatChip(
-                    label: 'On-chain',
-                    valeur: '$_onChain',
-                    icone: Icons.bolt,
+                    label: _phase == 2 ? 'On-chain' : 'SHA-256',
+                    valeur: _phase == 2 ? '$_onChain' : '$_totalOps',
+                    icone: _phase == 2 ? Icons.bolt : Icons.lock_outline,
                     couleur: _phase == 2
                         ? const Color(0xFF00C853)
-                        : AppColors.texteDoux),
+                        : AppColors.or),
                 const SizedBox(width: 8),
                 _StatChip(
                     label: 'Phase',

@@ -97,8 +97,11 @@ class _CertificatBlockchainScreenState
             .toList()
         : _entrees;
 
-    final countOnChain =
-        entreesFiltrees.where((e) => e.txHash != null && e.txHash!.length == 66).length;
+    // Phase 1 : tx_hash est un proof SHA-256 local, PAS un vrai TX Polygon
+    // Phase 2 : tx_hash est un vrai hash Ethereum (66 chars) vérifiable sur-chain
+    final countOnChain = phase == 2
+        ? entreesFiltrees.where((e) => e.txHash != null && e.txHash!.length == 66).length
+        : 0; // en Phase 1, aucune TX réelle sur Polygon
     final totalXof = entreesFiltrees
         .where((e) => e.montantXof != null)
         .fold(0, (s, e) => s + (e.montantXof ?? 0));
@@ -126,7 +129,7 @@ class _CertificatBlockchainScreenState
           pw.SizedBox(height: 20),
 
           // Tableau des opérations
-          _buildTableauOperations(entreesFiltrees),
+          _buildTableauOperations(entreesFiltrees, phase),
           pw.SizedBox(height: 20),
 
           // Section vérification
@@ -269,7 +272,11 @@ class _CertificatBlockchainScreenState
         pw.SizedBox(width: 8),
         _metriqueBox('Total opérations', '$total'),
         pw.SizedBox(width: 8),
-        _metriqueBox('On-chain ⚡', '$onChain', couleur: _pdfChain),
+        _metriqueBox(
+          phase == 2 ? 'On-chain ⚡' : 'Proof SHA-256',
+          phase == 2 ? '$onChain' : '$total',
+          couleur: phase == 2 ? _pdfChain : _pdfOr,
+        ),
         pw.SizedBox(width: 8),
         _metriqueBox('Volume XOF', _formatXof(xof)),
       ],
@@ -324,8 +331,8 @@ class _CertificatBlockchainScreenState
         children: [
           pw.Text(
             phase == 2
-                ? '✅ Opérations enregistrées on-chain sur Polygon Amoy'
-                : '🔒 Opérations avec preuve cryptographique SHA-256',
+                ? '✅ Opérations ancrées on-chain · vérifiables sur Polygon Amoy'
+                : '🔒 Opérations sécurisées par preuve cryptographique SHA-256 (journal interne TontineClair)',
             style: pw.TextStyle(
                 fontSize: 10,
                 fontWeight: pw.FontWeight.bold,
@@ -356,7 +363,7 @@ class _CertificatBlockchainScreenState
     );
   }
 
-  pw.Widget _buildTableauOperations(List<BlockchainEntry> entrees) {
+  pw.Widget _buildTableauOperations(List<BlockchainEntry> entrees, int phase) {
     if (entrees.isEmpty) {
       return pw.Text('Aucune opération trouvée.',
           style: pw.TextStyle(fontSize: 10, color: _pdfDoux));
@@ -398,7 +405,8 @@ class _CertificatBlockchainScreenState
             ...entrees.asMap().entries.map((entry) {
               final i = entry.key;
               final e = entry.value;
-              final estOnChain = e.txHash != null && e.txHash!.length == 66;
+              // En Phase 1, le txHash est un proof SHA-256 local — pas un TX Polygon
+              final estOnChain = phase == 2 && e.txHash != null && e.txHash!.length == 66;
               final bg = i.isEven ? PdfColors.white : _pdfGris;
               return pw.TableRow(
                 decoration: pw.BoxDecoration(color: bg),
@@ -412,7 +420,9 @@ class _CertificatBlockchainScreenState
                       ? '${_formatXof(e.montantXof!)} F'
                       : '—'),
                   _cell(
-                    e.txHash != null ? e.txHashCourt : '—',
+                    e.txHash != null
+                        ? (estOnChain ? e.txHashCourt : 'SHA-256:${e.txHashCourt}')
+                        : '—',
                     mono: true,
                     couleur: estOnChain ? _pdfChain : _pdfDoux,
                     suffix: estOnChain ? ' ⚡' : '',
@@ -473,10 +483,16 @@ class _CertificatBlockchainScreenState
           ),
           pw.SizedBox(height: 8),
           pw.Text(
-            '1. Ouvrez TontineClair → Vérifier blockchain\n'
-            '2. Saisissez le code : ${widget.codeTontine}\n'
-            '3. Chaque TX hash ⚡ est vérifiable sur https://amoy.polygonscan.com\n'
-            '${contratAddr != null ? "4. Smart Contract : https://amoy.polygonscan.com/address/$contratAddr" : ""}',
+            phase == 2
+                ? '1. Ouvrez TontineClair → Vérifier blockchain\n'
+                  '2. Saisissez le code : ${widget.codeTontine}\n'
+                  '3. Chaque TX hash ⚡ est vérifiable sur https://amoy.polygonscan.com\n'
+                  '${contratAddr != null ? "4. Smart Contract : https://amoy.polygonscan.com/address/$contratAddr" : ""}'
+                : '1. Ouvrez TontineClair → Vérifier blockchain\n'
+                  '2. Saisissez le code : ${widget.codeTontine}\n'
+                  '3. Les preuves SHA-256 sont des empreintes cryptographiques internes.\n'
+                  '   Elles garantissent l\'intégrité des données mais ne sont pas des transactions Polygon.\n'
+                  '4. La vérification on-chain (Phase 2) sera disponible ultérieurement.',
             style: pw.TextStyle(fontSize: 8, color: _pdfTexte, lineSpacing: 3),
           ),
           pw.SizedBox(height: 8),
@@ -579,22 +595,23 @@ class _CertificatBlockchainScreenState
   @override
   Widget build(BuildContext context) {
     final phase = (_contrat['phase'] as num?)?.toInt() ?? 1;
-    final countOnChain = _entrees
-        .where((e) => e.txHash != null && e.txHash!.length == 66)
-        .length;
+    // Phase 1 : aucun vrai TX on-chain — les hashes sont des preuves SHA-256 locales
+    final countOnChain = phase == 2
+        ? _entrees.where((e) => e.txHash != null && e.txHash!.length == 66).length
+        : 0;
 
     return Scaffold(
       backgroundColor: AppColors.fondPapier,
       appBar: AppBar(
         backgroundColor: AppColors.encre,
         foregroundColor: Colors.white,
-        title: const Column(
+        title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Certificat Blockchain',
+            const Text('Certificat Blockchain',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-            Text('PDF · Polygon Amoy',
-                style: TextStyle(fontSize: 11, color: Colors.white70)),
+            Text(phase == 2 ? 'PDF · Polygon Amoy On-Chain' : 'PDF · Preuves SHA-256',
+                style: const TextStyle(fontSize: 11, color: Colors.white70)),
           ],
         ),
       ),
@@ -706,9 +723,13 @@ class _CertificatBlockchainScreenState
                               _metriqueFlutter('Opérations',
                                   '${_entrees.length}', Icons.list_alt),
                               const SizedBox(width: 8),
-                              _metriqueFlutter('On-chain ⚡',
-                                  '$countOnChain', Icons.bolt,
-                                  couleur: const Color(0xFF00C853)),
+                              _metriqueFlutter(
+                                  phase == 2 ? 'On-chain ⚡' : 'SHA-256',
+                                  phase == 2 ? '$countOnChain' : '${_entrees.length}',
+                                  phase == 2 ? Icons.bolt : Icons.lock_outline,
+                                  couleur: phase == 2
+                                      ? const Color(0xFF00C853)
+                                      : AppColors.or),
                               const SizedBox(width: 8),
                               _metriqueFlutter(
                                   'Réseau', 'Polygon\nAmoy', Icons.hub),
