@@ -18,7 +18,8 @@
 //   TONTINE_CONTRACT_ADDRESS    — adresse TontineVault.sol déployé
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Pas d'import externe — Deno.serve() natif disponible dans Supabase Edge Runtime
+// Import npm:ethereum-cryptography pour keccak256 certifié Ethereum
+import { keccak256 as ethKeccak256 } from "npm:ethereum-cryptography@2.2.1/keccak.js";
 
 // ── Config réseau ──────────────────────────────────────────────────────────────
 const CHAIN_ID       = 137;            // Polygon Mainnet
@@ -145,84 +146,13 @@ function encodeCalldata(
 //   la signature à une Edge Function helper ou on utilise le pattern
 //   "sign via secp256k1 Deno native"
 
-// ── Keccak-256 pure JS (pas de dépendance externe) ────────────────────────────
-// Implémentation embarquée pour éviter les imports esm.sh/npm: qui cassent le boot
+// ── Keccak-256 certifié Ethereum (via npm:ethereum-cryptography) ───────────────
+// Remplace l'implémentation pure JS maison qui produisait des hash incorrects
+// (le bug de la version maison était documenté ligne 438 pour les selectors —
+//  il affectait aussi le hash de signing RLP → signatures invalides → TX rejetées)
 
 function keccak256(data: Uint8Array): Uint8Array {
-  // Keccak-256 (non-padded SHA3, standard Ethereum)
-  const RC: bigint[] = [
-    0x0000000000000001n,0x0000000000008082n,0x800000000000808An,0x8000000080008000n,
-    0x000000000000808Bn,0x0000000080000001n,0x8000000080008081n,0x8000000000008009n,
-    0x000000000000008An,0x0000000000000088n,0x0000000080008009n,0x000000008000000An,
-    0x000000008000808Bn,0x800000000000008Bn,0x8000000000008089n,0x8000000000008003n,
-    0x8000000000008002n,0x8000000000000080n,0x000000000000800An,0x800000008000000An,
-    0x8000000080008081n,0x8000000000008080n,0x0000000080000001n,0x8000000080008008n,
-  ];
-  const ROTC = [1,3,6,10,15,21,28,36,45,55,2,14,27,41,56,8,25,43,62,18,39,61,20,44];
-  const PI   = [10,7,11,17,18,3,5,16,8,21,24,4,15,23,19,13,12,2,20,14,22,9,6,1];
-  const M64  = 0xFFFFFFFFFFFFFFFFn;
-
-  function rotl64(x: bigint, n: number): bigint {
-    return ((x << BigInt(n)) | (x >> BigInt(64 - n))) & M64;
-  }
-
-  // Pad message (Keccak, not SHA3 — no domain separation byte 0x06, use 0x01)
-  const rate = 136; // 1088 bits / 8 for keccak-256
-  const len  = data.length;
-  const padded = new Uint8Array(Math.ceil((len + 1) / rate) * rate);
-  padded.set(data);
-  padded[len]           = 0x01;
-  padded[padded.length - 1] |= 0x80;
-
-  // State: 5×5 lanes of 64-bit values
-  const state = new Array<bigint>(25).fill(0n);
-
-  // Absorb
-  for (let block = 0; block < padded.length; block += rate) {
-    for (let i = 0; i < rate / 8; i++) {
-      let lane = 0n;
-      for (let j = 0; j < 8; j++) {
-        lane |= BigInt(padded[block + i * 8 + j]) << BigInt(j * 8);
-      }
-      state[i] ^= lane;
-    }
-    // Keccak-f[1600]
-    for (let round = 0; round < 24; round++) {
-      // θ
-      const C = Array.from({length:5}, (_,x) => state[x]^state[x+5]^state[x+10]^state[x+15]^state[x+20]);
-      const D = Array.from({length:5}, (_,x) => C[(x+4)%5] ^ rotl64(C[(x+1)%5], 1));
-      for (let i = 0; i < 25; i++) state[i] ^= D[i % 5];
-      // ρ + π
-      const B = new Array<bigint>(25).fill(0n);
-      B[0] = state[0];
-      for (let i = 0; i < 24; i++) B[PI[i]] = rotl64(state[i===0?0:PI[i-1]||0+1], ROTC[i]);
-      // Recompute π correctly
-      const tmp = [...state];
-      for (let x = 0; x < 5; x++) {
-        for (let y = 0; y < 5; y++) {
-          B[y*5+x] = rotl64(tmp[((2*x+3*y)%5)*5+x], ROTC[y===0&&x===0?0:PI.indexOf(y*5+x)] || 0);
-        }
-      }
-      // χ
-      for (let y = 0; y < 5; y++) {
-        for (let x = 0; x < 5; x++) {
-          state[y*5+x] = B[y*5+x] ^ ((~B[y*5+(x+1)%5]) & B[y*5+(x+2)%5]);
-        }
-      }
-      // ι
-      state[0] ^= RC[round];
-    }
-  }
-
-  // Squeeze first 32 bytes
-  const hash = new Uint8Array(32);
-  for (let i = 0; i < 4; i++) {
-    const lane = state[i];
-    for (let j = 0; j < 8; j++) {
-      hash[i*8+j] = Number((lane >> BigInt(j*8)) & 0xFFn);
-    }
-  }
-  return hash;
+  return ethKeccak256(data);
 }
 
 // ── secp256k1 ECDSA pure JS ────────────────────────────────────────────────────
@@ -435,9 +365,9 @@ async function signTransaction(params: {
 }
 
 // ── Keccak4 selector ────────────────────────────────────────────────────────────
-// IMPORTANT : la keccak256 JS maison produit des résultats incorrects pour les selectors.
-// On utilise des constantes hardcodées, calculées avec web3.py (keccak256 certifié).
-// À mettre à jour si les signatures de fonctions dans TontineVault.sol changent.
+// Selectors hardcodés calculés avec web3.py pour référence.
+// Désormais keccak256 utilise ethereum-cryptography → selectors dynamiques aussi corrects.
+// Les constantes sont conservées pour cohérence et performance.
 
 const SELECTORS: Record<string, string> = {
   "enregistrerOperation(string,string,string,uint256,uint256,string,bytes32)": "0xbaa62d66",
@@ -1184,7 +1114,7 @@ Deno.serve(async (req) => {
   }
 
   // ── Identifiant de version déployée (pour vérifier que le bon code tourne)
-  const DEPLOYED_VERSION = "bf8608d-v6-ankr";
+  const DEPLOYED_VERSION = "v7-keccak-fix-eth-crypto";
 
   try {
     const env: Record<string, string> = {
