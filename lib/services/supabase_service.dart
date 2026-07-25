@@ -2062,6 +2062,57 @@ class SupabaseService {
     }
   }
 
+  /// Réinitialise la clé personnelle d'un membre admin (super_admin seulement).
+  /// Calcule le SHA-256 de la nouvelle clé et PATCH sur admin_membres.
+  static Future<Map<String, dynamic>> adminReinitialiserCleMembre({
+    required int id,
+    required String nouvelleCle,
+  }) async {
+    try {
+      if (nouvelleCle.length < 6) {
+        return {'ok': false, 'erreur': 'La clé doit contenir au moins 6 caractères'};
+      }
+      final cleHash = _sha256hex(nouvelleCle);
+      final url = Uri.parse('$_url/rest/v1/admin_membres')
+          .replace(queryParameters: {'id': 'eq.$id'});
+      final resp = await http.patch(url,
+          headers: {
+            'Authorization': 'Bearer $_key',
+            'apikey': _key,
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({'cle_hash': cleHash}));
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        return {'ok': true};
+      }
+      return {'ok': false, 'erreur': 'HTTP ${resp.statusCode}'};
+    } catch (e) {
+      return {'ok': false, 'erreur': '$e'};
+    }
+  }
+
+  /// Supprime définitivement un membre admin (super_admin seulement).
+  /// DELETE REST direct sur admin_membres.
+  static Future<Map<String, dynamic>> adminSupprimerMembre({
+    required int id,
+  }) async {
+    try {
+      final url = Uri.parse('$_url/rest/v1/admin_membres')
+          .replace(queryParameters: {'id': 'eq.$id'});
+      final resp = await http.delete(url,
+          headers: {
+            'Authorization': 'Bearer $_key',
+            'apikey': _key,
+          });
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        return {'ok': true};
+      }
+      return {'ok': false, 'erreur': 'HTTP ${resp.statusCode}'};
+    } catch (e) {
+      return {'ok': false, 'erreur': '$e'};
+    }
+  }
+
   // ── Messagerie interne ──────────────────────────────────────────────────────
 
   /// Lister messages d'un membre (reçus / envoyés / tous).

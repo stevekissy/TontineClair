@@ -82,6 +82,82 @@ class _EquipeScreenState extends State<EquipeScreen> {
     if (res['ok'] == true) _charger();
   }
 
+  // ── Réinitialiser la clé personnelle ──────────────────────────────────────
+  Future<void> _reinitialiserCle(Map<String, dynamic> m) async {
+    final nouvelleCle = await showDialog<String>(
+      context: context,
+      builder: (_) => _DialogReinitCle(nom: m['nom'] as String? ?? m['pseudo'] as String? ?? ''),
+    );
+    if (nouvelleCle == null || !mounted) return;
+
+    final res = await SupabaseService.adminReinitialiserCleMembre(
+      id: m['id'] as int,
+      nouvelleCle: nouvelleCle,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(res['ok'] == true
+          ? 'Clé réinitialisée pour ${m['nom']}'
+          : 'Erreur : ${res['erreur'] ?? 'Inconnue'}'),
+      backgroundColor: res['ok'] == true ? AppColors.succes : AppColors.alerte,
+    ));
+  }
+
+  // ── Supprimer définitivement un membre admin ──────────────────────────────
+  Future<void> _supprimerMembre(Map<String, dynamic> m) async {
+    final confirme = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.fondPapier,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.delete_forever_rounded, color: Colors.red, size: 22),
+            SizedBox(width: 10),
+            Text('Supprimer le membre', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.encre)),
+          ],
+        ),
+        content: RichText(
+          text: TextSpan(
+            style: const TextStyle(fontSize: 14, color: AppColors.encre, height: 1.5),
+            children: [
+              const TextSpan(text: 'Vous allez supprimer définitivement '),
+              TextSpan(
+                text: m['nom'] as String? ?? m['pseudo'] as String? ?? '',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const TextSpan(text: '.\n\nCette action est '),
+              const TextSpan(text: 'irréversible', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w700)),
+              const TextSpan(text: '. Le membre ne pourra plus se connecter à TC Admin.'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler', style: TextStyle(color: AppColors.texteDoux)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (confirme != true || !mounted) return;
+
+    final res = await SupabaseService.adminSupprimerMembre(id: m['id'] as int);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(res['ok'] == true
+          ? '${m['nom']} supprimé de l\'équipe'
+          : 'Erreur : ${res['erreur'] ?? 'Inconnue'}'),
+      backgroundColor: res['ok'] == true ? AppColors.succes : AppColors.alerte,
+    ));
+    if (res['ok'] == true) _charger();
+  }
+
   Future<void> _changerRole(Map<String, dynamic> m) async {
     final roles = ['super_admin', 'comptable', 'conformite'];
     final role = await showDialog<String>(
@@ -236,8 +312,10 @@ class _EquipeScreenState extends State<EquipeScreen> {
                                         color: AppColors.fondPapier,
                                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                         onSelected: (v) {
-                                          if (v == 'role')   _changerRole(m);
-                                          if (v == 'toggle') _toggleActif(m);
+                                          if (v == 'role')     _changerRole(m);
+                                          if (v == 'toggle')   _toggleActif(m);
+                                          if (v == 'reinit')   _reinitialiserCle(m);
+                                          if (v == 'supprimer') _supprimerMembre(m);
                                         },
                                         itemBuilder: (_) => [
                                           const PopupMenuItem(value: 'role',
@@ -255,6 +333,18 @@ class _EquipeScreenState extends State<EquipeScreen> {
                                                 ),
                                                 const SizedBox(width: 8),
                                                 Text(actif ? 'Désactiver' : 'Réactiver'),
+                                              ])),
+                                          const PopupMenuItem(value: 'reinit',
+                                              child: Row(children: [
+                                                Icon(Icons.lock_reset_rounded, size: 18, color: AppColors.or),
+                                                SizedBox(width: 8),
+                                                Text('Réinitialiser la clé'),
+                                              ])),
+                                          const PopupMenuItem(value: 'supprimer',
+                                              child: Row(children: [
+                                                Icon(Icons.delete_forever_rounded, size: 18, color: Colors.red),
+                                                SizedBox(width: 8),
+                                                Text('Supprimer', style: TextStyle(color: Colors.red)),
                                               ])),
                                         ],
                                       ),
@@ -436,6 +526,145 @@ class _PillRole extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text('$n $label', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: couleur)),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dialogue réinitialisation clé personnelle
+// ─────────────────────────────────────────────────────────────────────────────
+class _DialogReinitCle extends StatefulWidget {
+  final String nom;
+  const _DialogReinitCle({required this.nom});
+  @override
+  State<_DialogReinitCle> createState() => _DialogReinitCleState();
+}
+
+class _DialogReinitCleState extends State<_DialogReinitCle> {
+  final _ctrl1 = TextEditingController();
+  final _ctrl2 = TextEditingController();
+  bool _obscure1 = true;
+  bool _obscure2 = true;
+  String? _erreur;
+
+  @override
+  void dispose() {
+    _ctrl1.dispose();
+    _ctrl2.dispose();
+    super.dispose();
+  }
+
+  void _valider() {
+    final c1 = _ctrl1.text.trim();
+    final c2 = _ctrl2.text.trim();
+    if (c1.length < 6) {
+      setState(() => _erreur = 'La clé doit contenir au moins 6 caractères');
+      return;
+    }
+    if (c1 != c2) {
+      setState(() => _erreur = 'Les deux clés ne correspondent pas');
+      return;
+    }
+    Navigator.pop(context, c1);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.fondPapier,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
+        children: [
+          const Icon(Icons.lock_reset_rounded, color: AppColors.or, size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Réinitialiser la clé\nde ${widget.nom}',
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: AppColors.encre),
+            ),
+          ),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Nouvelle clé personnelle',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.texteDoux),
+            ),
+            const SizedBox(height: 4),
+            TextField(
+              controller: _ctrl1,
+              obscureText: _obscure1,
+              decoration: InputDecoration(
+                hintText: '••••••••  (≥ 6 caractères)',
+                suffixIcon: IconButton(
+                  icon: Icon(_obscure1 ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                  onPressed: () => setState(() => _obscure1 = !_obscure1),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Confirmer la nouvelle clé',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.texteDoux),
+            ),
+            const SizedBox(height: 4),
+            TextField(
+              controller: _ctrl2,
+              obscureText: _obscure2,
+              decoration: InputDecoration(
+                hintText: '••••••••',
+                suffixIcon: IconButton(
+                  icon: Icon(_obscure2 ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                  onPressed: () => setState(() => _obscure2 = !_obscure2),
+                ),
+              ),
+            ),
+            if (_erreur != null) ...[
+              const SizedBox(height: 10),
+              Text(_erreur!, style: const TextStyle(fontSize: 12, color: AppColors.alerte)),
+            ],
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.or.withValues(alpha: .08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.or.withValues(alpha: .25)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline_rounded, size: 14, color: AppColors.or),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Communiquez la nouvelle clé au membre par un canal sécurisé.',
+                      style: TextStyle(fontSize: 11, color: AppColors.encreDoux),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annuler', style: TextStyle(color: AppColors.texteDoux)),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.or,
+            foregroundColor: Colors.white,
+          ),
+          onPressed: _valider,
+          child: const Text('Réinitialiser'),
+        ),
+      ],
     );
   }
 }

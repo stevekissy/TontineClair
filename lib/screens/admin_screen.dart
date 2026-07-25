@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../services/supabase_service.dart';
-import '../services/coinpayments_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
@@ -10,6 +9,7 @@ import 'messagerie_screen.dart';
 import 'support_admin_screen.dart';
 import 'coinpayments_admin_screen.dart';
 import 'blockchain_admin_screen.dart';
+import 'admin_soldes_screen.dart';
 import '../utils/app_localizations.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -762,6 +762,7 @@ class _AdminScreenState extends State<AdminScreen> {
       _OngletDef(icone: Icons.support_agent_outlined,  label: 'Support',   badge: 0,                  index: 5),
       _OngletDef(icone: Icons.currency_bitcoin,          label: 'Crypto',    badge: 0,                  index: 6),
       _OngletDef(icone: Icons.hexagon_outlined,           label: 'Blockchain', badge: 0,                 index: 7),
+      _OngletDef(icone: Icons.account_balance_wallet_rounded, label: 'Soldes',    badge: 0,                 index: 8),
     ];
 
     return Column(
@@ -803,6 +804,8 @@ class _AdminScreenState extends State<AdminScreen> {
               ),
             5 => SupportAdminScreen(cle: _cleEffective),
             6 => CoinPaymentsAdminScreen(cleAdmin: _cleEffective),
+            7 => BlockchainAdminScreen(cleAdmin: _cleEffective),
+            8 => AdminSoldesScreen(cleAdmin: _cleEffective),
             _ => BlockchainAdminScreen(cleAdmin: _cleEffective),
           },
         ),
