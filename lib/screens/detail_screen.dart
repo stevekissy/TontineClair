@@ -2336,37 +2336,26 @@ class _BadgeBlockchainState extends State<_BadgeBlockchain> {
 
     // Couleurs et textes selon le statut réel de la tontine
     final bool estOnChain = _statutBlockchain == 'onchain';
-    final bool estPending = _statutBlockchain == 'pending';
 
     final Color couleurBadge = estOnChain
         ? const Color(0xFF00C853)
-        : estPending
-            ? const Color(0xFFFF9800)
-            : AppColors.encre;
+        : AppColors.encre;
 
     final Color couleurFond = estOnChain
         ? const Color(0xFF00C853).withValues(alpha: 0.08)
-        : estPending
-            ? const Color(0xFFFF9800).withValues(alpha: 0.06)
-            : AppColors.fondCode;
+        : AppColors.fondCode;
 
     final Color couleurBordure = estOnChain
         ? const Color(0xFF00C853).withValues(alpha: 0.4)
-        : estPending
-            ? const Color(0xFFFF9800).withValues(alpha: 0.35)
-            : AppColors.lignes;
+        : AppColors.lignes;
 
     final IconData icone = estOnChain
         ? Icons.verified
-        : estPending
-            ? Icons.hourglass_top_rounded
-            : Icons.shield_outlined;
+        : Icons.shield_outlined;
 
     final String titre = estOnChain
         ? 'Verifie Blockchain — On-chain'
-        : estPending
-            ? 'Synchronisation en attente…'
-            : 'Journal Blockchain';
+        : 'Journal Blockchain';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2403,7 +2392,7 @@ class _BadgeBlockchainState extends State<_BadgeBlockchain> {
                           style: const TextStyle(
                               fontSize: 11, color: AppColors.texteDoux),
                         ),
-                      if (_derniereTx != null && (estOnChain || estPending))
+                      if (_derniereTx != null && estOnChain)
                         Text(
                           '${_derniereTx!.iconeMetier}  ${_derniereTx!.descriptionMetier}',
                           style: TextStyle(
