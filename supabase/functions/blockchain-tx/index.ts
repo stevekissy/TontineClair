@@ -826,6 +826,8 @@ async function actionEnregistrerOperation(
     } catch (err) {
       console.error(`[blockchain-tx] Phase 2 error, fallback Phase 1: ${err}`);
       // Fallback silencieux → on garde phase1Hash
+      // Stocker l'erreur pour debug (visible dans la réponse si phase=1)
+      (globalThis as Record<string, unknown>).__lastPhase2Error = String(err);
     }
   }
 
@@ -859,6 +861,8 @@ async function actionEnregistrerOperation(
   const entryArr = Array.isArray(entry) ? entry : [];
   const entryId  = entryArr[0]?.id || null;
 
+  const debugErr = (globalThis as Record<string, unknown>).__lastPhase2Error;
+
   return {
     ok          : true,
     phase,
@@ -870,6 +874,8 @@ async function actionEnregistrerOperation(
     entry_id    : entryId,
     explorer_url: phase === 2 ? `${EXPLORER_BASE}/tx/${txHash}` : null,
     contract    : contractAddr || null,
+    // Exposer l'erreur Phase 2 si fallback (pour debug)
+    ...(phase === 1 && debugErr ? { phase2_error: debugErr } : {}),
   };
 }
 
