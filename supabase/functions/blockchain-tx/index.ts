@@ -1180,6 +1180,9 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  // ── Identifiant de version déployée (pour vérifier que le bon code tourne)
+  const DEPLOYED_VERSION = "d38d381-v5";
+
   try {
     const env: Record<string, string> = {
       SUPABASE_URL              : Deno.env.get("SUPABASE_URL") || "",
@@ -1238,6 +1241,7 @@ Deno.serve(async (req) => {
           phase2Ready: !!(env.MASTER_WALLET_PRIVATE_KEY && env.MASTER_WALLET_ADDRESS && env.TONTINE_CONTRACT_ADDRESS),
           rpc_url: env.ALCHEMY_POLYGON_AMOY_URL || RPC_FALLBACK,
           chain_id: CHAIN_ID,
+          deployed_version: DEPLOYED_VERSION,
         };
         break;
       default:
