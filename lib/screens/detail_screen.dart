@@ -2320,13 +2320,13 @@ class _BadgeBlockchainState extends State<_BadgeBlockchain> {
         ? Icons.verified
         : estPending
             ? Icons.hourglass_top_rounded
-            : Icons.lock_outline;
+            : Icons.shield_outlined;
 
     final String titre = estOnChain
-        ? 'Verifie Blockchain — Phase 2 On-chain'
+        ? 'Verifie Blockchain — On-chain'
         : estPending
             ? 'Synchronisation en attente…'
-            : 'Journal Blockchain — Phase 1';
+            : 'Journal Blockchain';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

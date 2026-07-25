@@ -492,7 +492,7 @@ class _CertificatBlockchainScreenState
                   '2. Saisissez le code : ${widget.codeTontine}\n'
                   '3. Les preuves SHA-256 sont des empreintes cryptographiques internes.\n'
                   '   Elles garantissent l\'intégrité des données mais ne sont pas des transactions Polygon.\n'
-                  '4. La vérification on-chain (Phase 2) sera disponible ultérieurement.',
+                  '4. La verification on-chain est disponible via Polygon Mainnet.',
             style: pw.TextStyle(fontSize: 8, color: _pdfTexte, lineSpacing: 3),
           ),
           pw.SizedBox(height: 8),
