@@ -1190,10 +1190,10 @@ Deno.serve(async (req) => {
       SUPABASE_URL              : Deno.env.get("SUPABASE_URL") || "",
       SUPABASE_SERVICE_ROLE_KEY : Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "",
       BLOCKCHAIN_JOURNAL_SECRET : Deno.env.get("BLOCKCHAIN_JOURNAL_SECRET") || "default-secret",
-      ALCHEMY_POLYGON_AMOY_URL  : Deno.env.get("ALCHEMY_POLYGON_AMOY_URL") || RPC_FALLBACK,
-      MASTER_WALLET_PRIVATE_KEY : Deno.env.get("MASTER_WALLET_PRIVATE_KEY") || "",
-      MASTER_WALLET_ADDRESS     : Deno.env.get("MASTER_WALLET_ADDRESS") || "",
-      TONTINE_CONTRACT_ADDRESS  : Deno.env.get("TONTINE_CONTRACT_ADDRESS") || "",
+      ALCHEMY_POLYGON_AMOY_URL  : (Deno.env.get("ALCHEMY_POLYGON_AMOY_URL") || RPC_FALLBACK).trim(),
+      MASTER_WALLET_PRIVATE_KEY : (Deno.env.get("MASTER_WALLET_PRIVATE_KEY") || "").trim(),
+      MASTER_WALLET_ADDRESS     : (Deno.env.get("MASTER_WALLET_ADDRESS") || "").trim(),
+      TONTINE_CONTRACT_ADDRESS  : (Deno.env.get("TONTINE_CONTRACT_ADDRESS") || "").trim(),
     };
 
     const body = await req.json() as Record<string, unknown>;
