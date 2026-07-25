@@ -658,23 +658,12 @@ async function sendOnChainTx(
       return null;
     }
 
-    // Attendre receipt (max 60s, poll toutes les 3s, via le RPC principal)
-    let receipt = null;
-    for (let i = 0; i < 20; i++) {
-      await new Promise(r => setTimeout(r, 3000));
-      try {
-        receipt = await rpcCall(rpcUrl, "eth_getTransactionReceipt", [txHashResult]);
-        if (receipt) break;
-      } catch (_) { /* continuer */ }
-    }
-
-    if (!receipt || (receipt as { status: string }).status !== "0x1") {
-      console.warn(`[blockchain-tx] Receipt non confirmé pour ${txHashResult} (sera confirmé plus tard)`);
-      return { txHash: txHashResult, blockNumber: 0 };
-    }
-
-    const r = receipt as { blockNumber: string; status: string };
-    return { txHash: txHashResult, blockNumber: parseInt(r.blockNumber, 16) };
+    // Retourner immédiatement après le broadcast — ne pas attendre le receipt.
+    // Polygon confirme en ~2s mais Supabase Edge Function timeout = 25s max.
+    // Attendre le receipt ici dépasse le timeout → la fonction est tuée → fallback Phase 1.
+    // Le statut "pending" sera mis à jour par une vérification ultérieure (verifier_tx).
+    console.log(`[blockchain-tx] TX broadcastée: ${txHashResult} — retour immédiat (pas d'attente receipt)`);
+    return { txHash: txHashResult, blockNumber: 0 };
 
   } catch (err) {
     console.error(`[blockchain-tx] sendOnChainTx error: ${err}`);
