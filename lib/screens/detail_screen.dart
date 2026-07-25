@@ -2197,9 +2197,14 @@ class _BadgeBlockchain extends StatefulWidget {
 
 class _BadgeBlockchainState extends State<_BadgeBlockchain> {
   BlockchainEntry? _derniereTx;
-  int _totalOps = 0;
-  bool _loading = true;
-  int _phase = 1;
+  int              _totalOps   = 0;
+  bool             _loading    = true;
+
+  // ── Statut calculé depuis les TX réelles de CETTE tontine ──────────────
+  // 'onchain'  : au moins 1 TX confirmed + txHash valide (66 chars)
+  // 'pending'  : au moins 1 TX avec txHash mais pas encore confirmed
+  // 'phase1'   : aucune TX on-chain (journal SHA-256 uniquement)
+  String _statutBlockchain = 'phase1';
 
   @override
   void initState() {
@@ -2209,22 +2214,46 @@ class _BadgeBlockchainState extends State<_BadgeBlockchain> {
 
   Future<void> _charger() async {
     try {
-      final results = await Future.wait([
-        BlockchainService.lireJournal(tontineCode: widget.code, limit: 1),
-        BlockchainService.contractInfo(),
-      ]);
-      final entrees = results[0] as List<BlockchainEntry>;
-      final contrat = results[1] as Map<String, dynamic>;
-      if (!mounted) return;
-      setState(() {
-        _derniereTx = entrees.isNotEmpty ? entrees.first : null;
-        _phase      = (contrat['phase'] as num?)?.toInt() ?? 1;
-        _loading    = false;
-      });
-      // Charger le total en arrière-plan
+      // Charger toutes les entrées de cette tontine (limit 200)
+      // — source unique de vérité, pas de cache, pas de champ phase global
       final toutes = await BlockchainService.lireJournal(
           tontineCode: widget.code, limit: 200);
-      if (mounted) setState(() => _totalOps = toutes.length);
+
+      if (!mounted) return;
+
+      // Calcul du statut depuis les TX réelles
+      final confirme = toutes.where((e) =>
+          e.estConfirme &&
+          e.txHash != null &&
+          e.txHash!.length == 66).toList();
+
+      final enAttente = toutes.where((e) =>
+          e.txHash != null &&
+          e.txHash!.length == 66 &&
+          !e.estConfirme &&
+          !e.estEchec).toList();
+
+      final String statut;
+      if (confirme.isNotEmpty) {
+        statut = 'onchain';
+      } else if (enAttente.isNotEmpty) {
+        statut = 'pending';
+      } else {
+        statut = 'phase1';
+      }
+
+      // Dernière TX pertinente : confirmed en priorité, sinon pending, sinon première
+      final derniere = confirme.isNotEmpty
+          ? confirme.first
+          : (enAttente.isNotEmpty ? enAttente.first
+              : (toutes.isNotEmpty ? toutes.first : null));
+
+      setState(() {
+        _totalOps          = toutes.length;
+        _derniereTx        = derniere;
+        _statutBlockchain  = statut;
+        _loading           = false;
+      });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -2265,9 +2294,39 @@ class _BadgeBlockchainState extends State<_BadgeBlockchain> {
       );
     }
 
-    final estOnChain = _phase == 2 &&
-        _derniereTx?.txHash != null &&
-        _derniereTx!.txHash!.length == 66;
+    // Couleurs et textes selon le statut réel de la tontine
+    final bool estOnChain = _statutBlockchain == 'onchain';
+    final bool estPending = _statutBlockchain == 'pending';
+
+    final Color couleurBadge = estOnChain
+        ? const Color(0xFF00C853)
+        : estPending
+            ? const Color(0xFFFF9800)
+            : AppColors.encre;
+
+    final Color couleurFond = estOnChain
+        ? const Color(0xFF00C853).withValues(alpha: 0.08)
+        : estPending
+            ? const Color(0xFFFF9800).withValues(alpha: 0.06)
+            : AppColors.fondCode;
+
+    final Color couleurBordure = estOnChain
+        ? const Color(0xFF00C853).withValues(alpha: 0.4)
+        : estPending
+            ? const Color(0xFFFF9800).withValues(alpha: 0.35)
+            : AppColors.lignes;
+
+    final IconData icone = estOnChain
+        ? Icons.verified
+        : estPending
+            ? Icons.hourglass_top_rounded
+            : Icons.lock_outline;
+
+    final String titre = estOnChain
+        ? 'Verifie Blockchain — Phase 2 On-chain'
+        : estPending
+            ? 'Synchronisation en attente…'
+            : 'Journal Blockchain — Phase 1';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2278,52 +2337,38 @@ class _BadgeBlockchainState extends State<_BadgeBlockchain> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: estOnChain
-                  ? const Color(0xFF00C853).withValues(alpha: 0.08)
-                  : AppColors.fondCode,
+              color: couleurFond,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: estOnChain
-                    ? const Color(0xFF00C853).withValues(alpha: 0.4)
-                    : AppColors.lignes,
-              ),
+              border: Border.all(color: couleurBordure),
             ),
             child: Row(
               children: [
-                Icon(
-                  estOnChain ? Icons.verified : Icons.lock_outline,
-                  size: 16,
-                  color: estOnChain ? const Color(0xFF00C853) : AppColors.encre,
-                ),
+                Icon(icone, size: 16, color: couleurBadge),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        estOnChain
-                            ? '✅ Vérifié Blockchain — Phase 2 On-chain'
-                            : '🔒 Journal Blockchain — Phase 1',
+                        titre,
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
-                          color: estOnChain
-                              ? const Color(0xFF00C853)
-                              : AppColors.encre,
+                          color: couleurBadge,
                         ),
                       ),
                       if (_totalOps > 0)
                         Text(
-                          '$_totalOps opération${_totalOps > 1 ? 's' : ''} enregistrée${_totalOps > 1 ? 's' : ''}',
+                          '$_totalOps opération${_totalOps > 1 ? "s" : ""} enregistrée${_totalOps > 1 ? "s" : ""}',
                           style: const TextStyle(
                               fontSize: 11, color: AppColors.texteDoux),
                         ),
-                      if (_derniereTx != null && estOnChain)
+                      if (_derniereTx != null && (estOnChain || estPending))
                         Text(
                           '${_derniereTx!.iconeMetier}  ${_derniereTx!.descriptionMetier}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 10,
-                            color: Color(0xFF00C853),
+                            color: couleurBadge,
                             fontWeight: FontWeight.w600,
                           ),
                           maxLines: 1,
