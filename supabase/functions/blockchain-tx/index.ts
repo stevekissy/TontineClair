@@ -988,7 +988,7 @@ async function actionLireJournal(
   const supabaseUrl = env.SUPABASE_URL;
   const serviceKey  = env.SUPABASE_SERVICE_ROLE_KEY;
 
-  const limit   = Math.min(Number(body.limit) || 20, 100);
+  const limit   = Math.min(Number(body.limit) || 20, 500);
   const offset  = Number(body.offset) || 0;
   const tontine = body.tontine_code ? `&tontine_code=eq.${body.tontine_code}` : "";
   const statut  = body.statut && body.statut !== "tous" ? `&statut=eq.${body.statut}` : "";

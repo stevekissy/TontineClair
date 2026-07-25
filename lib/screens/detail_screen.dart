@@ -2212,22 +2212,43 @@ class _BadgeBlockchainState extends State<_BadgeBlockchain> {
     _charger();
   }
 
+  /// Réinitialise l'état et recharge quand on navigue vers une autre tontine.
+  @override
+  void didUpdateWidget(_BadgeBlockchain old) {
+    super.didUpdateWidget(old);
+    if (old.code != widget.code) {
+      setState(() {
+        _loading           = true;
+        _statutBlockchain  = 'phase1';
+        _totalOps          = 0;
+        _derniereTx        = null;
+      });
+      _charger();
+    }
+  }
+
   Future<void> _charger() async {
     try {
-      // Charger toutes les entrées de cette tontine (limit 200)
-      // — source unique de vérité, pas de cache, pas de champ phase global
+      // Charger les entrées de cette tontine (limit 500 — Edge Function plafonnée à 500)
       final toutes = await BlockchainService.lireJournal(
-          tontineCode: widget.code, limit: 200);
+          tontineCode: widget.code, limit: 500);
 
       if (!mounted) return;
 
-      // Calcul du statut depuis les TX réelles
-      final confirme = toutes.where((e) =>
+      // ── GARDE CLIENT : rejeter toute entrée d'une autre tontine ────────────
+      // Protège contre un éventuel bug serveur ou erreur de cache.
+      final code = widget.code.toUpperCase();
+      final filtrees = toutes
+          .where((e) => e.tontineCode.toUpperCase() == code)
+          .toList();
+
+      // Calcul du statut depuis les TX réelles de CETTE tontine uniquement
+      final confirme = filtrees.where((e) =>
           e.estConfirme &&
           e.txHash != null &&
           e.txHash!.length == 66).toList();
 
-      final enAttente = toutes.where((e) =>
+      final enAttente = filtrees.where((e) =>
           e.txHash != null &&
           e.txHash!.length == 66 &&
           !e.estConfirme &&
@@ -2245,11 +2266,12 @@ class _BadgeBlockchainState extends State<_BadgeBlockchain> {
       // Dernière TX pertinente : confirmed en priorité, sinon pending, sinon première
       final derniere = confirme.isNotEmpty
           ? confirme.first
-          : (enAttente.isNotEmpty ? enAttente.first
-              : (toutes.isNotEmpty ? toutes.first : null));
+          : (enAttente.isNotEmpty
+              ? enAttente.first
+              : (filtrees.isNotEmpty ? filtrees.first : null));
 
       setState(() {
-        _totalOps          = toutes.length;
+        _totalOps          = filtrees.length;
         _derniereTx        = derniere;
         _statutBlockchain  = statut;
         _loading           = false;

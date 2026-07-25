@@ -145,7 +145,6 @@ class BlockchainEntry {
     final base = _metier[typeOperation]?['desc'] ?? typeLabel;
     final parties = <String>[];
     if (membreNom != null && membreNom!.isNotEmpty) parties.add(membreNom!);
-    if (tontineCode.isNotEmpty) parties.add('– Groupe $tontineCode');
     if (montantXof != null && montantXof! > 0) {
       final s = montantXof.toString();
       final buf = StringBuffer();
