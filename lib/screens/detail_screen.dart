@@ -330,11 +330,8 @@ class _DetailScreenState extends State<DetailScreen> {
                         ),
                       ],
                     ),
-                    // Badge blockchain Phase 3
-                    const SizedBox(height: 8),
-                    _BadgeBlockchain(code: tontine.code, nom: data.nom),
                     // Bandeau échéance toujours visible (calcul auto si non définie)
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 8),
                     _BandeauEcheance(
                       echeance: data.echeance,
                       periode: data.periode,
@@ -345,6 +342,9 @@ class _DetailScreenState extends State<DetailScreen> {
                     const SizedBox(height: 16),
                     // Roue de rotation
                     RoueRotation(data: data),
+                    // Badge blockchain — après la méthode d'ordre
+                    const SizedBox(height: 16),
+                    _BadgeBlockchain(code: tontine.code, nom: data.nom),
                     const SizedBox(height: 20),
                     // Actions rapides
                     _ActionsRapides(

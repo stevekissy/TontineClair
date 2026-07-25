@@ -181,7 +181,7 @@ class _CertificatBlockchainScreenState
                   borderRadius: pw.BorderRadius.circular(8),
                 ),
                 child: pw.Text(
-                  phase == 2 ? 'PHASE 2 — ON-CHAIN' : 'PHASE 1 — PROOF',
+                  phase == 2 ? 'ON-CHAIN POLYGON MAINNET' : 'JOURNAL INTERNE',
                   style: pw.TextStyle(
                       fontSize: 7,
                       color: PdfColors.white,
@@ -256,7 +256,7 @@ class _CertificatBlockchainScreenState
                   fontStyle: pw.FontStyle.italic),
             ),
             pw.Text(
-              'Réseau : Polygon Amoy (chainId 80002) · TontineVault.sol v2.0.0',
+              'Réseau : Polygon Mainnet (chainId 137) · TontineVault.sol v2.0.0',
               style: pw.TextStyle(fontSize: 8, color: PdfColors.white),
             ),
           ],
@@ -273,7 +273,7 @@ class _CertificatBlockchainScreenState
         _metriqueBox('Total opérations', '$total'),
         pw.SizedBox(width: 8),
         _metriqueBox(
-          phase == 2 ? 'On-chain ⚡' : 'Proof SHA-256',
+          phase == 2 ? 'On-chain' : 'Proof SHA-256',
           phase == 2 ? '$onChain' : '$total',
           couleur: phase == 2 ? _pdfChain : _pdfOr,
         ),
@@ -331,8 +331,8 @@ class _CertificatBlockchainScreenState
         children: [
           pw.Text(
             phase == 2
-                ? '✅ Opérations ancrées on-chain · vérifiables sur Polygon Amoy'
-                : '🔒 Opérations sécurisées par preuve cryptographique SHA-256 (journal interne TontineClair)',
+                ? 'Opérations ancrées on-chain · vérifiables sur Polygon Mainnet'
+                : 'Opérations sécurisées par preuve cryptographique SHA-256 (journal interne TontineClair)',
             style: pw.TextStyle(
                 fontSize: 10,
                 fontWeight: pw.FontWeight.bold,
@@ -425,7 +425,7 @@ class _CertificatBlockchainScreenState
                         : '—',
                     mono: true,
                     couleur: estOnChain ? _pdfChain : _pdfDoux,
-                    suffix: estOnChain ? ' ⚡' : '',
+                    suffix: '',
                   ),
                 ],
               );
@@ -486,8 +486,8 @@ class _CertificatBlockchainScreenState
             phase == 2
                 ? '1. Ouvrez TontineClair → Vérifier blockchain\n'
                   '2. Saisissez le code : ${widget.codeTontine}\n'
-                  '3. Chaque TX hash ⚡ est vérifiable sur https://amoy.polygonscan.com\n'
-                  '${contratAddr != null ? "4. Smart Contract : https://amoy.polygonscan.com/address/$contratAddr" : ""}'
+                  '3. Chaque TX hash est verifiable sur https://polygonscan.com\n'
+                  '${contratAddr != null ? "4. Smart Contract : https://polygonscan.com/address/$contratAddr" : ""}'
                 : '1. Ouvrez TontineClair → Vérifier blockchain\n'
                   '2. Saisissez le code : ${widget.codeTontine}\n'
                   '3. Les preuves SHA-256 sont des empreintes cryptographiques internes.\n'
@@ -523,7 +523,7 @@ class _CertificatBlockchainScreenState
             'Certificat de transparence blockchain TontineClair\n'
             'Tontine : ${widget.nomTontine}\n'
             'Code : ${widget.codeTontine}\n'
-            'Vérifiable sur Polygon Amoy ⚡',
+            'Verifiable sur Polygon Mainnet',
       );
     } catch (e) {
       if (!mounted) return;
@@ -610,7 +610,7 @@ class _CertificatBlockchainScreenState
           children: [
             const Text('Certificat Blockchain',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-            Text(phase == 2 ? 'PDF · Polygon Amoy On-Chain' : 'PDF · Preuves SHA-256',
+            Text(phase == 2 ? 'PDF · Polygon Mainnet On-Chain' : 'PDF · Preuves SHA-256',
                 style: const TextStyle(fontSize: 11, color: Colors.white70)),
           ],
         ),
@@ -707,7 +707,7 @@ class _CertificatBlockchainScreenState
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: Text(
-                                  phase == 2 ? '⚡ Phase 2' : '🔒 Phase 1',
+                                  phase == 2 ? 'On-chain' : 'SHA-256',
                                   style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 10,
@@ -724,7 +724,7 @@ class _CertificatBlockchainScreenState
                                   '${_entrees.length}', Icons.list_alt),
                               const SizedBox(width: 8),
                               _metriqueFlutter(
-                                  phase == 2 ? 'On-chain ⚡' : 'SHA-256',
+                                  phase == 2 ? 'On-chain' : 'SHA-256',
                                   phase == 2 ? '$countOnChain' : '${_entrees.length}',
                                   phase == 2 ? Icons.bolt : Icons.lock_outline,
                                   couleur: phase == 2
@@ -732,7 +732,7 @@ class _CertificatBlockchainScreenState
                                       : AppColors.or),
                               const SizedBox(width: 8),
                               _metriqueFlutter(
-                                  'Réseau', 'Polygon\nAmoy', Icons.hub),
+                                  'Réseau', 'Polygon\nMainnet', Icons.hub),
                             ],
                           ),
                           const SizedBox(height: 16),
