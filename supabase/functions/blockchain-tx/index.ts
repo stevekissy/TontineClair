@@ -28,11 +28,14 @@ const RPC_FALLBACK   = "https://polygon.drpc.org";
 
 // RPC alternatifs pour eth_sendRawTransaction (certains RPC publics bloquent le broadcast)
 // Ordre de préférence : les plus fiables pour les TX en premier
+// Ankr accepte eth_sendRawTransaction depuis Supabase (Alchemy le bloque)
+const ANKR_RPC = "https://rpc.ankr.com/polygon/dbb05ffa48bde7edd4cc4c9f95bd487f861f4206fa425f8e392647eed461c1f9";
+
 const RPC_BROADCAST_FALLBACKS = [
+  ANKR_RPC,
   "https://polygon-rpc.com",
   "https://rpc-mainnet.matic.network",
   "https://matic-mainnet.chainstacklabs.com",
-  "https://rpc-mainnet.maticvigil.com",
   "https://polygon.drpc.org",
 ];
 
@@ -631,9 +634,9 @@ async function sendOnChainTx(
     });
 
     // ── Broadcast avec fallback multi-RPC ──────────────────────────────────────
-    // Certains RPC publics acceptent les lectures mais bloquent eth_sendRawTransaction.
-    // On essaie tous les endpoints jusqu'à succès.
-    const broadcastUrls = [rpcUrl, ...RPC_BROADCAST_FALLBACKS.filter(u => u !== rpcUrl)];
+    // Alchemy bloque eth_sendRawTransaction depuis les IPs Supabase.
+    // Ankr accepte les writes → toujours en premier pour le broadcast.
+    const broadcastUrls = [ANKR_RPC, ...RPC_BROADCAST_FALLBACKS.filter(u => u !== ANKR_RPC)];
     let txHashResult: string | null = null;
     let broadcastError = "";
 
@@ -1181,7 +1184,7 @@ Deno.serve(async (req) => {
   }
 
   // ── Identifiant de version déployée (pour vérifier que le bon code tourne)
-  const DEPLOYED_VERSION = "d38d381-v5";
+  const DEPLOYED_VERSION = "bf8608d-v6-ankr";
 
   try {
     const env: Record<string, string> = {
