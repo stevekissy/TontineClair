@@ -8,6 +8,7 @@ import '../utils/app_localizations.dart';
 import 'kyc_admin_screen.dart';
 import 'coinpayments_admin_screen.dart';
 import 'blockchain_admin_screen.dart';
+import 'admin_soldes_screen.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -773,6 +774,7 @@ class _AdminScreenState extends State<AdminScreen> {
       _OngletDef(icone: Icons.support_agent_rounded,          label: 'Support',   badge: nbTicketsPending),
       _OngletDef(icone: Icons.currency_bitcoin,               label: 'Crypto',    badge: 0),
       _OngletDef(icone: Icons.hexagon_outlined,                label: 'Blockchain', badge: 0),
+      _OngletDef(icone: Icons.account_balance_wallet_rounded,  label: 'Soldes',     badge: 0),
     ];
 
     return Column(
@@ -812,7 +814,8 @@ class _AdminScreenState extends State<AdminScreen> {
             : _onglet == 9 ? _ListeEmails()
             : _onglet == 10 ? _ListeSupport()
             : _onglet == 11 ? CoinPaymentsAdminScreen(cleAdmin: _cle)
-            : BlockchainAdminScreen(cleAdmin: _cle),
+            : _onglet == 12 ? BlockchainAdminScreen(cleAdmin: _cle)
+            : AdminSoldesScreen(cleAdmin: _cle),
         ),
       ],
     );

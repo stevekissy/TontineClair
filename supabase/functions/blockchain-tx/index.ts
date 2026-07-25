@@ -931,6 +931,117 @@ async function actionTauxUsdt(): Promise<Record<string, unknown>> {
   return { ok: true, taux_xof_usdt: 600, source: "fixed", updated_at: new Date().toISOString() };
 }
 
+// ── Action : sync_balance ──────────────────────────────────────────────────────
+// Synchronise le solde consolidé d'une tontine sur la blockchain.
+// Appelé par l'écran admin AdminSoldesScreen.
+// Utilise le même pipeline que enregistrer_operation (Phase 1 SHA-256 ou Phase 2 on-chain).
+
+async function actionSyncBalance(
+  body: Record<string, unknown>,
+  env : Record<string, string>
+): Promise<Record<string, unknown>> {
+  // Réutiliser exactement le pipeline enregistrer_operation
+  // avec type_operation = 'sync_balance'
+  const syncBody: Record<string, unknown> = {
+    ...body,
+    action         : "enregistrer_operation",
+    type_operation : "sync_balance",
+    // montant_xof contient le solde net
+    montant_xof    : body.solde_brut ?? body.montant_xof ?? 0,
+    metadata       : {
+      total_entrees: body.total_entrees ?? 0,
+      total_sorties: body.total_sorties ?? 0,
+      solde_net    : body.solde_brut ?? 0,
+      nb_ops       : body.nb_ops ?? 0,
+      sync_at      : new Date().toISOString(),
+      source       : "admin_sync",
+    },
+  };
+  return await actionEnregistrerOperation(syncBody, env);
+}
+
+// ── Action : stats_journal enrichi avec par_tontine ────────────────────────────
+// Version enrichie de actionStats qui retourne les soldes agrégés par tontine.
+// Appelé par AdminSoldesScreen pour éviter N requêtes individuelles.
+
+async function actionStatsSoldes(
+  env: Record<string, string>
+): Promise<Record<string, unknown>> {
+  const supabaseUrl = env.SUPABASE_URL;
+  const serviceKey  = env.SUPABASE_SERVICE_ROLE_KEY;
+
+  // Charger toutes les entrées du journal (max 5000)
+  const res = await fetch(
+    `${supabaseUrl}/rest/v1/blockchain_journal?select=tontine_code,type_operation,montant_xof,tx_hash,statut,created_at&order=created_at.desc&limit=5000`,
+    { headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` } }
+  );
+  const rows = await res.json() as Record<string, string | number>[];
+
+  // Types qui AUGMENTENT la caisse
+  const ENTREES = new Set(["cotisation","apport","remboursement","remboursement_pret","annulation_pret","annulation_distribution"]);
+  // Types qui DIMINUENT la caisse
+  const SORTIES = new Set(["distribution","decaissement","pret","depense_caisse","penalite","annulation_cotisation","retrait"]);
+
+  // Agrégation par tontine
+  const parTontine: Record<string, {
+    entrees: number; sorties: number; nb_ops: number;
+    nb_on_chain: number; dernier_tx: string | null;
+    dernier_statut: string | null; derniere_op: string | null;
+  }> = {};
+
+  for (const r of rows) {
+    const code = String(r.tontine_code || "");
+    if (!code) continue;
+    if (!parTontine[code]) {
+      parTontine[code] = {
+        entrees: 0, sorties: 0, nb_ops: 0,
+        nb_on_chain: 0, dernier_tx: null,
+        dernier_statut: null, derniere_op: null,
+      };
+    }
+    const t   = parTontine[code];
+    const m   = Number(r.montant_xof) || 0;
+    const type = String(r.type_operation).toLowerCase();
+    t.nb_ops++;
+
+    if (ENTREES.has(type))      t.entrees += m;
+    else if (SORTIES.has(type)) t.sorties += m;
+
+    const hash = String(r.tx_hash || "");
+    if (hash.length === 66) {
+      t.nb_on_chain++;
+      // Garder la TX la plus récente
+      if (!t.derniere_op || String(r.created_at) > t.derniere_op) {
+        t.dernier_tx     = hash;
+        t.dernier_statut = String(r.statut || "");
+        t.derniere_op    = String(r.created_at || "");
+      }
+    } else if (!t.derniere_op || String(r.created_at) > t.derniere_op) {
+      t.derniere_op = String(r.created_at || "");
+    }
+  }
+
+  // Ajouter le solde net à chaque entrée
+  const parTontineAvecSolde: Record<string, unknown> = {};
+  for (const [code, t] of Object.entries(parTontine)) {
+    parTontineAvecSolde[code] = {
+      ...t,
+      solde: t.entrees - t.sorties,
+    };
+  }
+
+  const contractAddr = env.TONTINE_CONTRACT_ADDRESS || "";
+  return {
+    ok          : true,
+    par_tontine : parTontineAvecSolde,
+    total_ops   : rows.length,
+    nb_tontines : Object.keys(parTontine).length,
+    network     : "polygon-mainnet",
+    contract    : contractAddr || null,
+    phase       : contractAddr ? 2 : 1,
+  };
+}
+
 // ── Action : contract_info ─────────────────────────────────────────────────────
 
 async function actionContractInfo(env: Record<string, string>): Promise<Record<string, unknown>> {
@@ -1017,6 +1128,12 @@ Deno.serve(async (req) => {
         break;
       case "contract_info":
         result = await actionContractInfo(env);
+        break;
+      case "sync_balance":
+        result = await actionSyncBalance(body, env);
+        break;
+      case "stats_soldes":
+        result = await actionStatsSoldes(env);
         break;
       default:
         result = { ok: false, erreur: `Action inconnue: ${action}` };

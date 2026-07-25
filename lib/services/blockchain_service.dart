@@ -619,6 +619,12 @@ class BlockchainService {
     return _appeler({'action': 'stats_journal'});
   }
 
+  /// Statistiques enrichies avec soldes agrégés par tontine.
+  /// Utilisé par AdminSoldesScreen pour charger tous les soldes en une seule requête.
+  static Future<Map<String, dynamic>> statsSoldes() async {
+    return _appeler({'action': 'stats_soldes'}, timeout: _timeoutLecture);
+  }
+
   /// Vérifie le statut d'une TX on-chain.
   static Future<Map<String, dynamic>> verifierTx(String txHash) async {
     return _appeler({'action': 'verifier_tx', 'tx_hash': txHash});
@@ -633,6 +639,35 @@ class BlockchainService {
   /// Retourne phase=1 si le contrat n'est pas encore déployé.
   static Future<Map<String, dynamic>> contractInfo() async {
     return _appeler({'action': 'contract_info'}, timeout: _timeoutLecture);
+  }
+
+  /// Synchronise le solde d'une tontine sur la blockchain.
+  ///
+  /// Envoie un event OperationEnregistree(type=sync_balance) on-chain
+  /// avec le solde consolidé (entrées, sorties, net) en tant que payload.
+  /// En Phase 1 : génère une preuve SHA-256 dans blockchain_journal.
+  /// En Phase 2 : envoie une vraie TX sur Polygon Mainnet.
+  static Future<BlockchainResultat> syncBalanceTontine({
+    required String tontineCode,
+    required int    soldeBrut,
+    required int    totalEntrees,
+    required int    totalSorties,
+    required int    nbOps,
+  }) async {
+    return _enregistrer(
+      tontineCode   : tontineCode,
+      typeOperation : 'sync_balance',
+      montantXof    : soldeBrut,
+      refInterne    : 'SYNC-${DateTime.now().millisecondsSinceEpoch}',
+      metadata      : {
+        'total_entrees' : totalEntrees,
+        'total_sorties' : totalSorties,
+        'solde_net'     : soldeBrut,
+        'nb_ops'        : nbOps,
+        'sync_at'       : DateTime.now().toIso8601String(),
+        'source'        : 'admin_sync',
+      },
+    );
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
