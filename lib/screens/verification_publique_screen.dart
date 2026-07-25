@@ -144,36 +144,15 @@ class _VerificationPubliqueScreenState
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Vérification Blockchain',
+            const Text('Journal Blockchain',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-            Text(
-              widget.nomTontine != null
-                  ? widget.nomTontine!
-                  : 'Polygon Amoy · TontineVault.sol',
-              style: const TextStyle(fontSize: 11, color: Colors.white70),
-            ),
+            if (widget.nomTontine != null && widget.nomTontine!.isNotEmpty)
+              Text(
+                widget.nomTontine!,
+                style: const TextStyle(fontSize: 11, color: Colors.white70),
+              ),
           ],
         ),
-        actions: [
-          // Phase badge
-          Container(
-            margin: const EdgeInsets.only(right: 12),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: _phase == 2
-                  ? const Color(0xFF00C853)
-                  : Colors.orange.shade400,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              _phase == 2 ? '⚡ Phase 2' : '🔒 Phase 1',
-              style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white),
-            ),
-          ),
-        ],
       ),
       body: Column(
         children: [
