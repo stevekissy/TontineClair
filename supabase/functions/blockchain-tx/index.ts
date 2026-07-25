@@ -26,6 +26,16 @@ const CHAIN_ID_HEX   = "0x89";
 const EXPLORER_BASE  = "https://polygonscan.com";
 const RPC_FALLBACK   = "https://polygon.drpc.org";
 
+// RPC alternatifs pour eth_sendRawTransaction (certains RPC publics bloquent le broadcast)
+// Ordre de préférence : les plus fiables pour les TX en premier
+const RPC_BROADCAST_FALLBACKS = [
+  "https://polygon-rpc.com",
+  "https://rpc-mainnet.matic.network",
+  "https://matic-mainnet.chainstacklabs.com",
+  "https://rpc-mainnet.maticvigil.com",
+  "https://polygon.drpc.org",
+];
+
 // ── Helpers crypto ─────────────────────────────────────────────────────────────
 
 async function sha256hex(data: string): Promise<string> {
@@ -540,7 +550,7 @@ function buildCreationCalldata(
   return sel + staticPart + str1 + str2 + str3;
 }
 
-// ── Envoyer une TX on-chain ─────────────────────────────────────────────────────
+// ── Envoyer une TX on-chain (avec fallback multi-RPC pour le broadcast) ─────────
 
 async function sendOnChainTx(
   rpcUrl      : string,
@@ -550,7 +560,7 @@ async function sendOnChainTx(
   fromAddr    : string
 ): Promise<{ txHash: string; blockNumber: number } | null> {
   try {
-    // Nonce
+    // Nonce + gas via le RPC principal (lecture — généralement pas bloqué)
     const nonce = parseInt(
       await rpcCall(rpcUrl, "eth_getTransactionCount", [fromAddr, "latest"]) as string,
       16
@@ -567,9 +577,9 @@ async function sendOnChainTx(
         from: fromAddr, to: contractAddr, data: calldata
       }]) as string;
       gasLimit = BigInt(gasEst) * 130n / 100n; // +30% marge
-    } catch (_) { /* utiliser défaut */ }
+    } catch (_) { /* utiliser défaut 200k */ }
 
-    // Signer
+    // Signer la TX (une seule fois — le nonce est fixé)
     const rawTx = await signTransaction({
       to      : contractAddr,
       data    : calldata,
@@ -580,11 +590,35 @@ async function sendOnChainTx(
       privKey,
     });
 
-    // Broadcast
-    const txHashResult = await rpcCall(rpcUrl, "eth_sendRawTransaction", [rawTx]) as string;
-    console.log(`[blockchain-tx] TX envoyée: ${txHashResult}`);
+    // ── Broadcast avec fallback multi-RPC ──────────────────────────────────────
+    // Certains RPC publics acceptent les lectures mais bloquent eth_sendRawTransaction.
+    // On essaie tous les endpoints jusqu'à succès.
+    const broadcastUrls = [rpcUrl, ...RPC_BROADCAST_FALLBACKS.filter(u => u !== rpcUrl)];
+    let txHashResult: string | null = null;
+    let broadcastError = "";
 
-    // Attendre receipt (max 60s, poll toutes les 3s)
+    for (const url of broadcastUrls) {
+      try {
+        console.log(`[blockchain-tx] Broadcast via ${url}`);
+        const result = await rpcCall(url, "eth_sendRawTransaction", [rawTx]) as string;
+        if (result && result.startsWith("0x") && result.length === 66) {
+          txHashResult = result;
+          console.log(`[blockchain-tx] TX envoyée via ${url}: ${txHashResult}`);
+          break;
+        }
+      } catch (e) {
+        broadcastError = String(e);
+        console.warn(`[blockchain-tx] Broadcast échoué sur ${url}: ${e}`);
+        // Continuer avec le prochain RPC
+      }
+    }
+
+    if (!txHashResult) {
+      console.error(`[blockchain-tx] Tous les RPC ont échoué. Dernière erreur: ${broadcastError}`);
+      return null;
+    }
+
+    // Attendre receipt (max 60s, poll toutes les 3s, via le RPC principal)
     let receipt = null;
     for (let i = 0; i < 20; i++) {
       await new Promise(r => setTimeout(r, 3000));
@@ -595,8 +629,7 @@ async function sendOnChainTx(
     }
 
     if (!receipt || (receipt as { status: string }).status !== "0x1") {
-      console.warn(`[blockchain-tx] Receipt non confirmé pour ${txHashResult}`);
-      // Retourner quand même le hash — confirmé plus tard
+      console.warn(`[blockchain-tx] Receipt non confirmé pour ${txHashResult} (sera confirmé plus tard)`);
       return { txHash: txHashResult, blockNumber: 0 };
     }
 
