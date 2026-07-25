@@ -517,8 +517,6 @@ class _PaiementCryptoWalletScreenState
           _buildWarning(),
           const SizedBox(height: 12),
 
-          // ── Bouton vérification manuelle ──────────────────────────────────
-          _buildBoutonVerifier(),
           const SizedBox(height: 24),
         ],
       ),
@@ -599,19 +597,30 @@ class _PaiementCryptoWalletScreenState
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: QrImageView(
-                data: _address!,
-                version: QrVersions.auto,
-                size: 200,
-                backgroundColor: Colors.white,
-                eyeStyle: QrEyeStyle(
-                  eyeShape: QrEyeShape.square,
-                  color: _cryptoColor,
-                ),
-                dataModuleStyle: QrDataModuleStyle(
-                  dataModuleShape: QrDataModuleShape.square,
-                  color: Colors.black87,
-                ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  QrImageView(
+                    data: _address!,
+                    version: QrVersions.auto,
+                    size: 200,
+                    backgroundColor: Colors.white,
+                    eyeStyle: QrEyeStyle(
+                      eyeShape: QrEyeShape.square,
+                      color: _cryptoColor,
+                    ),
+                    dataModuleStyle: QrDataModuleStyle(
+                      dataModuleShape: QrDataModuleShape.square,
+                      color: Colors.black87,
+                    ),
+                    // Réservation zone centrale pour le logo (30% = 60px sur 200)
+                    embeddedImageStyle: const QrEmbeddedImageStyle(
+                      size: Size(48, 48),
+                    ),
+                    embeddedImage:
+                        const AssetImage('assets/icons/icone-192.png'),
+                  ),
+                ],
               ),
             ),
           ),
@@ -903,23 +912,6 @@ class _PaiementCryptoWalletScreenState
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildBoutonVerifier() {
-    return OutlinedButton.icon(
-      onPressed: _enConfirmation ? null : () {
-        _pollTimer?.cancel();
-        _confirmerEtCrediter();
-      },
-      icon: const Icon(Icons.search, size: 18),
-      label: const Text('Vérifier manuellement'),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: _cryptoColor,
-        side: BorderSide(color: _cryptoColor),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
       ),
     );
   }
