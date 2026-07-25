@@ -382,8 +382,26 @@ async function signTransaction(params: {
 }
 
 // ── Keccak4 selector ────────────────────────────────────────────────────────────
+// IMPORTANT : la keccak256 JS maison produit des résultats incorrects pour les selectors.
+// On utilise des constantes hardcodées, calculées avec web3.py (keccak256 certifié).
+// À mettre à jour si les signatures de fonctions dans TontineVault.sol changent.
+
+const SELECTORS: Record<string, string> = {
+  "enregistrerOperation(string,string,string,uint256,uint256,string,bytes32)": "0xbaa62d66",
+  "enregistrerVote(string,string,string,string,bytes32)"                     : "0xd3795e53",
+  "enregistrerCreation(string,string,string,bytes32)"                        : "0x68054f4e",
+  "getInfo()"                                                                : "0x5a9b0b89",
+  "transfererAdmin(address)"                                                 : "0xb38ff71f",
+  "admin()"                                                                  : "0xf851a440",
+  "version()"                                                                : "0x54fd4d50",
+  "totalOperations()"                                                        : "0xed232029",
+};
 
 function functionSelector(sig: string): string {
+  const hardcoded = SELECTORS[sig];
+  if (hardcoded) return hardcoded;
+  // Fallback : keccak256 JS (peut être incorrect — à éviter pour les fonctions du contrat)
+  console.warn(`[blockchain-tx] Selector non hardcodé pour : ${sig}`);
   return "0x" + bytesToHex(keccak256(new TextEncoder().encode(sig)).slice(0, 4));
 }
 
