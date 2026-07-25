@@ -103,18 +103,49 @@ class BlockchainEntry {
   String get explorerUrl =>
       txHash != null ? 'https://polygonscan.com/tx/$txHash' : '';
 
-  String get typeLabel {
-    const map = {
-      'cotisation'        : 'Cotisation',
-      'distribution'      : 'Distribution',
-      'pret'              : 'Prêt',
-      'remboursement'     : 'Remboursement',
-      'vote'              : 'Vote',
-      'creation'          : 'Création tontine',
-      'apport'            : 'Apport caisse',
-      'penalite'          : 'Pénalité',
-    };
-    return map[typeOperation] ?? typeOperation.toUpperCase();
+  // ── Mapper métier complet ─────────────────────────────────────────────────
+  static const _metier = <String, Map<String, String>>{
+    'cotisation'      : {'icone': '💰', 'label': 'Cotisation',             'desc': 'Cotisation mensuelle'},
+    'decaissement'    : {'icone': '💸', 'label': 'Décaissement',           'desc': 'Décaissement vers membre'},
+    'distribution'    : {'icone': '🎁', 'label': 'Distribution',           'desc': 'Distribution du tour'},
+    'apport'          : {'icone': '🤝', 'label': 'Apport',                 'desc': 'Apport en caisse'},
+    'depot'           : {'icone': '📥', 'label': 'Dépôt',                  'desc': 'Dépôt de fonds'},
+    'retrait'         : {'icone': '📤', 'label': 'Retrait',                'desc': 'Retrait de fonds'},
+    'paiement'        : {'icone': '💳', 'label': 'Paiement',               'desc': 'Paiement effectué'},
+    'penalite'        : {'icone': '⚠️',  'label': 'Pénalité',              'desc': 'Pénalité appliquée'},
+    'pret'            : {'icone': '🏦', 'label': 'Prêt accordé',           'desc': 'Prêt accordé à membre'},
+    'remboursement'   : {'icone': '💵', 'label': 'Remboursement de prêt',  'desc': 'Remboursement de prêt'},
+    'ajout_membre'    : {'icone': '👤', 'label': 'Ajout de membre',        'desc': 'Nouveau membre ajouté'},
+    'suppression_membre':{'icone':'❌', 'label': 'Suppression de membre',   'desc': 'Membre retiré'},
+    'mise_a_jour'     : {'icone': '⚙️',  'label': 'Mise à jour',           'desc': 'Mise à jour paramètres'},
+    'vote'            : {'icone': '🗳️',  'label': 'Vote',                  'desc': 'Vote enregistré'},
+    'vote_cree'       : {'icone': '🗳️',  'label': 'Vote créé',             'desc': 'Nouveau vote créé'},
+    'creation'        : {'icone': '🏦', 'label': 'Création tontine',       'desc': 'Tontine créée'},
+    'sync_balance'    : {'icone': '🔄', 'label': 'Synchronisation',        'desc': 'Solde synchronisé on-chain'},
+  };
+
+  String get iconeMetier =>
+      _metier[typeOperation]?['icone'] ?? '📋';
+
+  String get typeLabel =>
+      _metier[typeOperation]?['label'] ?? typeOperation.replaceAll('_', ' ').toUpperCase();
+
+  /// Description lisible enrichie avec le contexte (membre, tontine, montant)
+  String get descriptionMetier {
+    final base = _metier[typeOperation]?['desc'] ?? typeLabel;
+    final parties = <String>[];
+    if (membreNom != null && membreNom!.isNotEmpty) parties.add(membreNom!);
+    if (tontineCode.isNotEmpty) parties.add('– Groupe $tontineCode');
+    if (montantXof != null && montantXof! > 0) {
+      final s = montantXof.toString();
+      final buf = StringBuffer();
+      for (int i = 0; i < s.length; i++) {
+        if (i > 0 && (s.length - i) % 3 == 0) buf.write('\u202F');
+        buf.write(s[i]);
+      }
+      parties.add('(${buf.toString()} XOF)');
+    }
+    return parties.isEmpty ? base : '$base · ${parties.join(' ')}';
   }
 
   String get statutLabel {
@@ -559,6 +590,42 @@ class BlockchainService {
       'action'       : 'v3_approuver_usdt',
       'montant_usdt' : montantUsdt,
     }, timeout: _timeoutPhase2);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SOLDES BLOCKCHAIN — stats agrégées + sync balance par tontine
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Retourne les soldes agrégés de toutes les tontines depuis le journal.
+  /// Résultat : { tontines: [ { code, solde_brut, total_entrees, total_sorties,
+  ///              nb_ops, last_sync, phase } ] }
+  static Future<Map<String, dynamic>> statsSoldes() async {
+    return _appeler({'action': 'stats_soldes'}, timeout: _timeoutLecture);
+  }
+
+  /// Enregistre un événement `sync_balance` pour une tontine (Phase 1 SHA-256
+  /// ou Phase 2 TX on-chain selon configuration des secrets Supabase).
+  static Future<BlockchainResultat> syncBalanceTontine({
+    required String tontineCode,
+    required int    soldeBrut,
+    required int    totalEntrees,
+    required int    totalSorties,
+    required int    nbOps,
+  }) async {
+    return _enregistrer(
+      tontineCode   : tontineCode,
+      typeOperation : 'sync_balance',
+      montantXof    : soldeBrut,
+      refInterne    : 'SYNC-${DateTime.now().millisecondsSinceEpoch}',
+      metadata      : {
+        'total_entrees' : totalEntrees,
+        'total_sorties' : totalSorties,
+        'solde_net'     : soldeBrut,
+        'nb_ops'        : nbOps,
+        'sync_at'       : DateTime.now().toIso8601String(),
+        'source'        : 'admin_sync',
+      },
+    );
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

@@ -117,7 +117,7 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
     // Copie l'URL dans le presse-papiers + feedback
     Clipboard.setData(ClipboardData(text: url));
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('Lien copié : ${url.length > 40 ? url.substring(0, 40) + "..." : url}'),
+      content: Text('Lien copié : ${url.length > 40 ? "${url.substring(0, 40)}..." : url}'),
       action: SnackBarAction(label: 'OK', onPressed: () {}),
       duration: const Duration(seconds: 3),
     ));
@@ -433,28 +433,36 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
   }
 
   Widget _carteMiniEntry(BlockchainEntry e) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.lignes),
-      ),
-      child: Row(children: [
-        _iconType(e.typeOperation),
-        const SizedBox(width: 10),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(e.typeLabel, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: AppColors.encre)),
-          Text('${e.tontineCode}  •  ${e.membreNom ?? "—"}',
-              style: const TextStyle(fontSize: 10, color: AppColors.texteDoux)),
-        ])),
-        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Text(e.montantXof != null ? '${_formatNumber(e.montantXof!)} XOF' : '—',
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: AppColors.encre)),
-          _badgeStatut(e.statut),
+    return InkWell(
+      onTap: () => _voirDetailsTechniques(e),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.lignes),
+        ),
+        child: Row(children: [
+          Text(e.iconeMetier, style: const TextStyle(fontSize: 20)),
+          const SizedBox(width: 10),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(e.typeLabel,
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: AppColors.encre)),
+            Text(e.descriptionMetier,
+                style: const TextStyle(fontSize: 10, color: AppColors.texteDoux),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+          ])),
+          const SizedBox(width: 8),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text(e.montantXof != null ? '${_formatNumber(e.montantXof!)} XOF' : '—',
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: AppColors.encre)),
+            const SizedBox(height: 3),
+            _badgeStatut(e.statut),
+          ]),
         ]),
-      ]),
+      ),
     );
   }
 
@@ -515,6 +523,7 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
   }
 
   Widget _carteEntry(BlockchainEntry e) {
+    final estOnChain = e.txHash != null && e.txHash!.length == 66;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -523,63 +532,249 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
         border: Border.all(color: AppColors.lignes),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // Header
+        // ── En-tête : icône métier + label + badge statut ────────────────────
         Row(children: [
-          _iconType(e.typeOperation),
+          Text(e.iconeMetier, style: const TextStyle(fontSize: 22)),
           const SizedBox(width: 8),
-          Expanded(child: Text(e.typeLabel,
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.encre))),
+          Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(e.typeLabel,
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.encre)),
+              Text(e.descriptionMetier,
+                  style: const TextStyle(fontSize: 11, color: AppColors.texteDoux),
+                  maxLines: 2, overflow: TextOverflow.ellipsis),
+            ],
+          )),
+          const SizedBox(width: 8),
           _badgeStatut(e.statut),
         ]),
         const SizedBox(height: 8),
-        // Infos
-        _ligneInfo('Tontine', e.tontineCode),
-        if (e.membreNom != null) _ligneInfo('Membre', e.membreNom!),
-        if (e.montantXof != null) _ligneInfo('Montant', '${_formatNumber(e.montantXof!)} XOF'
-            '${e.montantUsdt != null ? "  ≈  ${e.montantUsdt!.toStringAsFixed(4)} USDT" : ""}'),
-        _ligneInfo('Bloc', e.blockNumber != null ? '#${_formatNumber(e.blockNumber!)}' : '—'),
-        // TX Hash avec copie
-        if (e.txHash != null)
-          Row(children: [
-            const Text('TX Hash : ', style: TextStyle(fontSize: 11, color: AppColors.texteDoux)),
-            Expanded(child: Text(e.txHashCourt,
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
-                    color: Color(0xFF8247E5), fontFamily: 'monospace'))),
-            GestureDetector(
-              onTap: () {
-                Clipboard.setData(ClipboardData(text: e.txHash!));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Hash copié'), duration: Duration(seconds: 1)));
-              },
-              child: const Icon(Icons.copy_rounded, size: 14, color: AppColors.texteDoux),
-            ),
-            if (e.txHash!.length == 66) ...[
-              const SizedBox(width: 6),
-              GestureDetector(
-                onTap: () => _ouvrirUrl(e.explorerUrl),
-                child: const Icon(Icons.open_in_new_rounded, size: 14, color: Color(0xFF8247E5)),
+        // ── Infos essentielles ───────────────────────────────────────────────
+        if (e.montantXof != null)
+          _ligneInfo('Montant', '${_formatNumber(e.montantXof!)} XOF'
+              '${e.montantUsdt != null ? "  ≈  ${e.montantUsdt!.toStringAsFixed(4)} USDT" : ""}'),
+        Row(children: [
+          const Text('Date : ', style: TextStyle(fontSize: 11, color: AppColors.texteDoux)),
+          Expanded(child: Text(_formatDate(e.createdAt),
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.encre))),
+          if (estOnChain)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFF8247E5).withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(4),
               ),
-            ],
-          ]),
-        if (e.txHash != null && e.txHash!.length == 66)
-          Container(
-            margin: const EdgeInsets.only(top: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: const Color(0xFF8247E5).withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(4),
+              child: const Text('⚡ On-chain',
+                  style: TextStyle(fontSize: 9, color: Color(0xFF8247E5), fontWeight: FontWeight.w700)),
             ),
-            child: const Text('⚡ TX on-chain Phase 2',
-                style: TextStyle(fontSize: 9, color: Color(0xFF8247E5), fontWeight: FontWeight.w700)),
+        ]),
+        // ── Bouton détails techniques ────────────────────────────────────────
+        const SizedBox(height: 2),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: () => _voirDetailsTechniques(e),
+            icon: const Icon(Icons.code_rounded, size: 13),
+            label: const Text('Voir les détails techniques',
+                style: TextStyle(fontSize: 11)),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.texteDoux,
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
           ),
-        if (e.signature != null)
-          _ligneInfo('Signature', '${e.signature!.substring(0, 12)}…'),
-        const SizedBox(height: 4),
-        Text(
-          _formatDate(e.createdAt),
-          style: const TextStyle(fontSize: 10, color: AppColors.texteDoux),
         ),
       ]),
+    );
+  }
+
+  // ── Bottom sheet « Détails techniques » ──────────────────────────────────
+  void _voirDetailsTechniques(BlockchainEntry e) {
+    final estOnChain = e.txHash != null && e.txHash!.length == 66;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.55,
+        minChildSize: 0.35,
+        maxChildSize: 0.90,
+        expand: false,
+        builder: (_, scrollCtrl) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Poignée
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 10, bottom: 4),
+                  width: 36, height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.lignes,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              // Titre
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Row(children: [
+                  Text(e.iconeMetier, style: const TextStyle(fontSize: 24)),
+                  const SizedBox(width: 10),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(e.typeLabel,
+                        style: const TextStyle(fontWeight: FontWeight.w800,
+                            fontSize: 15, color: AppColors.encre)),
+                    const Text('Détails techniques',
+                        style: TextStyle(fontSize: 11, color: AppColors.texteDoux)),
+                  ])),
+                  if (estOnChain)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF8247E5).withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text('⚡ Phase 2',
+                          style: TextStyle(fontSize: 10, color: Color(0xFF8247E5), fontWeight: FontWeight.w700)),
+                    ),
+                ]),
+              ),
+              const Divider(height: 20, color: AppColors.lignes),
+              // Contenu scrollable
+              Expanded(
+                child: ListView(
+                  controller: scrollCtrl,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  children: [
+                    _detailLigne('Description', e.descriptionMetier),
+                    _detailLigne('Tontine', e.tontineCode),
+                    if (e.membreNom != null) _detailLigne('Membre', e.membreNom!),
+                    if (e.montantXof != null)
+                      _detailLigne('Montant', '${_formatNumber(e.montantXof!)} XOF'
+                          '${e.montantUsdt != null ? " ≈ ${e.montantUsdt!.toStringAsFixed(4)} USDT" : ""}'),
+                    _detailLigne('Statut', e.statutLabel),
+                    _detailLigne('Réseau', e.reseau),
+                    _detailLigne('Bloc', e.blockNumber != null ? '#${_formatNumber(e.blockNumber!)}' : '—'),
+                    _detailLigne('Date', _formatDate(e.createdAt)),
+                    const Divider(height: 20, color: AppColors.lignes),
+                    // TX Hash
+                    if (e.txHash != null) ...[
+                      const Text('TX Hash',
+                          style: TextStyle(fontSize: 11, color: AppColors.texteDoux, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 4),
+                      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Expanded(child: SelectableText(
+                          e.txHash!,
+                          style: const TextStyle(fontSize: 10, fontFamily: 'monospace',
+                              color: Color(0xFF8247E5)),
+                        )),
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () {
+                            Clipboard.setData(ClipboardData(text: e.txHash!));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Hash TX copié'),
+                                  duration: Duration(seconds: 1)));
+                          },
+                          child: const Icon(Icons.copy_rounded, size: 16, color: AppColors.texteDoux),
+                        ),
+                      ]),
+                      const SizedBox(height: 10),
+                    ],
+                    // Payload Hash
+                    if (e.payloadHash != null) ...[
+                      const Text('Proof / Payload Hash',
+                          style: TextStyle(fontSize: 11, color: AppColors.texteDoux, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 4),
+                      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Expanded(child: SelectableText(
+                          e.payloadHash!,
+                          style: const TextStyle(fontSize: 10, fontFamily: 'monospace',
+                              color: AppColors.encreDoux),
+                        )),
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () {
+                            Clipboard.setData(ClipboardData(text: e.payloadHash!));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Payload Hash copié'),
+                                  duration: Duration(seconds: 1)));
+                          },
+                          child: const Icon(Icons.copy_rounded, size: 16, color: AppColors.texteDoux),
+                        ),
+                      ]),
+                      const SizedBox(height: 10),
+                    ],
+                    // Signature
+                    if (e.signature != null) ...[
+                      const Text('Signature',
+                          style: TextStyle(fontSize: 11, color: AppColors.texteDoux, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 4),
+                      SelectableText(
+                        e.signature!,
+                        style: const TextStyle(fontSize: 9, fontFamily: 'monospace',
+                            color: AppColors.texteDoux),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                    if (e.refInterne != null)
+                      _detailLigne('Réf. interne', e.refInterne!),
+                    if (e.refCoinpayments != null)
+                      _detailLigne('Réf. CoinPayments', e.refCoinpayments!),
+                    // Bouton PolygonScan si Phase 2
+                    if (estOnChain) ...[
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _ouvrirUrl(e.explorerUrl);
+                          },
+                          icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                          label: const Text('Ouvrir sur PolygonScan',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF8247E5),
+                            side: const BorderSide(color: Color(0xFF8247E5)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _detailLigne(String label, String valeur) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label,
+              style: const TextStyle(fontSize: 10, color: AppColors.texteDoux,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 2),
+          Text(valeur,
+              style: const TextStyle(fontSize: 12, color: AppColors.encre,
+                  fontWeight: FontWeight.w600)),
+        ],
+      ),
     );
   }
 
@@ -660,12 +855,40 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
   }
 
   Widget _carteVerifyResult(Map<String, dynamic> r) {
-    final ok = r['ok'] == true;
+    final ok     = r['ok'] == true;
     final statut = r['statut'] as String? ?? '—';
+    final typeOp = r['type_operation'] as String?;
+
+    // Label métier pour le type d'opération
+    const metierMap = <String, Map<String, String>>{
+      'cotisation'        : {'icone': '💰', 'label': 'Cotisation'},
+      'decaissement'      : {'icone': '💸', 'label': 'Décaissement'},
+      'distribution'      : {'icone': '🎁', 'label': 'Distribution'},
+      'apport'            : {'icone': '🤝', 'label': 'Apport'},
+      'depot'             : {'icone': '📥', 'label': 'Dépôt'},
+      'retrait'           : {'icone': '📤', 'label': 'Retrait'},
+      'paiement'          : {'icone': '💳', 'label': 'Paiement'},
+      'penalite'          : {'icone': '⚠️',  'label': 'Pénalité'},
+      'pret'              : {'icone': '🏦', 'label': 'Prêt accordé'},
+      'remboursement'     : {'icone': '💵', 'label': 'Remboursement de prêt'},
+      'ajout_membre'      : {'icone': '👤', 'label': 'Ajout de membre'},
+      'suppression_membre': {'icone': '❌', 'label': 'Suppression de membre'},
+      'mise_a_jour'       : {'icone': '⚙️',  'label': 'Mise à jour'},
+      'vote'              : {'icone': '🗳️',  'label': 'Vote'},
+      'creation'          : {'icone': '🏦', 'label': 'Création tontine'},
+      'sync_balance'      : {'icone': '🔄', 'label': 'Synchronisation'},
+    };
+    final typeIcone = typeOp != null ? (metierMap[typeOp]?['icone'] ?? '📋') : null;
+    final typeLbl   = typeOp != null
+        ? (metierMap[typeOp]?['label'] ?? typeOp.replaceAll('_', ' ').toUpperCase())
+        : null;
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: ok ? AppColors.succes.withValues(alpha: 0.06) : AppColors.alerte.withValues(alpha: 0.06),
+        color: ok
+            ? AppColors.succes.withValues(alpha: 0.06)
+            : AppColors.alerte.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: ok ? AppColors.succes : AppColors.alerte),
       ),
@@ -674,46 +897,35 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
           Icon(ok ? Icons.check_circle_rounded : Icons.error_outline_rounded,
               color: ok ? AppColors.succes : AppColors.alerte, size: 20),
           const SizedBox(width: 8),
-          Text(ok ? 'Transaction trouvée' : 'Transaction introuvable',
+          Expanded(child: Text(ok ? 'Transaction trouvée' : 'Transaction introuvable',
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13,
-                  color: ok ? AppColors.succes : AppColors.alerte)),
+                  color: ok ? AppColors.succes : AppColors.alerte))),
         ]),
         const SizedBox(height: 10),
-        if (r['tontine_code'] != null) _ligneInfo('Tontine', r['tontine_code']),
-        if (r['type_operation'] != null) _ligneInfo('Type', r['type_operation']),
+        if (r['tontine_code'] != null) _ligneInfo('Tontine', r['tontine_code'] as String),
+        // Type avec icône métier
+        if (typeLbl != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 3),
+            child: Row(children: [
+              const Text('Type : ',
+                  style: TextStyle(fontSize: 11, color: AppColors.texteDoux)),
+              Text('$typeIcone  $typeLbl',
+                  style: const TextStyle(fontSize: 11,
+                      fontWeight: FontWeight.w700, color: AppColors.encre)),
+            ]),
+          ),
         if (r['montant_xof'] != null) _ligneInfo('Montant', '${r['montant_xof']} XOF'),
         _ligneInfo('Statut', statut),
         if (r['block_number'] != null) _ligneInfo('Bloc', '#${r['block_number']}'),
-        if (r['confirmed_at'] != null) _ligneInfo('Confirmé le', r['confirmed_at']),
+        if (r['confirmed_at'] != null) _ligneInfo('Confirmé le', r['confirmed_at'] as String),
         if (r['signature'] != null)
-          _ligneInfo('Signature', '${(r['signature'] as String).substring(0, 16)}…'),
+          _ligneInfo('Proof / Signature', '${(r['signature'] as String).substring(0, 16)}…'),
       ]),
     );
   }
 
   // ── Widgets utilitaires ───────────────────────────────────────────────────
-  Widget _iconType(String type) {
-    const map = {
-      'cotisation'   : (Icons.payments_rounded,     Color(0xFF2196F3)),
-      'distribution' : (Icons.account_balance_wallet_rounded, Color(0xFF4CAF50)),
-      'pret'         : (Icons.account_balance_rounded, Color(0xFFFF9800)),
-      'remboursement': (Icons.undo_rounded,          Color(0xFF9C27B0)),
-      'vote'         : (Icons.how_to_vote_rounded,   Color(0xFF00BCD4)),
-      'creation'     : (Icons.add_business_rounded,  Color(0xFF8247E5)),
-      'apport'       : (Icons.add_circle_rounded,    Color(0xFF009688)),
-      'penalite'     : (Icons.warning_rounded,       Color(0xFFF44336)),
-    };
-    final (icon, color) = map[type] ?? (Icons.receipt_rounded, AppColors.texteDoux);
-    return Container(
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Icon(icon, color: color, size: 16),
-    );
-  }
-
   Widget _badgeStatut(String statut) {
     Color c;
     switch (statut) {
