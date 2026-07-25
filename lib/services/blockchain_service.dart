@@ -103,28 +103,59 @@ class BlockchainEntry {
   String get explorerUrl =>
       txHash != null ? 'https://polygonscan.com/tx/$txHash' : '';
 
-  String get typeLabel {
-    const map = {
-      'cotisation'            : 'Cotisation',
-      'distribution'          : 'Distribution',
-      'pret'                  : 'Prêt',
-      'remboursement'         : 'Remboursement',
-      'vote'                  : 'Vote',
-      'creation'              : 'Création tontine',
-      'apport'                : 'Apport caisse',
-      'penalite'              : 'Pénalité',
-      'depense_caisse'        : 'Dépense caisse',
-      'annulation_cotisation' : 'Annulation cotisation',
-      'annulation_remboursement': 'Annulation remboursement',
-      'tirage_verrouille'     : 'Tirage verrouillé',
-      'vote_cree'             : 'Vote créé',
-      'vote_clos'             : 'Vote clôturé',
-      'score_modifie'         : 'Score modifié',
-      'retrait_propose'       : 'Retrait proposé',
-      'upgrade_pro'           : 'Passage Pro',
-      'nouveau_cycle'         : 'Nouveau cycle',
-    };
-    return map[typeOperation] ?? typeOperation.toUpperCase();
+  // ── Mapper métier complet ─────────────────────────────────────────────────
+  static const _metier = <String, Map<String, String>>{
+    'cotisation'              : {'icone': '💰', 'label': 'Cotisation',            'desc': 'Cotisation mensuelle'},
+    'decaissement'            : {'icone': '💸', 'label': 'Décaissement',          'desc': 'Décaissement vers membre'},
+    'distribution'            : {'icone': '🎁', 'label': 'Distribution',          'desc': 'Distribution du tour'},
+    'apport'                  : {'icone': '🤝', 'label': 'Apport',                'desc': 'Apport en caisse'},
+    'depot'                   : {'icone': '📥', 'label': 'Dépôt',                 'desc': 'Dépôt de fonds'},
+    'retrait'                 : {'icone': '📤', 'label': 'Retrait',               'desc': 'Retrait de fonds'},
+    'retrait_propose'         : {'icone': '📤', 'label': 'Retrait proposé',       'desc': 'Retrait proposé'},
+    'paiement'                : {'icone': '💳', 'label': 'Paiement',              'desc': 'Paiement effectué'},
+    'penalite'                : {'icone': '⚠️',  'label': 'Pénalité',             'desc': 'Pénalité appliquée'},
+    'pret'                    : {'icone': '🏦', 'label': 'Prêt accordé',          'desc': 'Prêt accordé à membre'},
+    'remboursement'           : {'icone': '💵', 'label': 'Remboursement de prêt', 'desc': 'Remboursement de prêt'},
+    'ajout_membre'            : {'icone': '👤', 'label': 'Ajout de membre',       'desc': 'Nouveau membre ajouté'},
+    'suppression_membre'      : {'icone': '❌', 'label': 'Suppression de membre', 'desc': 'Membre retiré'},
+    'mise_a_jour'             : {'icone': '⚙️',  'label': 'Mise à jour',          'desc': 'Mise à jour paramètres'},
+    'vote'                    : {'icone': '🗳️',  'label': 'Vote',                 'desc': 'Vote enregistré'},
+    'vote_cree'               : {'icone': '🗳️',  'label': 'Vote créé',            'desc': 'Nouveau vote créé'},
+    'vote_clos'               : {'icone': '🗳️',  'label': 'Vote clôturé',         'desc': 'Vote clôturé'},
+    'creation'                : {'icone': '🏦', 'label': 'Création tontine',      'desc': 'Tontine créée'},
+    'sync_balance'            : {'icone': '🔄', 'label': 'Synchronisation',       'desc': 'Solde synchronisé on-chain'},
+    'depense_caisse'          : {'icone': '💸', 'label': 'Dépense caisse',        'desc': 'Dépense depuis la caisse'},
+    'annulation_cotisation'   : {'icone': '↩️',  'label': 'Annulation cotisation','desc': 'Cotisation annulée'},
+    'annulation_remboursement': {'icone': '↩️',  'label': 'Annulation remboursement','desc': 'Remboursement annulé'},
+    'tirage_verrouille'       : {'icone': '🔒', 'label': 'Tirage verrouillé',     'desc': 'Tirage verrouillé'},
+    'score_modifie'           : {'icone': '⭐', 'label': 'Score modifié',         'desc': 'Score de membre modifié'},
+    'upgrade_pro'             : {'icone': '🚀', 'label': 'Passage Pro',            'desc': 'Mise à niveau vers Pro'},
+    'nouveau_cycle'           : {'icone': '🔁', 'label': 'Nouveau cycle',          'desc': 'Nouveau cycle démarré'},
+  };
+
+  String get iconeMetier =>
+      _metier[typeOperation]?['icone'] ?? '📋';
+
+  String get typeLabel =>
+      _metier[typeOperation]?['label'] ??
+      typeOperation.replaceAll('_', ' ').toUpperCase();
+
+  /// Description lisible enrichie avec le contexte (membre, tontine, montant)
+  String get descriptionMetier {
+    final base = _metier[typeOperation]?['desc'] ?? typeLabel;
+    final parties = <String>[];
+    if (membreNom != null && membreNom!.isNotEmpty) parties.add(membreNom!);
+    if (tontineCode.isNotEmpty) parties.add('– Groupe $tontineCode');
+    if (montantXof != null && montantXof! > 0) {
+      final s = montantXof.toString();
+      final buf = StringBuffer();
+      for (int i = 0; i < s.length; i++) {
+        if (i > 0 && (s.length - i) % 3 == 0) buf.write('\u202F');
+        buf.write(s[i]);
+      }
+      parties.add('(${buf.toString()} XOF)');
+    }
+    return parties.isEmpty ? base : '$base · ${parties.join(' ')}';
   }
 
   String get statutLabel {

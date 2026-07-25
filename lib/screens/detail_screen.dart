@@ -2318,14 +2318,16 @@ class _BadgeBlockchainState extends State<_BadgeBlockchain> {
                           style: const TextStyle(
                               fontSize: 11, color: AppColors.texteDoux),
                         ),
-                      if (_derniereTx?.txHash != null && estOnChain)
+                      if (_derniereTx != null && estOnChain)
                         Text(
-                          'Dernier TX : ${_derniereTx!.txHashCourt}',
+                          '${_derniereTx!.iconeMetier}  ${_derniereTx!.descriptionMetier}',
                           style: const TextStyle(
                             fontSize: 10,
                             color: Color(0xFF00C853),
-                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.w600,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                     ],
                   ),
