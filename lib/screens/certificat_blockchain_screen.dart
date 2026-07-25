@@ -68,8 +68,13 @@ class _CertificatBlockchainScreenState
         BlockchainService.contractInfo(),
       ]);
       if (!mounted) return;
+      // Garde client : seules les entrées de cette tontine sont conservées
+      final codeCible = widget.codeTontine.trim().toUpperCase();
+      final toutesEntrees = results[0] as List<BlockchainEntry>;
       setState(() {
-        _entrees = results[0] as List<BlockchainEntry>;
+        _entrees = toutesEntrees
+            .where((e) => e.tontineCode.trim().toUpperCase() == codeCible)
+            .toList();
         _contrat = results[1] as Map<String, dynamic>;
         _loading = false;
       });

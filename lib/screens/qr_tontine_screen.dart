@@ -79,9 +79,14 @@ class _QrTontineScreenState extends State<QrTontineScreen> {
         BlockchainService.lireJournal(tontineCode: widget.codeTontine, limit: 200),
         BlockchainService.contractInfo(),
       ]);
-      final entrees = results[0] as List<BlockchainEntry>;
+      final toutesEntrees = results[0] as List<BlockchainEntry>;
       final contrat = results[1] as Map<String, dynamic>;
       if (!mounted) return;
+      // Garde client : seules les entrées de CETTE tontine sont comptées
+      final codeCible = widget.codeTontine.trim().toUpperCase();
+      final entrees = toutesEntrees
+          .where((e) => e.tontineCode.trim().toUpperCase() == codeCible)
+          .toList();
       final phaseRecu = (contrat['phase'] as num?)?.toInt() ?? 1;
       setState(() {
         _phase    = phaseRecu;

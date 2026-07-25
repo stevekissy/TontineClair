@@ -77,8 +77,13 @@ class _VerificationPubliqueScreenState
       ]);
 
       if (!mounted) return;
+      // Garde client : ne conserver que les entrées dont tontine_code == code
+      final toutesEntrees = results[0] as List<BlockchainEntry>;
+      final entreesFiltrees = toutesEntrees
+          .where((e) => e.tontineCode.trim().toUpperCase() == code)
+          .toList();
       setState(() {
-        _entrees = results[0] as List<BlockchainEntry>;
+        _entrees = entreesFiltrees;
         _contrat = results[1] as Map<String, dynamic>;
         _loading = false;
         if (_entrees.isEmpty) {

@@ -344,7 +344,11 @@ class _DetailScreenState extends State<DetailScreen> {
                     RoueRotation(data: data),
                     // Badge blockchain — après la méthode d'ordre
                     const SizedBox(height: 16),
-                    _BadgeBlockchain(code: tontine.code, nom: data.nom),
+                    _BadgeBlockchain(
+                      key: ValueKey('badge_blockchain_${widget.code}'),
+                      code: widget.code,
+                      nom: data.nom,
+                    ),
                     const SizedBox(height: 20),
                     // Actions rapides
                     _ActionsRapides(
@@ -2189,7 +2193,7 @@ class _LigneRecapCloture extends StatelessWidget {
 class _BadgeBlockchain extends StatefulWidget {
   final String code;
   final String nom;
-  const _BadgeBlockchain({required this.code, required this.nom});
+  const _BadgeBlockchain({super.key, required this.code, required this.nom});
 
   @override
   State<_BadgeBlockchain> createState() => _BadgeBlockchainState();
@@ -2206,13 +2210,19 @@ class _BadgeBlockchainState extends State<_BadgeBlockchain> {
   // 'phase1'   : aucune TX on-chain (journal SHA-256 uniquement)
   String _statutBlockchain = 'phase1';
 
+  // Code verrouillé au moment du lancement de _charger() — évite les races.
+  String _codeEnCours = '';
+
   @override
   void initState() {
     super.initState();
+    // La Key ValueKey force la recréation de l'état à chaque changement de
+    // tontine, donc initState est toujours appelé avec le bon widget.code.
     _charger();
   }
 
   /// Réinitialise l'état et recharge quand on navigue vers une autre tontine.
+  /// Sécurité secondaire — la Key ValueKey devrait déjà recréer le State.
   @override
   void didUpdateWidget(_BadgeBlockchain old) {
     super.didUpdateWidget(old);
@@ -2222,24 +2232,32 @@ class _BadgeBlockchainState extends State<_BadgeBlockchain> {
         _statutBlockchain  = 'phase1';
         _totalOps          = 0;
         _derniereTx        = null;
+        _codeEnCours       = '';
       });
       _charger();
     }
   }
 
   Future<void> _charger() async {
+    // Verrouiller le code au début de la requête
+    final codeCible = widget.code.trim().toUpperCase();
+    _codeEnCours = codeCible;
+
     try {
       // Charger les entrées de cette tontine (limit 500 — Edge Function plafonnée à 500)
       final toutes = await BlockchainService.lireJournal(
           tontineCode: widget.code, limit: 500);
 
+      // ── GARDE RACE CONDITION : ignorer réponse si on a changé de tontine ──
       if (!mounted) return;
+      if (_codeEnCours != codeCible) return; // réponse périmée
+      if (widget.code.trim().toUpperCase() != codeCible) return;
 
-      // ── GARDE CLIENT : rejeter toute entrée d'une autre tontine ────────────
-      // Protège contre un éventuel bug serveur ou erreur de cache.
-      final code = widget.code.toUpperCase();
+      // ── GARDE CLIENT STRICT : rejeter toute entrée d'une autre tontine ────
+      // Double protection : même si le serveur retourne des données mixtes,
+      // seules les entrées dont tontine_code == codeCible sont conservées.
       final filtrees = toutes
-          .where((e) => e.tontineCode.toUpperCase() == code)
+          .where((e) => e.tontineCode.trim().toUpperCase() == codeCible)
           .toList();
 
       // Calcul du statut depuis les TX réelles de CETTE tontine uniquement
