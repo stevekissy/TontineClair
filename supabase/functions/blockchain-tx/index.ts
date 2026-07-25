@@ -1153,6 +1153,25 @@ Deno.serve(async (req) => {
       case "stats_soldes":
         result = await actionStatsSoldes(env);
         break;
+      case "debug_env":
+        // Action de diagnostic : expose les longueurs des secrets (pas les valeurs)
+        // Permet de vérifier que les secrets Supabase sont bien injectés sans révéler les clés
+        result = {
+          ok: true,
+          secrets: {
+            SUPABASE_URL              : { present: !!env.SUPABASE_URL,              len: env.SUPABASE_URL?.length              || 0 },
+            SUPABASE_SERVICE_ROLE_KEY : { present: !!env.SUPABASE_SERVICE_ROLE_KEY, len: env.SUPABASE_SERVICE_ROLE_KEY?.length || 0 },
+            BLOCKCHAIN_JOURNAL_SECRET : { present: !!env.BLOCKCHAIN_JOURNAL_SECRET, len: env.BLOCKCHAIN_JOURNAL_SECRET?.length || 0 },
+            ALCHEMY_POLYGON_AMOY_URL  : { present: !!env.ALCHEMY_POLYGON_AMOY_URL,  len: env.ALCHEMY_POLYGON_AMOY_URL?.length  || 0, value: env.ALCHEMY_POLYGON_AMOY_URL || "(fallback)" },
+            MASTER_WALLET_PRIVATE_KEY : { present: !!env.MASTER_WALLET_PRIVATE_KEY, len: env.MASTER_WALLET_PRIVATE_KEY?.length || 0 },
+            MASTER_WALLET_ADDRESS     : { present: !!env.MASTER_WALLET_ADDRESS,     len: env.MASTER_WALLET_ADDRESS?.length     || 0, prefix: env.MASTER_WALLET_ADDRESS?.slice(0, 6) || "" },
+            TONTINE_CONTRACT_ADDRESS  : { present: !!env.TONTINE_CONTRACT_ADDRESS,  len: env.TONTINE_CONTRACT_ADDRESS?.length  || 0, value: env.TONTINE_CONTRACT_ADDRESS || "" },
+          },
+          phase2Ready: !!(env.MASTER_WALLET_PRIVATE_KEY && env.MASTER_WALLET_ADDRESS && env.TONTINE_CONTRACT_ADDRESS),
+          rpc_url: env.ALCHEMY_POLYGON_AMOY_URL || RPC_FALLBACK,
+          chain_id: CHAIN_ID,
+        };
+        break;
       default:
         result = { ok: false, erreur: `Action inconnue: ${action}` };
     }
