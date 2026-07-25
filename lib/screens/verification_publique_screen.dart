@@ -768,7 +768,7 @@ class _CarteEntree extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: const Text(
-                                '⚡ On-chain',
+                                'On-chain',
                                 style: TextStyle(
                                   fontSize: 10,
                                   color: Color(0xFF00C853),

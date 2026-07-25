@@ -38,21 +38,34 @@ class _QrTontineScreenState extends State<QrTontineScreen> {
   bool _loading = true;
   bool _sharing = false;
 
-  // URL encodée dans le QR
-  // Deep link vers l'écran de vérification publique dans l'app
-  // NOTE : tontineclair.com n'existe pas encore — on encode une URL de fallback
-  // qui affiche le code à saisir dans TontineClair
-  String get _urlVerification =>
-      'https://app.tontineclair.com/verifier/${widget.codeTontine}';
+  // Contenu encodé dans le QR :
+  // - Phase 2 on-chain : lien PolygonScan vers le smart contract (page réelle)
+  // - Phase 1 SHA-256  : lien Google Play / texte de vérification manuelle
+  String get _urlVerification {
+    if (_phase == 2) {
+      // TontineVault.sol sur Polygon Mainnet — page réelle et vérifiable
+      const contrat = '0xbADbBb485159775c5733c5E0F506b7942ee77872';
+      return 'https://polygonscan.com/address/$contrat';
+    }
+    // Phase 1 : URL PlayStore avec param utm pour identifier la source
+    return 'https://play.google.com/store/apps/details?id=com.tontineclair.app&utm_source=qr&utm_content=${widget.codeTontine}';
+  }
 
-  // Texte WhatsApp complet
-  String get _messageWhatsapp =>
-      '🔗 *Vérifiez la tontine "${widget.nomTontine}" sur la blockchain*\n\n'
-      '📋 Code : *${widget.codeTontine}*\n'
-      '📋 $_totalOps opération${_totalOps > 1 ? "s" : ""} enregistrée${_totalOps > 1 ? "s" : ""} dans le journal\n'
-      '🔒 Sécurisé par TontineClair (Phase 1 — SHA-256)\n\n'
-      '👉 Scannez le QR code ci-joint ou ouvrez TontineClair\n'
-      '→ Vérifier blockchain → Code : ${widget.codeTontine}';
+  // Texte WhatsApp — dynamique selon la phase réelle
+  String get _messageWhatsapp {
+    final securite = _phase == 2
+        ? 'Ancre on-chain Polygon Mainnet — $_onChain TX verifiables sur PolygonScan'
+        : 'Securise par TontineClair (journal SHA-256 interne)';
+    final lien = _phase == 2
+        ? 'Voir le contrat : $_urlVerification'
+        : 'Ouvrez TontineClair > Verifier blockchain > Code : ${widget.codeTontine}';
+    return '*Verifiez la tontine "${widget.nomTontine}" sur la blockchain*\n\n'
+        'Code : *${widget.codeTontine}*\n'
+        '$_totalOps operation${_totalOps > 1 ? "s" : ""} enregistree${_totalOps > 1 ? "s" : ""} dans le journal\n'
+        '$securite\n\n'
+        'Scannez le QR code ci-joint ou :\n'
+        '$lien';
+  }
 
   @override
   void initState() {
@@ -265,9 +278,9 @@ class _QrTontineScreenState extends State<QrTontineScreen> {
                     const SizedBox(height: 6),
                     Text(
                       _loading
-                          ? 'Chargement…'
-                          : '$_totalOps opération${_totalOps > 1 ? "s" : ""} · '
-                              '${_phase == 2 ? "$_onChain on-chain ⚡" : "SHA-256 🔒"}',
+                          ? 'Chargement...'
+                          : '$_totalOps operation${_totalOps > 1 ? "s" : ""} · '
+                              '${_phase == 2 ? "$_onChain on-chain" : "SHA-256"}',
                       style: const TextStyle(
                           fontSize: 11, color: AppColors.texteDoux),
                     ),
