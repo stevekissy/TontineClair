@@ -942,6 +942,33 @@ Deno.serve(async (req: Request) => {
       return json({ erreur: !result.ok, ok: result.ok, message: result.message, numcommande });
     }
 
+    if (action === "get_rates") {
+      // Retourne les taux CoinPayments avec capacité de paiement (accepted=1).
+      // Utilisé pour vérifier que BNB.BSC, USDT.BEP20, etc. sont actifs.
+      // cpApiCall retourne déjà le corps parsé (le champ "result" de l'API CoinPayments)
+      const rates = await cpApiCall("rates", { accepted: 1, short: 0 }) as Record<string, Record<string, unknown>>;
+      if (!rates || Object.keys(rates).length === 0) return json({ erreur: true, message: "Pas de résultat rates" }, 502);
+
+      // Filtrer les devises demandées + toutes celles ayant is_fiat=0 et accepted=1
+      const coinsInterets = ["BNB.BSC", "USDT.BEP20", "USDT.TRC20", "USDT.ERC20", "BTC", "ETH", "LTC"];
+      const result: Record<string, unknown> = {};
+      for (const coin of coinsInterets) {
+        const info = rates[coin];
+        if (info) {
+          result[coin] = {
+            name:         info["name"],
+            rate_btc:     info["rate_btc"],
+            accepted:     info["accepted"],
+            is_fiat:      info["is_fiat"],
+            can_convert:  info["can_convert"],
+          };
+        } else {
+          result[coin] = { present: false, message: `${coin} non trouvé dans get_rates` };
+        }
+      }
+      return json({ erreur: false, rates: result, checkedAt: new Date().toISOString() });
+    }
+
     return json({ erreur: true, message: `Action inconnue: ${action}` }, 400);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

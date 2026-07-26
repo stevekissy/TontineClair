@@ -67,12 +67,15 @@ class _PaiementCoinPaymentsScreenState
   static const _couleurFond   = Color(0xFFFFF8EE);
 
   // Cryptos supportées : (code, label, couleur)
+  // Codes exacts transmis à CoinPayments currency2 — ne PAS simplifier (ex: pas "BNB", pas "USDT")
   static const _cryptos = [
-    ('USDT.TRC20', 'USDT (TRC20)', Color(0xFF26A17B)),
-    ('USDT.ERC20', 'USDT (ERC20)', Color(0xFF3C9BFF)),
-    ('BTC',        'Bitcoin',      Color(0xFFF7931A)),
-    ('ETH',        'Ethereum',     Color(0xFF627EEA)),
-    ('LTC',        'Litecoin',     Color(0xFF9DA2A6)),
+    ('USDT.TRC20',  'USDT (TRC20)',      Color(0xFF26A17B)),
+    ('USDT.BEP20',  'USDT (BEP20/BSC)',  Color(0xFFF0B90B)),
+    ('BNB.BSC',     'BNB (BSC)',         Color(0xFFF0B90B)),
+    ('USDT.ERC20',  'USDT (ERC20)',      Color(0xFF3C9BFF)),
+    ('BTC',         'Bitcoin',           Color(0xFFF7931A)),
+    ('ETH',         'Ethereum',          Color(0xFF627EEA)),
+    ('LTC',         'Litecoin',          Color(0xFF9DA2A6)),
   ];
 
   String  _crypto            = 'USDT.TRC20';
@@ -452,31 +455,8 @@ class _PaiementCoinPaymentsScreenState
           ),
           const SizedBox(height: 16),
 
-          // Info USDT recommandé
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color:        const Color(0xFFFFF8EE),
-              borderRadius: BorderRadius.circular(10),
-              border:       Border.all(color: _couleurCrypto.withValues(alpha: 0.3)),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.info_outline_rounded,
-                    size: 16, color: _couleurCrypto),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'USDT TRC20 recommandé : frais minimaux, confirmation rapide (1-5 min).',
-                    style: TextStyle(
-                        fontSize: 12,
-                        color:    AppColors.texte,
-                        height:   1.4),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          // Info réseau sélectionné
+          _InfoReseau(crypto: _crypto),
           const SizedBox(height: 20),
 
           // Message erreur / info
@@ -942,18 +922,63 @@ class _CarteMontantCrypto extends StatelessWidget {
   }
 }
 
+// ── Info réseau sélectionné ───────────────────────────────────────────────────
+
+class _InfoReseau extends StatelessWidget {
+  final String crypto;
+  const _InfoReseau({required this.crypto});
+
+  static const _infos = <String, (String, Color)>{
+    'USDT.TRC20': ('USDT TRC20 recommandé : frais minimaux, confirmation rapide (1-5 min).', Color(0xFF26A17B)),
+    'USDT.BEP20': ('USDT sur BEP20 (BSC) : frais très faibles, confirmations rapides (25 blocs).', Color(0xFFF0B90B)),
+    'BNB.BSC':    ('BNB natif sur BSC : frais ultra-faibles, confirmations en ~75s (25 blocs).', Color(0xFFF0B90B)),
+    'USDT.ERC20': ('USDT sur ERC20 : frais Ethereum élevés, préférer TRC20 ou BEP20.', Color(0xFF3C9BFF)),
+    'BTC':        ('Bitcoin : confirmation lente (10-60 min) et frais variables.', Color(0xFFF7931A)),
+    'ETH':        ('Ethereum : frais gas variables selon le réseau.', Color(0xFF627EEA)),
+    'LTC':        ('Litecoin : confirmations rapides (~2.5 min par bloc).', Color(0xFF9DA2A6)),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final (msg, color) = _infos[crypto] ?? ('Vérifiez le réseau dans votre wallet.', const Color(0xFFF7931A));
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color:        color.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(10),
+        border:       Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline_rounded, size: 16, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              msg,
+              style: TextStyle(fontSize: 12, color: AppColors.texte, height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Sélecteur de crypto ───────────────────────────────────────────────────────
 
 class _SelecteurCrypto extends StatelessWidget {
   final String               selected;
   final ValueChanged<String> onChanged;
 
+  // Codes EXACTS transmis à CoinPayments currency2 — ne pas modifier
   static const _items = [
-    ('USDT.TRC20', 'USDT TRC20', Color(0xFF26A17B)),
-    ('USDT.ERC20', 'USDT ERC20', Color(0xFF3C9BFF)),
-    ('BTC',        'Bitcoin',    Color(0xFFF7931A)),
-    ('ETH',        'Ethereum',   Color(0xFF627EEA)),
-    ('LTC',        'Litecoin',   Color(0xFF9DA2A6)),
+    ('USDT.TRC20',  'USDT TRC20',      Color(0xFF26A17B)),
+    ('USDT.BEP20',  'USDT BEP20/BSC',  Color(0xFFF0B90B)),
+    ('BNB.BSC',     'BNB (BSC)',        Color(0xFFF0B90B)),
+    ('USDT.ERC20',  'USDT ERC20',      Color(0xFF3C9BFF)),
+    ('BTC',         'Bitcoin',         Color(0xFFF7931A)),
+    ('ETH',         'Ethereum',        Color(0xFF627EEA)),
+    ('LTC',         'Litecoin',        Color(0xFF9DA2A6)),
   ];
 
   const _SelecteurCrypto({

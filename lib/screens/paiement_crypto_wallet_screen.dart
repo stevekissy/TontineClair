@@ -352,7 +352,23 @@ class _PaiementCryptoWalletScreenState
   String get _cryptoLabel {
     const map = {
       'USDT.TRC20': 'USDT TRC20',
+      'USDT.BEP20': 'USDT BEP20',
       'USDT.ERC20': 'USDT ERC20',
+      'BNB.BSC':    'BNB (BSC)',
+      'BTC':        'Bitcoin',
+      'ETH':        'Ethereum',
+      'LTC':        'Litecoin',
+    };
+    return map[widget.currency2] ?? widget.currency2;
+  }
+
+  // Libellé du réseau pour les avertissements
+  String get _networkLabel {
+    const map = {
+      'USDT.TRC20': 'TRC20 (Tron)',
+      'USDT.BEP20': 'BEP20 (BSC)',
+      'USDT.ERC20': 'ERC20 (Ethereum)',
+      'BNB.BSC':    'BSC (BNB Smart Chain)',
       'BTC':        'Bitcoin',
       'ETH':        'Ethereum',
       'LTC':        'Litecoin',
@@ -361,6 +377,8 @@ class _PaiementCryptoWalletScreenState
   }
 
   Color get _cryptoColor {
+    if (widget.currency2 == 'BNB.BSC')     return const Color(0xFFF0B90B);
+    if (widget.currency2 == 'USDT.BEP20')  return const Color(0xFFF0B90B);
     if (widget.currency2.contains('USDT')) return const Color(0xFF26A17B);
     if (widget.currency2 == 'BTC')         return _orange;
     if (widget.currency2 == 'ETH')         return const Color(0xFF627EEA);
@@ -781,7 +799,8 @@ class _PaiementCryptoWalletScreenState
     final montantStr = _amountCrypto > 0
         ? _amountCrypto.toStringAsFixed(widget.currency2 == 'BTC' ? 8 : 5)
         : '…';
-    final unite = widget.currency2.contains('USDT') ? 'USDT' : widget.currency2;
+    final unite = widget.currency2.contains('USDT') ? 'USDT'
+        : (widget.currency2 == 'BNB.BSC' ? 'BNB' : widget.currency2);
 
     return Container(
       decoration: BoxDecoration(
@@ -964,7 +983,10 @@ class _PaiementCryptoWalletScreenState
             ],
           ),
           const SizedBox(height: 8),
-          _warningItem('Utilisez uniquement le réseau ${_cryptoLabel.split(' ').last}'),
+          _warningItem('Réseau obligatoire : $_networkLabel'),
+          _warningItem('Tout envoi sur le mauvais réseau sera perdu définitivement'),
+          if (widget.currency2 == 'USDT.BEP20' || widget.currency2 == 'BNB.BSC')
+            _warningItem('BSC = BNB Smart Chain (anciennement Binance Smart Chain)'),
           _warningItem('Envoyez EXACTEMENT le montant indiqué'),
           _warningItem('Ne fermez pas cet écran avant confirmation'),
           _warningItem('Le paiement est détecté automatiquement (1-5 min)'),
