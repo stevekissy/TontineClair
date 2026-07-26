@@ -207,16 +207,31 @@ class _PaiementCryptoWalletScreenState
       );
       if (!mounted) return;
 
-      // ⚠️ CORRECTION CRITIQUE : statusCode >= 1 était FAUX.
-      // CoinPayments : 1 = fonds reçus non confirmés, 2 = en cours, 100 = CONFIRMÉ.
-      // On déclenche uniquement quand le paiement est réellement confirmé :
-      //   • statusCode == 100  (CoinPayments "Complete")
-      //   • statusNorm == 'confirmed' (Edge Function normalisé)
-      //   • ok == true && result.fromCache (déjà crédité en DB → fromCache:true)
+      // CAS 1 : Déjà crédité en DB (IPN a tout traité avant notre polling)
+      // → L'Edge Function retourne ok:true + fromCache:true → succès immédiat, pas besoin de re-créditer
+      if (statut.ok && !_paiementDetecte) {
+        _pollTimer?.cancel();
+        _countdownTimer?.cancel();
+        setState(() { _paiementDetecte = true; _enConfirmation = false; });
+        _afficherSucces();
+        return;
+      }
+
+      // CAS 2 : needsCredit=true → IPN reçu mais crédit en attente (polling Flutter)
+      // → L'Edge Function a détecté processing+IPN reçu → il faut appeler confirmerEtCrediter
+      if (statut.needsCredit && !_enConfirmation && !_paiementDetecte) {
+        _pollTimer?.cancel();
+        _confirmerEtCrediter();
+        return;
+      }
+
+      // CAS 3 : statusCode == 100 ou statusNorm == 'confirmed' sans ok:true
+      // → CoinPayments confirme le paiement → déclencher crédit côté serveur
+      // CoinPayments : 1 = fonds reçus non confirmés, 2 = en cours, 100 = CONFIRMÉ
       final estConfirme = statut.statusCode == 100
           || statut.statusNorm == 'confirmed';
 
-      if (estConfirme) {
+      if (estConfirme && !_enConfirmation && !_paiementDetecte) {
         _pollTimer?.cancel();
         _confirmerEtCrediter();
       }

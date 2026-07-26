@@ -247,6 +247,8 @@ class CoinPaymentsResultat {
   final int     statusCode;    // -1, 0, 1, 2, 100
   final String  statusNorm;    // 'pending' | 'processing' | 'confirmed' | 'failed' | 'cancelled'
   final bool    ok;            // true = confirmé ET crédité côté serveur
+  final bool    needsCredit;  // true = IPN reçu mais crédit en attente (déclencher confirmerEtCrediter)
+  final bool    fromCache;    // true = résultat vient de la DB (déjà traité)
 
   const CoinPaymentsResultat({
     required this.erreur,
@@ -258,6 +260,8 @@ class CoinPaymentsResultat {
     this.statusCode  = 0,
     this.statusNorm  = 'pending',
     this.ok          = false,
+    this.needsCredit = false,
+    this.fromCache   = false,
   });
 
   // ── Getters sémantiques ───────────────────────────────────────────────────
@@ -312,6 +316,8 @@ class CoinPaymentsResultat {
       statusCode:  statusCode,
       statusNorm:  norm,
       ok:          j['ok'] == true,
+      needsCredit: j['needsCredit'] == true,
+      fromCache:   j['fromCache']   == true,
     );
   }
 

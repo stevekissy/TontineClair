@@ -340,20 +340,21 @@ async function verifierEtCrediter(
     let usedIpnFallback = false;
 
     try {
-      const cpInfo = await cpGetTxInfo(txid);
-      cpStatus     = cpInfo.status;
-      cpStatusText = cpInfo.status_text;
-      cpCoin       = cpInfo.coin;
+      const txInfo = await cpGetTxInfo(txid);
+      cpStatus     = txInfo.status;
+      cpStatusText = txInfo.status_text;
+      cpCoin       = txInfo.coin;
       console.log(`[ipn-verif] get_tx_info → status=${cpStatus} (${cpStatusText})`);
     } catch (e) {
       const errMsg = String(e);
       // Fallback IPN : si la clé n'a pas la permission get_tx_info,
       // on accepte le payload IPN dont la signature HMAC a déjà été validée.
-      if (errMsg.includes("permission") || errMsg.includes("API Key")) {
+      if (errMsg.includes("permission") || errMsg.includes("API Key")
+          || errMsg.includes("Access denied") || errMsg.includes("Insufficient")) {
         console.warn(`[ipn-verif] get_tx_info refusé (permission manquante), fallback IPN payload`);
         cpStatus     = parseInt(ipnPayload["status"] ?? "-1", 10);
         cpStatusText = ipnPayload["status_text"] ?? "";
-        cpCoin       = ipnPayload["currency1"]   ?? "";
+        cpCoin       = ipnPayload["currency2"]   ?? ipnPayload["currency1"] ?? "";
         usedIpnFallback = true;
       } else {
         const msg = `Erreur get_tx_info: ${errMsg}`;
@@ -446,7 +447,7 @@ async function verifierEtCrediter(
     });
 
     const typeOp = (dbTx["type_operation"] as string) ?? "cotisation";
-    console.log(`[ipn-verif] ✅ ${numcommande} crédité OK via IPN (${cpInfo.coin})`);
+    console.log(`[ipn-verif] ✅ ${numcommande} crédité OK via IPN (coin=${cpCoin}, fallback=${usedIpnFallback})`);
     return { ok: true, message: messageSucces(typeOp) };
 
   } catch (e: unknown) {

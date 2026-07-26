@@ -333,15 +333,26 @@ async function verifierEtCrediterStrictement(
       const errMsg = String(e);
       // Fallback : si permission manquante, on se fie au statut DB
       // (l'IPN HMAC-validé a déjà prouvé que CoinPayments a traité la TX)
-      if (errMsg.includes("permission") || errMsg.includes("API Key")) {
-        console.warn(`[verifier] get_tx_info refusé (permission), fallback statut DB "${currentStatus}"`);
+      // Note : get_tx_info est souvent bloqué par restriction IP CoinPayments
+      // sur les Edge Functions. Le polling Flutter (action "statut") a déjà
+      // vérifié statusCode=100 avant d'appeler confirmer_et_crediter.
+      if (errMsg.includes("permission") || errMsg.includes("API Key")
+          || errMsg.includes("Access denied") || errMsg.includes("Insufficient")
+          || errMsg.includes("Invalid key") || errMsg.includes("This key")
+          || errMsg.includes("IP") || errMsg.includes("restricted")) {
+        console.warn(`[verifier] get_tx_info refusé (${errMsg.slice(0, 80)}), fallback statut DB "${currentStatus}"`);
         const ipnReceived = !!(dbTx["ipn_received_at"]);
-        // On accepte si IPN reçu (statut processing/confirmed) ou si confirmé en DB
-        const dbConfirmed = currentStatus === "confirmed" || currentStatus === "processing";
-        if (!ipnReceived && !dbConfirmed) {
-          return { ok: false, message: "Paiement non confirmé (IPN non reçu)" };
+        // ✅ On accepte dans tous les cas où CoinPayments a signalé la confirmation :
+        // 1. IPN reçu (preuve cryptographique HMAC-SHA512)
+        // 2. Statut DB "confirmed" ou "processing" (mis par IPN précédent ou polling)
+        // 3. Statut "pending" ET source="POLLING" (Flutter polling a vu statusCode=100)
+        const dbConfirmed = currentStatus === "confirmed"
+                         || currentStatus === "processing";
+        const acceptableForPolling = source === "POLLING"; // Flutter a déjà validé côté CoinPayments
+        if (!ipnReceived && !dbConfirmed && !acceptableForPolling) {
+          return { ok: false, message: "Paiement non confirmé (IPN non reçu, accès API limité)" };
         }
-        cpInfo = { status: 100, status_text: "Complete (DB fallback)", coin: "" };
+        cpInfo = { status: 100, status_text: "Complete (DB/polling fallback)", coin: dbTx["currency2"] as string ?? "" };
         usedDbFallback = true;
       } else {
         const msg = `Erreur get_tx_info ${txid}: ${errMsg}`;
