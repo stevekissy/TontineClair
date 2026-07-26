@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'supabase_service.dart';
 import 'storage_service.dart';
 import 'rappel_service.dart';
+import 'blockchain_service.dart' show BlockchainEntry;
 
 // ─── Handler background (top-level, hors classe) ───────────────────────────
 @pragma('vm:entry-point')
@@ -243,8 +244,14 @@ class NotificationService {
   // Appelée après chaque opération blockchain confirmée (phase 1 ou 2)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  /// Affiche une notification locale quand une opération blockchain est confirmée.
-  /// Appelée depuis BlockchainService._enregistrer() après succès.
+  /// Notifie TOUS les membres d'une tontine après une opération blockchain.
+  ///
+  /// ARCHITECTURE BROADCAST :
+  ///   1. Appelle l'Edge Function `envoyer_notification` → FCM → TOUS les appareils
+  ///      membres de cette tontine (tokens en base Supabase).
+  ///   2. Affiche AUSSI une notif locale sur l'appareil émetteur (feedback immédiat).
+  ///
+  /// L'étape 1 est le vrai broadcast. Sans elle, seul l'émetteur reçoit la notif.
   static Future<void> notifierOperationBlockchain({
     required String tontineCode,
     required String nomTontine,
@@ -255,25 +262,45 @@ class NotificationService {
     String?  membreNom,
   }) async {
     try {
-      // Construire le titre selon le type d'opération
-      final typeLabel = _typeLabel(typeOperation);
-      final montantStr = montantXof != null
-          ? ' · ${_formatXof(montantXof)} XOF'
-          : '';
-      final phaseLabel = phase == 2 ? '⚡ On-chain' : '🔒 Signé';
-
-      final titre = '$phaseLabel — $typeLabel$montantStr';
-      final corps = _buildCorpsNotif(
-        tontineCode : tontineCode,
-        nomTontine  : nomTontine,
-        typeOperation: typeOperation,
-        phase       : phase,
-        txHash      : txHash,
-        membreNom   : membreNom,
+      // Résoudre le type (y compris sélecteurs hex 0x…)
+      final typeResolu  = BlockchainEntry.resoudreType(typeOperation);
+      final typeLabel   = _typeLabel(typeResolu);
+      final montantStr  = montantXof != null ? ' · ${_formatXof(montantXof)} XOF' : '';
+      final phaseLabel  = phase == 2 ? '⚡ On-chain' : '🔒 Signé';
+      final titre       = '$phaseLabel — $typeLabel$montantStr';
+      final corps       = _buildCorpsNotif(
+        tontineCode  : tontineCode,
+        nomTontine   : nomTontine,
+        typeOperation: typeResolu,
+        phase        : phase,
+        txHash       : txHash,
+        membreNom    : membreNom,
       );
 
+      // ── ÉTAPE 1 : BROADCAST FCM via Edge Function ───────────────────────────
+      // Envoie la notification à TOUS les tokens enregistrés pour cette tontine.
+      // C'est cette étape qui notifie les autres membres.
+      SupabaseService.envoyerNotification(
+        code   : tontineCode,
+        type   : typeResolu,
+        titre  : titre,
+        message: corps,
+        donneesExtra: {
+          'type'  : typeResolu,
+          'phase' : '$phase',
+          if (membreNom != null && membreNom.isNotEmpty) 'membre': membreNom,
+          if (montantXof != null) 'montant': '$montantXof',
+        },
+      ); // unawaited — non-bloquant
+
+      if (kDebugMode) {
+        debugPrint('[Notif Broadcast] $typeLabel → tontine $tontineCode phase=$phase '
+            'tx=${txHash != null ? txHash.substring(0, 10) : "N/A"}...');
+      }
+
+      // ── ÉTAPE 2 : Notification locale (feedback immédiat pour l'émetteur) ───
+      // Affichée uniquement sur l'appareil courant, sans attendre FCM.
       await _local.show(
-        // ID unique basé sur timestamp pour ne pas écraser les notifs précédentes
         DateTime.now().millisecondsSinceEpoch ~/ 1000,
         titre,
         corps,
@@ -286,21 +313,16 @@ class NotificationService {
             priority: Priority.defaultPriority,
             icon: '@mipmap/ic_launcher',
             styleInformation: BigTextStyleInformation(corps),
-            // Couleur selon phase
             color: phase == 2
                 ? const Color(0xFF00C853)
                 : const Color(0xFF1C2447),
           ),
         ),
-        payload: '{"code":"$tontineCode","type":"$typeOperation","phase":$phase}',
+        payload: '{"code":"$tontineCode","type":"$typeResolu","phase":$phase}',
       );
 
-      if (kDebugMode) {
-        debugPrint('[Notif Blockchain] $typeLabel phase=$phase tx=${txHash?.substring(0, 10)}...');
-      }
     } catch (e) {
-      // Non-bloquant — ne jamais faire échouer une opération pour une notif
-      if (kDebugMode) debugPrint('[Notif Blockchain] ERREUR: $e');
+      if (kDebugMode) debugPrint('[Notif Broadcast] ERREUR: $e');
     }
   }
 

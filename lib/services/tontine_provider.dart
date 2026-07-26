@@ -211,6 +211,12 @@ class TontineProvider extends ChangeNotifier {
       await StorageService.enregistrerTontineCree(code);
       _mesTontines = await StorageService.getListe();
       notifyListeners();
+
+      // ── BROADCAST FIX : s'abonner aux notifications dès la création ─────────
+      // Le créateur de la tontine doit aussi recevoir les notifications
+      // des autres membres. Sans ça, son token n'est pas encore en base.
+      NotificationService.abonnerATontine(code); // unawaited — non-bloquant
+
       return code;
     } catch (e) {
       _erreur = e.toString().replaceFirst('Exception: ', '');
@@ -288,6 +294,12 @@ class TontineProvider extends ChangeNotifier {
           TontineLocale(code: t.code, nom: t.data.nom));
       _mesTontines = await StorageService.getListe();
       notifyListeners();
+
+      // ── BROADCAST FIX : s'abonner aux notifications dès la jonction ─────────
+      // Sans ça, le nouveau membre n'a aucun token en base → il ne reçoit
+      // aucune notification des autres membres même s'ils font des opérations.
+      NotificationService.abonnerATontine(t.code); // unawaited — non-bloquant
+
       return true;
 
     } catch (e) {

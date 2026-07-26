@@ -2554,7 +2554,7 @@ class SupabaseService {
         'message': message,
         if (donneesExtra != null) 'donneesExtra': donneesExtra,
       };
-      await http.post(
+      final res = await http.post(
         url,
         headers: {
           'Content-Type':  'application/json',
@@ -2562,9 +2562,23 @@ class SupabaseService {
           'apikey':        _key,
         },
         body: jsonEncode(body),
-      );
-    } catch (_) {
+      ).timeout(const Duration(seconds: 10));
+
+      if (kDebugMode) {
+        try {
+          final json = jsonDecode(res.body) as Map<String, dynamic>;
+          final envoyes = json['envoyes'] ?? 0;
+          final total   = json['total']   ?? 0;
+          final purges  = json['tokens_purges'] ?? 0;
+          debugPrint('[FCM Broadcast] ✅ $type → tontine ${code.toUpperCase()} : '
+              '$envoyes/$total appareils notifiés, $purges tokens purgés');
+        } catch (_) {
+          debugPrint('[FCM Broadcast] Réponse brute: ${res.body.substring(0, res.body.length.clamp(0, 200))}');
+        }
+      }
+    } catch (e) {
       // Silencieux — la notification n'est jamais bloquante
+      if (kDebugMode) debugPrint('[FCM Broadcast] ❌ Erreur envoi notification: $e');
     }
   }
 
