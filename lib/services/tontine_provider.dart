@@ -25,6 +25,26 @@ class TontineProvider extends ChangeNotifier {
     await StorageService.loadSupabaseConfig();
     _mesTontines = await StorageService.getListe();
     notifyListeners();
+
+    // ── FIX NOTIFICATIONS BROADCAST ────────────────────────────────────────
+    // Enregistrer le token FCM pour TOUTES les tontines dès le démarrage.
+    // Sans ça, un membre qui n'ouvre pas une tontine spécifique n'est jamais
+    // abonné → il ne reçoit aucune notification des autres membres.
+    // unawaited — ne bloque pas le démarrage de l'app
+    _enregistrerTokenPourToutesTontines();
+  }
+
+  Future<void> _enregistrerTokenPourToutesTontines() async {
+    try {
+      for (final t in _mesTontines) {
+        await NotificationService.abonnerATontine(t.code);
+      }
+      if (kDebugMode) {
+        debugPrint('[FCM] Tokens enregistrés au démarrage pour ${_mesTontines.length} tontine(s)');
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[FCM] Erreur enregistrement démarrage: $e');
+    }
   }
 
   Future<void> chargerTontine(String code, {bool silencieux = false}) async {

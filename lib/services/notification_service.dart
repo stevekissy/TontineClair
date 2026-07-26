@@ -143,9 +143,7 @@ class NotificationService {
     } catch (_) {}
   }
 
-  // ── Délai minimum entre deux ré-enregistrements (évite les rafales) ──────
-  static const _intervalleResynchroMin = Duration(minutes: 30);
-  static DateTime? _derniereResynchro;
+
 
   static Future<void> _enregistrerToken(String token) async {
     try {
@@ -174,8 +172,6 @@ class NotificationService {
         await SupabaseService.sauvegarderTokenFCM(code: code, token: token);
       }
 
-      _derniereResynchro = DateTime.now();
-
       if (kDebugMode) {
         debugPrint('[FCM] ✅ Token enregistré pour ${tousLesCodes.length} tontine(s): $tousLesCodes');
       }
@@ -203,40 +199,27 @@ class NotificationService {
         await prefs.setStringList('tontines_codes', codes);
       }
 
-      // ─── FIX BROADCAST ────────────────────────────────────────────────────
-      // Toujours demander un token FRAIS à FCM (pas uniquement le cache).
-      // FCM retourne le même token tant qu'il est valide — coût négligeable.
-      // Si le token a changé (réinstall, changement de téléphone), on met
-      // à jour Supabase immédiatement → tous les membres reçoivent les notifs.
+      // ─── TOUJOURS demander le token FCM frais à chaque appel ─────────────
+      // FCM retourne le même token si inchangé (appel rapide, < 100ms).
+      // On envoie à Supabase uniquement si le token a changé OU si on
+      // n'a pas encore enregistré pour cette tontine dans cette session.
       // ─────────────────────────────────────────────────────────────────────
       final now = DateTime.now();
-      final doitResynchro = _derniereResynchro == null ||
-          now.difference(_derniereResynchro!) > _intervalleResynchroMin;
 
-      String? token;
-      if (doitResynchro) {
-        // Demander un token frais à FCM (ignore le cache)
-        token = await FirebaseMessaging.instance.getToken();
-        if (token != null) {
-          await prefs.setString('fcm_token', token);
-          await prefs.setString('fcm_token_ts', now.toIso8601String());
-        }
-      } else {
-        // Dans l'intervalle de grâce : utiliser le cache pour ne pas saturer FCM
-        token = prefs.getString('fcm_token');
+      // Toujours demander le token frais à FCM
+      String? token = await FirebaseMessaging.instance.getToken();
+      if (token != null) {
+        await prefs.setString('fcm_token', token);
+        await prefs.setString('fcm_token_ts', now.toIso8601String());
       }
 
       // Fallback : si FCM ne répond pas, utiliser le cache
       token ??= prefs.getString('fcm_token');
 
       if (token != null && token.isNotEmpty) {
+        // Envoyer à Supabase (INSERT OR UPDATE — idempotent)
         await SupabaseService.sauvegarderTokenFCM(code: codeUp, token: token);
-        if (doitResynchro) {
-          _derniereResynchro = now;
-          if (kDebugMode) debugPrint('[FCM] ✅ Token frais enregistré pour $codeUp');
-        } else {
-          if (kDebugMode) debugPrint('[FCM] ↩️ Token cache enregistré pour $codeUp (résynchro < 30min)');
-        }
+        if (kDebugMode) debugPrint('[FCM] ✅ Token enregistré pour $codeUp: ${token.substring(0,20)}...');
       } else {
         if (kDebugMode) debugPrint('[FCM] ⚠️ Impossible d\'obtenir le token FCM pour $codeUp');
       }
