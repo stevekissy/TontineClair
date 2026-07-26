@@ -169,7 +169,7 @@ class CoinPaymentsService {
   // ── Confirmer et créditer (polling serveur-side) ──────────────────────────
 
   /// Demande à l'Edge Function de poller CoinPayments et de créditer dès
-  /// confirmation. Même pattern sécurisé que SycaPay v5.
+  /// confirmation. Vérification stricte côté serveur avant tout crédit.
   /// Déclenche la vérification stricte côté serveur et crédite si status=100.
   /// ⚠️  NE PAS APPELER depuis success_url ou retour utilisateur.
   ///     Appeler uniquement si l'IPN n'est pas arrivé après le délai max de polling.

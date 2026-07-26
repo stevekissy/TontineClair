@@ -22,7 +22,7 @@ import 'paiement_crypto_wallet_screen.dart';
 ///   5. Dès statut 100 → confirmerEtCrediter → crédit Supabase
 ///   6. Affichage "Paiement confirmé"
 ///
-/// Garanties de sécurité (même niveau que SycaPay v5) :
+/// Garanties de sécurité :
 ///   • Clés CoinPayments uniquement côté Edge Function
 ///   • Crédit uniquement via confirmerEtCrediter (RPC sécurisée)
 ///   • Double-click protégé par _enTraitement

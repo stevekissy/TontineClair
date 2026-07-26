@@ -8,7 +8,7 @@ import 'paiement_coinpayments_screen.dart';
 /// Accessible depuis cotisations_screen (cotisation), caisse_screen (apport/pénalité)
 /// et prets_screen (remboursement).
 ///
-/// SycaPay a été retiré de l'application.
+/// Redirige directement vers le paiement CoinPayments (crypto).
 class PaiementChoixScreen extends StatelessWidget {
   final String  code;
   final Membre? membre;

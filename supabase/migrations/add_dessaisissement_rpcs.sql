@@ -1,10 +1,10 @@
 -- ============================================================
--- MIGRATIONS : RPCs pour dessaisissements SycaPay
+-- MIGRATIONS : RPCs pour dessaisissements Crypto
 -- Prêt octroyé, Dépense caisse, Décaissement cagnotte
 -- v1.2.9 — Frais réseau 2,5% uniformisés
 -- ============================================================
 
--- ── 1. Prêt octroyé via SycaPay : débite la caisse + crée le prêt ──────────
+-- ── 1. Prêt octroyé via CoinPayments : débite la caisse + crée le prêt ──────────
 CREATE OR REPLACE FUNCTION public.debiter_pret_sycapay(
   p_code             TEXT,
   p_montant          INT,
@@ -49,7 +49,7 @@ BEGIN
     'type',        'depense',
     'montant',     p_montant,
     'description', CASE WHEN p_description <> '' THEN p_description
-                        ELSE 'Prêt SycaPay → ' || p_emprunteur_nom END,
+                        ELSE 'Prêt crypto → ' || p_emprunteur_nom END,
     'operateur',   p_operateur,
     'date',        v_now,
     'reference',   p_reference,
@@ -94,7 +94,7 @@ BEGIN
   -- Journal
   v_journal := COALESCE(v_data->'journal', '[]'::JSONB);
   v_journal := jsonb_build_object(
-    'quoi',        'PRÊT SYCAPAY → ' || p_emprunteur_nom || ' — ' || p_montant::TEXT || ' — ' || p_taux::TEXT || '% — ' || p_durees_mois::TEXT || ' mois',
+    'quoi',        'PRÊT CRYPTO → ' || p_emprunteur_nom || ' — ' || p_montant::TEXT || ' — ' || p_taux::TEXT || '% — ' || p_durees_mois::TEXT || ' mois',
     'quand',       v_now,
     'reference',   p_reference,
     'sycapay',     TRUE
@@ -106,7 +106,7 @@ BEGIN
 END;
 $$;
 
--- ── 2. Dépense caisse via SycaPay : débite la caisse ───────────────────────
+-- ── 2. Dépense caisse via CoinPayments : débite la caisse ───────────────────────
 CREATE OR REPLACE FUNCTION public.debiter_depense_sycapay(
   p_code              TEXT,
   p_montant           INT,
@@ -140,7 +140,7 @@ BEGIN
     'type',        'depense',
     'montant',     p_montant,
     'description', CASE WHEN p_description <> '' THEN p_description
-                        ELSE 'Dépense SycaPay → ' || p_beneficiaire_nom END,
+                        ELSE 'Dépense crypto → ' || p_beneficiaire_nom END,
     'operateur',   p_operateur,
     'date',        v_now,
     'reference',   p_reference,
@@ -150,7 +150,7 @@ BEGIN
 
   v_journal := COALESCE(v_data->'journal', '[]'::JSONB);
   v_journal := jsonb_build_object(
-    'quoi',      'DÉPENSE SYCAPAY → ' || p_beneficiaire_nom || ' — ' || p_montant::TEXT,
+    'quoi',      'DÉPENSE CRYPTO → ' || p_beneficiaire_nom || ' — ' || p_montant::TEXT,
     'quand',     v_now,
     'reference', p_reference,
     'sycapay',   TRUE
@@ -162,7 +162,7 @@ BEGIN
 END;
 $$;
 
--- ── 3. Décaissement cagnotte via SycaPay ───────────────────────────────────
+-- ── 3. Décaissement cagnotte via CoinPayments ───────────────────────────────────
 CREATE OR REPLACE FUNCTION public.debiter_decaissement_sycapay(
   p_code              TEXT,
   p_montant           INT,

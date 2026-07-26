@@ -297,7 +297,7 @@ class PaiementService {
     if (catalogue.containsKey(code)) return catalogue[code]!.label;
     // Reconnaissance générique CoinPayments (ex: coinpayments_usdt.trc20)
     if (code.startsWith('coinpayments')) return 'CoinPayments Crypto';
-    // Reconnaissance générique SycaPay
+    // Reconnaissance générique CoinPayments
 
     return code;
   }

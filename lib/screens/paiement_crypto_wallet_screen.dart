@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -91,6 +92,20 @@ class _PaiementCryptoWalletScreenState
     _pollTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  /// Retour foreground (ex : l'utilisateur vient de payer sur son wallet)
+  /// → vérification immédiate sans attendre le prochain tick de polling (10s).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed
+        && !_paiementDetecte
+        && !_enConfirmation
+        && _address != null) {
+      if (kDebugMode) debugPrint('[CryptoWallet] Retour foreground → vérification immédiate');
+      _verifierStatut();
+    }
   }
 
   // ── Chargement adresse wallet ──────────────────────────────────────────────
@@ -192,10 +207,20 @@ class _PaiementCryptoWalletScreenState
       );
       if (!mounted) return;
 
-      if (statut.statusNorm == 'confirmed' || statut.statusCode >= 1) {
+      // ⚠️ CORRECTION CRITIQUE : statusCode >= 1 était FAUX.
+      // CoinPayments : 1 = fonds reçus non confirmés, 2 = en cours, 100 = CONFIRMÉ.
+      // On déclenche uniquement quand le paiement est réellement confirmé :
+      //   • statusCode == 100  (CoinPayments "Complete")
+      //   • statusNorm == 'confirmed' (Edge Function normalisé)
+      //   • ok == true && result.fromCache (déjà crédité en DB → fromCache:true)
+      final estConfirme = statut.statusCode == 100
+          || statut.statusNorm == 'confirmed';
+
+      if (estConfirme) {
         _pollTimer?.cancel();
         _confirmerEtCrediter();
       }
+      // statut 1, 2, etc. → on continue à poller, rien à faire
     } catch (_) {}
   }
 
@@ -515,11 +540,71 @@ class _PaiementCryptoWalletScreenState
 
           // ── Warning ───────────────────────────────────────────────────────
           _buildWarning(),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
 
+          // ── Bouton vérification manuelle ──────────────────────────────────
+          _buildBoutonVerifier(),
           const SizedBox(height: 24),
         ],
       ),
+    );
+  }
+
+  Widget _buildBoutonVerifier() {
+    return Column(
+      children: [
+        if (_enConfirmation)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(width: 18, height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: _orange)),
+                SizedBox(width: 10),
+                Text('Vérification en cours…',
+                    style: TextStyle(color: _orange, fontSize: 13)),
+              ],
+            ),
+          )
+        else
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _enConfirmation ? null : _verifierStatut,
+              icon: const Icon(Icons.check_circle_outline, color: _orange),
+              label: const Text(
+                'J\'ai payé — Vérifier maintenant',
+                style: TextStyle(
+                  color: _orange,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: _orange, width: 2),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+        if (_erreurConfirm != null) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: _rouge.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              _erreurConfirm!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: _rouge, fontSize: 12),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -592,36 +677,27 @@ class _PaiementCryptoWalletScreenState
           const SizedBox(height: 16),
           Container(
             decoration: BoxDecoration(
-              border: Border.all(color: _cryptoColor.withValues(alpha: 0.3), width: 3),
+              color: Colors.white,
+              border: Border.all(color: _cryptoColor.withValues(alpha: 0.4), width: 3),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  QrImageView(
-                    data: _address!,
-                    version: QrVersions.auto,
-                    size: 200,
-                    backgroundColor: Colors.white,
-                    eyeStyle: QrEyeStyle(
-                      eyeShape: QrEyeShape.square,
-                      color: _cryptoColor,
-                    ),
-                    dataModuleStyle: QrDataModuleStyle(
-                      dataModuleShape: QrDataModuleShape.square,
-                      color: Colors.black87,
-                    ),
-                    // Réservation zone centrale pour le logo (30% = 60px sur 200)
-                    embeddedImageStyle: const QrEmbeddedImageStyle(
-                      size: Size(48, 48),
-                    ),
-                    embeddedImage:
-                        const AssetImage('assets/icons/icone-192.png'),
-                  ),
-                ],
+            padding: const EdgeInsets.all(10),
+            child: QrImageView(
+              data: _address!,
+              version: QrVersions.auto,
+              size: 220,
+              backgroundColor: Colors.white,
+              // M = 15% de correction d'erreur — bon compromis lisibilité/densité
+              errorCorrectionLevel: QrErrorCorrectLevel.M,
+              eyeStyle: QrEyeStyle(
+                eyeShape: QrEyeShape.square,
+                color: _cryptoColor,
               ),
+              dataModuleStyle: const QrDataModuleStyle(
+                dataModuleShape: QrDataModuleShape.square,
+                color: Colors.black87,
+              ),
+              // ⚠️ PAS de embeddedImage — le logo détruisait la lisibilité du QR
             ),
           ),
           const SizedBox(height: 12),

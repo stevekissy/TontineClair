@@ -172,7 +172,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
                             icon: Icons.add,
                             label: context.tr('apport'),
                             couleur: AppColors.succes,
-                            // Mode Pro : apport via SycaPay — Mode Lite : modale PIN
+                            // Mode Pro : apport via CoinPayments — Mode Lite : modale PIN
                             onTap: () => tontine.isPremium
                                 ? _apportPro(context, provider, tontine, data)
                                 : _mouvement(context, provider, data, 'apport'),
@@ -237,7 +237,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
     );
   }
 
-  // ── Apport Pro : saisie montant + description → SycaPay ──────────────────
+  // ── Apport Pro : saisie montant + description → CoinPayments ─────────────
   Future<void> _apportPro(
     BuildContext context,
     TontineProvider provider,
@@ -349,7 +349,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
       return;
     }
 
-    // Sélecteur de paiement : SycaPay (Mobile Money) OU CoinPayments (Crypto)
+    // Paiement via CoinPayments (Crypto)
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -475,7 +475,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                // Badge SycaPay
+                // Badge paiement crypto
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
@@ -485,11 +485,11 @@ class _CaisseScreenState extends State<CaisseScreen> {
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.rocket_launch_rounded, size: 13, color: Color(0xFF1A6B3C)),
+                      Icon(Icons.currency_bitcoin_rounded, size: 13, color: Color(0xFF1A6B3C)),
                       SizedBox(width: 6),
                       Flexible(
                         child: Text(
-                          'Paiement automatisé — frais réseau 2,5%',
+                          'Paiement crypto — CoinPayments',
                           style: TextStyle(fontSize: 12, color: Color(0xFF1A6B3C)),
                         ),
                       ),
@@ -611,7 +611,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
     }
   }
 
-  // ── Pénalité Pro : sélection membre + montant → SycaPay ─────────────────────
+  // ── Pénalité Pro : sélection membre + montant → CoinPayments ───────────────
   Future<void> _penalitePro(
     BuildContext context,
     TontineProvider provider,
@@ -663,7 +663,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
                   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20, color: AppColors.encre),
                 ),
                 const SizedBox(height: 4),
-                // Badge SycaPay
+                // Badge paiement crypto
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
@@ -673,11 +673,11 @@ class _CaisseScreenState extends State<CaisseScreen> {
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.rocket_launch_rounded, size: 13, color: AppColors.orFonce),
+                      Icon(Icons.currency_bitcoin_rounded, size: 13, color: AppColors.orFonce),
                       SizedBox(width: 6),
                       Flexible(
                         child: Text(
-                          'Le paiement de la pénalité sera effectué automatiquement',
+                          'Paiement de la pénalité via CoinPayments Crypto',
                           style: TextStyle(fontSize: 12, color: AppColors.orFonce),
                         ),
                       ),
@@ -748,7 +748,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
     final membre = membresOrdre.where((m) => m.id == membrePenaliteId).firstOrNull;
     if (!context.mounted) return;
 
-    // Sélecteur de paiement : SycaPay (Mobile Money) OU CoinPayments (Crypto)
+    // Paiement via CoinPayments (Crypto)
     await Navigator.push(
       context,
       MaterialPageRoute(
