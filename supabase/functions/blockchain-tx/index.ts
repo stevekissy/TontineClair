@@ -18,8 +18,9 @@
 //   TONTINE_CONTRACT_ADDRESS    — adresse TontineVault.sol déployé
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Import npm:ethereum-cryptography pour keccak256 certifié Ethereum
+// Import npm:ethereum-cryptography — keccak256 et secp256k1 certifiés Ethereum
 import { keccak256 as ethKeccak256 } from "npm:ethereum-cryptography@2.2.1/keccak.js";
+import { secp256k1 } from "npm:ethereum-cryptography@2.2.1/secp256k1.js";
 
 // ── Config réseau ──────────────────────────────────────────────────────────────
 const CHAIN_ID       = 137;            // Polygon Mainnet
@@ -155,118 +156,20 @@ function keccak256(data: Uint8Array): Uint8Array {
   return ethKeccak256(data);
 }
 
-// ── secp256k1 ECDSA pure JS ────────────────────────────────────────────────────
-// Courbe secp256k1 : y² = x³ + 7 (mod p)
+// ── secp256k1 ECDSA (via npm:ethereum-cryptography) ───────────────────────────
+// Remplace l'implémentation pure JS maison (recovery bit incorrect → "invalid sender")
+// ethereum-cryptography utilise @noble/secp256k1 — identique à ethers.js / web3.js
 
-const P  = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2Fn;
-const N  = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141n;
-const GX = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798n;
-const GY = 0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8n;
-
-function modP(n: bigint): bigint { return ((n % P) + P) % P; }
-function modN(n: bigint): bigint { return ((n % N) + N) % N; }
-
-function modInverse(a: bigint, m: bigint): bigint {
-  let [old_r, r] = [a, m];
-  let [old_s, s] = [1n, 0n];
-  while (r !== 0n) {
-    const q = old_r / r;
-    [old_r, r] = [r, old_r - q * r];
-    [old_s, s] = [s, old_s - q * s];
-  }
-  return ((old_s % m) + m) % m;
-}
-
-type Point = { x: bigint; y: bigint } | null;
-
-function pointAdd(P1: Point, P2: Point): Point {
-  if (!P1) return P2;
-  if (!P2) return P1;
-  if (P1.x === P2.x) {
-    if (P1.y !== P2.y) return null;
-    // Point doubling
-    const lam = modP(3n * P1.x * P1.x * modInverse(2n * P1.y, P));
-    const x3  = modP(lam * lam - 2n * P1.x);
-    return { x: x3, y: modP(lam * (P1.x - x3) - P1.y) };
-  }
-  const lam = modP((P2.y - P1.y) * modInverse(P2.x - P1.x, P));
-  const x3  = modP(lam * lam - P1.x - P2.x);
-  return { x: x3, y: modP(lam * (P1.x - x3) - P1.y) };
-}
-
-function scalarMul(k: bigint, pt: Point): Point {
-  let result: Point = null;
-  let addend = pt;
-  while (k > 0n) {
-    if (k & 1n) result = pointAdd(result, addend);
-    addend = pointAdd(addend, addend);
-    k >>= 1n;
-  }
-  return result;
-}
-
-// RFC 6979 HMAC-DRBG — génération déterministe de k (spec complète)
-// Réf : https://www.rfc-editor.org/rfc/rfc6979#section-3.2
-async function rfc6979k(privKeyBytes: Uint8Array, msgHash: Uint8Array): Promise<bigint> {
-  // Étape b : V = 0x01...01 (32 bytes)
-  let V = new Uint8Array(32).fill(0x01);
-  // Étape c : K = 0x00...00 (32 bytes)
-  let K = new Uint8Array(32).fill(0x00);
-
-  // Helper HMAC-SHA256 via crypto.subtle (natif Deno)
-  const hmac = async (key: Uint8Array, ...msgs: Uint8Array[]): Promise<Uint8Array> => {
-    const cryptoKey = await crypto.subtle.importKey(
-      "raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
-    );
-    const totalLen = msgs.reduce((a, m) => a + m.length, 0);
-    const total = new Uint8Array(totalLen);
-    let offset = 0;
-    for (const m of msgs) { total.set(m, offset); offset += m.length; }
-    return new Uint8Array(await crypto.subtle.sign("HMAC", cryptoKey, total));
-  };
-
-  // Étapes d → g : initialisation DRBG
-  K = await hmac(K, V, new Uint8Array([0x00]), privKeyBytes, msgHash);
-  V = await hmac(K, V);
-  K = await hmac(K, V, new Uint8Array([0x01]), privKeyBytes, msgHash);
-  V = await hmac(K, V);
-
-  // Étape h : générer T jusqu'à obtenir k dans [1, N-1]
-  for (let attempt = 0; attempt < 100; attempt++) {
-    V = await hmac(K, V);
-    const k = BigInt("0x" + Array.from(V).map(b => b.toString(16).padStart(2, "0")).join(""));
-    if (k >= 1n && k < N) return k;
-    // k invalide → mise à jour K et V (RFC 6979 §3.2 h.3)
-    K = await hmac(K, V, new Uint8Array([0x00]));
-    V = await hmac(K, V);
-  }
-  throw new Error("RFC 6979: impossible de générer k après 100 itérations");
-}
-
+// Wrapper ecSign utilisant @noble/secp256k1 (via ethereum-cryptography)
+// Produit des signatures EIP-2 low-S avec recovery bit correct
 async function ecSign(msgHash: Uint8Array, privKeyBytes: Uint8Array): Promise<{ r: bigint; s: bigint; recovery: number }> {
-  const z = BigInt("0x" + Array.from(msgHash).map(b=>b.toString(16).padStart(2,"0")).join(""));
-  const d = BigInt("0x" + Array.from(privKeyBytes).map(b=>b.toString(16).padStart(2,"0")).join(""));
-
-  // k déterministe RFC 6979 HMAC-DRBG — remplace l'implémentation buggée précédente
-  const k = await rfc6979k(privKeyBytes, msgHash);
-
-  const R = scalarMul(k, { x: GX, y: GY });
-  if (!R) throw new Error("secp256k1: R est null");
-
-  const r = modN(R.x);
-  if (r === 0n) throw new Error("secp256k1: r == 0");
-
-  // s = k⁻¹ * (z + r*d) mod N
-  const sRaw = modN(modInverse(k, N) * modN(z + modN(r * d)));
-
-  // EIP-2 low-S normalization (requis par Ethereum/Polygon)
-  const s = sRaw > N / 2n ? N - sRaw : sRaw;
-  if (s === 0n) throw new Error("secp256k1: s == 0");
-
-  // Recovery bit : parité de R.y, flippé si low-S a modifié s
-  const recovery = Number(R.y & 1n) ^ (sRaw > N / 2n ? 1 : 0);
-
-  return { r, s, recovery };
+  // secp256k1.sign() : RFC 6979 déterministe, low-S normalisé, recovery bit correct
+  const sig = secp256k1.sign(msgHash, privKeyBytes, { lowS: true });
+  return {
+    r        : sig.r,
+    s        : sig.s,
+    recovery : sig.recovery ?? 0,
+  };
 }
 
 function hexToBytes(hex: string): Uint8Array {
@@ -1119,7 +1022,7 @@ Deno.serve(async (req) => {
   }
 
   // ── Identifiant de version déployée (pour vérifier que le bon code tourne)
-  const DEPLOYED_VERSION = "v8-broadcast-diag";
+  const DEPLOYED_VERSION = "v9-secp256k1-fix";
 
   try {
     const env: Record<string, string> = {
