@@ -608,18 +608,8 @@ class _CarteResume extends StatelessWidget {
     return '$xof';
   }
 
-  String _typeLabel(String type) {
-    const map = {
-      'cotisation'  : 'Cotis.',
-      'distribution': 'Distrib.',
-      'pret'        : 'Prêt',
-      'remboursement': 'Rembours.',
-      'vote'        : 'Vote',
-      'creation'    : 'Création',
-      'apport'      : 'Apport',
-    };
-    return map[type] ?? type;
-  }
+  // Délègue entièrement à BlockchainEntry.typeLabel (20+ types couverts)
+  String _typeLabel(String type) => type; // non utilisé — garde pour compatibilité
 }
 
 class _MetriqueChip extends StatelessWidget {
@@ -675,16 +665,44 @@ class _CarteEntree extends StatelessWidget {
       entree.txHash != null && entree.txHash!.length == 66;
 
   Color get _couleurType {
-    const map = {
-      'cotisation'   : Color(0xFF1976D2),
-      'distribution' : Color(0xFF2E7D5B),
-      'pret'         : Color(0xFFF57C00),
-      'remboursement': Color(0xFF7B1FA2),
-      'vote'         : Color(0xFF00838F),
-      'creation'     : AppColors.encre,
-      'apport'       : Color(0xFF558B2F),
-    };
-    return map[entree.typeOperation] ?? AppColors.texteDoux;
+    switch (entree.typeOperation) {
+      // ── Finances — bleus ────────────────────────────────────
+      case 'cotisation':              return const Color(0xFF1976D2); // bleu principal
+      case 'annulation_cotisation':   return const Color(0xFF64B5F6); // bleu clair
+      case 'depot':                   return const Color(0xFF1565C0); // bleu foncé
+      case 'apport':                  return const Color(0xFF2196F3); // bleu vif
+      case 'paiement':                return const Color(0xFF1E88E5); // bleu moyen
+      // ── Sorties — rouges/oranges ─────────────────────────────
+      case 'decaissement':            return const Color(0xFFE53935); // rouge
+      case 'retrait':                 return const Color(0xFFEF5350); // rouge clair
+      case 'retrait_propose':         return const Color(0xFFEF9A9A); // rose-rouge
+      case 'depense_caisse':          return const Color(0xFFD32F2F); // rouge foncé
+      // ── Distribution — verts ─────────────────────────────────
+      case 'distribution':            return const Color(0xFF2E7D5B); // vert tontine
+      case 'nouveau_cycle':           return const Color(0xFF43A047); // vert cycle
+      case 'sync_balance':            return const Color(0xFF26A69A); // teal
+      // ── Prêt / Remboursement — violets ───────────────────────
+      case 'pret':                    return const Color(0xFFF57C00); // orange
+      case 'remboursement':           return const Color(0xFF7B1FA2); // violet
+      case 'annulation_remboursement':return const Color(0xFFAB47BC); // violet clair
+      // ── Pénalité — ambre ────────────────────────────────────
+      case 'penalite':                return const Color(0xFFFF8F00); // ambre
+      // ── Votes — cyan ────────────────────────────────────────
+      case 'vote':                    return const Color(0xFF00838F); // cyan foncé
+      case 'vote_cree':               return const Color(0xFF00ACC1); // cyan
+      case 'vote_clos':               return const Color(0xFF0097A7); // cyan moyen
+      // ── Membres ─────────────────────────────────────────────
+      case 'ajout_membre':            return const Color(0xFF388E3C); // vert membre
+      case 'suppression_membre':      return const Color(0xFFC62828); // rouge suppression
+      // ── Paramètres / Système ────────────────────────────────
+      case 'mise_a_jour':             return const Color(0xFF546E7A); // gris-bleu
+      case 'creation':                return AppColors.encre;          // encre tontine
+      case 'tirage_verrouille':       return const Color(0xFF37474F); // ardoise
+      case 'score_modifie':           return const Color(0xFFFBC02D); // jaune
+      case 'upgrade_pro':             return const Color(0xFFD4AC0D); // or
+      // ── Fallback ────────────────────────────────────────────
+      default:                        return AppColors.texteDoux;
+    }
   }
 
   @override
@@ -764,11 +782,24 @@ class _CarteEntree extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 2),
+                      // Description métier enrichie (ex: "Cotisation mensuelle", "Décaissement vers Koffi")
                       Text(
-                        entree.membreNom ?? entree.membreId ?? '—',
+                        entree.descriptionMetier,
                         style: const TextStyle(
                             fontSize: 12, color: AppColors.texteDoux),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
+                      // Membre si différent de la description
+                      if (entree.membreNom != null && entree.membreNom!.isNotEmpty)
+                        Text(
+                          entree.membreNom!,
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.texteDoux.withValues(alpha: 0.7)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                     ],
                   ),
                 ),
@@ -868,16 +899,44 @@ class _CarteEntree extends StatelessWidget {
   }
 
   IconData get _iconeType {
-    const map = {
-      'cotisation'   : Icons.savings_outlined,
-      'distribution' : Icons.account_balance_wallet_outlined,
-      'pret'         : Icons.handshake_outlined,
-      'remboursement': Icons.undo_outlined,
-      'vote'         : Icons.how_to_vote_outlined,
-      'creation'     : Icons.add_circle_outline,
-      'apport'       : Icons.add_box_outlined,
-    };
-    return map[entree.typeOperation] ?? Icons.receipt_outlined;
+    switch (entree.typeOperation) {
+      // ── Finances entrants ────────────────────────────────────
+      case 'cotisation':              return Icons.savings_outlined;
+      case 'annulation_cotisation':   return Icons.undo_outlined;
+      case 'depot':                   return Icons.download_outlined;
+      case 'apport':                  return Icons.add_box_outlined;
+      case 'paiement':                return Icons.credit_card_outlined;
+      // ── Finances sortants ────────────────────────────────────
+      case 'decaissement':            return Icons.outbound_outlined;
+      case 'retrait':                 return Icons.upload_outlined;
+      case 'retrait_propose':         return Icons.upload_file_outlined;
+      case 'depense_caisse':          return Icons.shopping_bag_outlined;
+      // ── Distribution / Cycle ─────────────────────────────────
+      case 'distribution':            return Icons.account_balance_wallet_outlined;
+      case 'nouveau_cycle':           return Icons.replay_circle_filled;
+      case 'sync_balance':            return Icons.sync_outlined;
+      // ── Prêt / Remboursement ─────────────────────────────────
+      case 'pret':                    return Icons.handshake_outlined;
+      case 'remboursement':           return Icons.price_check_outlined;
+      case 'annulation_remboursement':return Icons.cancel_outlined;
+      // ── Pénalité ────────────────────────────────────────────
+      case 'penalite':                return Icons.warning_amber_outlined;
+      // ── Votes ───────────────────────────────────────────────
+      case 'vote':                    return Icons.how_to_vote_outlined;
+      case 'vote_cree':               return Icons.ballot_outlined;
+      case 'vote_clos':               return Icons.check_circle_outline;
+      // ── Membres ─────────────────────────────────────────────
+      case 'ajout_membre':            return Icons.person_add_outlined;
+      case 'suppression_membre':      return Icons.person_remove_outlined;
+      // ── Paramètres / Système ────────────────────────────────
+      case 'mise_a_jour':             return Icons.tune_outlined;
+      case 'creation':                return Icons.add_circle_outline;
+      case 'tirage_verrouille':       return Icons.lock_outline;
+      case 'score_modifie':           return Icons.star_border_outlined;
+      case 'upgrade_pro':             return Icons.rocket_launch_outlined;
+      // ── Fallback ────────────────────────────────────────────
+      default:                        return Icons.help_outline;
+    }
   }
 
   String _formatXof(int xof) {

@@ -388,11 +388,11 @@ class _CertificatBlockchainScreenState
         pw.Table(
           border: pw.TableBorder.all(color: _pdfLignes, width: 0.5),
           columnWidths: {
-            0: const pw.FlexColumnWidth(1.5),
-            1: const pw.FlexColumnWidth(2),
-            2: const pw.FlexColumnWidth(1.5),
-            3: const pw.FlexColumnWidth(1.2),
-            4: const pw.FlexColumnWidth(3),
+            0: const pw.FlexColumnWidth(1.4),  // Date
+            1: const pw.FlexColumnWidth(1.6),  // Type
+            2: const pw.FlexColumnWidth(2.2),  // Description
+            3: const pw.FlexColumnWidth(1.2),  // Montant
+            4: const pw.FlexColumnWidth(2.6),  // TX Hash
           },
           children: [
             // En-tête
@@ -401,7 +401,7 @@ class _CertificatBlockchainScreenState
               children: [
                 _cellHeader('Date'),
                 _cellHeader('Type'),
-                _cellHeader('Membre'),
+                _cellHeader('Description'),
                 _cellHeader('Montant XOF'),
                 _cellHeader('TX Hash / Proof'),
               ],
@@ -420,7 +420,7 @@ class _CertificatBlockchainScreenState
                   _cell(e.typeLabel,
                       gras: true,
                       couleur: estOnChain ? _pdfChain : _pdfEncre),
-                  _cell(e.membreNom ?? e.membreId ?? '—'),
+                  _cell(e.descriptionMetier),  // Description enrichie avec membre + montant
                   _cell(e.montantXof != null
                       ? '${_formatXof(e.montantXof!)} F'
                       : '—'),
