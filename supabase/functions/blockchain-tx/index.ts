@@ -531,7 +531,7 @@ async function sendOnChainTx(
   calldata    : string,
   privKey     : string,
   fromAddr    : string
-): Promise<{ txHash: string; blockNumber: number } | null> {
+): Promise<{ txHash: string; blockNumber: number; broadcastError?: string } | null> {
   try {
     // Nonce + gas via le RPC principal (lecture — généralement pas bloqué)
     const nonce = parseInt(
@@ -588,7 +588,8 @@ async function sendOnChainTx(
 
     if (!txHashResult) {
       console.error(`[blockchain-tx] Tous les RPC ont échoué. Dernière erreur: ${broadcastError}`);
-      return null;
+      // Retourner l'erreur pour diagnostic (au lieu de null silencieux)
+      return { txHash: "", blockNumber: 0, broadcastError };
     }
 
     // Retourner immédiatement après le broadcast — ne pas attendre le receipt.
@@ -738,12 +739,16 @@ async function actionEnregistrerOperation(
       }
 
       const onChain = await sendOnChainTx(rpcUrl, contractAddr, calldata, privKey, fromAddr);
-      if (onChain) {
+      if (onChain && onChain.txHash && onChain.txHash.startsWith("0x") && onChain.txHash.length === 66) {
         txHash      = onChain.txHash;
         blockNumber = onChain.blockNumber;
         statut      = blockNumber > 0 ? "confirmed" : "pending";
         phase       = 2;
         console.log(`[blockchain-tx] Phase 2 TX: ${txHash} block=${blockNumber}`);
+      } else if (onChain?.broadcastError) {
+        // Broadcast échoué — stocker l'erreur pour diagnostic
+        (globalThis as Record<string, unknown>).__lastPhase2Error = `broadcast_failed: ${onChain.broadcastError}`;
+        console.error(`[blockchain-tx] Broadcast échoué: ${onChain.broadcastError}`);
       }
     } catch (err) {
       console.error(`[blockchain-tx] Phase 2 error, fallback Phase 1: ${err}`);
@@ -1114,7 +1119,7 @@ Deno.serve(async (req) => {
   }
 
   // ── Identifiant de version déployée (pour vérifier que le bon code tourne)
-  const DEPLOYED_VERSION = "v7-keccak-fix-eth-crypto";
+  const DEPLOYED_VERSION = "v8-broadcast-diag";
 
   try {
     const env: Record<string, string> = {
