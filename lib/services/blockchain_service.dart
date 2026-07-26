@@ -103,6 +103,39 @@ class BlockchainEntry {
   String get explorerUrl =>
       txHash != null ? 'https://polygonscan.com/tx/$txHash' : '';
 
+  // ── Mapping 4-byte Ethereum ABI selectors → type métier ─────────────────
+  // Ces sélecteurs sont les 4 premiers bytes de keccak256(signature_fonction)
+  // générés par blockchain-tx/index.ts et peuvent se retrouver dans type_operation
+  // pour des entrées historiques ou des erreurs de stockage.
+  static const _selectorVersType = <String, String>{
+    '0xbaa62d66': 'cotisation',    // enregistrerOperation(string,string,string,uint256,uint256,string,bytes32)
+    '0xd3795e53': 'vote',          // enregistrerVote(string,string,string,string,bytes32)
+    '0x68054f4e': 'creation',      // enregistrerCreation(string,string,string,bytes32)
+    '0x5a9b0b89': 'sync_balance',  // getInfo()
+    '0xb38ff71f': 'mise_a_jour',   // transfererAdmin(address)
+    '0xf851a440': 'mise_a_jour',   // admin()
+    '0x54fd4d50': 'mise_a_jour',   // version()
+    '0xed232029': 'sync_balance',  // totalOperations()
+    // Sélecteurs alternatifs possibles (selon version du contrat)
+    '0x60c06040': 'cotisation',    // variante enregistrerOperation
+    '0xa9059cbb': 'remboursement', // ERC-20 transfer(address,uint256)
+    '0x095ea7b3': 'mise_a_jour',   // ERC-20 approve(address,uint256)
+    '0x23b872dd': 'distribution',  // ERC-20 transferFrom(address,address,uint256)
+  };
+
+  /// Résout un type_operation : si c'est un sélecteur hex 0x…, retourne le type métier.
+  /// Méthode privée utilisée par les getters internes.
+  static String _resoudreTypeOperation(String raw) {
+    if (raw.startsWith('0x') && raw.length <= 10) {
+      return _selectorVersType[raw.toLowerCase()] ?? raw;
+    }
+    return raw;
+  }
+
+  /// Méthode publique statique : résout un type_operation brut (hex ou string) → type métier.
+  /// Utilisée par les écrans externes (blockchain_admin_screen.dart).
+  static String resoudreType(String raw) => _resoudreTypeOperation(raw);
+
   // ── Mapper métier complet ─────────────────────────────────────────────────
   static const _metier = <String, Map<String, String>>{
     'cotisation'              : {'icone': '💰', 'label': 'Cotisation',            'desc': 'Cotisation mensuelle'},
@@ -133,16 +166,28 @@ class BlockchainEntry {
     'nouveau_cycle'           : {'icone': '🔁', 'label': 'Nouveau cycle',          'desc': 'Nouveau cycle démarré'},
   };
 
-  String get iconeMetier =>
-      _metier[typeOperation]?['icone'] ?? '📋';
+  /// Type opération résolu : si hex selector 0x…, traduit vers type métier.
+  String get typeOperationResolu => _resoudreTypeOperation(typeOperation);
 
-  String get typeLabel =>
-      _metier[typeOperation]?['label'] ??
-      typeOperation.replaceAll('_', ' ').toUpperCase();
+  String get iconeMetier =>
+      _metier[typeOperationResolu]?['icone'] ?? '❓';
+
+  String get typeLabel {
+    final resolu = typeOperationResolu;
+    if (_metier.containsKey(resolu)) {
+      return _metier[resolu]!['label']!;
+    }
+    // Si c'était un selector hex non mappé, afficher "❓ Action inconnue"
+    if (typeOperation.startsWith('0x')) {
+      return '❓ Action inconnue';
+    }
+    return typeOperation.replaceAll('_', ' ').toUpperCase();
+  }
 
   /// Description lisible enrichie avec le contexte (membre, tontine, montant)
   String get descriptionMetier {
-    final base = _metier[typeOperation]?['desc'] ?? typeLabel;
+    final resolu = typeOperationResolu;
+    final base = _metier[resolu]?['desc'] ?? typeLabel;
     final parties = <String>[];
     if (membreNom != null && membreNom!.isNotEmpty) parties.add(membreNom!);
     if (montantXof != null && montantXof! > 0) {

@@ -693,17 +693,37 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
 
   // ── Widgets utilitaires ───────────────────────────────────────────────────
   Widget _iconType(String type) {
+    // Résoudre les sélecteurs hex 0x… → type métier
+    final resolu = BlockchainEntry.resoudreType(type);
     const map = {
-      'cotisation'   : (Icons.payments_rounded,     Color(0xFF2196F3)),
-      'distribution' : (Icons.account_balance_wallet_rounded, Color(0xFF4CAF50)),
-      'pret'         : (Icons.account_balance_rounded, Color(0xFFFF9800)),
-      'remboursement': (Icons.undo_rounded,          Color(0xFF9C27B0)),
-      'vote'         : (Icons.how_to_vote_rounded,   Color(0xFF00BCD4)),
-      'creation'     : (Icons.add_business_rounded,  Color(0xFF8247E5)),
-      'apport'       : (Icons.add_circle_rounded,    Color(0xFF009688)),
-      'penalite'     : (Icons.warning_rounded,       Color(0xFFF44336)),
+      'cotisation'              : (Icons.savings_rounded,                Color(0xFF1976D2)),
+      'annulation_cotisation'   : (Icons.undo_rounded,                   Color(0xFF64B5F6)),
+      'depot'                   : (Icons.download_rounded,               Color(0xFF1565C0)),
+      'apport'                  : (Icons.add_circle_rounded,             Color(0xFF009688)),
+      'paiement'                : (Icons.payments_rounded,               Color(0xFF1E88E5)),
+      'distribution'            : (Icons.account_balance_wallet_rounded, Color(0xFF2E7D5B)),
+      'decaissement'            : (Icons.outbound_rounded,               Color(0xFFE53935)),
+      'retrait'                 : (Icons.upload_rounded,                 Color(0xFFEF5350)),
+      'retrait_propose'         : (Icons.upload_file_rounded,            Color(0xFFEF9A9A)),
+      'depense_caisse'          : (Icons.shopping_bag_rounded,           Color(0xFFD32F2F)),
+      'pret'                    : (Icons.account_balance_rounded,        Color(0xFFFF9800)),
+      'remboursement'           : (Icons.price_check_rounded,            Color(0xFF9C27B0)),
+      'annulation_remboursement': (Icons.cancel_rounded,                 Color(0xFFAB47BC)),
+      'penalite'                : (Icons.warning_rounded,                Color(0xFFF44336)),
+      'vote'                    : (Icons.how_to_vote_rounded,            Color(0xFF00BCD4)),
+      'vote_cree'               : (Icons.ballot_rounded,                 Color(0xFF00ACC1)),
+      'vote_clos'               : (Icons.check_circle_rounded,           Color(0xFF0097A7)),
+      'ajout_membre'            : (Icons.person_add_rounded,             Color(0xFF388E3C)),
+      'suppression_membre'      : (Icons.person_remove_rounded,          Color(0xFFC62828)),
+      'creation'                : (Icons.add_business_rounded,           Color(0xFF8247E5)),
+      'sync_balance'            : (Icons.sync_rounded,                   Color(0xFF26A69A)),
+      'mise_a_jour'             : (Icons.tune_rounded,                   Color(0xFF546E7A)),
+      'tirage_verrouille'       : (Icons.lock_rounded,                   Color(0xFF37474F)),
+      'score_modifie'           : (Icons.star_rounded,                   Color(0xFFFBC02D)),
+      'upgrade_pro'             : (Icons.rocket_launch_rounded,          Color(0xFFD4AC0D)),
+      'nouveau_cycle'           : (Icons.replay_circle_filled,           Color(0xFF43A047)),
     };
-    final (icon, color) = map[type] ?? (Icons.receipt_rounded, AppColors.texteDoux);
+    final (icon, color) = map[resolu] ?? (Icons.help_outline, AppColors.texteDoux);
     return Container(
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(

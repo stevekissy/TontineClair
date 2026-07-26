@@ -608,8 +608,57 @@ class _CarteResume extends StatelessWidget {
     return '$xof';
   }
 
-  // Délègue entièrement à BlockchainEntry.typeLabel (20+ types couverts)
-  String _typeLabel(String type) => type; // non utilisé — garde pour compatibilité
+  // Traduit un type_operation (y compris sélecteurs hex 0x…) → label lisible.
+  // Crée une BlockchainEntry temporaire pour réutiliser le mapping complet.
+  String _typeLabel(String type) {
+    // Sélecteurs hex 4 bytes → type métier → label
+    const selectorVersType = <String, String>{
+      '0xbaa62d66': 'cotisation',
+      '0xd3795e53': 'vote',
+      '0x68054f4e': 'creation',
+      '0x60c06040': 'cotisation',
+      '0x5a9b0b89': 'sync_balance',
+      '0xb38ff71f': 'mise_a_jour',
+      '0xa9059cbb': 'remboursement',
+      '0x23b872dd': 'distribution',
+    };
+    const metierLabels = <String, String>{
+      'cotisation'              : '💰 Cotisation',
+      'decaissement'            : '💸 Décaissement',
+      'distribution'            : '🎁 Distribution',
+      'apport'                  : '🤝 Apport',
+      'depot'                   : '📥 Dépôt',
+      'retrait'                 : '📤 Retrait',
+      'retrait_propose'         : '📤 Retrait proposé',
+      'paiement'                : '💳 Paiement',
+      'penalite'                : '⚠️ Pénalité',
+      'pret'                    : '🏦 Prêt',
+      'remboursement'           : '💵 Remboursement',
+      'ajout_membre'            : '👤 Ajout membre',
+      'suppression_membre'      : '❌ Suppression membre',
+      'mise_a_jour'             : '⚙️ Mise à jour',
+      'vote'                    : '🗳️ Vote',
+      'vote_cree'               : '🗳️ Vote créé',
+      'vote_clos'               : '🗳️ Vote clôturé',
+      'creation'                : '🏦 Création tontine',
+      'sync_balance'            : '🔄 Synchronisation',
+      'depense_caisse'          : '💸 Dépense caisse',
+      'annulation_cotisation'   : '↩️ Annulation cotisation',
+      'annulation_remboursement': '↩️ Annulation remboursement',
+      'tirage_verrouille'       : '🔒 Tirage verrouillé',
+      'score_modifie'           : '⭐ Score modifié',
+      'upgrade_pro'             : '🚀 Passage Pro',
+      'nouveau_cycle'           : '🔁 Nouveau cycle',
+    };
+
+    // Si c'est un sélecteur hex, le résoudre d'abord
+    final resolu = type.startsWith('0x') && type.length <= 10
+        ? (selectorVersType[type.toLowerCase()] ?? type)
+        : type;
+
+    return metierLabels[resolu]
+        ?? (resolu.startsWith('0x') ? '❓ Action inconnue' : resolu.replaceAll('_', ' '));
+  }
 }
 
 class _MetriqueChip extends StatelessWidget {
@@ -665,7 +714,8 @@ class _CarteEntree extends StatelessWidget {
       entree.txHash != null && entree.txHash!.length == 66;
 
   Color get _couleurType {
-    switch (entree.typeOperation) {
+    // Résoudre d'abord les sélecteurs hex 0x… → type métier
+    switch (entree.typeOperationResolu) {
       // ── Finances — bleus ────────────────────────────────────
       case 'cotisation':              return const Color(0xFF1976D2); // bleu principal
       case 'annulation_cotisation':   return const Color(0xFF64B5F6); // bleu clair
@@ -700,7 +750,7 @@ class _CarteEntree extends StatelessWidget {
       case 'tirage_verrouille':       return const Color(0xFF37474F); // ardoise
       case 'score_modifie':           return const Color(0xFFFBC02D); // jaune
       case 'upgrade_pro':             return const Color(0xFFD4AC0D); // or
-      // ── Fallback ────────────────────────────────────────────
+      // ── Fallback : sélecteur hex non mappé ──────────────────
       default:                        return AppColors.texteDoux;
     }
   }
@@ -899,7 +949,8 @@ class _CarteEntree extends StatelessWidget {
   }
 
   IconData get _iconeType {
-    switch (entree.typeOperation) {
+    // Résoudre d'abord les sélecteurs hex 0x… → type métier
+    switch (entree.typeOperationResolu) {
       // ── Finances entrants ────────────────────────────────────
       case 'cotisation':              return Icons.savings_outlined;
       case 'annulation_cotisation':   return Icons.undo_outlined;
@@ -934,7 +985,7 @@ class _CarteEntree extends StatelessWidget {
       case 'tirage_verrouille':       return Icons.lock_outline;
       case 'score_modifie':           return Icons.star_border_outlined;
       case 'upgrade_pro':             return Icons.rocket_launch_outlined;
-      // ── Fallback ────────────────────────────────────────────
+      // ── Fallback : sélecteur hex non mappé ❓ ───────────────
       default:                        return Icons.help_outline;
     }
   }
