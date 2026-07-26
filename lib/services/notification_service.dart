@@ -143,11 +143,16 @@ class NotificationService {
     } catch (_) {}
   }
 
+  // ── Délai minimum entre deux ré-enregistrements (évite les rafales) ──────
+  static const _intervalleResynchroMin = Duration(minutes: 30);
+  static DateTime? _derniereResynchro;
+
   static Future<void> _enregistrerToken(String token) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       // Sauvegarder localement
       await prefs.setString('fcm_token', token);
+      await prefs.setString('fcm_token_ts', DateTime.now().toIso8601String());
 
       // Source de vérité 1 : StorageService (tontines_liste) — persisté entre MAJ
       final tontinesStockees = await StorageService.getListe();
@@ -169,14 +174,23 @@ class NotificationService {
         await SupabaseService.sauvegarderTokenFCM(code: code, token: token);
       }
 
+      _derniereResynchro = DateTime.now();
+
       if (kDebugMode) {
-        debugPrint('[FCM] Token enregistré pour ${tousLesCodes.length} tontine(s): $tousLesCodes');
+        debugPrint('[FCM] ✅ Token enregistré pour ${tousLesCodes.length} tontine(s): $tousLesCodes');
       }
-    } catch (_) {}
+    } catch (e) {
+      if (kDebugMode) debugPrint('[FCM] ❌ _enregistrerToken erreur: $e');
+    }
   }
 
   /// Appelée quand l'utilisateur rejoint ou crée une tontine, et à chaque
-  /// chargement de tontine (chargerTontine) pour garantir la re-synchro après MAJ.
+  /// chargement de tontine (chargerTontine) pour garantir que le token FCM
+  /// de CET appareil est bien présent dans fcm_tokens pour CETTE tontine.
+  ///
+  /// FIX BROADCAST : force toujours un token FCM frais (ne se fie pas au cache).
+  /// Raison : si le token est expiré en base mais valide en cache local,
+  /// l'appareil ne reçoit plus les notifications des autres membres.
   static Future<void> abonnerATontine(String code) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -189,21 +203,46 @@ class NotificationService {
         await prefs.setStringList('tontines_codes', codes);
       }
 
-      // Envoyer le token actuel à Supabase
-      // Utiliser le token frais de FCM en priorité, fallback sur celui en cache
-      String? token = prefs.getString('fcm_token');
-      if (token == null) {
-        // Token absent du cache — le demander directement à FCM
+      // ─── FIX BROADCAST ────────────────────────────────────────────────────
+      // Toujours demander un token FRAIS à FCM (pas uniquement le cache).
+      // FCM retourne le même token tant qu'il est valide — coût négligeable.
+      // Si le token a changé (réinstall, changement de téléphone), on met
+      // à jour Supabase immédiatement → tous les membres reçoivent les notifs.
+      // ─────────────────────────────────────────────────────────────────────
+      final now = DateTime.now();
+      final doitResynchro = _derniereResynchro == null ||
+          now.difference(_derniereResynchro!) > _intervalleResynchroMin;
+
+      String? token;
+      if (doitResynchro) {
+        // Demander un token frais à FCM (ignore le cache)
         token = await FirebaseMessaging.instance.getToken();
         if (token != null) {
           await prefs.setString('fcm_token', token);
+          await prefs.setString('fcm_token_ts', now.toIso8601String());
         }
+      } else {
+        // Dans l'intervalle de grâce : utiliser le cache pour ne pas saturer FCM
+        token = prefs.getString('fcm_token');
       }
-      if (token != null) {
+
+      // Fallback : si FCM ne répond pas, utiliser le cache
+      token ??= prefs.getString('fcm_token');
+
+      if (token != null && token.isNotEmpty) {
         await SupabaseService.sauvegarderTokenFCM(code: codeUp, token: token);
-        if (kDebugMode) debugPrint('[FCM] Abonné à $codeUp');
+        if (doitResynchro) {
+          _derniereResynchro = now;
+          if (kDebugMode) debugPrint('[FCM] ✅ Token frais enregistré pour $codeUp');
+        } else {
+          if (kDebugMode) debugPrint('[FCM] ↩️ Token cache enregistré pour $codeUp (résynchro < 30min)');
+        }
+      } else {
+        if (kDebugMode) debugPrint('[FCM] ⚠️ Impossible d\'obtenir le token FCM pour $codeUp');
       }
-    } catch (_) {}
+    } catch (e) {
+      if (kDebugMode) debugPrint('[FCM] ❌ abonnerATontine erreur: $e');
+    }
   }
 
   // ── Récupérer le token FCM sauvegardé ─────────────────────────────────────
