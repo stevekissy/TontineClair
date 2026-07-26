@@ -662,10 +662,14 @@ async function actionEnregistrerOperation(
   }
 
   // Insérer dans blockchain_journal
+  // FIX: membre_nom stocké à la fois dans la colonne directe ET dans metadata
+  // (colonne directe = lu par Flutter via j['membre_nom'] pour descriptionMetier)
+  const membreNomStr = membre_nom ? String(membre_nom) : null;
   const entry = await supabaseInsert(supabaseUrl, serviceKey, "blockchain_journal", {
     tontine_code   : String(tontine_code).toUpperCase(),
     type_operation : String(type_operation),
     membre_id      : String(membre_id),
+    membre_nom     : membreNomStr,            // ← FIX: colonne directe (était absent)
     montant_xof    : montantXof,
     montant_usdt   : montantUsdt / 1_000_000,
     taux_xof_usdt  : TAUX_XOF_USDT,
@@ -679,7 +683,7 @@ async function actionEnregistrerOperation(
     ref_coinpayments: ref_coinpayments ? String(ref_coinpayments) : null,
     ref_interne    : ref_interne ? String(ref_interne) : null,
     metadata       : {
-      membre_nom,
+      membre_nom  : membreNomStr,             // ← conservé pour rétrocompatibilité
       phase,
       contract_address: contractAddr || null,
       explorer_url: phase === 2
@@ -838,16 +842,27 @@ async function actionLireJournal(
   });
   const rows = await res.json() as unknown[];
 
-  // Enrichir avec explorer_url
-  const enriched = (rows as Record<string, unknown>[]).map(r => ({
-    ...r,
-    explorer_url: r.tx_hash && String(r.tx_hash).length === 66
-      ? `${EXPLORER_BASE}/tx/${r.tx_hash}`
-      : null,
-    explorer_contract: env.TONTINE_CONTRACT_ADDRESS
-      ? `${EXPLORER_BASE}/address/${env.TONTINE_CONTRACT_ADDRESS}`
-      : null,
-  }));
+  // Enrichir avec explorer_url + récupérer membre_nom depuis metadata si absent
+  // (rétrocompatibilité : anciennes entrées n'ont pas membre_nom en colonne directe)
+  const enriched = (rows as Record<string, unknown>[]).map(r => {
+    const meta = (r.metadata as Record<string, unknown> | null) ?? {};
+
+    // Récupérer membre_nom : colonne directe en priorité, sinon metadata
+    const membreNom = r.membre_nom
+      || meta["membre_nom"]
+      || null;
+
+    return {
+      ...r,
+      membre_nom    : membreNom,   // ← FIX: garantit que Flutter reçoit le nom
+      explorer_url  : r.tx_hash && String(r.tx_hash).length === 66
+        ? `${EXPLORER_BASE}/tx/${r.tx_hash}`
+        : null,
+      explorer_contract: env.TONTINE_CONTRACT_ADDRESS
+        ? `${EXPLORER_BASE}/address/${env.TONTINE_CONTRACT_ADDRESS}`
+        : null,
+    };
+  });
 
   return { ok: true, journal: enriched, count: enriched.length, offset };
 }
