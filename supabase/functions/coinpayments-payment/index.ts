@@ -225,9 +225,19 @@ async function cpGetWalletInfo(checkoutUrl: string, currency2: string): Promise<
   } else if (cur === "BTC") {
     const m = html.match(/\b(bc1[a-z0-9]{39,59}|[13][A-HJ-NP-Za-km-z1-9]{25,34})\b/);
     if (m) address = m[0];
-  } else if (cur === "ETH" || cur.includes("ERC20")) {
-    const m = html.match(/\b0x[a-fA-F0-9]{40}\b/);
-    if (m) address = m[0];
+  } else if (cur === "ETH" || cur.includes("ERC20") || cur.includes("BEP20") || cur === "BNB.BSC" || cur === "BNB") {
+    // Adresse EVM (Ethereum, BSC/BEP20, BNB Smart Chain) : 0x + 40 hex
+    // ⚠️ IMPORTANT : BEP20 et BNB.BSC utilisent le MÊME format d'adresse qu'Ethereum (0x...)
+    // La page checkout CoinPayments peut afficher l'adresse sans le préfixe 0x dans le HTML.
+    // On cherche d'abord avec 0x, puis sans 0x si non trouvé.
+    const mWith0x = html.match(/\b0x[a-fA-F0-9]{40}\b/);
+    if (mWith0x) {
+      address = mWith0x[0];
+    } else {
+      // Chercher adresse hex de 40 chars sans 0x et la préfixer
+      const mWithout0x = html.match(/\b[a-fA-F0-9]{40}\b/);
+      if (mWithout0x) address = "0x" + mWithout0x[0];
+    }
   } else if (cur === "LTC") {
     const m = html.match(/\b[LMm][a-km-zA-HJ-NP-Z1-9]{26,33}\b/);
     if (m) address = m[0];
@@ -237,8 +247,8 @@ async function cpGetWalletInfo(checkoutUrl: string, currency2: string): Promise<
     if (m) address = m.find(a => a.length >= 30) ?? "";
   }
 
-  // Extraction montant crypto
-  const amtMatch = html.match(/([\d]+\.[\d]+)\s*USDT|BTC|ETH|LTC/);
+  // Extraction montant crypto — supporte USDT, BNB, BTC, ETH, LTC
+  const amtMatch = html.match(/([\d]+\.[\d]+)\s*(?:USDT|BNB|BTC|ETH|LTC)/i);
   const amountf  = amtMatch ? parseFloat(amtMatch[1]) : 0;
 
   // Extraction dest_tag (XRP, XLM, etc.)
