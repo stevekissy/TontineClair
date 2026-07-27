@@ -384,6 +384,7 @@ class _VotesScreenState extends State<VotesScreen> {
         gestionnaire: provider.gestActifNom ?? '',
         typeVote    : type,
         question    : question,
+        membreId    : provider.gestActifNom ?? '',  // FIX: évite membre_id='undefined'
       ).catchError((e) {
         if (kDebugMode) debugPrint('[Blockchain] vote_cree erreur: $e');
         return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
@@ -907,6 +908,7 @@ class _VotesScreenState extends State<VotesScreen> {
         typeVote    : estVoteRetrait ? 'retrait' : vote.type,
         voteId      : vote.id,
         adopte      : adopte,
+        membreId    : provider.gestActifNom ?? '',  // FIX: évite membre_id='undefined'
       ).catchError((e) {
         if (kDebugMode) debugPrint('[Blockchain] vote_clos erreur: $e');
         return BlockchainResultat(ok: false, erreur: '$e', phase: 1);

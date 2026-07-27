@@ -668,7 +668,7 @@ async function actionEnregistrerOperation(
   const entry = await supabaseInsert(supabaseUrl, serviceKey, "blockchain_journal", {
     tontine_code   : String(tontine_code).toUpperCase(),
     type_operation : String(type_operation),
-    membre_id      : String(membre_id),
+    membre_id      : String(membre_id ?? ''),  // FIX: évite "undefined" quand membre_id absent
     membre_nom     : membreNomStr,            // ← FIX: colonne directe (était absent)
     montant_xof    : montantXof,
     montant_usdt   : montantUsdt / 1_000_000,
@@ -1037,7 +1037,7 @@ Deno.serve(async (req) => {
   }
 
   // ── Identifiant de version déployée (pour vérifier que le bon code tourne)
-  const DEPLOYED_VERSION = "v9-secp256k1-fix";
+  const DEPLOYED_VERSION = "v10-membre-id-fix";
 
   try {
     const env: Record<string, string> = {

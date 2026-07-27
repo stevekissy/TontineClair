@@ -30,6 +30,7 @@ import 'paiement_choix_screen.dart';
 import 'verification_publique_screen.dart';
 import 'certificat_blockchain_screen.dart';
 import 'qr_tontine_screen.dart';
+import 'package:flutter/foundation.dart';
 import '../services/blockchain_service.dart';
 
 class DetailScreen extends StatefulWidget {
@@ -1766,6 +1767,7 @@ class _BarreDetail extends StatelessWidget {
         provider:          provider,
         data:              data,
         membres:           membres,
+        benefId:           benefId,
         benefNom:          benefNom,
         numerTourAffiche:  numerTourAffiche,
         ref:               ref,
@@ -1782,6 +1784,7 @@ class _BarreDetail extends StatelessWidget {
     required TontineProvider           provider,
     required TontineData               data,
     required List<Membre>              membres,
+    required String                    benefId,
     required String                    benefNom,
     required int                       numerTourAffiche,
     required String                    ref,
@@ -1811,6 +1814,21 @@ class _BarreDetail extends StatelessWidget {
         return provider.ecrire(newData, pin);
       },
     );
+
+    // ── BLOCKCHAIN : distribution tour Lite (non-bloquant) ─────────────────
+    if (ok == true) {
+      BlockchainService.enregistrerDistribution(
+        tontineCode : provider.courante!.code,
+        membreId    : benefId,
+        membreNom   : benefNom,
+        montantXof  : montantVerse,
+        refInterne  : ref,
+      ).catchError((e) {
+        if (kDebugMode) debugPrint('[Blockchain] distribution_lite erreur: $e');
+        return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+      });
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     if (ok == true && context.mounted) {
       afficherToast(

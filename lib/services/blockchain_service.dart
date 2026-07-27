@@ -546,11 +546,13 @@ class BlockchainService {
     required String gestionnaire,
     required String typeVote,
     required String question,
+    String? membreId,
     String? refInterne,
   }) async {
     return _enregistrer(
       tontineCode  : tontineCode,
       typeOperation: 'vote_cree',
+      membreId     : membreId,
       membreNom    : gestionnaire,
       montantXof   : null,
       refInterne   : refInterne,
@@ -565,10 +567,12 @@ class BlockchainService {
     required String typeVote,
     required String voteId,
     required bool   adopte,
+    String? membreId,
   }) async {
     return _enregistrer(
       tontineCode  : tontineCode,
       typeOperation: 'vote_clos',
+      membreId     : membreId,
       membreNom    : gestionnaire,
       montantXof   : null,
       refInterne   : voteId,

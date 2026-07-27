@@ -923,6 +923,9 @@ class _CaisseScreenState extends State<CaisseScreen> {
             ? 'Dépense'
             : 'Pénalité';
 
+    // ref généré ici pour être accessible à la fois dans onValider ET dans le bloc blockchain
+    final ref = Formatters.genererReference();
+
     final ok = await afficherModalePin(
       context,
       titre: 'Confirmer le mouvement',
@@ -934,7 +937,6 @@ class _CaisseScreenState extends State<CaisseScreen> {
         (label: 'Solde actuel', valeur: Formatters.montant(data.soldeCaisse, devise: data.devise)),
       ],
       onValider: (pin) async {
-        final ref = Formatters.genererReference();
         final now = DateTime.now().toIso8601String();
         final newData = data.toJson();
         // ── Correction : caisse est stockée comme {mouvements:[...]} ─────────
@@ -996,7 +998,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
       },
     );
 
-    // ── BLOCKCHAIN : pénalité / dépense caisse (non-bloquant) ────────────
+    // ── BLOCKCHAIN : pénalité / dépense / apport caisse (non-bloquant) ──
     if (ok == true) {
       if (type == 'penalite' && membrePenaliteId != null) {
         BlockchainService.enregistrerPenalite(
@@ -1004,6 +1006,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
           membreId   : membrePenaliteId!,
           membreNom  : nomMembre,
           montantXof : montant,
+          refInterne : ref,
         ).catchError((e) {
           if (kDebugMode) debugPrint('[Blockchain] penalite erreur: $e');
           return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
@@ -1014,8 +1017,21 @@ class _CaisseScreenState extends State<CaisseScreen> {
           montantXof  : montant,
           description : descFinale.isNotEmpty ? descFinale : 'Dépense caisse',
           gestionnaire: provider.gestActifNom,
+          refInterne  : ref,
         ).catchError((e) {
           if (kDebugMode) debugPrint('[Blockchain] depense_caisse erreur: $e');
+          return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+        });
+      } else if (type == 'apport') {
+        // Apport caisse manuel (espèces / Mobile Money hors CoinPayments)
+        BlockchainService.enregistrerApport(
+          tontineCode: widget.code,
+          membreId   : provider.gestActifNom ?? 'gest',
+          membreNom  : provider.gestActifNom ?? '',
+          montantXof : montant,
+          refInterne : ref,
+        ).catchError((e) {
+          if (kDebugMode) debugPrint('[Blockchain] apport_caisse erreur: $e');
           return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
         });
       }
