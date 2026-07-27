@@ -27,7 +27,7 @@ import '../widgets/app_widgets.dart';
 class SoldeTontine {
   final String code;
   final String nom;
-  final int    soldeBrut;       // XOF calculé depuis journal
+  final int    soldeBrut;       // XOF calculé depuis journal blockchain
   final int    totalEntrees;    // cotisations + apports
   final int    totalSorties;    // distributions + prêts + dépenses
   final int    nbOps;           // nombre d'opérations total
@@ -36,6 +36,7 @@ class SoldeTontine {
   final String? dernierStatut;  // 'confirmed' | 'pending' | null
   final DateTime? derniereOp;
   final bool   syncEnCours;
+  final int?   soldeCaisseReel; // Solde réel depuis Supabase (comparaison)
 
   const SoldeTontine({
     required this.code,
@@ -49,20 +50,32 @@ class SoldeTontine {
     this.dernierStatut,
     this.derniereOp,
     this.syncEnCours = false,
+    this.soldeCaisseReel,
   });
 
-  SoldeTontine copyWith({bool? syncEnCours}) => SoldeTontine(
-    code          : code,
-    nom           : nom,
-    soldeBrut     : soldeBrut,
-    totalEntrees  : totalEntrees,
-    totalSorties  : totalSorties,
-    nbOps         : nbOps,
-    nbOnChain     : nbOnChain,
-    dernierTxHash : dernierTxHash,
-    dernierStatut : dernierStatut,
-    derniereOp    : derniereOp,
-    syncEnCours   : syncEnCours ?? this.syncEnCours,
+  /// Écart entre solde blockchain et solde réel (en % absolu)
+  double? get ecartPourcentage {
+    if (soldeCaisseReel == null) return null;
+    if (soldeCaisseReel == 0 && soldeBrut == 0) return 0;
+    final base = soldeCaisseReel! != 0 ? soldeCaisseReel!.abs() : 1;
+    return ((soldeBrut - soldeCaisseReel!).abs() / base * 100);
+  }
+
+  bool get diverge => (ecartPourcentage ?? 0) > 2; // alerte si >2% d'écart
+
+  SoldeTontine copyWith({bool? syncEnCours, int? soldeCaisseReel}) => SoldeTontine(
+    code            : code,
+    nom             : nom,
+    soldeBrut       : soldeBrut,
+    totalEntrees    : totalEntrees,
+    totalSorties    : totalSorties,
+    nbOps           : nbOps,
+    nbOnChain       : nbOnChain,
+    dernierTxHash   : dernierTxHash,
+    dernierStatut   : dernierStatut,
+    derniereOp      : derniereOp,
+    syncEnCours     : syncEnCours ?? this.syncEnCours,
+    soldeCaisseReel : soldeCaisseReel ?? this.soldeCaisseReel,
   );
 
   // Types qui AUGMENTENT la caisse
@@ -141,6 +154,7 @@ class AdminSoldesScreen extends StatefulWidget {
 class _AdminSoldesScreenState extends State<AdminSoldesScreen> {
   List<SoldeTontine>      _soldes       = [];
   List<Map<String, dynamic>> _tontines  = [];
+  Map<String, int>        _soldesReels  = {}; // soldes réels depuis Supabase
   bool                    _loading      = true;
   bool                    _refreshing   = false;
   String?                 _erreur;
@@ -190,8 +204,15 @@ class _AdminSoldesScreenState extends State<AdminSoldesScreen> {
   }
 
   Future<void> _chargerTontines() async {
-    final tontines = await SupabaseService.adminListerTontines(widget.cleAdmin);
-    _tontines = tontines;
+    // Charger la liste des tontines ET les soldes réels en parallèle
+    final results = await Future.wait([
+      SupabaseService.adminListerTontines(widget.cleAdmin),
+      SupabaseService.adminSoldesCaisses(widget.cleAdmin),
+    ]);
+    final tontines   = results[0] as List<Map<String, dynamic>>;
+    final soldesReels = results[1] as Map<String, int>;
+    _tontines  = tontines;
+    _soldesReels = soldesReels;
     await _calculerSoldes(tontines);
   }
 
@@ -222,22 +243,26 @@ class _AdminSoldesScreenState extends State<AdminSoldesScreen> {
 
       if (code.isEmpty) continue;
 
+      // Solde réel depuis Supabase (pour détection divergence)
+      final soldeCaisseReel = _soldesReels[code];
+
       // Utiliser les stats agrégées si disponibles
       if (parTontine.containsKey(code)) {
         final st = parTontine[code] as Map<String, dynamic>;
         soldes.add(SoldeTontine(
-          code         : code,
-          nom          : nom,
-          soldeBrut    : (st['solde'] as num?)?.toInt() ?? 0,
-          totalEntrees : (st['entrees'] as num?)?.toInt() ?? 0,
-          totalSorties : (st['sorties'] as num?)?.toInt() ?? 0,
-          nbOps        : (st['nb_ops'] as num?)?.toInt() ?? 0,
-          nbOnChain    : (st['nb_on_chain'] as num?)?.toInt() ?? 0,
-          dernierTxHash: st['dernier_tx'] as String?,
-          dernierStatut: st['dernier_statut'] as String?,
-          derniereOp   : st['derniere_op'] != null
+          code            : code,
+          nom             : nom,
+          soldeBrut       : (st['solde'] as num?)?.toInt() ?? 0,
+          totalEntrees    : (st['entrees'] as num?)?.toInt() ?? 0,
+          totalSorties    : (st['sorties'] as num?)?.toInt() ?? 0,
+          nbOps           : (st['nb_ops'] as num?)?.toInt() ?? 0,
+          nbOnChain       : (st['nb_on_chain'] as num?)?.toInt() ?? 0,
+          dernierTxHash   : st['dernier_tx'] as String?,
+          dernierStatut   : st['dernier_statut'] as String?,
+          derniereOp      : st['derniere_op'] != null
               ? DateTime.tryParse(st['derniere_op'] as String)
               : null,
+          soldeCaisseReel : soldeCaisseReel,
         ));
       } else {
         // Fallback : lire le journal de cette tontine individuellement
@@ -246,7 +271,8 @@ class _AdminSoldesScreenState extends State<AdminSoldesScreen> {
           limit      : 200,
         );
         if (entrees.isNotEmpty) {
-          soldes.add(SoldeTontine.depuisEntrees(code, nom, entrees));
+          final s = SoldeTontine.depuisEntrees(code, nom, entrees);
+          soldes.add(s.copyWith(soldeCaisseReel: soldeCaisseReel));
         }
       }
     }
@@ -377,11 +403,12 @@ class _AdminSoldesScreenState extends State<AdminSoldesScreen> {
 
   // ── Totaux ────────────────────────────────────────────────────────────────
 
-  int get _totalSolde    => _soldes.fold(0, (s, e) => s + e.soldeBrut);
-  int get _totalEntrees  => _soldes.fold(0, (s, e) => s + e.totalEntrees);
-  int get _totalSorties  => _soldes.fold(0, (s, e) => s + e.totalSorties);
-  int get _totalOnChain  => _soldes.fold(0, (s, e) => s + e.nbOnChain);
-  int get _totalOps      => _soldes.fold(0, (s, e) => s + e.nbOps);
+  int get _totalSolde     => _soldes.fold(0, (s, e) => s + e.soldeBrut);
+  int get _totalEntrees   => _soldes.fold(0, (s, e) => s + e.totalEntrees);
+  int get _totalSorties   => _soldes.fold(0, (s, e) => s + e.totalSorties);
+  int get _totalOnChain   => _soldes.fold(0, (s, e) => s + e.nbOnChain);
+  int get _totalOps       => _soldes.fold(0, (s, e) => s + e.nbOps);
+  int get _nbDivergences  => _soldes.where((s) => s.diverge).length;
 
   // ═══════════════════════════════════════════════════════════════════════════
   // BUILD
@@ -584,6 +611,35 @@ class _AdminSoldesScreenState extends State<AdminSoldesScreen> {
                 ),
               ],
             ),
+            // ── Alerte divergences globale ──────────────────────────────────
+            if (_nbDivergences > 0) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE65100).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: const Color(0xFFFF9800).withValues(alpha: 0.6),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded,
+                        size: 15, color: Color(0xFFFF9800)),
+                    const SizedBox(width: 6),
+                    Text(
+                      '$_nbDivergences tontine${_nbDivergences > 1 ? "s" : ""} '
+                      'avec divergence blockchain ≠ réel — Sync recommandée !',
+                      style: const TextStyle(
+                          fontSize: 11.5,
+                          color: Color(0xFFFF9800),
+                          fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -950,6 +1006,54 @@ class _CarteSolde extends StatelessWidget {
                           fontSize: 11.5, color: Color(0xFF00C853)),
                     ),
                   ],
+                ],
+              ),
+            ],
+
+            // ── Ligne 2b : alerte divergence blockchain vs réel ────────────
+            if (solde.soldeCaisseReel != null && solde.diverge) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF3E0),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFFF9800), width: 1),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded,
+                        size: 14, color: Color(0xFFE65100)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Divergence détectée : blockchain ${Formatters.montant(solde.soldeBrut.abs(), devise: "XOF")} '
+                        'vs réel ${Formatters.montant(solde.soldeCaisseReel!.abs(), devise: "XOF")} '
+                        '(${solde.ecartPourcentage!.toStringAsFixed(1)}%). Synchroniser pour corriger.',
+                        style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFFE65100),
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // ── Ligne 2c : solde réel Supabase (confirmé) ─────────────────
+            if (solde.soldeCaisseReel != null && !solde.diverge && solde.soldeCaisseReel != 0) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  const Icon(Icons.verified_rounded, size: 12, color: Color(0xFF4CAF50)),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Solde Supabase confirmé : ${Formatters.montant(solde.soldeCaisseReel!.abs(), devise: "XOF")}',
+                    style: const TextStyle(
+                        fontSize: 11, color: Color(0xFF4CAF50),
+                        fontWeight: FontWeight.w600),
+                  ),
                 ],
               ),
             ],

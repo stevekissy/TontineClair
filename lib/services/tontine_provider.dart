@@ -139,14 +139,41 @@ class TontineProvider extends ChangeNotifier {
   Future<bool> ecrire(Map<String, dynamic> data, String pin) async {
     if (_courante == null || _gestActifNom == null) return false;
     try {
+      final code = _courante!.code;
       final ok = await SupabaseService.ecrireTontine(
-        code: _courante!.code,
+        code: code,
         nom: _gestActifNom!,
         pin: pin,
         data: data,
       );
       if (ok) {
-        await chargerTontine(_courante!.code);
+        await chargerTontine(code);
+
+        // ── BLOCKCHAIN : sync solde caisse après chaque écriture (non-bloquant) ──
+        // Déclenché automatiquement pour que le solde de la caisse commune soit
+        // toujours visible on-chain avec le code de la tontine.
+        final tontine = _courante;
+        if (tontine != null) {
+          final td = tontine.data;
+          final soldeBrut   = td.soldeCaisse;
+          final totalEntrees = td.caisse
+              .where((m) => ['apport','cotisation','depot','remboursement'].contains(m.type))
+              .fold<int>(0, (s, m) => s + m.montant.abs());
+          final totalSorties = td.caisse
+              .where((m) => ['depense','decaissement','pret','retrait'].contains(m.type))
+              .fold<int>(0, (s, m) => s + m.montant.abs());
+          BlockchainService.syncBalanceTontine(
+            tontineCode  : code,
+            soldeBrut    : soldeBrut,
+            totalEntrees : totalEntrees,
+            totalSorties : totalSorties,
+            nbOps        : td.caisse.length,
+          ).catchError((e) {
+            if (kDebugMode) debugPrint('[Blockchain] sync_balance erreur: $e');
+            return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+          });
+        }
+        // ────────────────────────────────────────────────────────────────────────
       }
       return ok;
     } catch (_) {

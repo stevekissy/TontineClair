@@ -745,6 +745,36 @@ class SupabaseService {
     return [];
   }
 
+  /// Récupère les soldes réels des caisses depuis Supabase pour toutes les tontines.
+  /// Retourne une Map<code, soldeCaisse> calculée depuis data->caisse de chaque tontine.
+  /// Utilisée par AdminSoldesScreen pour comparer solde blockchain vs solde réel.
+  static Future<Map<String, int>> adminSoldesCaisses(String cle) async {
+    final Map<String, int> soldes = {};
+    try {
+      // Récupérer toutes les tontines actives avec leur data JSON
+      final tontines = await adminListerTontines(cle);
+      for (final t in tontines) {
+        final code = t['code'] as String? ?? '';
+        if (code.isEmpty) continue;
+        // Le solde peut être pré-calculé dans la liste admin si disponible
+        final soldePrecalcule = t['solde_caisse'] as int?
+            ?? t['soldeCaisse'] as int?;
+        if (soldePrecalcule != null) {
+          soldes[code] = soldePrecalcule;
+          continue;
+        }
+        // Sinon lire la tontine complète
+        try {
+          final tontine = await lireTontine(code);
+          soldes[code] = tontine.data.soldeCaisse;
+        } catch (_) {
+          // Tontine inaccessible : ignorer
+        }
+      }
+    } catch (_) {}
+    return soldes;
+  }
+
   /// Compteurs unifiés pour l'Admin (v17).
   /// Retourne {total, actives, premium, gratuites, inactives, expirees,
   ///           suspendues, supprimees, demandes_en_attente}
