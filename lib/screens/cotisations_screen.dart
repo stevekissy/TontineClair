@@ -314,6 +314,21 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
         },
       );
 
+      // ── BLOCKCHAIN : cotisation manuelle validée par gestionnaire (non-bloquant) ─
+      if (ok == true) {
+        BlockchainService.enregistrerCotisation(
+          tontineCode: provider.courante!.code,
+          membreId   : membre.id,
+          membreNom  : membre.nom,
+          montantXof : data.montant,
+          refInterne : ref,
+        ).catchError((e) {
+          if (kDebugMode) debugPrint('[Blockchain] cotisation_manuelle erreur: $e');
+          return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+        });
+      }
+      // ─────────────────────────────────────────────────────────────────────────────
+
       if (ok == true && context.mounted) {
         afficherToast(context, 'Paiement de ${membre.nom} enregistré !');
         // Notification push à tous les membres
