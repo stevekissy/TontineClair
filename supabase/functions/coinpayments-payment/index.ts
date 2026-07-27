@@ -227,16 +227,38 @@ async function cpGetWalletInfo(checkoutUrl: string, currency2: string): Promise<
     if (m) address = m[0];
   } else if (cur === "ETH" || cur.includes("ERC20") || cur.includes("BEP20") || cur === "BNB.BSC" || cur === "BNB") {
     // Adresse EVM (Ethereum, BSC/BEP20, BNB Smart Chain) : 0x + 40 hex
-    // ⚠️ IMPORTANT : BEP20 et BNB.BSC utilisent le MÊME format d'adresse qu'Ethereum (0x...)
-    // La page checkout CoinPayments peut afficher l'adresse sans le préfixe 0x dans le HTML.
-    // On cherche d'abord avec 0x, puis sans 0x si non trouvé.
-    const mWith0x = html.match(/\b0x[a-fA-F0-9]{40}\b/);
-    if (mWith0x) {
-      address = mWith0x[0];
+    // ⚠️ PIÈGE CRITIQUE : La page checkout CoinPayments contient DEUX adresses 0x :
+    //   1. L'adresse du contrat token (ex: USDT BSC = 0x55d3...) dans l'URL EIP-681
+    //      Format: ethereum:0x<CONTRACT>@56/transfer?address=0x<DEPOSIT>&uint256=...
+    //   2. L'adresse de dépôt réelle (unique à la TX) dans le paramètre "address="
+    //
+    // Il faut extraire l'adresse du paramètre "address=" de l'URL EIP-681, PAS la première 0x trouvée.
+
+    // Méthode 1 (prioritaire) : extraire depuis l'URL EIP-681 ethereum:CONTRACT@CHAIN/transfer?address=DEPOSIT
+    const eip681Match = html.match(/ethereum:0x[a-fA-F0-9]{40}@\d+\/transfer\?address=(0x[a-fA-F0-9]{40})/i);
+    if (eip681Match) {
+      address = eip681Match[1]; // Le vrai adresse de dépôt dans "address="
     } else {
-      // Chercher adresse hex de 40 chars sans 0x et la préfixer
-      const mWithout0x = html.match(/\b[a-fA-F0-9]{40}\b/);
-      if (mWithout0x) address = "0x" + mWithout0x[0];
+      // Méthode 2 : chercher dans le label "Address" de la page checkout
+      // Pattern: class="address"...0x<ADDR> ou "Address</div>...<div>0x<ADDR>"
+      const addressLabelMatch = html.match(/class="address"[^>]*>\s*(0x[a-fA-F0-9]{40})\s*</i)
+                             ?? html.match(/Address<\/div>\s*<div[^>]*>\s*(0x[a-fA-F0-9]{40})/i)
+                             ?? html.match(/send[^"]*to address[^"]*<strong>(0x[a-fA-F0-9]{40})<\/strong>/i);
+      if (addressLabelMatch) {
+        address = addressLabelMatch[1];
+      } else {
+        // Méthode 3 (dernier recours) : prendre toutes les adresses 0x et exclure les contrats connus
+        const KNOWN_CONTRACTS = [
+          "0x55d398326f99059fF775485246999027B3197955", // USDT BSC
+          "0xdAC17F958D2ee523a2206206994597C13D831ec7", // USDT ERC20
+          "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", // USDC ERC20
+          "0x2170Ed0880ac9A755fd29B2688956BD959F933F8", // ETH on BSC
+          "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c", // WBNB
+        ].map(a => a.toLowerCase());
+        const allAddresses = [...html.matchAll(/\b(0x[a-fA-F0-9]{40})\b/gi)].map(m => m[1]);
+        const depositAddr = allAddresses.find(a => !KNOWN_CONTRACTS.includes(a.toLowerCase()));
+        if (depositAddr) address = depositAddr;
+      }
     }
   } else if (cur === "LTC") {
     const m = html.match(/\b[LMm][a-km-zA-HJ-NP-Z1-9]{26,33}\b/);
