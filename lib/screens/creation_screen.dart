@@ -7,6 +7,7 @@ import '../services/storage_service.dart';
 import '../services/echeance_service.dart';
 import '../services/devise_service.dart';
 import '../services/kyc_service.dart';
+import '../services/phone_otp_service.dart';
 import '../utils/app_colors.dart';
 import '../widgets/app_widgets.dart';
 import 'code_cree_screen.dart';
@@ -38,6 +39,12 @@ class _CreationScreenState extends State<CreationScreen> {
   final List<TextEditingController> _gestPrenomCtrl   = [TextEditingController()];
   final List<TextEditingController> _gestNomFamCtrl   = [TextEditingController()];
   final List<TextEditingController> _gestTelCtrl      = [TextEditingController()];
+  // Confirmation téléphone gestionnaires 2+ (double saisie anti-typo)
+  final List<TextEditingController> _gestTelConfCtrl  = [TextEditingController()];
+
+  // ── OTP gestionnaire principal ────────────────────────────────────────────
+  bool   _otpVerifie      = false;   // true une fois le numéro confirmé par OTP
+  String _otpVerifieNum   = '';      // numéro confirmé (normalisé)
 
   bool _loading = false;
   String? _erreur;
@@ -61,9 +68,10 @@ class _CreationScreenState extends State<CreationScreen> {
     for (final c in _gestNomCtrl)    { c.dispose(); }
     for (final c in _gestPinCtrl)    { c.dispose(); }
     for (final c in _gestEmailCtrl)  { c.dispose(); }
-    for (final c in _gestPrenomCtrl) { c.dispose(); }
-    for (final c in _gestNomFamCtrl) { c.dispose(); }
-    for (final c in _gestTelCtrl)    { c.dispose(); }
+    for (final c in _gestPrenomCtrl)  { c.dispose(); }
+    for (final c in _gestNomFamCtrl)  { c.dispose(); }
+    for (final c in _gestTelCtrl)     { c.dispose(); }
+    for (final c in _gestTelConfCtrl) { c.dispose(); }
     super.dispose();
   }
 
@@ -187,6 +195,41 @@ class _CreationScreenState extends State<CreationScreen> {
             'Format accepté : +225XXXXXXXXXX ou 07XXXXXXXX (8 à 15 chiffres).');
         return;
       }
+      // ── Gestionnaire 1 : OTP Firebase obligatoire ────────────────────────
+      if (i == 0) {
+        if (!_otpVerifie) {
+          setState(() => _erreur =
+              'Vous devez vérifier votre numéro de téléphone par SMS avant de créer la tontine.\n'
+              'Appuyez sur "Vérifier par SMS" à côté du numéro.');
+          return;
+        }
+        // Vérifier que le numéro saisi correspond à celui vérifié par OTP
+        if (telNorm != _otpVerifieNum) {
+          setState(() {
+            _otpVerifie    = false;
+            _otpVerifieNum = '';
+            _erreur =
+                'Le numéro saisi ne correspond plus au numéro vérifié par SMS.\n'
+                'Modifiez le numéro et vérifiez à nouveau.';
+          });
+          return;
+        }
+      }
+      // ── Gestionnaires 2+ : double saisie (confirmation anti-typo) ────────
+      if (i > 0) {
+        final telConf = _gestTelConfCtrl[i].text.trim().replaceAll(RegExp(r'[\s\-\.]'), '');
+        if (telConf.isEmpty) {
+          setState(() => _erreur =
+              'Confirmez le numéro de téléphone du gestionnaire ${i + 1}.');
+          return;
+        }
+        if (telNorm != telConf) {
+          setState(() => _erreur =
+              'Les deux numéros du gestionnaire ${i + 1} ne correspondent pas.\n'
+              'Vérifiez la saisie.');
+          return;
+        }
+      }
       // ── PIN ──────────────────────────────────────────────────────────────
       final pin = gestPins[i];
       if (pin.length < 4) {
@@ -295,6 +338,7 @@ class _CreationScreenState extends State<CreationScreen> {
       _gestPrenomCtrl.add(TextEditingController());
       _gestNomFamCtrl.add(TextEditingController());
       _gestTelCtrl.add(TextEditingController());
+      _gestTelConfCtrl.add(TextEditingController());
     });
   }
 
@@ -305,6 +349,7 @@ class _CreationScreenState extends State<CreationScreen> {
     _gestPrenomCtrl[i].dispose();
     _gestNomFamCtrl[i].dispose();
     _gestTelCtrl[i].dispose();
+    _gestTelConfCtrl[i].dispose();
     setState(() {
       _gestNomCtrl.removeAt(i);
       _gestPinCtrl.removeAt(i);
@@ -312,6 +357,7 @@ class _CreationScreenState extends State<CreationScreen> {
       _gestPrenomCtrl.removeAt(i);
       _gestNomFamCtrl.removeAt(i);
       _gestTelCtrl.removeAt(i);
+      _gestTelConfCtrl.removeAt(i);
     });
   }
 
@@ -651,13 +697,27 @@ class _CreationScreenState extends State<CreationScreen> {
                         ...List.generate(
                           _gestNomCtrl.length,
                           (i) => _LigneGestionnaire(
-                            nomCtrl:      _gestNomCtrl[i],
-                            pinCtrl:      _gestPinCtrl[i],
-                            emailCtrl:    _gestEmailCtrl[i],
-                            prenomCtrl:   _gestPrenomCtrl[i],
-                            nomFamCtrl:   _gestNomFamCtrl[i],
-                            telCtrl:      _gestTelCtrl[i],
-                            index: i,
+                            nomCtrl:        _gestNomCtrl[i],
+                            pinCtrl:        _gestPinCtrl[i],
+                            emailCtrl:      _gestEmailCtrl[i],
+                            prenomCtrl:     _gestPrenomCtrl[i],
+                            nomFamCtrl:     _gestNomFamCtrl[i],
+                            telCtrl:        _gestTelCtrl[i],
+                            telConfCtrl:    _gestTelConfCtrl[i],
+                            index:          i,
+                            otpVerifie:     i == 0 ? _otpVerifie : null,
+                            onOtpVerifie:   i == 0
+                                ? (numVerifie) => setState(() {
+                                    _otpVerifie    = true;
+                                    _otpVerifieNum = numVerifie;
+                                  })
+                                : null,
+                            onOtpReset:     i == 0
+                                ? () => setState(() {
+                                    _otpVerifie    = false;
+                                    _otpVerifieNum = '';
+                                  })
+                                : null,
                             onRetirer: _gestNomCtrl.length > 1
                                 ? () => _retirerGest(i)
                                 : null,
@@ -780,14 +840,23 @@ class _LigneMembre extends StatelessWidget {
   }
 }
 
-class _LigneGestionnaire extends StatelessWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// _LigneGestionnaire
+//  - index == 0 → bouton "Vérifier par SMS" (Firebase OTP)
+//  - index  > 0 → double saisie du téléphone (anti-typo)
+// ─────────────────────────────────────────────────────────────────────────────
+class _LigneGestionnaire extends StatefulWidget {
   final TextEditingController nomCtrl;
   final TextEditingController pinCtrl;
   final TextEditingController emailCtrl;
   final TextEditingController prenomCtrl;
   final TextEditingController nomFamCtrl;
   final TextEditingController telCtrl;
+  final TextEditingController telConfCtrl;   // confirmation pour gest 2+
   final int index;
+  final bool? otpVerifie;                    // null pour gest 2+ (non concerné)
+  final void Function(String numVerifie)? onOtpVerifie;
+  final VoidCallback? onOtpReset;
   final VoidCallback? onRetirer;
 
   const _LigneGestionnaire({
@@ -797,19 +866,105 @@ class _LigneGestionnaire extends StatelessWidget {
     required this.prenomCtrl,
     required this.nomFamCtrl,
     required this.telCtrl,
+    required this.telConfCtrl,
     required this.index,
+    this.otpVerifie,
+    this.onOtpVerifie,
+    this.onOtpReset,
     this.onRetirer,
   });
 
   @override
+  State<_LigneGestionnaire> createState() => _LigneGestionnaireState();
+}
+
+class _LigneGestionnaireState extends State<_LigneGestionnaire> {
+
+  bool _otpEnCours = false;  // spinner pendant envoi/vérif SMS
+
+  // ── Lance le flux OTP Firebase ───────────────────────────────────────────
+  Future<void> _lancerOtp() async {
+    final numero = widget.telCtrl.text.trim().replaceAll(RegExp(r'[\s\-\.]'), '');
+    final telReg = RegExp(r'^\+[0-9]{8,15}$');
+
+    if (!telReg.hasMatch(numero)) {
+      _afficherErreur(
+        'Entrez d\'abord un numéro valide avec indicatif pays\n'
+        '(ex: +2250700000000) avant de vérifier.',
+      );
+      return;
+    }
+
+    setState(() => _otpEnCours = true);
+
+    final result = await PhoneOtpService.envoyerOtp(numero);
+
+    if (!mounted) return;
+    setState(() => _otpEnCours = false);
+
+    if (!result.estSucces) {
+      _afficherErreur(result.erreurMessage ?? 'Erreur envoi SMS.');
+      return;
+    }
+
+    // ── Auto-résolution Android (rare, mais possible) ──────────────────
+    if (result.status == PhoneOtpStatus.autoVerified) {
+      widget.onOtpVerifie?.call(numero);
+      _afficherSucces('Numéro vérifié automatiquement par Android !');
+      return;
+    }
+
+    // ── SMS envoyé → ouvrir le dialogue de saisie du code ─────────────
+    if (!mounted) return;
+    final codeConfirme = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _DialogOtp(
+        verificationId: result.verificationId!,
+        numero: numero,
+        onRenvoyer: () async {
+          // Ferme le dialogue et relance depuis le début
+          if (mounted) Navigator.of(context).pop(false);
+          await Future.delayed(const Duration(milliseconds: 300));
+          if (mounted) _lancerOtp();
+        },
+      ),
+    );
+
+    if (!mounted) return;
+    if (codeConfirme == true) {
+      widget.onOtpVerifie?.call(numero);
+    }
+  }
+
+  void _afficherErreur(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg),
+      backgroundColor: AppColors.alerte,
+      duration: const Duration(seconds: 5),
+    ));
+  }
+
+  void _afficherSucces(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg),
+      backgroundColor: AppColors.succes,
+      duration: const Duration(seconds: 4),
+    ));
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final estPrincipal = widget.index == 0;
+    final otpOk = widget.otpVerifie == true;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
 
-          // ── Entête gestionnaire ──────────────────────────────────────────
+          // ── Entête gestionnaire ────────────────────────────────────────
           Row(
             children: [
               Container(
@@ -820,7 +975,7 @@ class _LigneGestionnaire extends StatelessWidget {
                 ),
                 child: Center(
                   child: Text(
-                    '${index + 1}',
+                    '${widget.index + 1}',
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,
@@ -830,19 +985,21 @@ class _LigneGestionnaire extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'Informations du gestionnaire',
-                  style: TextStyle(
+                  estPrincipal
+                      ? 'Gestionnaire principal (vous)'
+                      : 'Gestionnaire ${widget.index + 1}',
+                  style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
                     color: AppColors.encre,
                   ),
                 ),
               ),
-              if (onRetirer != null)
+              if (widget.onRetirer != null)
                 GestureDetector(
-                  onTap: onRetirer,
+                  onTap: widget.onRetirer,
                   child: Container(
                     width: 36, height: 36,
                     decoration: BoxDecoration(
@@ -859,12 +1016,12 @@ class _LigneGestionnaire extends StatelessWidget {
           ),
           const SizedBox(height: 10),
 
-          // ── Ligne 1 : Prénom + Nom de famille ───────────────────────────
+          // ── Ligne 1 : Prénom + Nom de famille ─────────────────────────
           Row(
             children: [
               Expanded(
                 child: TextField(
-                  controller: prenomCtrl,
+                  controller: widget.prenomCtrl,
                   maxLength: 40,
                   textCapitalization: TextCapitalization.words,
                   decoration: const InputDecoration(
@@ -877,7 +1034,7 @@ class _LigneGestionnaire extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: TextField(
-                  controller: nomFamCtrl,
+                  controller: widget.nomFamCtrl,
                   maxLength: 40,
                   textCapitalization: TextCapitalization.words,
                   decoration: const InputDecoration(
@@ -890,13 +1047,13 @@ class _LigneGestionnaire extends StatelessWidget {
           ),
           const SizedBox(height: 8),
 
-          // ── Ligne 2 : Nom d'affichage + PIN ─────────────────────────────
+          // ── Ligne 2 : Nom d'affichage + PIN ───────────────────────────
           Row(
             children: [
               Expanded(
                 flex: 3,
                 child: TextField(
-                  controller: nomCtrl,
+                  controller: widget.nomCtrl,
                   maxLength: 40,
                   decoration: InputDecoration(
                     hintText: 'Nom affiché (ex: Arnaud)',
@@ -912,7 +1069,7 @@ class _LigneGestionnaire extends StatelessWidget {
               Expanded(
                 flex: 2,
                 child: TextField(
-                  controller: pinCtrl,
+                  controller: widget.pinCtrl,
                   keyboardType: TextInputType.number,
                   obscureText: true,
                   maxLength: 6,
@@ -931,25 +1088,141 @@ class _LigneGestionnaire extends StatelessWidget {
           ),
           const SizedBox(height: 8),
 
-          // ── Ligne 3 : Numéro de téléphone ───────────────────────────────
-          TextField(
-            controller: telCtrl,
-            keyboardType: TextInputType.phone,
-            autocorrect: false,
-            maxLength: 20,
-            decoration: const InputDecoration(
-              hintText: 'Téléphone (ex: +2250700000000)',
-              prefixIcon: Icon(Icons.phone_outlined, size: 18),
-              counterText: '',
-              helperText: 'Avec indicatif pays : +225, +33, +1…',
-              helperStyle: TextStyle(fontSize: 11, color: AppColors.encreDoux),
+          // ── Ligne 3 : Téléphone ────────────────────────────────────────
+          // Gestionnaire 1 : champ + badge OTP + bouton "Vérifier"
+          // Gestionnaire 2+: champ + champ confirmation (double saisie)
+          if (estPrincipal) ...[
+            // Badge OTP vérifié (affiché quand numéro confirmé)
+            if (otpOk)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE3F1EA),
+                    border: Border.all(
+                      color: const Color(0xFF2E7D5B).withValues(alpha: 0.5),
+                      width: 1.5,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.verified_rounded,
+                          size: 18, color: Color(0xFF2E7D5B)),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Numéro vérifié par SMS ✓',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1B5E3B),
+                          ),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          widget.onOtpReset?.call();
+                          widget.telCtrl.clear();
+                        },
+                        child: const Text(
+                          'Changer',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF2E7D5B),
+                            fontWeight: FontWeight.w600,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            // Champ téléphone (masqué si déjà vérifié)
+            if (!otpOk) ...[
+              TextField(
+                controller: widget.telCtrl,
+                keyboardType: TextInputType.phone,
+                autocorrect: false,
+                maxLength: 20,
+                onChanged: (_) {
+                  // Si on modifie le numéro après vérif, reset OTP
+                  if (widget.otpVerifie == true) {
+                    widget.onOtpReset?.call();
+                  }
+                },
+                decoration: const InputDecoration(
+                  hintText: 'Votre téléphone (+2250700000000)',
+                  prefixIcon: Icon(Icons.phone_outlined, size: 18),
+                  counterText: '',
+                  helperText: 'Indicatif obligatoire : +225, +33, +1…',
+                  helperStyle: TextStyle(fontSize: 11, color: AppColors.encreDoux),
+                ),
+              ),
+              const SizedBox(height: 8),
+              // Bouton "Vérifier par SMS"
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _otpEnCours ? null : _lancerOtp,
+                  icon: _otpEnCours
+                      ? const SizedBox(
+                          width: 16, height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.sms_outlined, size: 18),
+                  label: Text(
+                    _otpEnCours ? 'Envoi du SMS…' : 'Vérifier par SMS',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.encre,
+                    side: const BorderSide(color: AppColors.encre, width: 1.5),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ] else ...[
+            // ── Gestionnaire 2+ : téléphone + confirmation ───────────────
+            TextField(
+              controller: widget.telCtrl,
+              keyboardType: TextInputType.phone,
+              autocorrect: false,
+              maxLength: 20,
+              decoration: const InputDecoration(
+                hintText: 'Téléphone (ex: +2250700000000)',
+                prefixIcon: Icon(Icons.phone_outlined, size: 18),
+                counterText: '',
+                helperText: 'Avec indicatif pays : +225, +33, +1…',
+                helperStyle: TextStyle(fontSize: 11, color: AppColors.encreDoux),
+              ),
             ),
-          ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: widget.telConfCtrl,
+              keyboardType: TextInputType.phone,
+              autocorrect: false,
+              maxLength: 20,
+              decoration: const InputDecoration(
+                hintText: 'Confirmer le téléphone',
+                prefixIcon: Icon(Icons.phone_callback_outlined, size: 18),
+                counterText: '',
+                helperText: 'Retapez le même numéro pour confirmer',
+                helperStyle: TextStyle(fontSize: 11, color: AppColors.encreDoux),
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
 
-          // ── Ligne 4 : Email de récupération ─────────────────────────────
+          // ── Ligne 4 : Email de récupération ───────────────────────────
           TextField(
-            controller: emailCtrl,
+            controller: widget.emailCtrl,
             keyboardType: TextInputType.emailAddress,
             autocorrect: false,
             maxLength: 100,
@@ -962,10 +1235,199 @@ class _LigneGestionnaire extends StatelessWidget {
             ),
           ),
 
-          if (index < 999)
+          if (widget.index < 999)
             const Divider(height: 24, color: AppColors.lignes),
         ],
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dialogue de saisie du code OTP (6 chiffres)
+// ─────────────────────────────────────────────────────────────────────────────
+class _DialogOtp extends StatefulWidget {
+  final String verificationId;
+  final String numero;
+  final VoidCallback onRenvoyer;
+
+  const _DialogOtp({
+    required this.verificationId,
+    required this.numero,
+    required this.onRenvoyer,
+  });
+
+  @override
+  State<_DialogOtp> createState() => _DialogOtpState();
+}
+
+class _DialogOtpState extends State<_DialogOtp> {
+  final _codeCtrl = TextEditingController();
+  bool _verifEnCours = false;
+  String? _erreur;
+
+  @override
+  void dispose() {
+    _codeCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _verifier() async {
+    final code = _codeCtrl.text.trim();
+    if (code.length < 6) {
+      setState(() => _erreur = 'Le code SMS contient 6 chiffres.');
+      return;
+    }
+
+    setState(() {
+      _verifEnCours = true;
+      _erreur = null;
+    });
+
+    final err = await PhoneOtpService.verifierOtp(
+      verificationId: widget.verificationId,
+      smsCode: code,
+    );
+
+    if (!mounted) return;
+    setState(() => _verifEnCours = false);
+
+    if (err == null) {
+      // Succès
+      Navigator.of(context).pop(true);
+    } else {
+      setState(() => _erreur = err);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Masquer partiellement le numéro : +225 07XX XX **
+    final numMasque = widget.numero.length > 6
+        ? '${widget.numero.substring(0, widget.numero.length - 4)}****'
+        : widget.numero;
+
+    return AlertDialog(
+      backgroundColor: AppColors.fondPapier,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Row(
+        children: [
+          Icon(Icons.sms_outlined, size: 22, color: AppColors.encre),
+          SizedBox(width: 10),
+          Text(
+            'Code SMS',
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 18,
+              color: AppColors.encre,
+            ),
+          ),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Un code à 6 chiffres a été envoyé au\n$numMasque',
+            style: const TextStyle(
+              fontSize: 14,
+              color: AppColors.texteDoux,
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _codeCtrl,
+            keyboardType: TextInputType.number,
+            autofocus: true,
+            maxLength: 6,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 8,
+              color: AppColors.encre,
+            ),
+            decoration: InputDecoration(
+              hintText: '000000',
+              hintStyle: const TextStyle(
+                fontSize: 26,
+                letterSpacing: 8,
+                color: AppColors.encreDoux,
+              ),
+              counterText: '',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.lignes, width: 1.5),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.encre, width: 2),
+              ),
+              contentPadding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+            onChanged: (v) {
+              if (_erreur != null) setState(() => _erreur = null);
+              if (v.length == 6) _verifier();
+            },
+          ),
+          if (_erreur != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              _erreur!,
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppColors.alerte,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Center(
+            child: TextButton(
+              onPressed: widget.onRenvoyer,
+              child: const Text(
+                'Renvoyer le code',
+                style: TextStyle(
+                  color: AppColors.encre,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: _verifEnCours ? null : () => Navigator.of(context).pop(false),
+          child: const Text(
+            'Annuler',
+            style: TextStyle(color: AppColors.texteDoux),
+          ),
+        ),
+        ElevatedButton(
+          onPressed: _verifEnCours ? null : _verifier,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.encre,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          child: _verifEnCours
+              ? const SizedBox(
+                  width: 18, height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Colors.white),
+                )
+              : const Text(
+                  'Confirmer',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+        ),
+      ],
     );
   }
 }
