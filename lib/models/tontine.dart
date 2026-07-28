@@ -8,20 +8,40 @@
 
 class Gestionnaire {
   final String nom;
-  final String pin;   // uniquement côté création locale, jamais retourné par lire_tontine
-  final String email; // email de récupération associé à ce gestionnaire
+  final String pin;        // uniquement côté création locale, jamais retourné par lire_tontine
+  final String email;      // email de récupération
+  final String prenom;     // prénom du gestionnaire
+  final String nomFamille; // nom de famille du gestionnaire
+  final String telephone;  // numéro de téléphone (avec indicatif)
 
-  Gestionnaire({required this.nom, required this.pin, this.email = ''});
+  Gestionnaire({
+    required this.nom,
+    required this.pin,
+    this.email      = '',
+    this.prenom     = '',
+    this.nomFamille = '',
+    this.telephone  = '',
+  });
 
   factory Gestionnaire.fromJson(Map<String, dynamic> json) {
     return Gestionnaire(
-      nom:   json['nom']   as String? ?? '',
-      pin:   json['pin']   as String? ?? '',
-      email: json['email'] as String? ?? '',
+      nom:        json['nom']         as String? ?? '',
+      pin:        json['pin']         as String? ?? '',
+      email:      json['email']       as String? ?? '',
+      prenom:     json['prenom']      as String? ?? '',
+      nomFamille: json['nom_famille'] as String? ?? '',
+      telephone:  json['telephone']   as String? ?? '',
     );
   }
 
-  Map<String, dynamic> toJson() => {'nom': nom, 'pin': pin, 'email': email};
+  Map<String, dynamic> toJson() => {
+    'nom':         nom,
+    'pin':         pin,
+    'email':       email,
+    'prenom':      prenom,
+    'nom_famille': nomFamille,
+    'telephone':   telephone,
+  };
 }
 
 class Membre {

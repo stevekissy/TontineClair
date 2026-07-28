@@ -32,9 +32,12 @@ class _CreationScreenState extends State<CreationScreen> {
     TextEditingController(),
   ];
 
-  final List<TextEditingController> _gestNomCtrl   = [TextEditingController()];
-  final List<TextEditingController> _gestPinCtrl   = [TextEditingController()];
-  final List<TextEditingController> _gestEmailCtrl = [TextEditingController()];
+  final List<TextEditingController> _gestNomCtrl      = [TextEditingController()];
+  final List<TextEditingController> _gestPinCtrl      = [TextEditingController()];
+  final List<TextEditingController> _gestEmailCtrl    = [TextEditingController()];
+  final List<TextEditingController> _gestPrenomCtrl   = [TextEditingController()];
+  final List<TextEditingController> _gestNomFamCtrl   = [TextEditingController()];
+  final List<TextEditingController> _gestTelCtrl      = [TextEditingController()];
 
   bool _loading = false;
   String? _erreur;
@@ -55,15 +58,12 @@ class _CreationScreenState extends State<CreationScreen> {
     for (final c in _membresCtrl) {
       c.dispose();
     }
-    for (final c in _gestNomCtrl) {
-      c.dispose();
-    }
-    for (final c in _gestPinCtrl) {
-      c.dispose();
-    }
-    for (final c in _gestEmailCtrl) {
-      c.dispose();
-    }
+    for (final c in _gestNomCtrl)    { c.dispose(); }
+    for (final c in _gestPinCtrl)    { c.dispose(); }
+    for (final c in _gestEmailCtrl)  { c.dispose(); }
+    for (final c in _gestPrenomCtrl) { c.dispose(); }
+    for (final c in _gestNomFamCtrl) { c.dispose(); }
+    for (final c in _gestTelCtrl)    { c.dispose(); }
     super.dispose();
   }
 
@@ -74,9 +74,12 @@ class _CreationScreenState extends State<CreationScreen> {
         .map((c) => c.text.trim())
         .where((s) => s.isNotEmpty)
         .toList();
-    final gestNoms   = _gestNomCtrl.map((c) => c.text.trim()).toList();
-    final gestPins   = _gestPinCtrl.map((c) => c.text.trim()).toList();
-    final gestEmails = _gestEmailCtrl.map((c) => c.text.trim().toLowerCase()).toList();
+    final gestNoms      = _gestNomCtrl.map((c) => c.text.trim()).toList();
+    final gestPins      = _gestPinCtrl.map((c) => c.text.trim()).toList();
+    final gestEmails    = _gestEmailCtrl.map((c) => c.text.trim().toLowerCase()).toList();
+    final gestPrenoms   = _gestPrenomCtrl.map((c) => c.text.trim()).toList();
+    final gestNomsFam   = _gestNomFamCtrl.map((c) => c.text.trim()).toList();
+    final gestTels      = _gestTelCtrl.map((c) => c.text.trim()).toList();
 
     // Validations
     if (nom.isEmpty) {
@@ -156,15 +159,41 @@ class _CreationScreenState extends State<CreationScreen> {
 
     for (int i = 0; i < gestNoms.length; i++) {
       if (gestNoms[i].isEmpty) {
-        setState(() => _erreur = 'Nom du gestionnaire ${i + 1} manquant.');
+        setState(() => _erreur = 'Nom d\'affichage du gestionnaire ${i + 1} manquant.');
         return;
       }
+      // ── Prénom obligatoire ───────────────────────────────────────────────
+      if (gestPrenoms[i].isEmpty) {
+        setState(() => _erreur = 'Prénom du gestionnaire ${i + 1} manquant.');
+        return;
+      }
+      // ── Nom de famille obligatoire ───────────────────────────────────────
+      if (gestNomsFam[i].isEmpty) {
+        setState(() => _erreur = 'Nom de famille du gestionnaire ${i + 1} manquant.');
+        return;
+      }
+      // ── Téléphone obligatoire + format ───────────────────────────────────
+      final tel = gestTels[i];
+      if (tel.isEmpty) {
+        setState(() => _erreur = 'Numéro de téléphone du gestionnaire ${i + 1} manquant.');
+        return;
+      }
+      // Accepte : +225XXXXXXXXXX ou 00225XXXXXXXXXX ou local 07XXXXXXXX (min 8 chiffres)
+      final telReg = RegExp(r'^\+?[0-9]{8,15}$');
+      final telNorm = tel.replaceAll(RegExp(r'[\s\-\.]'), '');
+      if (!telReg.hasMatch(telNorm)) {
+        setState(() => _erreur =
+            'Numéro de téléphone du gestionnaire ${i + 1} invalide.\n'
+            'Format accepté : +225XXXXXXXXXX ou 07XXXXXXXX (8 à 15 chiffres).');
+        return;
+      }
+      // ── PIN ──────────────────────────────────────────────────────────────
       final pin = gestPins[i];
       if (pin.length < 4) {
         setState(() => _erreur = 'PIN de ${gestNoms[i]} trop court (4 chiffres min.).');
         return;
       }
-      // Email de récupération obligatoire
+      // ── Email de récupération obligatoire ────────────────────────────────
       final email = gestEmails[i];
       if (email.isEmpty) {
         setState(() => _erreur = 'Email de récupération de ${gestNoms[i]} manquant.');
@@ -195,9 +224,12 @@ class _CreationScreenState extends State<CreationScreen> {
     final gestionnaires = List.generate(
       gestNoms.length,
       (i) => Gestionnaire(
-        nom:   gestNoms[i],
-        pin:   gestPins[i],
-        email: gestEmails[i],
+        nom:        gestNoms[i],
+        pin:        gestPins[i],
+        email:      gestEmails[i],
+        prenom:     gestPrenoms[i],
+        nomFamille: gestNomsFam[i],
+        telephone:  gestTels[i].replaceAll(RegExp(r'[\s\-\.]'), ''), // normalisé
       ),
     );
 
@@ -260,6 +292,9 @@ class _CreationScreenState extends State<CreationScreen> {
       _gestNomCtrl.add(TextEditingController());
       _gestPinCtrl.add(TextEditingController());
       _gestEmailCtrl.add(TextEditingController());
+      _gestPrenomCtrl.add(TextEditingController());
+      _gestNomFamCtrl.add(TextEditingController());
+      _gestTelCtrl.add(TextEditingController());
     });
   }
 
@@ -267,10 +302,16 @@ class _CreationScreenState extends State<CreationScreen> {
     _gestNomCtrl[i].dispose();
     _gestPinCtrl[i].dispose();
     _gestEmailCtrl[i].dispose();
+    _gestPrenomCtrl[i].dispose();
+    _gestNomFamCtrl[i].dispose();
+    _gestTelCtrl[i].dispose();
     setState(() {
       _gestNomCtrl.removeAt(i);
       _gestPinCtrl.removeAt(i);
       _gestEmailCtrl.removeAt(i);
+      _gestPrenomCtrl.removeAt(i);
+      _gestNomFamCtrl.removeAt(i);
+      _gestTelCtrl.removeAt(i);
     });
   }
 
@@ -605,14 +646,17 @@ class _CreationScreenState extends State<CreationScreen> {
                         ),
                         const ChampAide(
                             texte:
-                                'Chacun avec son PIN personnel (4-6 chiffres). L\'email de récupération est requis pour réinitialiser le PIN.'),
+                                'Prénom, nom de famille, téléphone et email obligatoires. PIN personnel (4-6 chiffres) pour valider les opérations.'),
                         const SizedBox(height: 12),
                         ...List.generate(
                           _gestNomCtrl.length,
                           (i) => _LigneGestionnaire(
-                            nomCtrl:   _gestNomCtrl[i],
-                            pinCtrl:   _gestPinCtrl[i],
-                            emailCtrl: _gestEmailCtrl[i],
+                            nomCtrl:      _gestNomCtrl[i],
+                            pinCtrl:      _gestPinCtrl[i],
+                            emailCtrl:    _gestEmailCtrl[i],
+                            prenomCtrl:   _gestPrenomCtrl[i],
+                            nomFamCtrl:   _gestNomFamCtrl[i],
+                            telCtrl:      _gestTelCtrl[i],
                             index: i,
                             onRetirer: _gestNomCtrl.length > 1
                                 ? () => _retirerGest(i)
@@ -740,6 +784,9 @@ class _LigneGestionnaire extends StatelessWidget {
   final TextEditingController nomCtrl;
   final TextEditingController pinCtrl;
   final TextEditingController emailCtrl;
+  final TextEditingController prenomCtrl;
+  final TextEditingController nomFamCtrl;
+  final TextEditingController telCtrl;
   final int index;
   final VoidCallback? onRetirer;
 
@@ -747,6 +794,9 @@ class _LigneGestionnaire extends StatelessWidget {
     required this.nomCtrl,
     required this.pinCtrl,
     required this.emailCtrl,
+    required this.prenomCtrl,
+    required this.nomFamCtrl,
+    required this.telCtrl,
     required this.index,
     this.onRetirer,
   });
@@ -758,7 +808,89 @@ class _LigneGestionnaire extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Ligne 1 : Nom + PIN + bouton supprimer ──────────────────────
+
+          // ── Entête gestionnaire ──────────────────────────────────────────
+          Row(
+            children: [
+              Container(
+                width: 28, height: 28,
+                decoration: BoxDecoration(
+                  color: AppColors.encre,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Center(
+                  child: Text(
+                    '${index + 1}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Informations du gestionnaire',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    color: AppColors.encre,
+                  ),
+                ),
+              ),
+              if (onRetirer != null)
+                GestureDetector(
+                  onTap: onRetirer,
+                  child: Container(
+                    width: 36, height: 36,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: AppColors.lignes, width: 1.5),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Center(
+                      child: Text('✕',
+                          style: TextStyle(fontSize: 16, color: AppColors.alerte)),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // ── Ligne 1 : Prénom + Nom de famille ───────────────────────────
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: prenomCtrl,
+                  maxLength: 40,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    hintText: 'Prénom',
+                    prefixIcon: Icon(Icons.person_outline, size: 18),
+                    counterText: '',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: nomFamCtrl,
+                  maxLength: 40,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    hintText: 'Nom de famille',
+                    counterText: '',
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // ── Ligne 2 : Nom d'affichage + PIN ─────────────────────────────
           Row(
             children: [
               Expanded(
@@ -767,8 +899,12 @@ class _LigneGestionnaire extends StatelessWidget {
                   controller: nomCtrl,
                   maxLength: 40,
                   decoration: InputDecoration(
-                    hintText: 'Gestionnaire ${index + 1}',
+                    hintText: 'Nom affiché (ex: Arnaud)',
+                    prefixIcon: const Icon(Icons.badge_outlined, size: 18),
                     counterText: '',
+                    helperText: 'Nom visible dans la tontine',
+                    helperStyle: const TextStyle(
+                        fontSize: 11, color: AppColors.encreDoux),
                   ),
                 ),
               ),
@@ -782,7 +918,7 @@ class _LigneGestionnaire extends StatelessWidget {
                   maxLength: 6,
                   textAlign: TextAlign.center,
                   decoration: const InputDecoration(
-                    hintText: 'PIN',
+                    hintText: 'PIN (4-6)',
                     counterText: '',
                   ),
                   style: const TextStyle(
@@ -791,49 +927,43 @@ class _LigneGestionnaire extends StatelessWidget {
                   ),
                 ),
               ),
-              if (onRetirer != null) ...[
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: onRetirer,
-                  child: Container(
-                    width: 44,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: AppColors.lignes, width: 1.5),
-                      borderRadius: BorderRadius.circular(12),
-                      color: Colors.white,
-                    ),
-                    child: const Center(
-                      child: Text(
-                        '✕',
-                        style: TextStyle(fontSize: 18, color: AppColors.alerte),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
             ],
           ),
-          // ── Ligne 2 : Email de récupération ─────────────────────────────
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
+
+          // ── Ligne 3 : Numéro de téléphone ───────────────────────────────
+          TextField(
+            controller: telCtrl,
+            keyboardType: TextInputType.phone,
+            autocorrect: false,
+            maxLength: 20,
+            decoration: const InputDecoration(
+              hintText: 'Téléphone (ex: +2250700000000)',
+              prefixIcon: Icon(Icons.phone_outlined, size: 18),
+              counterText: '',
+              helperText: 'Avec indicatif pays : +225, +33, +1…',
+              helperStyle: TextStyle(fontSize: 11, color: AppColors.encreDoux),
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // ── Ligne 4 : Email de récupération ─────────────────────────────
           TextField(
             controller: emailCtrl,
             keyboardType: TextInputType.emailAddress,
             autocorrect: false,
             maxLength: 100,
-            decoration: InputDecoration(
-              hintText: 'Email de récupération (ex: nom@gmail.com)',
-              prefixIcon: const Icon(Icons.email_outlined, size: 18),
+            decoration: const InputDecoration(
+              hintText: 'Email (ex: nom@gmail.com)',
+              prefixIcon: Icon(Icons.email_outlined, size: 18),
               counterText: '',
-              helperText: 'Utilisé uniquement si le PIN est oublié',
-              helperStyle: const TextStyle(
-                fontSize: 11,
-                color: AppColors.encreDoux,
-              ),
+              helperText: 'Pour réinitialiser le PIN si oublié',
+              helperStyle: TextStyle(fontSize: 11, color: AppColors.encreDoux),
             ),
           ),
-          if (index < 999) // séparateur visuel entre gestionnaires
-            const Divider(height: 20, color: AppColors.lignes),
+
+          if (index < 999)
+            const Divider(height: 24, color: AppColors.lignes),
         ],
       ),
     );
