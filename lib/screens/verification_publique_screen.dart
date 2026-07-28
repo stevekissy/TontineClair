@@ -225,11 +225,39 @@ class _VerificationPubliqueScreenState
 }
 
 // ── Barre de recherche ─────────────────────────────────────────────────────────
-class _BarreRecherche extends StatelessWidget {
+// IMPORTANT: StatefulWidget requis pour que le FocusNode fonctionne correctement
+// sur Android (clavier ne sortait pas avec StatelessWidget sans FocusNode).
+class _BarreRecherche extends StatefulWidget {
   final TextEditingController ctrl;
   final VoidCallback onRechercher;
 
   const _BarreRecherche({required this.ctrl, required this.onRechercher});
+
+  @override
+  State<_BarreRecherche> createState() => _BarreRechercheState();
+}
+
+class _BarreRechercheState extends State<_BarreRecherche> {
+  late final FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode();
+    // Demander le focus après le premier frame pour ouvrir le clavier
+    // automatiquement à l'ouverture de l'écran (sauf si code pré-rempli).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && widget.ctrl.text.isEmpty) {
+        _focusNode.requestFocus();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -240,8 +268,12 @@ class _BarreRecherche extends StatelessWidget {
         children: [
           Expanded(
             child: TextField(
-              controller: ctrl,
+              controller: widget.ctrl,
+              focusNode: _focusNode,
+              autofocus: false, // géré manuellement via requestFocus() ci-dessus
+              keyboardType: TextInputType.text,
               textCapitalization: TextCapitalization.characters,
+              textInputAction: TextInputAction.search,
               style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w700,
@@ -258,16 +290,27 @@ class _BarreRecherche extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
                 ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                      color: Colors.white.withValues(alpha: 0.4), width: 1.5),
+                ),
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 prefixIcon: const Icon(Icons.search, color: Colors.white60),
               ),
-              onSubmitted: (_) => onRechercher(),
+              onSubmitted: (_) => widget.onRechercher(),
+              onTap: () {
+                // Garantir que le focus est bien acquis au tap (sécurité Android)
+                if (!_focusNode.hasFocus) {
+                  _focusNode.requestFocus();
+                }
+              },
             ),
           ),
           const SizedBox(width: 10),
           ElevatedButton(
-            onPressed: onRechercher,
+            onPressed: widget.onRechercher,
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.or,
               foregroundColor: Colors.white,
