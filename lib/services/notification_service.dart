@@ -182,12 +182,16 @@ class NotificationService {
   }
 
   /// Appelée quand l'utilisateur rejoint ou crée une tontine, et à chaque
-  /// chargement de tontine (chargerTontine) pour garantir que le token FCM
-  /// de CET appareil est bien présent dans fcm_tokens pour CETTE tontine.
+  /// Abonne cet appareil aux notifications d'une tontine.
   ///
-  /// FIX BROADCAST : force toujours un token FCM frais (ne se fie pas au cache).
-  /// Raison : si le token est expiré en base mais valide en cache local,
-  /// l'appareil ne reçoit plus les notifications des autres membres.
+  /// DOUBLE MÉCANISME (robuste) :
+  ///   1. FCM TOPIC  → subscribeToTopic("tontine_CODE")
+  ///      Garantit que l'appareil reçoit le broadcast même si son token
+  ///      individuel change ou n'est pas encore en base Supabase.
+  ///      C'est LA solution fiable pour notifier TOUS les membres.
+  ///
+  ///   2. Token individuel dans fcm_tokens (conservé en fallback)
+  ///      Nécessaire pour les actions admin et la purge des tokens invalides.
   static Future<void> abonnerATontine(String code) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -200,32 +204,43 @@ class NotificationService {
         await prefs.setStringList('tontines_codes', codes);
       }
 
-      // ─── TOUJOURS demander le token FCM frais à chaque appel ─────────────
-      // FCM retourne le même token si inchangé (appel rapide, < 100ms).
-      // On envoie à Supabase uniquement si le token a changé OU si on
-      // n'a pas encore enregistré pour cette tontine dans cette session.
-      // ─────────────────────────────────────────────────────────────────────
-      final now = DateTime.now();
+      // ── MÉCANISME 1 : FCM TOPIC (broadcast garanti) ───────────────────────
+      // "tontine_49LJP3" → TOUS les membres abonnés reçoivent les notifications
+      // même si leur token individuel n'est pas en base ou a changé.
+      final topic = 'tontine_$codeUp';
+      await FirebaseMessaging.instance.subscribeToTopic(topic);
+      if (kDebugMode) debugPrint('[FCM] ✅ Abonné au topic: $topic');
 
-      // Toujours demander le token frais à FCM
+      // ── MÉCANISME 2 : Token individuel (fallback + admin) ─────────────────
       String? token = await FirebaseMessaging.instance.getToken();
       if (token != null) {
         await prefs.setString('fcm_token', token);
-        await prefs.setString('fcm_token_ts', now.toIso8601String());
-      }
-
-      // Fallback : si FCM ne répond pas, utiliser le cache
-      token ??= prefs.getString('fcm_token');
-
-      if (token != null && token.isNotEmpty) {
-        // Envoyer à Supabase (INSERT OR UPDATE — idempotent)
+        await prefs.setString('fcm_token_ts', DateTime.now().toIso8601String());
         await SupabaseService.sauvegarderTokenFCM(code: codeUp, token: token);
-        if (kDebugMode) debugPrint('[FCM] ✅ Token enregistré pour $codeUp: ${token.substring(0,20)}...');
+        if (kDebugMode) debugPrint('[FCM] ✅ Token individuel enregistré pour $codeUp: ${token.substring(0,20)}...');
       } else {
-        if (kDebugMode) debugPrint('[FCM] ⚠️ Impossible d\'obtenir le token FCM pour $codeUp');
+        // Fallback cache
+        token = prefs.getString('fcm_token');
+        if (token != null && token.isNotEmpty) {
+          await SupabaseService.sauvegarderTokenFCM(code: codeUp, token: token);
+        } else {
+          if (kDebugMode) debugPrint('[FCM] ⚠️ Impossible d\'obtenir le token FCM pour $codeUp');
+        }
       }
     } catch (e) {
       if (kDebugMode) debugPrint('[FCM] ❌ abonnerATontine erreur: $e');
+    }
+  }
+
+  /// Se désabonne du topic FCM d'une tontine (ex: quitter une tontine).
+  static Future<void> desabonnerDeTontine(String code) async {
+    try {
+      final codeUp = code.toUpperCase();
+      final topic = 'tontine_$codeUp';
+      await FirebaseMessaging.instance.unsubscribeFromTopic(topic);
+      if (kDebugMode) debugPrint('[FCM] 🚪 Désabonné du topic: $topic');
+    } catch (e) {
+      if (kDebugMode) debugPrint('[FCM] ❌ desabonnerDeTontine erreur: $e');
     }
   }
 
