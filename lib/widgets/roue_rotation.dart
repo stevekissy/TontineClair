@@ -14,7 +14,12 @@ class RoueRotation extends StatelessWidget {
     final membres = data.membres;
     // tourActuel = index 0-based dans ordre[]
     // numerTour = tourActuel + 1 (affichage humain)
-    final montant = data.montant * (data.ordre.isNotEmpty ? data.ordre.length : membres.length);
+    //
+    // BUG FIX : utiliser membres.length comme source de vérité pour la cagnotte.
+    // data.ordre.length était utilisé avant, ce qui ignorait les nouveaux membres
+    // admis en cours de cycle (leur cotisation n'était pas comptée dans la cagnotte).
+    // membres.length reflète TOUJOURS le vrai nombre de cotisants actuels.
+    final montant = data.montant * membres.length;
     final beneficiaire = data.beneficiaire; // null si cycle terminé
     final cycleTermine = data.cycleTermine;
 
@@ -39,7 +44,7 @@ class RoueRotation extends StatelessWidget {
           Text(
             cycleTermine
                 ? 'Cycle terminé ✔'
-                : 'Tour ${data.numerTour} sur ${data.ordre.length}',
+                : 'Tour ${data.numerTour} sur ${data.nbTours}',
             style: const TextStyle(
               fontSize: 13,
               color: Colors.white70,
