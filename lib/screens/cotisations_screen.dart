@@ -1022,7 +1022,7 @@ class _CarteMembre extends StatelessWidget {
               // ── Bouton statut / toggle ──
               // Logique :
               //   Membre payé              → badge vert "✓ Payé"
-              //   Premium non-payé         → bouton "Payer" (CoinPayments)
+              //   Premium non-payé         → bouton "Payer" (Mobile Money ou Crypto)
               //   Gest Lite non-payé       → bouton "Approuver" (toggle manuel)
               //   Membre Lite non-gest     → badge "En attente" (lecture seule)
               if (membre.paye)
@@ -1043,19 +1043,19 @@ class _CarteMembre extends StatelessWidget {
                   ),
                 )
               else if (onPayer != null)
-                // ── Premium non-payé → CoinPayments
+                // ── Premium non-payé → écran choix paiement (Mobile Money / Crypto)
                 GestureDetector(
                   onTap: onPayer,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF7931A),
+                      color: const Color(0xFF0D8A4E),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.currency_bitcoin_rounded, size: 12, color: Colors.white),
+                        Icon(Icons.payment_rounded, size: 12, color: Colors.white),
                         SizedBox(width: 4),
                         Text('Payer', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
                       ],
