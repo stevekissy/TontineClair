@@ -1,15 +1,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // PhoneOtpService — vérification numéro de téléphone via Firebase Phone Auth
 //
-// Utilisé uniquement pour le gestionnaire principal (index 0) lors de la
-// création d'une tontine. Les gestionnaires secondaires utilisent la double
-// saisie (anti-typo, sans SMS).
+// Utilisé pour le gestionnaire principal (index 0) lors de la création d'une
+// tontine ET pour la modification du numéro dans le profil.
 //
 // Flux :
-//  1. envoyerOtp(numero)          → Firebase envoie SMS avec code à 6 chiffres
-//  2. verifierOtp(verificationId, smsCode) → retourne le numéro confirmé ou erreur
+//  1. envoyerOtp(numero)                        → Firebase envoie SMS 6 chiffres
+//  2. verifierOtp(verificationId, smsCode)       → retourne null (succès) ou erreur
 // ─────────────────────────────────────────────────────────────────────────────
 
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
@@ -17,17 +17,18 @@ class PhoneOtpService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
 
   // ── Étape 1 : Envoyer le SMS OTP ─────────────────────────────────────────
-  // Retourne un [PhoneOtpResult] avec soit verificationId (succès envoi),
+  // Retourne un [PhoneOtpResult] avec soit verificationId (succès),
   // soit un message d'erreur.
   static Future<PhoneOtpResult> envoyerOtp(String numero) async {
-    final completer = _OtpCompleter();
+    // Completer Dart standard — thread-safe, pas de polling
+    final completer = Completer<PhoneOtpResult>();
 
     try {
       await _auth.verifyPhoneNumber(
         phoneNumber: numero,
         timeout: const Duration(seconds: 60),
 
-        // ── Cas 1 : Android auto-résolution (pas besoin de saisir le code)
+        // ── Cas 1 : Android auto-résolution (rare)
         verificationCompleted: (PhoneAuthCredential credential) {
           if (kDebugMode) {
             debugPrint('[OTP] ✅ Auto-résolution Android: ${credential.smsCode}');
@@ -43,7 +44,7 @@ class PhoneOtpService {
         // ── Cas 2 : Erreur d'envoi (numéro invalide, quota dépassé…)
         verificationFailed: (FirebaseAuthException e) {
           if (kDebugMode) {
-            debugPrint('[OTP] ❌ Échec vérification: ${e.code} — ${e.message}');
+            debugPrint('[OTP] ❌ Échec: ${e.code} — ${e.message}');
           }
           if (!completer.isCompleted) {
             completer.complete(PhoneOtpResult.erreur(_messageErreur(e)));
@@ -63,12 +64,18 @@ class PhoneOtpService {
           }
         },
 
-        // ── Cas 4 : Timeout (60 secondes dépassées)
+        // ── Cas 4 : Timeout auto-récupération (65s)
         codeAutoRetrievalTimeout: (String verificationId) {
           if (kDebugMode) {
             debugPrint('[OTP] ⏱ Timeout auto-récupération: $verificationId');
           }
-          // Ne pas compléter ici si déjà complété par codeSent
+          // Ne compléter que si ni codeSent ni verificationFailed n'a répondu
+          if (!completer.isCompleted) {
+            completer.complete(PhoneOtpResult.codeSent(
+              verificationId: verificationId,
+              resendToken: null,
+            ));
+          }
         },
       );
     } catch (e) {
@@ -79,7 +86,13 @@ class PhoneOtpService {
       }
     }
 
-    return completer.future;
+    // Timeout global de sécurité : 65s (Firebase timeout = 60s)
+    return completer.future.timeout(
+      const Duration(seconds: 65),
+      onTimeout: () => PhoneOtpResult.erreur(
+        'Délai dépassé. Vérifiez votre connexion et réessayez.',
+      ),
+    );
   }
 
   // ── Étape 2 : Vérifier le code OTP saisi par l'utilisateur ───────────────
@@ -94,10 +107,11 @@ class PhoneOtpService {
         smsCode: smsCode.trim(),
       );
 
-      // On vérifie la credential sans connexion permanente :
-      // on utilise signInWithCredential puis on déconnecte immédiatement
+      // Vérifier via signInWithCredential puis déconnecter immédiatement
       // (l'app n'utilise pas Firebase Auth comme système de login global)
-      final result = await _auth.signInWithCredential(credential);
+      final result = await _auth.signInWithCredential(credential)
+          .timeout(const Duration(seconds: 30));
+
       if (kDebugMode) {
         debugPrint('[OTP] ✅ Numéro vérifié: ${result.user?.phoneNumber}');
       }
@@ -107,10 +121,10 @@ class PhoneOtpService {
       return null; // null = succès
 
     } on FirebaseAuthException catch (e) {
-      if (kDebugMode) {
-        debugPrint('[OTP] ❌ Code incorrect: ${e.code}');
-      }
+      if (kDebugMode) debugPrint('[OTP] ❌ Code incorrect: ${e.code}');
       return _messageErreurCode(e);
+    } on TimeoutException {
+      return 'Délai de vérification dépassé. Réessayez.';
     } catch (e) {
       return 'Erreur de vérification : $e';
     }
@@ -131,6 +145,8 @@ class PhoneOtpService {
         return 'Numéro de téléphone manquant.';
       case 'app-not-authorized':
         return 'Application non autorisée pour cette vérification.';
+      case 'blocked':
+        return 'Numéro bloqué temporairement. Réessayez dans 24h.';
       default:
         return e.message ?? 'Erreur lors de l\'envoi du SMS (${e.code}).';
     }
@@ -141,11 +157,13 @@ class PhoneOtpService {
       case 'invalid-verification-code':
         return 'Code incorrect. Vérifiez le SMS et réessayez.';
       case 'invalid-verification-id':
-        return 'Session expirée. Renvoyez le code SMS.';
+        return 'Session expirée. Appuyez sur "Renvoyer le code".';
       case 'session-expired':
         return 'Code expiré (5 min). Appuyez sur "Renvoyer le code".';
       case 'too-many-requests':
         return 'Trop de tentatives. Attendez quelques minutes.';
+      case 'credential-already-in-use':
+        return 'Ce numéro est déjà utilisé par un autre compte.';
       default:
         return e.message ?? 'Code invalide (${e.code}).';
     }
@@ -199,46 +217,4 @@ class PhoneOtpResult {
   bool get estSucces =>
       status == PhoneOtpStatus.codeSent ||
       status == PhoneOtpStatus.autoVerified;
-}
-
-// ── Completer helper (évite d'appeler complete() deux fois) ──────────────────
-class _OtpCompleter {
-  bool isCompleted = false;
-  final _completerInternal = _SimpleCompleter<PhoneOtpResult>();
-
-  Future<PhoneOtpResult> get future => _completerInternal.future;
-
-  void complete(PhoneOtpResult result) {
-    if (isCompleted) return;
-    isCompleted = true;
-    _completerInternal.complete(result);
-  }
-}
-
-// Minimal async completer wrapper
-class _SimpleCompleter<T> {
-  late T _value;
-  bool _done = false;
-
-  Future<T> get future async {
-    if (_done) return _value;
-    // Poll until done (max 65 seconds — Firebase timeout is 60s)
-    for (int i = 0; i < 650; i++) {
-      await Future.delayed(const Duration(milliseconds: 100));
-      if (_done) return _value;
-    }
-    throw TimeoutException('OTP timeout après 65 secondes');
-  }
-
-  void complete(T value) {
-    _value = value;
-    _done = true;
-  }
-}
-
-class TimeoutException implements Exception {
-  final String message;
-  TimeoutException(this.message);
-  @override
-  String toString() => message;
 }

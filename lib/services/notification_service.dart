@@ -32,6 +32,9 @@ class NotificationService {
     playSound: true,
   );
 
+  // ── Clé SharedPreferences : date du dernier ré-abonnement topics ──────────
+  static const _kDernierReabonnement = 'fcm_dernier_reabonnement';
+
   // ── Initialisation complète ────────────────────────────────────────────────
   static Future<void> initialiser() async {
     // 1. Plugin local notifications
@@ -83,9 +86,66 @@ class NotificationService {
     await _sauvegarderToken();
     messaging.onTokenRefresh.listen(_enregistrerToken);
 
+    // 10. Ré-abonner aux topics FCM de TOUTES les tontines au démarrage
+    //     Garanti même si l'app a été réinstallée ou le token FCM a changé.
+    //     Fait en background — non-bloquant.
+    _reabonnerTousTopic();
+
     if (kDebugMode) {
       final token = await messaging.getToken();
       debugPrint('[FCM] Token: $token');
+    }
+  }
+
+  // ── Ré-abonner aux topics de toutes les tontines connues ──────────────────
+  // Appelé au démarrage de l'app. Garantit que le topic est actif même après
+  // réinstallation, changement d'appareil ou expiration du token FCM.
+  static Future<void> _reabonnerTousTopic() async {
+    try {
+      final prefs        = await SharedPreferences.getInstance();
+      final maintenant   = DateTime.now();
+      final dernierStr   = prefs.getString(_kDernierReabonnement);
+      final dernier      = dernierStr != null ? DateTime.tryParse(dernierStr) : null;
+
+      // Ré-abonner max 1 fois par 24h pour éviter les appels FCM excessifs
+      // SAUF si jamais fait (première installation)
+      if (dernier != null &&
+          maintenant.difference(dernier).inHours < 24) {
+        if (kDebugMode) debugPrint('[FCM] Ré-abonnement topics déjà fait il y a < 24h — ignoré');
+        return;
+      }
+
+      // Récupérer tous les codes de tontines connus
+      final tontinesStockees = await StorageService.getListe();
+      final codesStorage     = tontinesStockees.map((t) => t.code.toUpperCase()).toList();
+      final codesPrefs       = prefs.getStringList('tontines_codes') ?? [];
+      final tousLesCodes     = <String>{...codesStorage, ...codesPrefs};
+
+      if (tousLesCodes.isEmpty) {
+        if (kDebugMode) debugPrint('[FCM] Aucune tontine connue — ré-abonnement ignoré');
+        return;
+      }
+
+      if (kDebugMode) debugPrint('[FCM] Ré-abonnement topics pour ${tousLesCodes.length} tontine(s): $tousLesCodes');
+
+      int ok = 0;
+      for (final code in tousLesCodes) {
+        try {
+          final topic = 'tontine_$code';
+          await FirebaseMessaging.instance.subscribeToTopic(topic);
+          ok++;
+          if (kDebugMode) debugPrint('[FCM] ✅ Re-subscribed: $topic');
+        } catch (e) {
+          if (kDebugMode) debugPrint('[FCM] ⚠️ Erreur ré-abonnement $code: $e');
+        }
+      }
+
+      // Mémoriser la date du dernier ré-abonnement réussi
+      await prefs.setString(_kDernierReabonnement, maintenant.toIso8601String());
+      if (kDebugMode) debugPrint('[FCM] ✅ Ré-abonnement terminé: $ok/${tousLesCodes.length} topics OK');
+
+    } catch (e) {
+      if (kDebugMode) debugPrint('[FCM] ❌ _reabonnerTousTopic erreur: $e');
     }
   }
 
@@ -181,7 +241,19 @@ class NotificationService {
     }
   }
 
-  /// Appelée quand l'utilisateur rejoint ou crée une tontine, et à chaque
+  /// Force un ré-abonnement immédiat à tous les topics (ex: après login).
+  /// Utile si l'utilisateur vient de se connecter sur un nouvel appareil.
+  static Future<void> reabonnerImmediatement() async {
+    try {
+      // Réinitialiser la date pour forcer le ré-abonnement
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_kDernierReabonnement);
+      await _reabonnerTousTopic();
+    } catch (e) {
+      if (kDebugMode) debugPrint('[FCM] ❌ reabonnerImmediatement erreur: $e');
+    }
+  }
+
   /// Abonne cet appareil aux notifications d'une tontine.
   ///
   /// DOUBLE MÉCANISME (robuste) :
