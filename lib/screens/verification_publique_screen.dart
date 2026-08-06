@@ -124,7 +124,7 @@ class _VerificationPubliqueScreenState
   }
 
   int get _countOnChain =>
-      _entrees.where((e) => e.txHash != null && e.txHash!.length == 66).length;
+      _entrees.where((e) => e.statut == 'confirmed').length;
 
   int get _totalXof => _entrees
       .where((e) => e.montantXof != null)
@@ -754,8 +754,9 @@ class _CarteEntree extends StatelessWidget {
 
   const _CarteEntree({required this.entree, required this.onCopier});
 
-  bool get _estOnChain =>
-      entree.txHash != null && entree.txHash!.length == 66;
+  /// true = vraie TX confirmée sur Polygon (phase 2)
+  /// false = preuve SHA-256 locale (phase 1) — hash n'existe PAS sur PolygonScan
+  bool get _estOnChain => entree.statut == 'confirmed';
 
   Color get _couleurType {
     // Résoudre d'abord les sélecteurs hex 0x… → type métier
