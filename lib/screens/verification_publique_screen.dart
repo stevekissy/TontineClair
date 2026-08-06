@@ -8,6 +8,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/blockchain_service.dart';
 import '../utils/app_colors.dart';
 import 'certificat_blockchain_screen.dart';
@@ -924,54 +925,75 @@ class _CarteEntree extends StatelessWidget {
           // TX Hash (si présent)
           if (entree.txHash != null) ...[
             const Divider(height: 1, color: AppColors.lignes),
-            GestureDetector(
-              onTap: () => onCopier(entree.txHash!, 'TX Hash'),
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                child: Row(
-                  children: [
-                    Icon(
-                      _estOnChain ? Icons.link : Icons.fingerprint,
-                      size: 14,
-                      color: _estOnChain
-                          ? const Color(0xFF00C853)
-                          : AppColors.texteDoux,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _estOnChain
-                            ? 'TX: ${entree.txHashCourt}'
-                            : 'Proof: ${entree.txHashCourt}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontFamily: 'monospace',
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Row(
+                children: [
+                  // ── Icône + TX hash court (tap = copier) ──────────────────
+                  GestureDetector(
+                    onTap: () => onCopier(entree.txHash!, 'TX Hash'),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _estOnChain ? Icons.link : Icons.fingerprint,
+                          size: 14,
                           color: _estOnChain
                               ? const Color(0xFF00C853)
                               : AppColors.texteDoux,
-                          fontWeight: FontWeight.w600,
                         ),
-                      ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _estOnChain
+                              ? 'TX: ${entree.txHashCourt}'
+                              : 'Proof: ${entree.txHashCourt}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontFamily: 'monospace',
+                            color: _estOnChain
+                                ? const Color(0xFF00C853)
+                                : AppColors.texteDoux,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.copy, size: 13, color: AppColors.texteDoux),
+                      ],
                     ),
-                    if (_estOnChain)
-                      Container(
+                  ),
+                  const Spacer(),
+                  // ── Bouton PolygonScan (tap = ouvrir la TX dans le navigateur) ──
+                  if (_estOnChain)
+                    GestureDetector(
+                      onTap: () async {
+                        final url = Uri.parse(
+                          'https://polygonscan.com/tx/${entree.txHash}',
+                        );
+                        if (await canLaunchUrl(url)) {
+                          await launchUrl(url, mode: LaunchMode.externalApplication);
+                        }
+                      },
+                      child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
+                            horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF00C853).withValues(alpha: 0.1),
+                          color: const Color(0xFF00C853).withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: const Color(0xFF00C853).withValues(alpha: 0.3),
+                            width: 0.8,
+                          ),
                         ),
                         child: const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(Icons.open_in_new,
-                                size: 10, color: Color(0xFF00C853)),
-                            SizedBox(width: 3),
+                                size: 11, color: Color(0xFF00C853)),
+                            SizedBox(width: 4),
                             Text(
                               'PolygonScan',
                               style: TextStyle(
-                                fontSize: 10,
+                                fontSize: 11,
                                 color: Color(0xFF00C853),
                                 fontWeight: FontWeight.w700,
                               ),
@@ -979,10 +1001,8 @@ class _CarteEntree extends StatelessWidget {
                           ],
                         ),
                       ),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.copy, size: 14, color: AppColors.texteDoux),
-                  ],
-                ),
+                    ),
+                ],
               ),
             ),
           ],
