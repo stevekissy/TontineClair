@@ -209,7 +209,6 @@ class BlockchainEntry {
   String get descriptionMetier {
     final resolu  = typeOperationResolu;
     final nom     = (membreNom != null && membreNom!.isNotEmpty) ? membreNom! : null;
-    final montant = montantXof != null && montantXof! > 0 ? _formaterXof(montantXof!) : null;
 
     // Phrases naturelles par type — intègrent le nom du membre
     String phrase;
@@ -231,10 +230,12 @@ class BlockchainEntry {
         break;
       case 'vote':
       case 'vote_cree':
-        phrase = nom != null ? 'Vote — $nom' : 'Vote enregistré';
+        // Le nom du gestionnaire est déjà affiché sur la ligne "membreNom" en dessous
+        // → éviter la redondance "Vote — Arnaud / Arnaud le Président"
+        phrase = 'Vote ouvert';
         break;
       case 'vote_clos':
-        phrase = nom != null ? 'Vote clôturé — $nom' : 'Vote clôturé';
+        phrase = 'Vote clôturé';
         break;
       case 'penalite':
         phrase = nom != null ? 'Pénalité appliquée à $nom' : 'Pénalité';
@@ -261,13 +262,14 @@ class BlockchainEntry {
         if (nom != null) phrase = '$phrase · $nom';
     }
 
-    // Ajouter le montant si présent
-    if (montant != null) phrase = '$phrase ($montant XOF)';
+    // Le montant est déjà affiché dans la colonne droite de la carte (montantXof).
+    // On ne le répète PAS dans la description pour éviter la redondance.
     return phrase;
   }
 
   /// Formate un entier XOF avec espace fine comme séparateur de milliers.
-  static String _formaterXof(int xof) {
+  /// Utilisé par les écrans externes (ex: _CarteResume dans verification_publique_screen).
+  static String formaterXof(int xof) {
     final s = xof.toString();
     final buf = StringBuffer();
     for (int i = 0; i < s.length; i++) {

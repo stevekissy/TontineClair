@@ -245,8 +245,8 @@ class _BarreRechercheState extends State<_BarreRecherche> {
   void initState() {
     super.initState();
     _focusNode = FocusNode();
-    // Demander le focus après le premier frame pour ouvrir le clavier
-    // automatiquement à l'ouverture de l'écran (sauf si code pré-rempli).
+    // Ouvrir le clavier automatiquement si le champ est vide.
+    // Si code pré-rempli : on ne force pas le clavier (l'utilisateur n'a rien à taper).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && widget.ctrl.text.isEmpty) {
         _focusNode.requestFocus();
@@ -302,10 +302,10 @@ class _BarreRechercheState extends State<_BarreRecherche> {
               ),
               onSubmitted: (_) => widget.onRechercher(),
               onTap: () {
-                // Garantir que le focus est bien acquis au tap (sécurité Android)
-                if (!_focusNode.hasFocus) {
-                  _focusNode.requestFocus();
-                }
+                // Sur Android, certains appareils ne sortent pas le clavier
+                // si le FocusNode est déjà "hasFocus" mais clavier caché.
+                // requestFocus() sans condition force le clavier à s'ouvrir.
+                _focusNode.requestFocus();
               },
             ),
           ),
@@ -954,14 +954,29 @@ class _CarteEntree extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               child: Row(
                 children: [
-                  // ── Icône + TX hash court (tap = copier) ──────────────────
+                  // ── Hash TX cliquable ──────────────────────────────────────
+                  // • Phase 1 (Proof SHA-256) → tap = copier uniquement
+                  // • Phase 2 (TX on-chain)   → tap = ouvrir PolygonScan directement
                   GestureDetector(
-                    onTap: () => onCopier(entree.txHash!, 'TX Hash'),
+                    onTap: () async {
+                      if (_estOnChain) {
+                        // Ouvrir PolygonScan directement en tapant sur le hash
+                        final url = Uri.parse(
+                          'https://polygonscan.com/tx/${entree.txHash}',
+                        );
+                        if (await canLaunchUrl(url)) {
+                          await launchUrl(url, mode: LaunchMode.externalApplication);
+                        }
+                      } else {
+                        // Phase 1 : copier le proof SHA-256
+                        onCopier(entree.txHash!, 'TX Hash');
+                      }
+                    },
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          _estOnChain ? Icons.link : Icons.fingerprint,
+                          _estOnChain ? Icons.open_in_new : Icons.fingerprint,
                           size: 14,
                           color: _estOnChain
                               ? const Color(0xFF00C853)
@@ -979,15 +994,24 @@ class _CarteEntree extends StatelessWidget {
                                 ? const Color(0xFF00C853)
                                 : AppColors.texteDoux,
                             fontWeight: FontWeight.w600,
+                            decoration: _estOnChain
+                                ? TextDecoration.underline
+                                : TextDecoration.none,
                           ),
                         ),
                         const SizedBox(width: 4),
-                        const Icon(Icons.copy, size: 13, color: AppColors.texteDoux),
+                        Icon(
+                          _estOnChain ? Icons.open_in_new : Icons.copy,
+                          size: 13,
+                          color: _estOnChain
+                              ? const Color(0xFF00C853)
+                              : AppColors.texteDoux,
+                        ),
                       ],
                     ),
                   ),
                   const Spacer(),
-                  // ── Bouton PolygonScan (tap = ouvrir la TX dans le navigateur) ──
+                  // ── Bouton PolygonScan (zone tap plus grande, visible à droite) ──
                   if (_estOnChain)
                     GestureDetector(
                       onTap: () async {
