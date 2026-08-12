@@ -245,19 +245,33 @@ class _BarreRechercheState extends State<_BarreRecherche> {
   void initState() {
     super.initState();
     _focusNode = FocusNode();
-    // Ouvrir le clavier automatiquement si le champ est vide.
-    // Si code pré-rempli : on ne force pas le clavier (l'utilisateur n'a rien à taper).
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && widget.ctrl.text.isEmpty) {
-        _focusNode.requestFocus();
-      }
-    });
+    // Auto-focus uniquement si champ vide (pas de code pré-rempli).
+    // Délai 300ms pour laisser le widget s'installer complètement dans l'arbre
+    // avant de demander le focus — évite les races conditions sur Android.
+    if (widget.ctrl.text.isEmpty) {
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted) {
+          _focusNode.requestFocus();
+          // Force l'affichage du clavier même si le focus était déjà là
+          // (bug Samsung/Android : focus sans clavier visible)
+          SystemChannels.textInput.invokeMethod<void>('TextInput.show');
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
     _focusNode.dispose();
     super.dispose();
+  }
+
+  /// Force l'ouverture du clavier — même si le focus est déjà accordé.
+  /// Sur certains Samsung Android, requestFocus() place le curseur
+  /// mais le clavier reste caché. invokeMethod('TextInput.show') le force.
+  void _ouvrirClavier() {
+    _focusNode.requestFocus();
+    SystemChannels.textInput.invokeMethod<void>('TextInput.show');
   }
 
   @override
@@ -271,7 +285,7 @@ class _BarreRechercheState extends State<_BarreRecherche> {
             child: TextField(
               controller: widget.ctrl,
               focusNode: _focusNode,
-              autofocus: false, // géré manuellement via requestFocus() ci-dessus
+              autofocus: false, // géré via _ouvrirClavier() pour mieux contrôler le timing
               keyboardType: TextInputType.text,
               textCapitalization: TextCapitalization.characters,
               textInputAction: TextInputAction.search,
@@ -301,12 +315,7 @@ class _BarreRechercheState extends State<_BarreRecherche> {
                 prefixIcon: const Icon(Icons.search, color: Colors.white60),
               ),
               onSubmitted: (_) => widget.onRechercher(),
-              onTap: () {
-                // Sur Android, certains appareils ne sortent pas le clavier
-                // si le FocusNode est déjà "hasFocus" mais clavier caché.
-                // requestFocus() sans condition force le clavier à s'ouvrir.
-                _focusNode.requestFocus();
-              },
+              onTap: _ouvrirClavier,
             ),
           ),
           const SizedBox(width: 10),
