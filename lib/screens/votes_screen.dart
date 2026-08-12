@@ -887,8 +887,11 @@ class _VotesScreenState extends State<VotesScreen> {
               [],
         );
         final typeLabel = estVoteRetrait ? 'RETRAIT' : 'VOTE';
+        final statutLabel = adopte ? 'ADOPTE' : 'REJETE';
         journal.insert(0, {
-          'quoi': '${typeLabel}_CLOS_${adopte ? 'ADOPTE' : 'REJETE'}_${vote.id}'
+          // Format parseable par _formaterQuoi() dans journal_screen.dart
+          // Exemple : VOTE_CLOS_ADOPTE_TC80294701:oui=3:non=1:abs=0:participation=4/5
+          'quoi': '${typeLabel}_CLOS_${statutLabel}_${vote.id}'
               ':oui=$oui:non=$non:abs=$abstention:participation=$participation/$totalMembres',
           'gestionnaire': provider.gestActifNom ?? '',
           'quand': now,
