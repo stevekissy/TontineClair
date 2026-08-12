@@ -108,19 +108,39 @@ class BlockchainEntry {
   // générés par blockchain-tx/index.ts et peuvent se retrouver dans type_operation
   // pour des entrées historiques ou des erreurs de stockage.
   static const _selectorVersType = <String, String>{
-    '0xbaa62d66': 'cotisation',    // enregistrerOperation(string,string,string,uint256,uint256,string,bytes32)
-    '0xd3795e53': 'vote',          // enregistrerVote(string,string,string,string,bytes32)
-    '0x68054f4e': 'creation',      // enregistrerCreation(string,string,string,bytes32)
-    '0x5a9b0b89': 'sync_balance',  // getInfo()
-    '0xb38ff71f': 'mise_a_jour',   // transfererAdmin(address)
-    '0xf851a440': 'mise_a_jour',   // admin()
-    '0x54fd4d50': 'mise_a_jour',   // version()
-    '0xed232029': 'sync_balance',  // totalOperations()
-    // Sélecteurs alternatifs possibles (selon version du contrat)
-    '0x60c06040': 'cotisation',    // variante enregistrerOperation
-    '0xa9059cbb': 'remboursement', // ERC-20 transfer(address,uint256)
-    '0x095ea7b3': 'mise_a_jour',   // ERC-20 approve(address,uint256)
-    '0x23b872dd': 'distribution',  // ERC-20 transferFrom(address,address,uint256)
+    // ── TontineVaultV3 — 18 fonctions métier ─────────────────────────────────
+    '0xa3980ee2': 'cotisation',        // enregistrerCotisation
+    '0x7948515e': 'decaissement',      // enregistrerDecaissement  (absent V1 → V3)
+    '0x5ee35c39': 'distribution',      // enregistrerDistribution
+    '0xe8309f9d': 'apport',            // enregistrerApport
+    '0x3a34a193': 'depot',             // enregistrerDepot
+    '0x566519de': 'retrait',           // enregistrerRetrait
+    '0x49b4279e': 'retrait_propose',   // enregistrerRetraitPropose
+    '0x1d00f9ce': 'penalite',          // enregistrerPenalite
+    '0x3bfe5ba7': 'pret',              // enregistrerPret
+    '0x673efd5f': 'remboursement',     // enregistrerRemboursement
+    '0xace3c9ee': 'vote',              // enregistrerVoteIndividuel
+    '0x05797094': 'vote_cree',         // enregistrerVoteCree
+    '0xf4ef3be9': 'vote_clos',         // enregistrerVoteClos
+    '0x69d1a0f8': 'creation',          // enregistrerCreation
+    '0x54ce7c65': 'sync_balance',      // enregistrerSynchronisation
+    '0x89808c56': 'score_modifie',     // enregistrerScoreModifie
+    '0x0496be90': 'upgrade_pro',       // enregistrerUpgradePro
+    '0x19c2cd10': 'nouveau_cycle',     // enregistrerNouveauCycle
+    // ── TontineVaultV3 — fonctions système ───────────────────────────────────
+    '0xb38ff71f': 'mise_a_jour',       // transfererAdmin(address)
+    '0xf851a440': 'mise_a_jour',       // admin()
+    '0x54fd4d50': 'mise_a_jour',       // version()
+    '0x5a9b0b89': 'sync_balance',      // getInfo()
+    '0xed232029': 'sync_balance',      // totalOperations()
+    // ── TontineVaultV1/V2 — anciens sélecteurs (rétrocompat) ─────────────────
+    '0xbaa62d66': 'cotisation',        // enregistrerOperation V1
+    '0xd3795e53': 'vote',              // enregistrerVote V1
+    '0x68054f4e': 'creation',          // enregistrerCreation V1
+    '0x60c06040': 'cotisation',        // variante enregistrerOperation
+    '0xa9059cbb': 'remboursement',     // ERC-20 transfer(address,uint256)
+    '0x095ea7b3': 'mise_a_jour',       // ERC-20 approve(address,uint256)
+    '0x23b872dd': 'distribution',      // ERC-20 transferFrom(address,address,uint256)
   };
 
   /// Résout un type_operation : si c'est un sélecteur hex 0x…, retourne le type métier.
@@ -184,22 +204,77 @@ class BlockchainEntry {
     return typeOperation.replaceAll('_', ' ').toUpperCase();
   }
 
-  /// Description lisible enrichie avec le contexte (membre, tontine, montant)
+  /// Description lisible enrichie avec le contexte (membre, tontine, montant).
+  /// Formule naturelle pour un novice : "Cotisation de Koffi", "Prêt accordé à Koffi", etc.
   String get descriptionMetier {
-    final resolu = typeOperationResolu;
-    final base = _metier[resolu]?['desc'] ?? typeLabel;
-    final parties = <String>[];
-    if (membreNom != null && membreNom!.isNotEmpty) parties.add(membreNom!);
-    if (montantXof != null && montantXof! > 0) {
-      final s = montantXof.toString();
-      final buf = StringBuffer();
-      for (int i = 0; i < s.length; i++) {
-        if (i > 0 && (s.length - i) % 3 == 0) buf.write('\u202F');
-        buf.write(s[i]);
-      }
-      parties.add('(${buf.toString()} XOF)');
+    final resolu  = typeOperationResolu;
+    final nom     = (membreNom != null && membreNom!.isNotEmpty) ? membreNom! : null;
+    final montant = montantXof != null && montantXof! > 0 ? _formaterXof(montantXof!) : null;
+
+    // Phrases naturelles par type — intègrent le nom du membre
+    String phrase;
+    switch (resolu) {
+      case 'cotisation':
+        phrase = nom != null ? 'Cotisation de $nom' : 'Cotisation mensuelle';
+        break;
+      case 'decaissement':
+        phrase = nom != null ? 'Décaissement vers $nom' : 'Décaissement';
+        break;
+      case 'distribution':
+        phrase = nom != null ? 'Tour attribué à $nom' : 'Distribution du tour';
+        break;
+      case 'pret':
+        phrase = nom != null ? 'Prêt accordé à $nom' : 'Prêt accordé';
+        break;
+      case 'remboursement':
+        phrase = nom != null ? 'Remboursement de $nom' : 'Remboursement de prêt';
+        break;
+      case 'vote':
+      case 'vote_cree':
+        phrase = nom != null ? 'Vote — $nom' : 'Vote enregistré';
+        break;
+      case 'vote_clos':
+        phrase = nom != null ? 'Vote clôturé — $nom' : 'Vote clôturé';
+        break;
+      case 'penalite':
+        phrase = nom != null ? 'Pénalité appliquée à $nom' : 'Pénalité';
+        break;
+      case 'ajout_membre':
+        phrase = nom != null ? '$nom rejoint la tontine' : 'Nouveau membre ajouté';
+        break;
+      case 'suppression_membre':
+        phrase = nom != null ? '$nom retiré de la tontine' : 'Membre retiré';
+        break;
+      case 'retrait':
+      case 'retrait_propose':
+        phrase = nom != null ? 'Retrait demandé par $nom' : 'Retrait de fonds';
+        break;
+      case 'apport':
+        phrase = nom != null ? 'Apport de $nom' : 'Apport en caisse';
+        break;
+      case 'annulation_cotisation':
+        phrase = nom != null ? 'Cotisation de $nom annulée' : 'Cotisation annulée';
+        break;
+      default:
+        // Fallback générique : garde l'ancienne logique
+        phrase = _metier[resolu]?['desc'] ?? typeLabel;
+        if (nom != null) phrase = '$phrase · $nom';
     }
-    return parties.isEmpty ? base : '$base · ${parties.join(' ')}';
+
+    // Ajouter le montant si présent
+    if (montant != null) phrase = '$phrase ($montant XOF)';
+    return phrase;
+  }
+
+  /// Formate un entier XOF avec espace fine comme séparateur de milliers.
+  static String _formaterXof(int xof) {
+    final s = xof.toString();
+    final buf = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buf.write('\u202F');
+      buf.write(s[i]);
+    }
+    return buf.toString();
   }
 
   String get statutLabel {

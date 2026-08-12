@@ -144,10 +144,20 @@ class PhoneOtpService {
       case 'missing-phone-number':
         return 'Numéro de téléphone manquant.';
       case 'app-not-authorized':
-        return 'Application non autorisée pour cette vérification.';
+      case 'CONFIGURATION_NOT_FOUND':
+        // Firebase Phone Auth non configuré pour ce package Android.
+        // → Enregistrer com.tontineclair.app + SHA dans Firebase Console.
+        return 'Service SMS temporairement indisponible.\n'
+            'Vérifiez votre numéro par email ou contactez le support.';
       case 'blocked':
         return 'Numéro bloqué temporairement. Réessayez dans 24h.';
       default:
+        // Attraper CONFIGURATION_NOT_FOUND dans le message si le code ne matche pas
+        if ((e.message ?? '').contains('CONFIGURATION_NOT_FOUND') ||
+            (e.code).contains('CONFIGURATION_NOT_FOUND')) {
+          return 'Service SMS temporairement indisponible.\n'
+              'Vérifiez votre numéro par email ou contactez le support.';
+        }
         return e.message ?? 'Erreur lors de l\'envoi du SMS (${e.code}).';
     }
   }

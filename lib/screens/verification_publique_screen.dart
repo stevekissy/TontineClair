@@ -353,7 +353,7 @@ class _BandeauContrat extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'Smart contract : $_court · Polygon Amoy',
+                'Smart contract : $_court · Polygon Mainnet ✅',
                 style: const TextStyle(
                   fontSize: 12,
                   color: Color(0xFF00C853),
@@ -655,14 +655,38 @@ class _CarteResume extends StatelessWidget {
   // Traduit un type_operation (y compris sélecteurs hex 0x…) → label lisible.
   // Crée une BlockchainEntry temporaire pour réutiliser le mapping complet.
   String _typeLabel(String type) {
-    // Sélecteurs hex 4 bytes → type métier → label
+    // Sélecteurs hex 4 bytes → type métier → label (TontineVaultV3 complet)
     const selectorVersType = <String, String>{
+      // V3 — 18 fonctions métier
+      '0xa3980ee2': 'cotisation',
+      '0x7948515e': 'decaissement',
+      '0x5ee35c39': 'distribution',
+      '0xe8309f9d': 'apport',
+      '0x3a34a193': 'depot',
+      '0x566519de': 'retrait',
+      '0x49b4279e': 'retrait_propose',
+      '0x1d00f9ce': 'penalite',
+      '0x3bfe5ba7': 'pret',
+      '0x673efd5f': 'remboursement',
+      '0xace3c9ee': 'vote',
+      '0x05797094': 'vote_cree',
+      '0xf4ef3be9': 'vote_clos',
+      '0x69d1a0f8': 'creation',
+      '0x54ce7c65': 'sync_balance',
+      '0x89808c56': 'score_modifie',
+      '0x0496be90': 'upgrade_pro',
+      '0x19c2cd10': 'nouveau_cycle',
+      // V3 — fonctions système
+      '0xb38ff71f': 'mise_a_jour',
+      '0xf851a440': 'mise_a_jour',
+      '0x54fd4d50': 'mise_a_jour',
+      '0x5a9b0b89': 'sync_balance',
+      '0xed232029': 'sync_balance',
+      // V1/V2 — rétrocompatibilité
       '0xbaa62d66': 'cotisation',
       '0xd3795e53': 'vote',
       '0x68054f4e': 'creation',
       '0x60c06040': 'cotisation',
-      '0x5a9b0b89': 'sync_balance',
-      '0xb38ff71f': 'mise_a_jour',
       '0xa9059cbb': 'remboursement',
       '0x23b872dd': 'distribution',
     };
