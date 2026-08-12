@@ -268,19 +268,33 @@ async function signTransaction(params: {
 }
 
 // ── Keccak4 selector ────────────────────────────────────────────────────────────
-// Selectors hardcodés calculés avec web3.py pour référence.
-// Désormais keccak256 utilise ethereum-cryptography → selectors dynamiques aussi corrects.
-// Les constantes sont conservées pour cohérence et performance.
+// TontineVaultV3 — sélecteurs calculés avec web3.py (keccak256 des signatures ABI)
+// Une fonction par action métier → noms lisibles sur PolygonScan
 
 const SELECTORS: Record<string, string> = {
-  "enregistrerOperation(string,string,string,uint256,uint256,string,bytes32)": "0xbaa62d66",
-  "enregistrerVote(string,string,string,string,bytes32)"                     : "0xd3795e53",
-  "enregistrerCreation(string,string,string,bytes32)"                        : "0x68054f4e",
-  "getInfo()"                                                                : "0x5a9b0b89",
-  "transfererAdmin(address)"                                                 : "0xb38ff71f",
-  "admin()"                                                                  : "0xf851a440",
-  "version()"                                                                : "0x54fd4d50",
-  "totalOperations()"                                                        : "0xed232029",
+  "admin()": "0xf851a440",
+  "enregistrerApport(string,string,string,uint256,string,bytes32)": "0xe8309f9d",
+  "enregistrerCotisation(string,string,string,uint256,string,bytes32)": "0xa3980ee2",
+  "enregistrerCreation(string,string,string,string,bytes32)": "0x69d1a0f8",
+  "enregistrerDecaissement(string,string,string,uint256,string,bytes32)": "0x7948515e",
+  "enregistrerDepot(string,string,string,uint256,string,bytes32)": "0x3a34a193",
+  "enregistrerDistribution(string,string,string,uint256,string,bytes32)": "0x5ee35c39",
+  "enregistrerNouveauCycle(string,string,string,string,bytes32)": "0x19c2cd10",
+  "enregistrerPenalite(string,string,string,uint256,string,bytes32)": "0x1d00f9ce",
+  "enregistrerPret(string,string,string,uint256,string,bytes32)": "0x3bfe5ba7",
+  "enregistrerRemboursement(string,string,string,uint256,string,bytes32)": "0x673efd5f",
+  "enregistrerRetrait(string,string,string,uint256,string,bytes32)": "0x566519de",
+  "enregistrerRetraitPropose(string,string,string,string,bytes32)": "0x49b4279e",
+  "enregistrerScoreModifie(string,string,string,string,bytes32)": "0x89808c56",
+  "enregistrerSynchronisation(string,string,string,uint256,string,bytes32)": "0x54ce7c65",
+  "enregistrerUpgradePro(string,string,string,bytes32)": "0x0496be90",
+  "enregistrerVoteClos(string,string,string,string,bytes32)": "0xf4ef3be9",
+  "enregistrerVoteCree(string,string,string,string,bytes32)": "0x05797094",
+  "enregistrerVoteIndividuel(string,string,string,string,bytes32)": "0xace3c9ee",
+  "getInfo()": "0x5a9b0b89",
+  "totalOperations()": "0xed232029",
+  "transfererAdmin(address)": "0xb38ff71f",
+  "version()": "0x54fd4d50",
 };
 
 function functionSelector(sig: string): string {
@@ -424,6 +438,154 @@ function buildCreationCalldata(
     ph;
 
   return sel + staticPart + str1 + str2 + str3;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BUILD CALLDATA — TontineVaultV3 (une fonction par action métier)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Helper ABI encoder commun
+function _encStr(s: string): string {
+  const encoder = new TextEncoder();
+  const b = encoder.encode(s);
+  return encodeUint256(b.length) + bytesToHex(b).padEnd(Math.ceil(b.length / 32) * 64, "0");
+}
+
+/**
+ * Finance v3 : (string tontineCode, string membreId, string membreNom,
+ *               uint256 montantXof, string refInterne, bytes32 payloadHash)
+ * Utilisé par : enregistrerCotisation, enregistrerDistribution, enregistrerDecaissement,
+ *               enregistrerDepot, enregistrerPret, enregistrerRemboursement,
+ *               enregistrerPenalite, enregistrerRetrait, enregistrerApport,
+ *               enregistrerSynchronisation
+ */
+function buildFinanceCalldata_v3(
+  tontineCode : string | number,
+  membreId    : string | number,
+  membreNom   : string | number,
+  montantXof  : number,
+  montantUsdt : number,  // non utilisé dans v3 (simplifié) — gardé pour compatibilité
+  refInterne  : string,
+  funcName    : string,
+  payloadHash : Uint8Array
+): string {
+  const sig = `${funcName}(string,string,string,uint256,string,bytes32)`;
+  const sel = functionSelector(sig);
+
+  const s1  = _encStr(String(tontineCode));
+  const s2  = _encStr(String(membreId));
+  const s3  = _encStr(String(membreNom || ""));
+  const s4  = _encStr(refInterne);
+  const ph  = bytesToHex(payloadHash).padEnd(64, "0");
+
+  // 6 params: string(dyn) string(dyn) string(dyn) uint256(static) string(dyn) bytes32(static)
+  // Offsets: param0,1,2 = dynamic offsets | param3 = uint256 static | param4 = dynamic offset | param5 = bytes32 static
+  const base  = 6 * 32;  // 192 bytes = 6 slots
+  const o0    = base;
+  const o1    = o0 + s1.length / 2;
+  const o2    = o1 + s2.length / 2;
+  const o4    = o2 + s3.length / 2;  // après param3 (uint256 static, pas d'offset)
+
+  const staticPart =
+    encodeUint256(o0) +          // param0: tontineCode offset
+    encodeUint256(o1) +          // param1: membreId offset
+    encodeUint256(o2) +          // param2: membreNom offset
+    encodeUint256(montantXof) +  // param3: montantXof (static)
+    encodeUint256(o4) +          // param4: refInterne offset
+    ph;                          // param5: payloadHash (static bytes32)
+
+  return sel + staticPart + s1 + s2 + s3 + s4;
+}
+
+/**
+ * Vote v3 : (string tontineCode, string membreId, string membreNom,
+ *            string refVote, bytes32 payloadHash)
+ * Utilisé par : enregistrerVoteCree, enregistrerVoteClos,
+ *               enregistrerVoteIndividuel, enregistrerRetraitPropose
+ */
+function buildVoteCalldata_v3(
+  tontineCode : string | number,
+  membreId    : string | number,
+  membreNom   : string | number,
+  refVote     : string,
+  funcName    : string,
+  payloadHash : Uint8Array
+): string {
+  const sig = `${funcName}(string,string,string,string,bytes32)`;
+  const sel = functionSelector(sig);
+
+  const s1  = _encStr(String(tontineCode));
+  const s2  = _encStr(String(membreId));
+  const s3  = _encStr(String(membreNom || ""));
+  const s4  = _encStr(refVote);
+  const ph  = bytesToHex(payloadHash).padEnd(64, "0");
+
+  // 5 params: string(dyn) string(dyn) string(dyn) string(dyn) bytes32(static)
+  const base = 5 * 32;  // 160 bytes
+  const o0   = base;
+  const o1   = o0 + s1.length / 2;
+  const o2   = o1 + s2.length / 2;
+  const o3   = o2 + s3.length / 2;
+
+  const staticPart =
+    encodeUint256(o0) +
+    encodeUint256(o1) +
+    encodeUint256(o2) +
+    encodeUint256(o3) +
+    ph;
+
+  return sel + staticPart + s1 + s2 + s3 + s4;
+}
+
+/**
+ * Création v3 : (string tontineCode, string gestionnaireId, string gestionnaireNom,
+ *                string nomTontine, bytes32 payloadHash)
+ */
+function buildCreationCalldata_v3(
+  tontineCode : string | number,
+  gestId      : string | number,
+  gestNom     : string | number,
+  nomTontine  : string,
+  payloadHash : Uint8Array
+): string {
+  return buildVoteCalldata_v3(tontineCode, gestId, gestNom, nomTontine, "enregistrerCreation", payloadHash);
+}
+
+/**
+ * Système v3 : (string tontineCode, string membreId, string membreNom,
+ *               string details, bytes32 payloadHash)
+ * Utilisé par : enregistrerNouveauCycle, enregistrerScoreModifie
+ *
+ * UpgradePro : (string tontineCode, string gestionnaireId, string gestionnaireNom,
+ *               bytes32 payloadHash)  — 4 params seulement
+ */
+function buildSysCalldata_v3(
+  tontineCode : string | number,
+  membreId    : string | number,
+  membreNom   : string | number,
+  details     : string,
+  funcName    : string,
+  payloadHash : Uint8Array
+): string {
+  if (funcName === "enregistrerUpgradePro") {
+    // Signature spéciale : 4 params (string,string,string,bytes32)
+    const sig = "enregistrerUpgradePro(string,string,string,bytes32)";
+    const sel = functionSelector(sig);
+
+    const s1 = _encStr(String(tontineCode));
+    const s2 = _encStr(String(membreId));
+    const s3 = _encStr(String(membreNom || ""));
+    const ph = bytesToHex(payloadHash).padEnd(64, "0");
+
+    const base = 4 * 32;
+    const o0   = base;
+    const o1   = o0 + s1.length / 2;
+    const o2   = o1 + s2.length / 2;
+
+    return sel + encodeUint256(o0) + encodeUint256(o1) + encodeUint256(o2) + ph + s1 + s2 + s3;
+  }
+  // Autres : 5 params (string,string,string,string,bytes32)
+  return buildVoteCalldata_v3(tontineCode, membreId, membreNom, details, funcName, payloadHash);
 }
 
 // ── Envoyer une TX on-chain (avec fallback multi-RPC pour le broadcast) ─────────
@@ -614,31 +776,54 @@ async function actionEnregistrerOperation(
       let calldata: string;
       const typeOp = String(type_operation);
 
-      if (typeOp === "vote") {
-        calldata = buildVoteCalldata(
-          String(tontine_code),
-          String(membre_id),
-          String(body.question || "vote"),
-          String(body.choix || "oui"),
-          payloadBytes
-        );
-      } else if (typeOp === "creation") {
-        calldata = buildCreationCalldata(
-          String(tontine_code),
-          String(membre_id),
-          String(body.nom_tontine || tontine_code),
-          payloadBytes
-        );
-      } else {
-        calldata = buildOperationCalldata(
-          String(tontine_code),
-          typeOp,
-          String(membre_id),
-          montantXof,
-          montantUsdt,
-          String(ref_interne || ""),
-          payloadBytes
-        );
+      // ── Routing v3 : une fonction métier par type → noms lisibles sur PolygonScan ──
+      const memNom = String(body.membre_nom || membre_nom || "");
+      const ref    = String(ref_interne || "");
+      switch (typeOp) {
+        // ── Votes ────────────────────────────────────────────────────────────
+        case "vote_cree":
+          calldata = buildVoteCalldata_v3(tontine_code, membre_id, memNom, ref, "enregistrerVoteCree", payloadBytes); break;
+        case "vote_clos":
+          calldata = buildVoteCalldata_v3(tontine_code, membre_id, memNom, ref, "enregistrerVoteClos", payloadBytes); break;
+        case "vote":
+          calldata = buildVoteCalldata_v3(tontine_code, membre_id, memNom, String(body.question || ref), "enregistrerVoteIndividuel", payloadBytes); break;
+        case "retrait_propose":
+          calldata = buildVoteCalldata_v3(tontine_code, membre_id, memNom, ref, "enregistrerRetraitPropose", payloadBytes); break;
+        // ── Système ──────────────────────────────────────────────────────────
+        case "creation":
+          calldata = buildCreationCalldata_v3(tontine_code, membre_id, memNom, String(body.nom_tontine || tontine_code), payloadBytes); break;
+        case "upgrade_pro":
+          calldata = buildSysCalldata_v3(tontine_code, membre_id, memNom, "", "enregistrerUpgradePro", payloadBytes); break;
+        case "nouveau_cycle":
+          calldata = buildSysCalldata_v3(tontine_code, membre_id, memNom, ref, "enregistrerNouveauCycle", payloadBytes); break;
+        case "score_modifie":
+          calldata = buildSysCalldata_v3(tontine_code, membre_id, memNom, ref, "enregistrerScoreModifie", payloadBytes); break;
+        // ── Finances ─────────────────────────────────────────────────────────
+        case "cotisation":
+          calldata = buildFinanceCalldata_v3(tontine_code, membre_id, memNom, montantXof, montantUsdt, ref, "enregistrerCotisation", payloadBytes); break;
+        case "distribution":
+          calldata = buildFinanceCalldata_v3(tontine_code, membre_id, memNom, montantXof, montantUsdt, ref, "enregistrerDistribution", payloadBytes); break;
+        case "decaissement":
+          calldata = buildFinanceCalldata_v3(tontine_code, membre_id, memNom, montantXof, montantUsdt, ref, "enregistrerDecaissement", payloadBytes); break;
+        case "depot":
+          calldata = buildFinanceCalldata_v3(tontine_code, membre_id, memNom, montantXof, montantUsdt, ref, "enregistrerDepot", payloadBytes); break;
+        case "pret":
+          calldata = buildFinanceCalldata_v3(tontine_code, membre_id, memNom, montantXof, montantUsdt, ref, "enregistrerPret", payloadBytes); break;
+        case "remboursement":
+        case "remboursement_pret":
+          calldata = buildFinanceCalldata_v3(tontine_code, membre_id, memNom, montantXof, montantUsdt, ref, "enregistrerRemboursement", payloadBytes); break;
+        case "penalite":
+          calldata = buildFinanceCalldata_v3(tontine_code, membre_id, memNom, montantXof, montantUsdt, ref, "enregistrerPenalite", payloadBytes); break;
+        case "retrait":
+          calldata = buildFinanceCalldata_v3(tontine_code, membre_id, memNom, montantXof, montantUsdt, ref, "enregistrerRetrait", payloadBytes); break;
+        case "apport":
+          calldata = buildFinanceCalldata_v3(tontine_code, membre_id, memNom, montantXof, montantUsdt, ref, "enregistrerApport", payloadBytes); break;
+        case "sync_balance":
+        case "synchronisation":
+          calldata = buildFinanceCalldata_v3(tontine_code, membre_id, memNom, montantXof, montantUsdt, ref, "enregistrerSynchronisation", payloadBytes); break;
+        default:
+          // Fallback : type inconnu → enregistrerSynchronisation
+          calldata = buildFinanceCalldata_v3(tontine_code, membre_id, memNom, montantXof, montantUsdt, ref, "enregistrerSynchronisation", payloadBytes); break;
       }
 
       const onChain = await sendOnChainTx(rpcUrl, contractAddr, calldata, privKey, fromAddr);

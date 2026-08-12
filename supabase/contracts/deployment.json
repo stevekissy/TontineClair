@@ -1,12 +1,16 @@
 {
-  "contract_address": "0xdD3aa7dcd20f3C5321CbFFf6EF2dc2a278cBA26a",
-  "tx_hash": "e89710b02448777ee0e2a00d12272ba03e30e50a65f138e10f0415da3c69a9db",
-  "block_number": 90715853,
-  "admin_address": "0xf2C1019814425f46E743a5492153C1a25bdfEEfd",
+  "contract_address": "0x49dc7ed09bc2d4ff081790c417197a0435696976",
+  "contract_address_v2": "0xdD3aa7dcd20f3C5321CbFFf6EF2dc2a278cBA26a",
+  "tx_hash": "e9c446d74aee89c31f28ee5626572390bc63ae6d84754a622f64211b88f75b66",
+  "block_number": 91617777,
+  "admin_address": "0x21Bb7Bd63EED98cad05144b07b1b00d47A7d6384",
+  "admin_transfer_tx": "0x269721b2dcc3bc0b06babc589dc7d2709cea766d19e2515f6c88d9f786e45862",
+  "admin_transfer_block": 91859973,
   "network": "polygon-mainnet",
   "chain_id": 137,
-  "deployed_at": "2026-07-23T03:52:59Z",
-  "polygonscan": "https://polygonscan.com/address/0xdD3aa7dcd20f3C5321CbFFf6EF2dc2a278cBA26a",
-  "gas_used": 694912,
-  "deploy_cost_matic": 0.192102
+  "deployed_at": "2026-08-07T19:41:35Z",
+  "version": "3.0.0",
+  "polygonscan": "https://polygonscan.com/address/0x49dc7ed09bc2d4ff081790c417197a0435696976",
+  "gas_used": 1859585,
+  "deploy_cost_matic": 0.61489
 }
