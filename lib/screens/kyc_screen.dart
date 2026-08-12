@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 // SDK natif Smile ID — widget DocumentVerification + classe SmileID
 import 'package:smile_id/products/document/smile_id_document_verification.dart';
+import 'package:smile_id/smile_id.dart';
 
 import '../models/kyc_model.dart';
 import '../services/kyc_service.dart';
@@ -38,11 +39,37 @@ class _KycScreenState extends State<KycScreen> {
   KycVerification? _kyc;
   bool _loading = true;
   bool _lancementEnCours = false;
+  // Suivi de l'état d'initialisation Smile ID
+  bool _smileIdPret = false;
 
   @override
   void initState() {
     super.initState();
     _charger();
+    _initSmileId();
+  }
+
+  // ── Re-initialiser Smile ID au moment où l'écran s'ouvre ────────────────
+  // Le SDK peut avoir échoué silencieusement au démarrage de l'app
+  // → on réessaie ici pour garantir que fileSavePath est initialisé
+  Future<void> _initSmileId() async {
+    try {
+      // v11.2.10 : initialize() retourne void (pas Future) → pas d'await
+      SmileID.initialize(useSandbox: false, enableCrashReporting: false);
+      // Pause pour laisser le SDK natif finir son init asynchrone interne
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (mounted) setState(() { _smileIdPret = true; });
+    } catch (e) {
+      if (kDebugMode) debugPrint('[SmileID] re-init error: $e');
+      if (mounted) {
+        final msg = e.toString().toLowerCase();
+        // "already initialized" → OK, le SDK est déjà prêt
+        if (msg.contains('already') || msg.contains('initialized')) {
+          setState(() { _smileIdPret = true; });
+        }
+        // Sinon _smileIdPret reste false → le bouton affichera l'erreur
+      }
+    }
   }
 
   Future<void> _charger() async {
@@ -54,9 +81,28 @@ class _KycScreenState extends State<KycScreen> {
   // ── Lancer le SDK natif Smile ID ────────────────────────────────────────
   Future<void> _lancerSmileId() async {
     if (_lancementEnCours) return;
+
+    // Si pas encore prêt → réessayer l'init avant d'ouvrir
+    if (!_smileIdPret) {
+      setState(() => _lancementEnCours = true);
+      await _initSmileId();
+      if (!mounted) return;
+      if (!_smileIdPret) {
+        setState(() => _lancementEnCours = false);
+        _afficherErreur(
+          'Le service de vérification n\'est pas disponible.\n'
+          'Vérifiez votre connexion et réessayez.',
+        );
+        return;
+      }
+    }
+
     setState(() => _lancementEnCours = true);
 
     try {
+      // Petite pause pour s'assurer que le SDK est entièrement prêt côté natif
+      await Future.delayed(const Duration(milliseconds: 300));
+
       // _SmileIdDocumentVerificationScreen retourne un Map? avec le résultat JSON parsé
       final result = await Navigator.push<Map<String, dynamic>?>(
         context,

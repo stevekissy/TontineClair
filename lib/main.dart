@@ -30,12 +30,14 @@ void main() async {
 
   // Initialiser le SDK natif Smile ID (KYC identité Premium)
   // Le fichier smile_config.json doit être dans android/app/src/main/assets/
+  // IMPORTANT : on tente l'init mais on ne bloque pas l'app si elle échoue.
+  // KycScreen re-tentera l'init au moment où l'utilisateur ouvre l'écran KYC.
+  // SmileID.initialize() retourne void en v11.2.10 (pas Future) → pas d'await
   try {
-    await SmileID.initialize(useSandbox: false, enableCrashReporting: false);
+    SmileID.initialize(useSandbox: false, enableCrashReporting: false);
+    if (kDebugMode) debugPrint('[SmileID] initialize OK');
   } catch (e) {
-    // Echec init (ex: smile_config.json absent ou invalide)
-    // L'app démarre quand même — KycScreen affichera un message d'erreur
-    if (kDebugMode) debugPrint('[SmileID] initialize error: $e');
+    if (kDebugMode) debugPrint('[SmileID] initialize error (non fatal): $e');
   }
 
   // Vérifier les échéances de toutes les tontines au démarrage
