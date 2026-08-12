@@ -530,6 +530,40 @@ class BlockchainService {
     );
   }
 
+  /// Enregistre l'AJOUT D'UN MEMBRE (admission par vote ou directement).
+  static Future<BlockchainResultat> enregistrerAjoutMembre({
+    required String tontineCode,
+    required String membreId,
+    required String membreNom,
+    String? gestionnaire,
+  }) async {
+    return _enregistrer(
+      tontineCode  : tontineCode,
+      typeOperation: 'ajout_membre',
+      membreId     : membreId,
+      membreNom    : membreNom,
+      montantXof   : null,
+      metadata     : gestionnaire != null ? {'gestionnaire': gestionnaire} : null,
+    );
+  }
+
+  /// Enregistre la SUPPRESSION D'UN MEMBRE (vote retrait adopté ou exclusion).
+  static Future<BlockchainResultat> enregistrerSuppressionMembre({
+    required String tontineCode,
+    required String membreId,
+    required String membreNom,
+    String? gestionnaire,
+  }) async {
+    return _enregistrer(
+      tontineCode  : tontineCode,
+      typeOperation: 'suppression_membre',
+      membreId     : membreId,
+      membreNom    : membreNom,
+      montantXof   : null,
+      metadata     : gestionnaire != null ? {'gestionnaire': gestionnaire} : null,
+    );
+  }
+
   /// Enregistre une PÉNALITÉ appliquée à un membre.
   static Future<BlockchainResultat> enregistrerPenalite({
     required String tontineCode,

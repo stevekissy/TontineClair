@@ -229,9 +229,26 @@ class TontineProvider extends ChangeNotifier {
       notifyListeners();
 
       // ── BROADCAST FIX : s'abonner aux notifications dès la création ─────────
-      // Le créateur de la tontine doit aussi recevoir les notifications
-      // des autres membres. Sans ça, son token n'est pas encore en base.
       NotificationService.abonnerATontine(code); // unawaited — non-bloquant
+
+      // ── BLOCKCHAIN : ancrage création tontine (non-bloquant) ─────────────────
+      BlockchainService.enregistrerCreation(
+        tontineCode : code,
+        gestionnaire: gestNom,
+        nomTontine  : nom,
+      ).then((res) {
+        if (res.ok) {
+          // Notifier tous les membres (topic FCM) : tontine créée
+          NotificationService.notifierOperationBlockchain(
+            tontineCode  : code,
+            nomTontine   : nom,
+            typeOperation: 'creation',
+            phase        : res.phase,
+            txHash       : res.txHash,
+            membreNom    : gestNom,
+          ).catchError((_) {});
+        }
+      }).catchError((_) {}); // Non-bloquant — la création reste valide même si blockchain KO
 
       return code;
     } catch (e) {

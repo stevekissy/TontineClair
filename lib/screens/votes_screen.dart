@@ -7,6 +7,7 @@ import '../services/pdf_service.dart';
 import '../services/tontine_provider.dart';
 import '../services/supabase_service.dart';
 import '../services/blockchain_service.dart';
+import '../services/notification_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
@@ -822,6 +823,25 @@ class _VotesScreenState extends State<VotesScreen> {
           ordre.add(newId);
           newData['ordre'] = ordre;
 
+          // ── BLOCKCHAIN : ajout membre admis par vote ─────────────────────
+          BlockchainService.enregistrerAjoutMembre(
+            tontineCode : widget.code,
+            membreId    : newId,
+            membreNom   : vote.nouveauMembreNom ?? '',
+            gestionnaire: provider.gestActifNom ?? '',
+          ).then((res) {
+            if (res.ok) {
+              NotificationService.notifierOperationBlockchain(
+                tontineCode  : widget.code,
+                nomTontine   : widget.code,
+                typeOperation: 'ajout_membre',
+                phase        : res.phase,
+                txHash       : res.txHash,
+                membreNom    : vote.nouveauMembreNom,
+              ).catchError((_) {});
+            }
+          }).catchError((_) {});
+
           // Notification nouveau membre admis
           final langMembre = Provider.of<LocaleService>(context, listen: false).langue.code;
           final tMembre = SupabaseService.notifTexte('nouveau_membre', langMembre, vars: {'nom': vote.nouveauMembreNom ?? ''});
@@ -864,6 +884,26 @@ class _VotesScreenState extends State<VotesScreen> {
           } catch (_) {
             // v6 non déployée — silencieux
           }
+
+          // ── BLOCKCHAIN : suppression membre par vote ──────────────────────
+          final membreConcerneNom = _extraireNomMembre(vote);
+          BlockchainService.enregistrerSuppressionMembre(
+            tontineCode : widget.code,
+            membreId    : membreConcerneId ?? '',
+            membreNom   : membreConcerneNom ?? '',
+            gestionnaire: provider.gestActifNom ?? '',
+          ).then((res) {
+            if (res.ok) {
+              NotificationService.notifierOperationBlockchain(
+                tontineCode  : widget.code,
+                nomTontine   : widget.code,
+                typeOperation: 'suppression_membre',
+                phase        : res.phase,
+                txHash       : res.txHash,
+                membreNom    : membreConcerneNom,
+              ).catchError((_) {});
+            }
+          }).catchError((_) {});
         }
 
         // ── Vote de retrait refusé → mettre à jour le statut propositions ─
@@ -987,6 +1027,21 @@ class _VotesScreenState extends State<VotesScreen> {
     final desc = vote.description ?? '';
     final match = RegExp(r'Motif\s*:\s*(.+?)(?:\n|Score|$)').firstMatch(desc);
     return match?.group(1)?.trim() ?? 'Retrait par vote collectif';
+  }
+
+  /// Extrait le NOM du membre concerné par un vote de retrait (pour blockchain).
+  String? _extraireNomMembre(Vote vote) {
+    // 1. Chercher dans voix (metadata structurée)
+    if (vote.voix.containsKey('membreConcerneNom')) {
+      return vote.voix['membreConcerneNom'] as String?;
+    }
+    // 2. Extraire de la description (format libre "Nom : Koffi")
+    final desc = vote.description ?? '';
+    final match = RegExp(r'(?:Membre|Nom)\s*:\s*(.+?)(?:\n|Score|Motif|$)', caseSensitive: false).firstMatch(desc);
+    if (match != null) return match.group(1)?.trim();
+    // 3. Fallback : titre du vote peut contenir le nom
+    final titreMatch = RegExp(r'retrait\s+(.+)', caseSensitive: false).firstMatch(vote.question);
+    return titreMatch?.group(1)?.trim();
   }
 }
 
