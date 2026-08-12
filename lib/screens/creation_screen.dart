@@ -377,7 +377,8 @@ class _CreationScreenState extends State<CreationScreen> {
     }
   }
 
-  /// Bannière KYC — visible uniquement si type = Premium
+  /// Bannière KYC — visible uniquement si type = Premium.
+  /// Contient un bouton "Vérifier mon identité" standalone (sans soumettre le formulaire).
   Widget _banniereKyc() {
     if (!_kycRequis) return const SizedBox.shrink();
     if (_kycEnCours) {
@@ -396,7 +397,7 @@ class _CreationScreenState extends State<CreationScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
         decoration: BoxDecoration(
           color: valide ? const Color(0xFFE3F1EA) : const Color(0xFFFFF3CD),
           border: Border.all(
@@ -407,49 +408,115 @@ class _CreationScreenState extends State<CreationScreen> {
           ),
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              valide ? Icons.shield_rounded : Icons.fingerprint_rounded,
-              size: 20,
-              color: valide ? const Color(0xFF2E7D5B) : const Color(0xFFF59E0B),
+            // ── Ligne icone + texte ──────────────────────────────────────
+            Row(
+              children: [
+                Icon(
+                  valide ? Icons.shield_rounded : Icons.fingerprint_rounded,
+                  size: 20,
+                  color: valide ? const Color(0xFF2E7D5B) : const Color(0xFFF59E0B),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        valide
+                            ? 'Identite verifiee (Smile ID)'
+                            : 'Verification d\'identite obligatoire',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: valide
+                              ? const Color(0xFF1B5E3B)
+                              : const Color(0xFF78350F),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        valide
+                            ? 'Votre identite a ete confirmee par Smile ID.'
+                            : 'Tontine Premium — verifiez votre identite avant la creation.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: valide
+                              ? const Color(0xFF2E7D5B)
+                              : const Color(0xFF92400E),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    valide
-                        ? 'Identité vérifiée ✓ (Smile ID)'
-                        : 'Vérification d\'identité obligatoire',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: valide
-                          ? const Color(0xFF1B5E3B)
-                          : const Color(0xFF78350F),
-                    ),
+
+            // ── Bouton "Vérifier mon identité" (visible seulement si pas encore vérifié) ──
+            if (!valide) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _verifierIdentiteStandalone,
+                  icon: const Icon(Icons.verified_user_rounded, size: 18),
+                  label: const Text(
+                    'Verifier mon identite',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    valide
-                        ? 'Votre identité a été confirmée par Smile ID.'
-                        : 'Tontine Premium — votre identité sera vérifiée avant la création.',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: valide
-                          ? const Color(0xFF2E7D5B)
-                          : const Color(0xFF92400E),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFF59E0B),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
                     ),
+                    elevation: 0,
                   ),
-                ],
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  /// Lance la vérification Smile ID directement depuis la bannière,
+  /// sans nécessiter la soumission du formulaire de création.
+  Future<void> _verifierIdentiteStandalone() async {
+    final gestNomKyc = _gestNomCtrl.isNotEmpty
+        ? _gestNomCtrl.first.text.trim()
+        : '';
+    final userId = gestNomKyc.isNotEmpty ? gestNomKyc : 'unknown';
+
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => KycScreen(userId: userId),
+      ),
+    );
+    if (!mounted) return;
+
+    if (result == true) {
+      // Re-vérifier le statut KYC après retour
+      setState(() => _kycEnCours = true);
+      final encoreBloquant = await KycService.kycBloquantPourPremium(userId);
+      if (!mounted) return;
+      setState(() {
+        _kycEnCours = false;
+        _kycValide = !encoreBloquant;
+      });
+      if (_kycValide) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Identite verifiee avec succes !'),
+          backgroundColor: Color(0xFF2E7D5B),
+          duration: Duration(seconds: 3),
+        ));
+      }
+    }
   }
 
   @override

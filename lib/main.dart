@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:smile_id/smile_id.dart';
 import 'services/storage_service.dart';
 import 'services/tontine_provider.dart';
 import 'services/notification_service.dart';
@@ -25,6 +27,16 @@ void main() async {
   // Initialiser Firebase + notifications push
   await Firebase.initializeApp();
   await NotificationService.initialiser();
+
+  // Initialiser le SDK natif Smile ID (KYC identité Premium)
+  // Le fichier smile_config.json doit être dans android/app/src/main/assets/
+  try {
+    await SmileID.initialize(useSandbox: false, enableCrashReporting: false);
+  } catch (e) {
+    // Echec init (ex: smile_config.json absent ou invalide)
+    // L'app démarre quand même — KycScreen affichera un message d'erreur
+    if (kDebugMode) debugPrint('[SmileID] initialize error: $e');
+  }
 
   // Vérifier les échéances de toutes les tontines au démarrage
   // (unawaited — ne bloque pas le démarrage de l'app)

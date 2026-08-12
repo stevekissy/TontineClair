@@ -63,6 +63,20 @@ android {
             isShrinkResources = false
         }
     }
+
+    // ── Fix META-INF conflict from smile_id dependencies ──────────────────
+    // okhttp3:logging-interceptor:5.3.2 et jspecify:1.0.0 contiennent tous deux
+    // META-INF/versions/9/OSGI-INF/MANIFEST.MF → exclude pour éviter le conflit
+    packaging {
+        resources {
+            excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+            excludes += "META-INF/DEPENDENCIES"
+            excludes += "META-INF/LICENSE"
+            excludes += "META-INF/LICENSE.txt"
+            excludes += "META-INF/NOTICE"
+            excludes += "META-INF/NOTICE.txt"
+        }
+    }
 }
 
 flutter {
