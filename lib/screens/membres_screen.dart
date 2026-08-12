@@ -1274,17 +1274,43 @@ class _LigneVote extends StatelessWidget {
 
   const _LigneVote({required this.voix});
 
+  /// Tente de parser une date depuis plusieurs champs possibles du JSON vote.
+  /// Supporte : int (ms epoch), String ISO8601, String timestamp PostgreSQL.
+  static String _extraireDate(Map<String, dynamic> voix) {
+    // Priorité : quand > created_at > date > voted_at > ts
+    for (final key in ['quand', 'created_at', 'date', 'voted_at', 'ts']) {
+      final raw = voix[key];
+      if (raw == null) continue;
+      DateTime? dt;
+      if (raw is int && raw > 0) {
+        // Milliseconds epoch
+        dt = DateTime.fromMillisecondsSinceEpoch(raw);
+      } else if (raw is String && raw.isNotEmpty) {
+        // ISO 8601 ou timestamp PostgreSQL (ex: "2024-12-01T14:23:00.000Z")
+        dt = DateTime.tryParse(raw);
+        // Tentative avec timestamp numérique sous forme string
+        if (dt == null) {
+          final ms = int.tryParse(raw);
+          if (ms != null && ms > 0) dt = DateTime.fromMillisecondsSinceEpoch(ms);
+        }
+      }
+      if (dt != null) return Formatters.dateHeure(dt);
+    }
+    return ''; // Pas de date disponible — on n'affiche rien plutôt que "—"
+  }
+
   @override
   Widget build(BuildContext context) {
-    final choix = voix['choix'] as String? ?? '—';
+    final choix   = voix['choix']   as String? ?? '—';
     final methode = voix['methode'] as String? ?? '';
-    final quand = voix['quand'];
-    String dateStr = '—';
-    if (quand is int) {
-      dateStr = Formatters.dateHeure(
-          DateTime.fromMillisecondsSinceEpoch(quand));
-    } else if (quand is String) {
-      dateStr = Formatters.dateHeure(DateTime.tryParse(quand));
+    final dateStr = _extraireDate(voix);
+
+    // Libellé lisible du choix
+    final String choixLabel;
+    switch (choix.toLowerCase()) {
+      case 'pour':   choixLabel = 'Oui';  break;
+      case 'contre': choixLabel = 'Non';  break;
+      default:       choixLabel = choix;
     }
 
     Color choixCouleur;
@@ -1300,17 +1326,19 @@ class _LigneVote extends StatelessWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.only(bottom: 8),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Badge choix
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
               color: choixCouleur.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
-              choix,
+              choixLabel,
               style: GoogleFonts.inter(
                 fontWeight: FontWeight.w700,
                 fontSize: 12,
@@ -1319,25 +1347,37 @@ class _LigneVote extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          if (methode.isNotEmpty) ...[
-            Text(
-              '· $methode',
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                color: AppColors.texteDoux,
-              ),
-            ),
-            const SizedBox(width: 6),
-          ],
+          // Méthode + Date
           Expanded(
-            child: Text(
-              dateStr,
-              style: GoogleFonts.inter(
-                fontSize: 11.5,
-                color: AppColors.texteDoux,
-              ),
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.end,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (methode.isNotEmpty)
+                  Text(
+                    '· $methode',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: AppColors.texteDoux,
+                    ),
+                  ),
+                if (dateStr.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      const Icon(Icons.access_time_rounded,
+                          size: 11, color: AppColors.texteDoux),
+                      const SizedBox(width: 3),
+                      Text(
+                        dateStr,
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          color: AppColors.texteDoux,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
             ),
           ),
         ],

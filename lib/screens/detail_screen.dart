@@ -1868,12 +1868,25 @@ class _BarreDetail extends StatelessWidget {
     required int                       commission,
     required int                       montantNet,
   }) async {
-    // Pré-remplir depuis le profil membre (si déjà renseigné)
-    String? operateur  = beneficiaire?.operateur;
+    // ── Coordonnées pré-enregistrées dans le profil membre ───────────────────
+    String? operateur   = beneficiaire?.operateur;
     String  numeroBenef = beneficiaire?.numeroBenef ?? '';
 
+    final bool profileMmDispo = operateur != null && numeroBenef.isNotEmpty;
+
     // ── Étape 1 : formulaire Mobile Money ────────────────────────────────────
+    // Si le membre a déjà un numéro MM enregistré → afficher en mode "pré-rempli"
+    // avec possibilité de modifier. Sinon → saisie manuelle complète.
     const ops = ['orange', 'moov', 'mtn', 'wave'];
+
+    // Libellés lisibles des opérateurs
+    const opLabels = {
+      'orange': 'Orange Money',
+      'moov':   'Moov Money',
+      'mtn':    'MTN MoMo',
+      'wave':   'Wave',
+    };
+
     final numCtrl = TextEditingController(text: numeroBenef);
 
     final mmOk = await showModalBottomSheet<bool>(
@@ -1890,136 +1903,217 @@ class _BarreDetail extends StatelessWidget {
             20, 20, 20,
             20 + MediaQuery.of(sCtx).viewInsets.bottom,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Poignée
-              Center(
-                child: Container(
-                  width: 40, height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.lignes,
-                    borderRadius: BorderRadius.circular(2),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Poignée
+                Center(
+                  child: Container(
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.lignes,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                '💸 Décaissement — Tour',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.encre),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Bénéficiaire : $benefNom · Tour $numerTourAffiche',
-                style: const TextStyle(fontSize: 13, color: AppColors.texteDoux),
-              ),
-              const SizedBox(height: 16),
-
-              // Récap montants
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.fondCode,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.lignes),
+                const SizedBox(height: 16),
+                const Text(
+                  '💸 Décaissement — Tour',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.encre),
                 ),
-                child: Column(
-                  children: [
-                    _LigneRecapCloture('Montant versé',      Formatters.montant(montantVerse, devise: data.devise)),
-                    _LigneRecapCloture('Frais réseau (2,5%)', '− ${Formatters.montant(commission, devise: data.devise)}', rouge: true),
-                    const Divider(height: 12, color: AppColors.lignes),
-                    _LigneRecapCloture('Montant net à décaisser', Formatters.montant(montantNet, devise: data.devise), gras: true),
-                  ],
+                const SizedBox(height: 4),
+                Text(
+                  'Bénéficiaire : $benefNom · Tour $numerTourAffiche',
+                  style: const TextStyle(fontSize: 13, color: AppColors.texteDoux),
                 ),
-              ),
-              const SizedBox(height: 16),
+                const SizedBox(height: 16),
 
-              // Opérateur
-              const Text('Opérateur Mobile Money *',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.texteDoux)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: ops.map((op) {
-                  final sel = operateur == op;
-                  return GestureDetector(
-                    onTap: () => setSt(() => operateur = op),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: sel ? AppColors.encre : AppColors.fondCode,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: sel ? AppColors.encre : AppColors.lignes),
+                // Récap montants
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.fondCode,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.lignes),
+                  ),
+                  child: Column(
+                    children: [
+                      _LigneRecapCloture('Montant versé',      Formatters.montant(montantVerse, devise: data.devise)),
+                      _LigneRecapCloture('Frais réseau (2,5%)', '− ${Formatters.montant(commission, devise: data.devise)}', rouge: true),
+                      const Divider(height: 12, color: AppColors.lignes),
+                      _LigneRecapCloture('Montant net à décaisser', Formatters.montant(montantNet, devise: data.devise), gras: true),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // ── Bandeau "pré-enregistré" si le membre a déjà son MM ──────
+                if (profileMmDispo) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8F5E9),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFF2E7D5B).withValues(alpha: 0.4)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.check_circle_rounded, color: Color(0xFF2E7D5B), size: 20),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Mobile Money pré-enregistré',
+                                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF1B5E3B)),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${opLabels[operateur] ?? operateur}  ·  $numeroBenef',
+                                style: const TextStyle(fontSize: 13, color: Color(0xFF2E7D5B), fontWeight: FontWeight.w600),
+                              ),
+                            ],
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () => setSt(() {
+                            // Permettre de modifier
+                          }),
+                          style: TextButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(0, 0),
+                          ),
+                          child: const Text('Modifier', style: TextStyle(fontSize: 12, color: Color(0xFF2E7D5B))),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+
+                // Opérateur (affiché en édition si pas de profil MM OU si utilisateur clique Modifier)
+                if (!profileMmDispo) ...[
+                  const Text('Opérateur Mobile Money *',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.texteDoux)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: ops.map((op) {
+                      final sel = operateur == op;
+                      return GestureDetector(
+                        onTap: () => setSt(() => operateur = op),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: sel ? AppColors.encre : AppColors.fondCode,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: sel ? AppColors.encre : AppColors.lignes),
+                          ),
+                          child: Text(
+                            opLabels[op] ?? '${op[0].toUpperCase()}${op.substring(1)}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                              color: sel ? Colors.white : AppColors.encre,
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Numéro (saisie manuelle uniquement si pas de profil)
+                  const Text('Numéro Mobile Money *',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.texteDoux)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: numCtrl,
+                    keyboardType: TextInputType.phone,
+                    decoration: InputDecoration(
+                      hintText: 'Ex : +225 07 00 00 00',
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: AppColors.lignes),
                       ),
-                      child: Text(
-                        op[0].toUpperCase() + op.substring(1),
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                          color: sel ? Colors.white : AppColors.encre,
+                      prefixIcon: const Icon(Icons.phone_outlined, size: 18),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
+                // ── Note PayDunya ─────────────────────────────────────────────
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF2FBF6),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.phone_android_rounded, size: 15, color: Color(0xFF1AA259)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          profileMmDispo
+                              ? 'PayDunya utilisera automatiquement le numéro enregistré pour le décaissement.'
+                              : 'PayDunya enverra le montant sur le numéro Mobile Money saisi.',
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF1AA259), height: 1.4),
                         ),
                       ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Bouton continuer
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.encre,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 12),
-
-              // Numéro
-              const Text('Numéro Mobile Money *',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.texteDoux)),
-              const SizedBox(height: 6),
-              TextField(
-                controller: numCtrl,
-                keyboardType: TextInputType.phone,
-                decoration: InputDecoration(
-                  hintText: 'Ex : +225 07 00 00 00',
-                  filled: true,
-                  fillColor: Colors.white,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: AppColors.lignes),
-                  ),
-                  prefixIcon: const Icon(Icons.phone_outlined, size: 18),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Bouton continuer
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.encre,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  onPressed: () {
-                    if (operateur == null || numCtrl.text.trim().isEmpty) {
-                      ScaffoldMessenger.of(sCtx).showSnackBar(
-                        const SnackBar(content: Text('Choisissez un opérateur et saisissez le numéro.')),
-                      );
-                      return;
-                    }
-                    Navigator.pop(sCtx, true);
-                  },
-                  child: const Text(
-                    'Continuer avec le PIN',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: Colors.white),
+                    onPressed: () {
+                      // Si profil MM dispo : utiliser directement, pas de validation numéro
+                      if (profileMmDispo) {
+                        Navigator.pop(sCtx, true);
+                        return;
+                      }
+                      if (operateur == null || numCtrl.text.trim().isEmpty) {
+                        ScaffoldMessenger.of(sCtx).showSnackBar(
+                          const SnackBar(content: Text('Choisissez un opérateur et saisissez le numéro.')),
+                        );
+                        return;
+                      }
+                      Navigator.pop(sCtx, true);
+                    },
+                    child: Text(
+                      profileMmDispo ? 'Confirmer — ${opLabels[operateur] ?? operateur}  $numeroBenef' : 'Continuer avec le PIN',
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Colors.white),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 8),
-            ],
+                const SizedBox(height: 8),
+              ],
+            ),
           ),
         ),
       ),
     );
 
     if (mmOk != true || !context.mounted) return;
-    numeroBenef = numCtrl.text.trim();
+    // Si profil MM pré-enregistré : garder numeroBenef/operateur du profil
+    if (!profileMmDispo) {
+      numeroBenef = numCtrl.text.trim();
+    }
 
     // ── Étape 2 : confirmation PIN ───────────────────────────────────────────
     // operateur est garanti non-null ici (vérifié dans le bottom sheet avant pop)

@@ -193,13 +193,19 @@ class _PretsScreenState extends State<PretsScreen> {
       return;
     }
 
-    String? emprunteurId    = membresOrdre.first.id;
-    final montantCtrl       = TextEditingController();
-    final tauxCtrl          = TextEditingController(text: '5');
-    final dureesCtrl        = TextEditingController(text: '3');
-    final numBenefCtrl      = TextEditingController();
-    final nomBenefCtrl      = TextEditingController();
-    String operateur        = _operateursPret.first;
+    String? emprunteurId = membresOrdre.first.id;
+
+    // ── Pré-remplir MM depuis le profil du premier emprunteur ────────────────
+    Membre? emprunteurCourant() =>
+        membresOrdre.where((m) => m.id == emprunteurId).firstOrNull;
+    String? operateur    = emprunteurCourant()?.operateur ?? _operateursPret.first;
+    final String numPreRempli = emprunteurCourant()?.numeroBenef ?? '';
+
+    final montantCtrl   = TextEditingController();
+    final tauxCtrl      = TextEditingController(text: '5');
+    final dureesCtrl    = TextEditingController(text: '3');
+    final numBenefCtrl  = TextEditingController(text: numPreRempli);
+    final nomBenefCtrl  = TextEditingController(text: emprunteurCourant()?.nom ?? '');
 
     final result = await showModalBottomSheet<bool>(
       context: context,
@@ -213,6 +219,8 @@ class _PretsScreenState extends State<PretsScreen> {
           final montantSaisi = int.tryParse(montantCtrl.text.trim()) ?? 0;
           final frais        = (montantSaisi * 0.025).round();
           final net          = montantSaisi - frais;
+          // Mettre à jour les champs MM quand l'emprunteur change
+          final emprunteur = membresOrdre.where((m) => m.id == emprunteurId).firstOrNull;
           return Padding(
             padding: EdgeInsets.only(
               left: 16, right: 16, top: 16,
@@ -268,7 +276,18 @@ class _PretsScreenState extends State<PretsScreen> {
                       value: m.id,
                       child: Text(m.nom, overflow: TextOverflow.ellipsis),
                     )).toList(),
-                    onChanged: (v) => setS(() => emprunteurId = v),
+                    onChanged: (v) {
+                      setS(() {
+                        emprunteurId = v;
+                        // Mettre à jour automatiquement les champs Mobile Money
+                        final m = membresOrdre.where((m) => m.id == v).firstOrNull;
+                        if (m != null) {
+                          operateur = m.operateur ?? _operateursPret.first;
+                          numBenefCtrl.text = m.numeroBenef ?? '';
+                          nomBenefCtrl.text = m.nom;
+                        }
+                      });
+                    },
                   ),
                   // Montant
                   ChampLabel(label: 'Montant du prêt (${DeviseService.parCode(data.devise).symbole})'),
@@ -334,6 +353,30 @@ class _PretsScreenState extends State<PretsScreen> {
                   // Champs Mobile Money (Premium uniquement)
                   if (isPremium) ...[
                     const SizedBox(height: 8),
+                    // Badge pré-rempli si le membre a un MM enregistré
+                    if (emprunteur != null && (emprunteur.numeroBenef?.isNotEmpty ?? false)) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE8F5E9),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFF2E7D5B).withValues(alpha: 0.4)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.check_circle_rounded, color: Color(0xFF2E7D5B), size: 16),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'MM pré-enregistré : ${Formatters.methodePaiement(emprunteur.operateur ?? '')}  ·  ${emprunteur.numeroBenef}',
+                                style: const TextStyle(fontSize: 12, color: Color(0xFF1B5E3B), fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     ChampLabel(label: 'Opérateur Mobile Money'),
                     DropdownButtonFormField<String>(
                       initialValue: operateur,
@@ -348,13 +391,39 @@ class _PretsScreenState extends State<PretsScreen> {
                     TextField(
                       controller: numBenefCtrl,
                       keyboardType: TextInputType.phone,
-                      decoration: const InputDecoration(hintText: 'Ex : 07 01 02 03'),
+                      decoration: InputDecoration(
+                        hintText: 'Ex : 07 01 02 03',
+                        suffixIcon: (emprunteur?.numeroBenef?.isNotEmpty ?? false)
+                            ? const Icon(Icons.check_circle_outline, color: Color(0xFF2E7D5B), size: 18)
+                            : null,
+                      ),
                     ),
                     ChampLabel(label: 'Nom bénéficiaire'),
                     TextField(
                       controller: nomBenefCtrl,
                       textCapitalization: TextCapitalization.words,
                       decoration: const InputDecoration(hintText: 'Ex : Kouamé Jean'),
+                    ),
+                    // Note PayDunya
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF2FBF6),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.phone_android_rounded, size: 13, color: Color(0xFF1AA259)),
+                          SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'PayDunya utilisera ce numéro pour envoyer le montant du prêt.',
+                              style: TextStyle(fontSize: 11, color: Color(0xFF1AA259)),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                   const SizedBox(height: 16),

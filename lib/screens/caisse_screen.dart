@@ -433,6 +433,23 @@ class _CaisseScreenState extends State<CaisseScreen> {
     final nomCtrl     = TextEditingController();
     String operateur  = _operateursMobileMoney.first;
 
+    // ── Membres disponibles pour pré-remplissage MM ──────────────────────────
+    final membres = data.membresActifs;
+    String? membreSelId; // null = bénéficiaire externe
+
+    void preRemplirDepuisMembre(String? membreId, void Function(void Function()) setS) {
+      final m = membres.where((m) => m.id == membreId).firstOrNull;
+      if (m != null) {
+        setS(() {
+          if (m.operateur != null && _operateursMobileMoney.contains(m.operateur)) {
+            operateur = m.operateur!;
+          }
+          numCtrl.text = m.numeroBenef ?? '';
+          nomCtrl.text = m.nom;
+        });
+      }
+    }
+
     // ── Formulaire dépense caisse ─────────────────────────────────────────
     if (!context.mounted) return;
     final confirmed = await showModalBottomSheet<bool>(
@@ -443,7 +460,10 @@ class _CaisseScreenState extends State<CaisseScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => Padding(
+        builder: (ctx, setS) {
+          final membreSel = membres.where((m) => m.id == membreSelId).firstOrNull;
+          final mmPreRempli = membreSel != null && (membreSel.numeroBenef?.isNotEmpty ?? false);
+          return Padding(
           padding: EdgeInsets.only(
             left: 16,
             right: 16,
@@ -475,6 +495,71 @@ class _CaisseScreenState extends State<CaisseScreen> {
                   ),
                 ),
                 const SizedBox(height: 4),
+                // Sélecteur membre (optionnel — pré-remplit automatiquement les champs MM)
+                if (membres.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String?>(
+                    value: membreSelId,
+                    decoration: InputDecoration(
+                      labelText: 'Bénéficiaire membre (optionnel)',
+                      labelStyle: const TextStyle(fontSize: 13, color: AppColors.texteDoux),
+                      prefixIcon: const Icon(Icons.person_outline_rounded, size: 18),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: AppColors.lignes),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                    isExpanded: true,
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('— Bénéficiaire externe —',
+                            style: TextStyle(fontSize: 13, color: AppColors.texteDoux)),
+                      ),
+                      ...membres.map((m) => DropdownMenuItem<String?>(
+                        value: m.id,
+                        child: Row(
+                          children: [
+                            Expanded(child: Text(m.nom, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13))),
+                            if (m.numeroBenef?.isNotEmpty ?? false)
+                              const Icon(Icons.check_circle_outline, size: 14, color: Color(0xFF2E7D5B)),
+                          ],
+                        ),
+                      )),
+                    ],
+                    onChanged: (v) {
+                      setS(() => membreSelId = v);
+                      preRemplirDepuisMembre(v, setS);
+                    },
+                  ),
+                  // Badge pré-rempli
+                  if (mmPreRempli) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8F5E9),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFF2E7D5B).withValues(alpha: 0.4)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.check_circle_rounded, color: Color(0xFF2E7D5B), size: 14),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'PayDunya utilisera automatiquement : ${Formatters.methodePaiement(membreSel!.operateur ?? '')}  ·  ${membreSel.numeroBenef}',
+                              style: const TextStyle(fontSize: 11, color: Color(0xFF1B5E3B), fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                ],
                 // Badge paiement crypto
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -557,7 +642,8 @@ class _CaisseScreenState extends State<CaisseScreen> {
               ],
             ),
           ),
-        ),
+        );
+      }, // builder: (ctx, setS)
       ),
     );
 
