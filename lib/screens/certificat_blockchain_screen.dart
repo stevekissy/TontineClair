@@ -210,7 +210,7 @@ class _CertificatBlockchainScreenState
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
           pw.Text(
-            'TontineClair — Certificat confidentiel · $numCert',
+            'TontineClair - Certificat confidentiel - $numCert',
             style: pw.TextStyle(fontSize: 7, color: _pdfDoux),
           ),
           pw.Text(
@@ -357,7 +357,7 @@ class _CertificatBlockchainScreenState
                   border: pw.Border.all(color: _pdfLignes),
                 ),
                 child: pw.Text(
-                  '${e.key} : ${e.value}',
+                  '${_pdfSafe(e.key)} : ${e.value}',
                   style: pw.TextStyle(fontSize: 8, color: _pdfTexte),
                 ),
               );
@@ -417,17 +417,19 @@ class _CertificatBlockchainScreenState
                 decoration: pw.BoxDecoration(color: bg),
                 children: [
                   _cell(_fmtDate(e.createdAt)),
-                  _cell(e.typeLabel,
+                  _cell(_pdfSafe(e.typeLabel),
                       gras: true,
                       couleur: estOnChain ? _pdfChain : _pdfEncre),
-                  _cell(e.descriptionMetier),  // Description enrichie avec membre + montant
+                  _cell(_pdfSafe(e.descriptionMetier)),
                   _cell(e.montantXof != null
                       ? '${_formatXof(e.montantXof!)} F'
-                      : '—'),
+                      : '-'),
                   _cell(
                     e.txHash != null
-                        ? (estOnChain ? e.txHashCourt : 'SHA-256:${e.txHashCourt}')
-                        : '—',
+                        ? _pdfSafe(estOnChain
+                            ? e.txHashCourt
+                            : 'SHA-256:${e.txHashCourt}')
+                        : '-',
                     mono: true,
                     couleur: estOnChain ? _pdfChain : _pdfDoux,
                     suffix: '',
@@ -489,20 +491,20 @@ class _CertificatBlockchainScreenState
           pw.SizedBox(height: 8),
           pw.Text(
             phase == 2
-                ? '1. Ouvrez TontineClair → Vérifier blockchain\n'
+                ? '1. Ouvrez TontineClair > Verifier blockchain\n'
                   '2. Saisissez le code : ${widget.codeTontine}\n'
                   '3. Chaque TX hash est verifiable sur https://polygonscan.com\n'
                   '${contratAddr != null ? "4. Smart Contract : https://polygonscan.com/address/$contratAddr" : ""}'
-                : '1. Ouvrez TontineClair → Vérifier blockchain\n'
+                : '1. Ouvrez TontineClair > Verifier blockchain\n'
                   '2. Saisissez le code : ${widget.codeTontine}\n'
                   '3. Les preuves SHA-256 sont des empreintes cryptographiques internes.\n'
-                  '   Elles garantissent l\'intégrité des données mais ne sont pas des transactions Polygon.\n'
+                  '   Elles garantissent l\'integrite des donnees mais ne sont pas des transactions Polygon.\n'
                   '4. La verification on-chain est disponible via Polygon Mainnet.',
             style: pw.TextStyle(fontSize: 8, color: _pdfTexte, lineSpacing: 3),
           ),
           pw.SizedBox(height: 8),
           pw.Text(
-            'Certificat N° $numCert · Document généré automatiquement par TontineClair · Non modifiable',
+            'Certificat N. $numCert - Document genere automatiquement par TontineClair - Non modifiable',
             style:
                 pw.TextStyle(fontSize: 7, color: _pdfDoux, fontStyle: pw.FontStyle.italic),
           ),
@@ -587,6 +589,33 @@ class _CertificatBlockchainScreenState
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
+
+  /// Rend un texte "PDF-safe" : supprime les emojis et caractères Unicode
+  /// non supportés par le renderer PDF Flutter (police Helvetica intégrée).
+  /// Conserve le Latin étendu (accents : é è à ç ù ô î, etc.).
+  static String _pdfSafe(String texte) {
+    return texte
+        .replaceAll('\u2026', '...')  // ellipse → ...
+        .replaceAll('\u2019', "'")    // apostrophe typographique
+        .replaceAll('\u2018', "'")    // guillemet ouvert
+        .replaceAll('\u201C', '"')    // guillemet double ouvert
+        .replaceAll('\u201D', '"')    // guillemet double fermé
+        .replaceAll('\u202F', ' ')    // espace fine insécable
+        .replaceAll('\u00B7', '.')    // point médian
+        .replaceAll('\u2013', '-')    // tiret demi-cadratin
+        .replaceAll('\u2014', '-')    // tiret cadratin
+        .replaceAll('✓', 'OK')
+        .replaceAll('✗', 'X')
+        .replaceAll('❓', '?')
+        .replaceAll('❌', '[retire]')
+        .replaceAll('✅', '[OK]')
+        // Filtre général : garde ASCII + Latin-1 + Latin Extended-A/B (≤ U+024F)
+        // Supprime tout emoji, symbole CJK, dingbat > U+024F
+        .split('')
+        .where((ch) => ch.codeUnitAt(0) <= 0x024F)
+        .join();
+  }
+
   String _fmtDate(DateTime dt) =>
       '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
 

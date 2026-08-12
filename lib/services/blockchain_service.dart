@@ -290,10 +290,12 @@ class BlockchainEntry {
     return map[statut] ?? statut;
   }
 
+  /// Version courte du TX hash, ASCII-safe (pas d'ellipse Unicode).
+  /// Utilisé notamment dans la génération PDF.
   String get txHashCourt =>
       txHash != null && txHash!.length > 12
-          ? '${txHash!.substring(0, 8)}…${txHash!.substring(txHash!.length - 6)}'
-          : (txHash ?? '—');
+          ? '${txHash!.substring(0, 8)}...${txHash!.substring(txHash!.length - 6)}'
+          : (txHash ?? '-');
 }
 
 // ── Résultat d'enregistrement ─────────────────────────────────────────────────
