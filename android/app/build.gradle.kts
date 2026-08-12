@@ -9,11 +9,17 @@ plugins {
 }
 
 // ── Lecture du fichier key.properties ─────────────────────────────────────
-val keyPropertiesFile = rootProject.file("../android/key.properties")
+// Cherche key.properties dans android/ (= rootProject dir).
+// Fonctionne sur toute machine (sandbox, Mac, CI) sans chemin codé en dur.
+val keyPropertiesFile = rootProject.file("key.properties")
 val keyProperties = Properties()
 if (keyPropertiesFile.exists()) {
     keyProperties.load(FileInputStream(keyPropertiesFile))
 }
+
+// Helpers null-safe : évitent "null cannot be cast to non-null type kotlin.String"
+// quand key.properties est absent (première clone, machine sans keystore, CI public).
+fun keyProp(key: String): String = (keyProperties[key] as? String)?.trim() ?: ""
 
 android {
     namespace = "com.tontineclair.app"
@@ -33,10 +39,12 @@ android {
     // ── Configuration de signature release ────────────────────────────────
     signingConfigs {
         create("release") {
-            keyAlias     = keyProperties["keyAlias"]    as String
-            keyPassword  = keyProperties["keyPassword"] as String
-            storeFile    = file(keyProperties["storeFile"] as String)
-            storePassword= keyProperties["storePassword"] as String
+            keyAlias      = keyProp("keyAlias")
+            keyPassword   = keyProp("keyPassword")
+            storePassword = keyProp("storePassword")
+            // storeFile est résolu depuis android/app/ → "../release-key.jks" = android/release-key.jks
+            val sf = keyProp("storeFile")
+            if (sf.isNotEmpty()) storeFile = file(sf)
         }
     }
 
@@ -50,8 +58,8 @@ android {
 
     buildTypes {
         release {
-            signingConfig   = signingConfigs.getByName("release")
-            isMinifyEnabled = false
+            signingConfig     = signingConfigs.getByName("release")
+            isMinifyEnabled   = false
             isShrinkResources = false
         }
     }
