@@ -73,12 +73,19 @@ class _KycScreenState extends State<KycScreen> {
       if (!mounted) return;
 
       if (result != null) {
-        await _onSmileIdSuccess(result);
+        // Vérifier si c'est une erreur remontée par onError()
+        if (result.containsKey('__error')) {
+          final errMsg = result['__error'] as String? ?? 'Erreur inconnue';
+          if (kDebugMode) debugPrint('[SmileID] onError reçu: $errMsg');
+          _afficherErreur('Smile ID : $errMsg');
+        } else {
+          await _onSmileIdSuccess(result);
+        }
       }
     } catch (e) {
       if (!mounted) return;
       if (kDebugMode) debugPrint('[SmileID] lancement erreur: $e');
-      _afficherErreur('Impossible de démarrer Smile ID. Vérifiez votre connexion.');
+      _afficherErreur('Impossible de démarrer Smile ID : $e');
     } finally {
       if (mounted) setState(() => _lancementEnCours = false);
     }
@@ -260,7 +267,8 @@ class _SmileIdDocumentVerificationScreenState
         },
         onError: (String errorMessage) {
           if (kDebugMode) debugPrint('[SmileID] DocVerif error: $errorMessage');
-          Navigator.pop(context, null);
+          // Fermer l'écran SmileID et remonter l'erreur à l'écran KYC
+          Navigator.pop(context, {'__error': errorMessage});
         },
       ),
     );

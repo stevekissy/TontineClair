@@ -33,15 +33,18 @@ void main() async {
   await NotificationService.initialiser();
 
   // Initialiser le SDK natif Smile ID (KYC identité Premium).
-  // Fire-and-forget : on ne bloque PAS le démarrage sur le résultat.
-  // Le SDK lit smile_config.json en local — pas de réseau nécessaire.
-  // Les erreurs éventuelles sont gérées par onError() dans le widget
-  // SmileIDDocumentVerification, pas ici.
+  // AWAIT obligatoire : le SDK doit être prêt avant que l'utilisateur
+  // puisse appuyer sur le bouton. L'init se fait pendant le splash screen,
+  // donc l'utilisateur ne voit aucun délai.
+  // En cas d'échec, l'app démarre quand même — onError() du widget gère
+  // les erreurs au moment de l'utilisation.
   try {
-    SmileID.initialize(useSandbox: false, enableCrashReporting: false);
-    if (kDebugMode) debugPrint('[SmileID] initialize() appelé');
+    await SmileID.initialize(useSandbox: false, enableCrashReporting: false);
+    if (kDebugMode) debugPrint('[SmileID] ✅ initialized OK');
   } catch (e) {
-    if (kDebugMode) debugPrint('[SmileID] initialize error (ignoré): $e');
+    // Init a échoué mais on ne bloque pas l'app.
+    // onError() dans SmileIDDocumentVerification affichera l'erreur.
+    if (kDebugMode) debugPrint('[SmileID] ⚠️ initialize error: $e');
   }
 
   // Vérifier les échéances de toutes les tontines au démarrage
