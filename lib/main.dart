@@ -11,6 +11,7 @@ import 'services/tontine_provider.dart';
 import 'services/notification_service.dart';
 import 'services/rappel_service.dart';
 import 'services/locale_service.dart';
+import 'kyc_init_state.dart';
 import 'utils/app_theme.dart';
 import 'utils/app_colors.dart';
 import 'utils/app_localizations.dart';
@@ -33,13 +34,24 @@ void main() async {
   await NotificationService.initialiser();
 
   // Initialiser le SDK natif Smile ID (KYC identité Premium)
-  // initialize() retourne void en v11.2.10 → pas d'await
+  // CRITIQUE : await obligatoire sur Android (doc officielle smile_id v11.2.x)
+  // Sans await, le PlatformView SmileIDDocumentVerification crashe au lancement.
+  // En cas d'échec, l'app démarre quand même — KycScreen affichera un bouton
+  // de réessai plutôt que de bloquer le démarrage.
+  // Initialiser le SDK natif Smile ID (KYC identité Premium).
+  // SmileID.initialize() est void synchrone — déclenche l'init native Android.
+  // Le SDK est prêt quasi-immédiatement après l'appel car smile_config.json
+  // est embarqué dans l'APK (assets/smile_config.json avec partner_id valide).
+  // On marque initialized=true dès que l'appel ne lève pas d'exception.
   try {
     SmileID.initialize(useSandbox: false, enableCrashReporting: false);
+    SmileIdInitState.initialized = true;
+    if (kDebugMode) debugPrint('[SmileID] ✅ initialize called successfully');
   } catch (e) {
-    // Echec init (ex: smile_config.json absent ou invalide)
-    // L'app démarre quand même — KycScreen affichera un message d'erreur
-    if (kDebugMode) debugPrint('[SmileID] initialize error: $e');
+    // Echec init (ex: smile_config.json absent ou malformé)
+    SmileIdInitState.initialized = false;
+    SmileIdInitState.errorMessage = e.toString();
+    if (kDebugMode) debugPrint('[SmileID] ⚠️ initialize error: $e');
   }
 
   // Vérifier les échéances de toutes les tontines au démarrage

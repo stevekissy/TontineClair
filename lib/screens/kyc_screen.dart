@@ -3,23 +3,23 @@
 //
 // Architecture :
 //   KycScreen          → affiche le statut + bouton "Démarrer la vérification"
-//   _initSmileIdAsync  → await réel sur SmileID.platformInterface.initialize()
-//   _lancerSmileId()   → lance le SDK natif SmileID (DocumentVerification)
+//   _lancerSmileId()   → lance le SDK natif SmileID SEULEMENT si init OK
 //   _onSmileIdSuccess  → persiste le résultat dans Supabase via KycService
 //
 // SDK : smile_id 11.2.10
-// Fix crash : SmileID.initialize() expose un wrapper void mais le Pigeon sous-jacent
-//             est Future<void> → utiliser platformInterface.initialize() avec await
+// Fix crash : await SmileID.initialize() dans main.dart (obligatoire sur Android)
+//             + smile_config.json avec les vraies credentials (partner_id: 9035)
+//             + on NE lance PAS le PlatformView si SmileIdInitState.initialized == false
 // ═══════════════════════════════════════════════════════════════════════════
 
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-// SDK natif Smile ID — widget DocumentVerification + classe SmileID
+// SDK natif Smile ID — widget DocumentVerification uniquement
 import 'package:smile_id/products/document/smile_id_document_verification.dart';
-import 'package:smile_id/smile_id.dart';
 
+import '../kyc_init_state.dart';
 import '../models/kyc_model.dart';
 import '../services/kyc_service.dart';
 import '../services/supabase_service.dart';
@@ -41,37 +41,11 @@ class _KycScreenState extends State<KycScreen> {
   KycVerification? _kyc;
   bool _loading = true;
   bool _lancementEnCours = false;
-  // true quand le SDK natif a confirmé son init via Future
-  bool _smileIdPret = false;
-  String? _smileIdErreur;
 
   @override
   void initState() {
     super.initState();
     _charger();
-    _initSmileIdAsync();
-  }
-
-  // ── Init SDK SmileID — appel fire-and-forget + timeout 2s ──────────────
-  // SmileID.initialize() déclenche l'init native Android.
-  // On NE PAS attend sa completion (elle peut ne jamais résoudre).
-  // On attend juste 2s pour laisser le temps au natif de démarrer, puis on
-  // considère le SDK prêt et on laisse Android gérer le reste.
-  Future<void> _initSmileIdAsync() async {
-    try {
-      // Fire-and-forget : déclenche l'init sans await
-      SmileID.initialize(useSandbox: false, enableCrashReporting: false);
-    } catch (_) {
-      // Ignorer toute exception ici (ex: "already initialized")
-    }
-    // Attendre 2s que le natif Android démarre, puis considérer prêt
-    await Future.delayed(const Duration(milliseconds: 2000));
-    if (mounted) {
-      setState(() {
-        _smileIdPret = true;
-        _smileIdErreur = null;
-      });
-    }
   }
 
   Future<void> _charger() async {
@@ -81,13 +55,28 @@ class _KycScreenState extends State<KycScreen> {
   }
 
   // ── Lancer le SDK natif Smile ID ────────────────────────────────────────
+  // GARDE : on vérifie SmileIdInitState.initialized avant d'ouvrir le PlatformView.
+  // Si le SDK n'est pas initialisé (smile_config.json invalide, réseau absent au
+  // démarrage), on affiche un message clair au lieu de crasher Android.
   Future<void> _lancerSmileId() async {
     if (_lancementEnCours) return;
+
+    // Vérification de l'état d'init SmileID
+    if (!SmileIdInitState.initialized) {
+      _afficherErreur(
+        'Le service de vérification n\'est pas disponible. '
+        'Vérifiez votre connexion internet et relancez l\'application.',
+      );
+      if (kDebugMode) {
+        debugPrint('[SmileID] ⛔ Tentative de lancement sans init. '
+            'Erreur: ${SmileIdInitState.errorMessage}');
+      }
+      return;
+    }
+
     setState(() => _lancementEnCours = true);
 
     try {
-      // Délai de sécurité avant d'ouvrir la vue native Android
-      await Future.delayed(const Duration(milliseconds: 500));
       if (!mounted) return;
 
       final result = await Navigator.push<Map<String, dynamic>?>(
@@ -226,6 +215,7 @@ class _KycScreenState extends State<KycScreen> {
                     _ActionSection(
                       kyc: _kyc,
                       lancementEnCours: _lancementEnCours,
+                      smileIdPret: SmileIdInitState.initialized,
                       onDemarrer: _lancerSmileId,
                       onRecommencer: _lancerSmileId,
                     ),
@@ -449,12 +439,14 @@ class _Ligne extends StatelessWidget {
 class _ActionSection extends StatelessWidget {
   final KycVerification? kyc;
   final bool lancementEnCours;
+  final bool smileIdPret;
   final VoidCallback onDemarrer;
   final VoidCallback onRecommencer;
 
   const _ActionSection({
     this.kyc,
     required this.lancementEnCours,
+    required this.smileIdPret,
     required this.onDemarrer,
     required this.onRecommencer,
   });
@@ -491,6 +483,7 @@ class _ActionSection extends StatelessWidget {
       return _BoutonDemarrer(
         onTap: onDemarrer,
         lancementEnCours: lancementEnCours,
+        smileIdPret: smileIdPret,
       );
     }
 
@@ -527,9 +520,11 @@ class _ActionSection extends StatelessWidget {
 class _BoutonDemarrer extends StatelessWidget {
   final VoidCallback onTap;
   final bool lancementEnCours;
+  final bool smileIdPret;
   const _BoutonDemarrer({
     required this.onTap,
     required this.lancementEnCours,
+    required this.smileIdPret,
   });
 
   @override
@@ -546,42 +541,58 @@ class _BoutonDemarrer extends StatelessWidget {
       _PourquoiItem(Icons.shield_rounded, 'Protéger votre communauté de tontine'),
       const SizedBox(height: 20),
 
-      // Badge Smile ID
+      // Badge Smile ID — statut d'init
       Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
-          color: const Color(0xFFF0F4FF),
+          color: smileIdPret ? const Color(0xFFF0F4FF) : const Color(0xFFFFF3E0),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFF3B5BDB).withValues(alpha: 0.3)),
+          border: Border.all(
+            color: smileIdPret
+                ? const Color(0xFF3B5BDB).withValues(alpha: 0.3)
+                : Colors.orange.withValues(alpha: 0.4),
+          ),
         ),
         child: Row(
           children: [
             Container(
               width: 36, height: 36,
               decoration: BoxDecoration(
-                color: const Color(0xFF3B5BDB).withValues(alpha: 0.12),
+                color: smileIdPret
+                    ? const Color(0xFF3B5BDB).withValues(alpha: 0.12)
+                    : Colors.orange.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.fingerprint_rounded, color: Color(0xFF3B5BDB), size: 20),
+              child: Icon(
+                smileIdPret ? Icons.fingerprint_rounded : Icons.wifi_off_rounded,
+                color: smileIdPret ? const Color(0xFF3B5BDB) : Colors.orange,
+                size: 20,
+              ),
             ),
             const SizedBox(width: 12),
-            const Expanded(
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Verification par Smile ID',
+                    smileIdPret ? 'Verification par Smile ID' : 'Service en cours de chargement',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w800,
-                      color: Color(0xFF1E3A8A),
+                      color: smileIdPret ? const Color(0xFF1E3A8A) : Colors.deepOrange,
                     ),
                   ),
-                  SizedBox(height: 2),
+                  const SizedBox(height: 2),
                   Text(
-                    'SDK natif certifié — capture selfie + document en quelques secondes',
-                    style: TextStyle(fontSize: 11.5, color: Color(0xFF3B5BDB), height: 1.4),
+                    smileIdPret
+                        ? 'SDK natif certifié — capture selfie + document en quelques secondes'
+                        : 'Vérifiez votre connexion internet et relancez l\'app',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: smileIdPret ? const Color(0xFF3B5BDB) : Colors.orange,
+                      height: 1.4,
+                    ),
                   ),
                 ],
               ),
@@ -601,7 +612,7 @@ class _BoutonDemarrer extends StatelessWidget {
         BtnPrincipal(
           label: 'Démarrer la vérification',
           icon: Icons.verified_user_rounded,
-          onTap: onTap,
+          onTap: smileIdPret ? onTap : null,
         ),
     ],
   );
