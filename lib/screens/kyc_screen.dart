@@ -12,6 +12,7 @@
 //             + onError() du widget gère les erreurs SDK nativement
 // ═══════════════════════════════════════════════════════════════════════════
 
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -71,13 +72,25 @@ class _KycScreenState extends State<KycScreen> {
   }
 
   // ── Lancer le SDK natif Smile ID ────────────────────────────────────────
+  // Architecture : Completer + PageRouteBuilder opaque sans transition.
+  //
+  // Pourquoi Completer ?
+  //   Navigator.push retourne Future<T?> — la route SmileID appelle
+  //   widget.onDone(result) puis Navigator.pop(context), ce qui résout
+  //   le Completer AVANT que pop() retire la route de la pile.
+  //   Résultat : pas de flash de l'écran KYC entre SmileID et la fermeture.
+  //
+  // Pourquoi PageRouteBuilder opaque + transitionDuration: Duration.zero ?
+  //   MaterialPageRoute garde l'écran précédent visible pendant la transition
+  //   d'entrée (~300 ms). Le PlatformView Compose (SmileID) met ~1-2 s à
+  //   s'initialiser — pendant ce temps l'écran KYC reste visible en dessous.
+  //   PageRouteBuilder opaque + Duration.zero supprime ce comportement.
   Future<void> _lancerSmileId() async {
     if (_lancementEnCours) return;
     setState(() => _lancementEnCours = true);
 
     try {
-      // Si l'init n'a pas encore réussi (réseau lent, premier lancement),
-      // on retente ici — juste avant d'ouvrir le widget.
+      // Retenter l'init si nécessaire
       if (!_smileIdInitialized) {
         if (kDebugMode) debugPrint('[SmileID] Retente init avant lancement...');
         await SmileID.initialize(useSandbox: false, enableCrashReporting: false);
@@ -87,19 +100,35 @@ class _KycScreenState extends State<KycScreen> {
 
       if (!mounted) return;
 
-      final result = await Navigator.push<Map<String, dynamic>?>(
+      // Completer pour recevoir le résultat depuis onDone callback
+      final completer = Completer<Map<String, dynamic>?>();
+
+      // PageRouteBuilder opaque sans animation :
+      //   - opaque: true  → masque complètement l'écran KYC derrière
+      //   - Duration.zero → aucune transition visible (pas de fondu)
+      await Navigator.push<void>(
         context,
-        MaterialPageRoute(
-          builder: (_) => _SmileIdDocumentVerificationScreen(
+        PageRouteBuilder<void>(
+          opaque: true,
+          barrierDismissible: false,
+          transitionDuration: Duration.zero,
+          reverseTransitionDuration: Duration.zero,
+          transitionsBuilder: (_, __, ___, child) => child,
+          pageBuilder: (_, __, ___) => _SmileIdDocumentVerificationScreen(
             userId: widget.userId,
+            onDone: (result) {
+              if (!completer.isCompleted) completer.complete(result);
+            },
           ),
         ),
       );
 
+      // Attendre le résultat (déjà disponible ou sera résolu par onDone)
+      final result = await completer.future;
+
       if (!mounted) return;
 
       if (result != null) {
-        // Vérifier si c'est une erreur remontée par onError()
         if (result.containsKey('__error')) {
           final errMsg = result['__error'] as String? ?? 'Erreur inconnue';
           if (kDebugMode) debugPrint('[SmileID] onError reçu: $errMsg');
@@ -245,10 +274,19 @@ class _KycScreenState extends State<KycScreen> {
 
 // ─────────────────────────────────────────────────────────────────────────
 // Écran wrapper pour le SDK SmileID DocumentVerification
+//
+// Utilise un callback onDone au lieu de Navigator.pop(context, result)
+// pour transmettre le résultat AVANT de fermer la route.
+// Cela évite le flash de l'écran KYC lors du retour.
 // ─────────────────────────────────────────────────────────────────────────
 class _SmileIdDocumentVerificationScreen extends StatefulWidget {
   final String userId;
-  const _SmileIdDocumentVerificationScreen({required this.userId});
+  final void Function(Map<String, dynamic>? result) onDone;
+
+  const _SmileIdDocumentVerificationScreen({
+    required this.userId,
+    required this.onDone,
+  });
 
   @override
   State<_SmileIdDocumentVerificationScreen> createState() =>
@@ -258,10 +296,16 @@ class _SmileIdDocumentVerificationScreen extends StatefulWidget {
 class _SmileIdDocumentVerificationScreenState
     extends State<_SmileIdDocumentVerificationScreen> {
 
+  // Appelle onDone PUIS pop — dans cet ordre précis.
+  // onDone résout le Completer côté KycScreen, ensuite pop retire la route.
+  void _finish(Map<String, dynamic>? result) {
+    widget.onDone(result);
+    if (mounted) Navigator.pop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     // PAS de Scaffold ni AppBar — SmileID gère son propre écran natif Compose.
-    // Envelopper dans un Scaffold causait l'overlap visible sur photo 1.
     return SmileIDDocumentVerification(
       countryCode: 'CI',
       documentType: 'NATIONAL_ID',
@@ -273,15 +317,15 @@ class _SmileIdDocumentVerificationScreenState
           final Map<String, dynamic> result =
               jsonDecode(resultJson) as Map<String, dynamic>;
           if (kDebugMode) debugPrint('[SmileID] Success: $result');
-          Navigator.pop(context, result);
+          _finish(result);
         } catch (e) {
           if (kDebugMode) debugPrint('[SmileID] parse error: $e');
-          Navigator.pop(context, {'jobId': 'smile-${DateTime.now().millisecondsSinceEpoch}'});
+          _finish({'jobId': 'smile-${DateTime.now().millisecondsSinceEpoch}'});
         }
       },
       onError: (String errorMessage) {
         if (kDebugMode) debugPrint('[SmileID] DocVerif error: $errorMessage');
-        Navigator.pop(context, {'__error': errorMessage});
+        _finish({'__error': errorMessage});
       },
     );
   }
