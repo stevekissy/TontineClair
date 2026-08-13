@@ -1,15 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Autorise toutes les connexions HTTPS en release (Supabase, etc.) -->
+    <!-- Autorise toutes les connexions HTTPS en release -->
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
             <certificates src="user" />
         </trust-anchors>
     </base-config>
-    <!-- Domaine Supabase explicitement autorisé -->
+    <!-- Supabase -->
     <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="true">supabase.co</domain>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
+    <!-- Smile ID API -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">smileidentity.com</domain>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
+    <!-- Smile ID uploads / assets CDN -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">smileid.com</domain>
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>

@@ -11,7 +11,6 @@ import 'services/tontine_provider.dart';
 import 'services/notification_service.dart';
 import 'services/rappel_service.dart';
 import 'services/locale_service.dart';
-import 'kyc_init_state.dart';
 import 'utils/app_theme.dart';
 import 'utils/app_colors.dart';
 import 'utils/app_localizations.dart';
@@ -33,27 +32,16 @@ void main() async {
   );
   await NotificationService.initialiser();
 
-  // Initialiser le SDK natif Smile ID (KYC identité Premium)
-  // CRITIQUE : await obligatoire sur Android (doc officielle smile_id v11.2.x)
-  // Sans await, le PlatformView SmileIDDocumentVerification crashe au lancement.
-  // En cas d'échec, l'app démarre quand même — KycScreen affichera un bouton
-  // de réessai plutôt que de bloquer le démarrage.
   // Initialiser le SDK natif Smile ID (KYC identité Premium).
-  // SmileID.initialize() est void synchrone — déclenche l'init native Android.
-  // Le SDK est prêt quasi-immédiatement après l'appel car smile_config.json
-  // est embarqué dans l'APK (assets/smile_config.json avec partner_id valide).
-  // On marque initialized=true dès que l'appel ne lève pas d'exception.
-  // smile_id 11.2.11 : initialize() retourne maintenant Future<void>
-  // Le await est obligatoire sur Android — un échec remonte via le Future
-  // au lieu d'être silencieusement ignoré (fix bug #258 SmileID)
+  // Fire-and-forget : on ne bloque PAS le démarrage sur le résultat.
+  // Le SDK lit smile_config.json en local — pas de réseau nécessaire.
+  // Les erreurs éventuelles sont gérées par onError() dans le widget
+  // SmileIDDocumentVerification, pas ici.
   try {
-    await SmileID.initialize(useSandbox: false, enableCrashReporting: false);
-    SmileIdInitState.initialized = true;
-    if (kDebugMode) debugPrint('[SmileID] ✅ initialized');
+    SmileID.initialize(useSandbox: false, enableCrashReporting: false);
+    if (kDebugMode) debugPrint('[SmileID] initialize() appelé');
   } catch (e) {
-    SmileIdInitState.initialized = false;
-    SmileIdInitState.errorMessage = e.toString();
-    if (kDebugMode) debugPrint('[SmileID] ⚠️ initialize error: $e');
+    if (kDebugMode) debugPrint('[SmileID] initialize error (ignoré): $e');
   }
 
   // Vérifier les échéances de toutes les tontines au démarrage
