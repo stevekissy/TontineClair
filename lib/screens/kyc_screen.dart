@@ -577,15 +577,6 @@ class _BoutonDemarrer extends StatelessWidget {
                       color: Color(0xFF1E3A8A),
                     ),
                   ),
-                  SizedBox(height: 2),
-                  Text(
-                    'SDK natif certifié — capture selfie + document en quelques secondes',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: Color(0xFF3B5BDB),
-                      height: 1.4,
-                    ),
-                  ),
                 ],
               ),
             ),
