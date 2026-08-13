@@ -16,7 +16,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-// SDK natif Smile ID — widget DocumentVerification uniquement
+import 'package:smile_id/smile_id.dart';
 import 'package:smile_id/products/document/smile_id_document_verification.dart';
 
 import '../models/kyc_model.dart';
@@ -40,11 +40,28 @@ class _KycScreenState extends State<KycScreen> {
   KycVerification? _kyc;
   bool _loading = true;
   bool _lancementEnCours = false;
+  // Suivi de l'état d'initialisation SmileID — local à cet écran
+  bool _smileIdInitialized = false;
 
   @override
   void initState() {
     super.initState();
     _charger();
+    _initSmileId();
+  }
+
+  // Initialiser SmileID dès l'ouverture de l'écran KYC.
+  // Comme ça, quand l'utilisateur tape le bouton, c'est déjà prêt.
+  Future<void> _initSmileId() async {
+    try {
+      await SmileID.initialize(useSandbox: false, enableCrashReporting: false);
+      if (mounted) setState(() => _smileIdInitialized = true);
+      if (kDebugMode) debugPrint('[SmileID] ✅ initialized dans KycScreen');
+    } catch (e) {
+      if (kDebugMode) debugPrint('[SmileID] ⚠️ init error dans KycScreen: $e');
+      // On laisse _smileIdInitialized = false
+      // _lancerSmileId() retentera l'init
+    }
   }
 
   Future<void> _charger() async {
@@ -59,6 +76,15 @@ class _KycScreenState extends State<KycScreen> {
     setState(() => _lancementEnCours = true);
 
     try {
+      // Si l'init n'a pas encore réussi (réseau lent, premier lancement),
+      // on retente ici — juste avant d'ouvrir le widget.
+      if (!_smileIdInitialized) {
+        if (kDebugMode) debugPrint('[SmileID] Retente init avant lancement...');
+        await SmileID.initialize(useSandbox: false, enableCrashReporting: false);
+        if (mounted) setState(() => _smileIdInitialized = true);
+        if (kDebugMode) debugPrint('[SmileID] ✅ init OK (retentative)');
+      }
+
       if (!mounted) return;
 
       final result = await Navigator.push<Map<String, dynamic>?>(
