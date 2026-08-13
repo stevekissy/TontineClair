@@ -16,7 +16,6 @@ import 'support_screen.dart';
 import 'config_screen.dart';
 import 'langue_screen.dart';
 import 'kyc_screen.dart';
-import 'verification_publique_screen.dart';
 import '../utils/app_localizations.dart';
 
 class AccueilScreen extends StatelessWidget {
@@ -100,8 +99,7 @@ class AccueilScreen extends StatelessWidget {
           final gestNom = context.read<TontineProvider>().gestActifNom ?? '';
           _aller(context, KycScreen(userId: gestNom));
         },
-        onVerifierBlockchain: () => _aller(
-          context, const VerificationPubliqueScreen()),
+
       ),
     );
   }
@@ -789,14 +787,11 @@ class _BarreActions extends StatelessWidget {
   final VoidCallback onCreer;
   final VoidCallback onSupport;
   final VoidCallback onKyc;
-  final VoidCallback onVerifierBlockchain;
-
   const _BarreActions({
     required this.onRejoindre,
     required this.onCreer,
     required this.onSupport,
     required this.onKyc,
-    required this.onVerifierBlockchain,
   });
 
   @override
@@ -876,26 +871,7 @@ class _BarreActions extends StatelessWidget {
                   ),
                 ),
               ),
-              Text(' · ',
-                style: TextStyle(color: AppColors.encre.withValues(alpha: 0.25), fontSize: 13)),
-              GestureDetector(
-                onTap: onVerifierBlockchain,
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.verified_outlined, size: 13,
-                          color: const Color(0xFF00C853).withValues(alpha: 0.8)),
-                      const SizedBox(width: 4),
-                      Text('Vérifier blockchain',
-                          style: TextStyle(fontSize: 11.5,
-                              color: const Color(0xFF00C853).withValues(alpha: 0.85))),
-                    ],
-                  ),
-                ),
-              ),
+
             ],
           ),
           const SizedBox(height: 4),
