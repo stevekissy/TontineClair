@@ -43,12 +43,14 @@ void main() async {
   // Le SDK est prêt quasi-immédiatement après l'appel car smile_config.json
   // est embarqué dans l'APK (assets/smile_config.json avec partner_id valide).
   // On marque initialized=true dès que l'appel ne lève pas d'exception.
+  // smile_id 11.2.11 : initialize() retourne maintenant Future<void>
+  // Le await est obligatoire sur Android — un échec remonte via le Future
+  // au lieu d'être silencieusement ignoré (fix bug #258 SmileID)
   try {
-    SmileID.initialize(useSandbox: false, enableCrashReporting: false);
+    await SmileID.initialize(useSandbox: false, enableCrashReporting: false);
     SmileIdInitState.initialized = true;
-    if (kDebugMode) debugPrint('[SmileID] ✅ initialize called successfully');
+    if (kDebugMode) debugPrint('[SmileID] ✅ initialized');
   } catch (e) {
-    // Echec init (ex: smile_config.json absent ou malformé)
     SmileIdInitState.initialized = false;
     SmileIdInitState.errorMessage = e.toString();
     if (kDebugMode) debugPrint('[SmileID] ⚠️ initialize error: $e');

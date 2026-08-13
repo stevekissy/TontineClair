@@ -1121,10 +1121,10 @@ packages:
     dependency: "direct main"
     description:
       name: smile_id
-      sha256: "5e530e4358753fedd98e09980645731b156727126a61697a001ddf56da72268b"
+      sha256: "9100c029b1c5416fe3518cebd28db8b8baed642832e2646c3c3fae3f7168d4b0"
       url: "https://pub.dev"
     source: hosted
-    version: "11.2.10"
+    version: "11.2.11"
   source_gen:
     dependency: transitive
     description:
