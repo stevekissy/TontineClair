@@ -1,12 +1,9 @@
 {
+  "auth_token": "VpG6p3R7shpe6cgLd6Lx8kZapVLIjiLtCGLPvpiO41+17ooS62Wdx1RJFaSzkIlCZGxR4vp4spqoq5TB0PjhUO0snjxwErmxRhAiYhyTT+rlYcJ99QvxqQqYKQ44nQCNKTFl6jLledHooV5UA1eJ6Jn66DJKUcLJ8dCGmNKx4lw=",
   "partner_id": "9035",
-  "auth_token": "2d6f90eb-fd3a-4389-a3d7-c30389a2230d",
   "prod_lambda_url": "https://api.smileidentity.com/v1/",
+  "prod_url": "",
   "test_lambda_url": "https://testapi.smileidentity.com/v1/",
-  "prod_smile_id_auth_url": "https://api.smileidentity.com/v1/",
-  "test_smile_id_auth_url": "https://testapi.smileidentity.com/v1/",
-  "android_client_lib": "smile_identity",
-  "ios_client_lib": "smile_identity",
-  "android_client_lib_version": "11.2.11",
-  "ios_client_lib_version": "11.2.11"
+  "test_url": "",
+  "version": "1.0.0"
 }
