@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:smile_id/smile_id.dart';
+import 'firebase_options.dart';
 import 'services/storage_service.dart';
 import 'services/tontine_provider.dart';
 import 'services/notification_service.dart';
@@ -25,13 +26,16 @@ void main() async {
   await StorageService.loadSupabaseConfig();
 
   // Initialiser Firebase + notifications push
-  await Firebase.initializeApp();
+  // firebase_options.dart garantit l'init correcte en release Android
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   await NotificationService.initialiser();
 
   // Initialiser le SDK natif Smile ID (KYC identité Premium)
-  // Le fichier smile_config.json doit être dans android/app/src/main/assets/
+  // initialize() retourne void en v11.2.10 → pas d'await
   try {
-    await SmileID.initialize(useSandbox: false, enableCrashReporting: false);
+    SmileID.initialize(useSandbox: false, enableCrashReporting: false);
   } catch (e) {
     // Echec init (ex: smile_config.json absent ou invalide)
     // L'app démarre quand même — KycScreen affichera un message d'erreur

@@ -3,11 +3,13 @@
 //
 // Architecture :
 //   KycScreen          → affiche le statut + bouton "Démarrer la vérification"
+//   _initSmileIdAsync  → await réel sur SmileID.platformInterface.initialize()
 //   _lancerSmileId()   → lance le SDK natif SmileID (DocumentVerification)
 //   _onSmileIdSuccess  → persiste le résultat dans Supabase via KycService
 //
-// SDK : smile_id ^11.2.10
-// Flux : DocumentVerification (selfie + document recto/verso inclus)
+// SDK : smile_id 11.2.10
+// Fix crash : SmileID.initialize() expose un wrapper void mais le Pigeon sous-jacent
+//             est Future<void> → utiliser platformInterface.initialize() avec await
 // ═══════════════════════════════════════════════════════════════════════════
 
 import 'dart:convert';
@@ -16,6 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 // SDK natif Smile ID — widget DocumentVerification + classe SmileID
 import 'package:smile_id/products/document/smile_id_document_verification.dart';
+import 'package:smile_id/smile_id.dart';
 
 import '../models/kyc_model.dart';
 import '../services/kyc_service.dart';
@@ -38,11 +41,51 @@ class _KycScreenState extends State<KycScreen> {
   KycVerification? _kyc;
   bool _loading = true;
   bool _lancementEnCours = false;
+  // true quand le SDK natif a confirmé son init via Future
+  bool _smileIdPret = false;
+  String? _smileIdErreur;
 
   @override
   void initState() {
     super.initState();
     _charger();
+    _initSmileIdAsync();
+  }
+
+  // ── Init SDK SmileID via l'API Pigeon async (vraie Future native) ────────
+  // SmileID.initialize() est un wrapper void qui appelle platformInterface.initialize()
+  // sans await → le SDK peut ne pas être prêt quand on ouvre la vue.
+  // On utilise directement platformInterface.initialize() pour attendre la complétion native.
+  Future<void> _initSmileIdAsync() async {
+    try {
+      // Appel direct sur l'interface Pigeon → Future<void> réelle
+      await SmileID.platformInterface.initialize(false, false);
+      // Pause supplémentaire pour laisser le SDK natif terminer ses opérations internes
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (mounted) {
+        setState(() {
+          _smileIdPret = true;
+          _smileIdErreur = null;
+        });
+      }
+    } catch (e) {
+      final msg = e.toString().toLowerCase();
+      if (kDebugMode) debugPrint('[SmileID] init async error: $e');
+      if (mounted) {
+        // "already initialized" = SDK déjà prêt → OK
+        if (msg.contains('already') || msg.contains('initialized')) {
+          setState(() {
+            _smileIdPret = true;
+            _smileIdErreur = null;
+          });
+        } else {
+          setState(() {
+            _smileIdPret = false;
+            _smileIdErreur = e.toString();
+          });
+        }
+      }
+    }
   }
 
   Future<void> _charger() async {
@@ -56,8 +99,25 @@ class _KycScreenState extends State<KycScreen> {
     if (_lancementEnCours) return;
     setState(() => _lancementEnCours = true);
 
+    // Si SDK pas encore prêt → réessayer l'init async
+    if (!_smileIdPret) {
+      await _initSmileIdAsync();
+      if (!mounted) return;
+      if (!_smileIdPret) {
+        setState(() => _lancementEnCours = false);
+        _afficherErreur(
+          'Le service de vérification n\'est pas disponible.\n'
+          'Vérifiez votre connexion et réessayez.',
+        );
+        return;
+      }
+    }
+
     try {
-      // _SmileIdDocumentVerificationScreen retourne un Map? avec le résultat JSON parsé
+      // Délai de sécurité supplémentaire avant d'ouvrir la vue native
+      await Future.delayed(const Duration(milliseconds: 300));
+      if (!mounted) return;
+
       final result = await Navigator.push<Map<String, dynamic>?>(
         context,
         MaterialPageRoute(
@@ -75,23 +135,20 @@ class _KycScreenState extends State<KycScreen> {
     } catch (e) {
       if (!mounted) return;
       if (kDebugMode) debugPrint('[SmileID] lancement erreur: $e');
-      _afficherErreur('Impossible de demarrer Smile ID. Verifiez votre connexion.');
+      _afficherErreur('Impossible de démarrer Smile ID. Vérifiez votre connexion.');
     } finally {
       if (mounted) setState(() => _lancementEnCours = false);
     }
   }
 
   // ── Callback succès SDK ─────────────────────────────────────────────────
-  // result : JSON parsé retourné par SmileIDDocumentVerification.onSuccess
   Future<void> _onSmileIdSuccess(Map<String, dynamic> result) async {
     try {
       final now = DateTime.now();
-      // Le SDK retourne jobId dans le JSON de résultat
       final jobId = (result['jobId'] as String?)
           ?? (result['job_id'] as String?)
           ?? 'smile-${now.millisecondsSinceEpoch}';
 
-      // Mettre à jour Supabase avec le job ID Smile ID
       await SupabaseService.kycSetProviderReference(widget.userId, jobId);
       await SupabaseService.kycUpdateStatus(
         userId:      widget.userId,
@@ -101,10 +158,8 @@ class _KycScreenState extends State<KycScreen> {
         performedBy: 'smile_id_sdk',
       );
 
-      // Recharger le statut
       await _charger();
 
-      // Dialog succès
       if (!mounted) return;
       await showDialog(
         context: context,
@@ -129,9 +184,9 @@ class _KycScreenState extends State<KycScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Votre dossier a ete soumis avec succes via Smile ID. '
-                'La verification prend generalement 24 a 48 heures. '
-                'Vous serez notifie des la confirmation.',
+                'Votre dossier a été soumis avec succès via Smile ID. '
+                'La vérification prend généralement 24 à 48 heures. '
+                'Vous serez notifié dès la confirmation.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 13.5, color: AppColors.texteDoux, height: 1.5),
               ),
@@ -152,7 +207,7 @@ class _KycScreenState extends State<KycScreen> {
     } catch (e) {
       if (kDebugMode) debugPrint('[SmileID] onSuccess persist error: $e');
       if (!mounted) return;
-      _afficherErreur('Verification soumise mais erreur enregistrement. Contactez le support.');
+      _afficherErreur('Vérification soumise mais erreur enregistrement. Contactez le support.');
     }
   }
 
@@ -199,6 +254,7 @@ class _KycScreenState extends State<KycScreen> {
                     _ActionSection(
                       kyc: _kyc,
                       lancementEnCours: _lancementEnCours,
+                      smileIdPret: _smileIdPret,
                       onDemarrer: _lancerSmileId,
                       onRecommencer: _lancerSmileId,
                     ),
@@ -214,8 +270,6 @@ class _KycScreenState extends State<KycScreen> {
 
 // ─────────────────────────────────────────────────────────────────────────
 // Écran wrapper pour le SDK SmileID DocumentVerification
-// Lance le flow natif : document + selfie (tout en un)
-// Retourne Map<String, dynamic>? parsé depuis le JSON de résultat
 // ─────────────────────────────────────────────────────────────────────────
 class _SmileIdDocumentVerificationScreen extends StatefulWidget {
   final String userId;
@@ -233,7 +287,6 @@ class _SmileIdDocumentVerificationScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      // AppBar avec bouton fermer
       appBar: AppBar(
         backgroundColor: Colors.black,
         elevation: 0,
@@ -247,17 +300,11 @@ class _SmileIdDocumentVerificationScreenState
         ),
       ),
       body: SmileIDDocumentVerification(
-        // Pays par defaut : Cote d\'Ivoire (ISO 3166-1 alpha-2)
         countryCode: 'CI',
-        // Type de document : carte nationale d\'identite
         documentType: 'NATIONAL_ID',
-        // Capturer recto + verso
         captureBothSides: true,
-        // Afficher les instructions
         showInstructions: true,
-        // Permettre l\'upload depuis galerie (plus flexible)
         allowGalleryUpload: true,
-        // Callback succes — onSuccess recoit un JSON String
         onSuccess: (String resultJson) {
           try {
             final Map<String, dynamic> result =
@@ -266,11 +313,9 @@ class _SmileIdDocumentVerificationScreenState
             Navigator.pop(context, result);
           } catch (e) {
             if (kDebugMode) debugPrint('[SmileID] parse error: $e');
-            // Meme si parse echoue, on retourne un map minimal avec timestamp
             Navigator.pop(context, {'jobId': 'smile-${DateTime.now().millisecondsSinceEpoch}'});
           }
         },
-        // Callback erreur — onError recoit un String message
         onError: (String errorMessage) {
           if (kDebugMode) debugPrint('[SmileID] DocVerif error: $errorMessage');
           Navigator.pop(context, null);
@@ -433,12 +478,14 @@ class _Ligne extends StatelessWidget {
 class _ActionSection extends StatelessWidget {
   final KycVerification? kyc;
   final bool lancementEnCours;
+  final bool smileIdPret;
   final VoidCallback onDemarrer;
   final VoidCallback onRecommencer;
 
   const _ActionSection({
     this.kyc,
     required this.lancementEnCours,
+    required this.smileIdPret,
     required this.onDemarrer,
     required this.onRecommencer,
   });
@@ -475,10 +522,10 @@ class _ActionSection extends StatelessWidget {
       return _BoutonDemarrer(
         onTap: onDemarrer,
         lancementEnCours: lancementEnCours,
+        smileIdPret: smileIdPret,
       );
     }
 
-    // rejected ou manual_review → permettre de recommencer
     return Column(
       children: [
         if (status == KycStatus.manualReview)
@@ -512,7 +559,12 @@ class _ActionSection extends StatelessWidget {
 class _BoutonDemarrer extends StatelessWidget {
   final VoidCallback onTap;
   final bool lancementEnCours;
-  const _BoutonDemarrer({required this.onTap, required this.lancementEnCours});
+  final bool smileIdPret;
+  const _BoutonDemarrer({
+    required this.onTap,
+    required this.lancementEnCours,
+    required this.smileIdPret,
+  });
 
   @override
   Widget build(BuildContext context) => Column(
@@ -579,6 +631,30 @@ class _BoutonDemarrer extends StatelessWidget {
             child: CircularProgressIndicator(color: AppColors.or),
           ),
         )
+      else if (!smileIdPret)
+        // SDK pas encore prêt → spinner discret + message
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+          decoration: BoxDecoration(
+            color: AppColors.fondSecondaire,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Row(
+            children: [
+              SizedBox(
+                width: 18, height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.encreDoux),
+              ),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Initialisation du service de vérification…',
+                  style: TextStyle(fontSize: 13, color: AppColors.texteDoux),
+                ),
+              ),
+            ],
+          ),
+        )
       else
         BtnPrincipal(
           label: 'Démarrer la vérification',
@@ -618,18 +694,18 @@ class _EnAttenteWidget extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
       border: Border.all(color: AppColors.or.withValues(alpha: 0.3)),
     ),
-    child: Column(
+    child: const Column(
       children: [
-        const CircularProgressIndicator(
+        CircularProgressIndicator(
           color: AppColors.or, strokeWidth: 2.5,
         ),
-        const SizedBox(height: 16),
-        const Text(
+        SizedBox(height: 16),
+        Text(
           'Vérification en cours',
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.encre),
         ),
-        const SizedBox(height: 6),
-        const Text(
+        SizedBox(height: 6),
+        Text(
           'Votre dossier Smile ID est en cours d\'examen. Le résultat sera disponible sous 24–48h. '
           'Vous serez notifié dès la fin de la vérification.',
           textAlign: TextAlign.center,
@@ -712,7 +788,7 @@ class KycGuardWidget extends StatelessWidget {
           children: [
             Container(
               width: 60, height: 60,
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 color: AppColors.alerteFond,
                 shape: BoxShape.circle,
               ),

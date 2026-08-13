@@ -32,10 +32,6 @@ android {
         isCoreLibraryDesugaringEnabled = true
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11.toString()
-    }
-
     // ── Configuration de signature release ────────────────────────────────
     signingConfigs {
         create("release") {
@@ -81,6 +77,13 @@ android {
 
 flutter {
     source = "../.."
+}
+
+// Kotlin 2.3.0 : compilerOptions DSL remplace kotlinOptions (déprécié)
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+    }
 }
 
 dependencies {
