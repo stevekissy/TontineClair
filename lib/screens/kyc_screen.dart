@@ -52,39 +52,25 @@ class _KycScreenState extends State<KycScreen> {
     _initSmileIdAsync();
   }
 
-  // ── Init SDK SmileID via l'API Pigeon async (vraie Future native) ────────
-  // SmileID.initialize() est un wrapper void qui appelle platformInterface.initialize()
-  // sans await → le SDK peut ne pas être prêt quand on ouvre la vue.
-  // On utilise directement platformInterface.initialize() pour attendre la complétion native.
+  // ── Init SDK SmileID — appel fire-and-forget + timeout 2s ──────────────
+  // SmileID.initialize() déclenche l'init native Android.
+  // On NE PAS attend sa completion (elle peut ne jamais résoudre).
+  // On attend juste 2s pour laisser le temps au natif de démarrer, puis on
+  // considère le SDK prêt et on laisse Android gérer le reste.
   Future<void> _initSmileIdAsync() async {
     try {
-      // Appel direct sur l'interface Pigeon → Future<void> réelle
-      await SmileID.platformInterface.initialize(false, false);
-      // Pause supplémentaire pour laisser le SDK natif terminer ses opérations internes
-      await Future.delayed(const Duration(milliseconds: 800));
-      if (mounted) {
-        setState(() {
-          _smileIdPret = true;
-          _smileIdErreur = null;
-        });
-      }
-    } catch (e) {
-      final msg = e.toString().toLowerCase();
-      if (kDebugMode) debugPrint('[SmileID] init async error: $e');
-      if (mounted) {
-        // "already initialized" = SDK déjà prêt → OK
-        if (msg.contains('already') || msg.contains('initialized')) {
-          setState(() {
-            _smileIdPret = true;
-            _smileIdErreur = null;
-          });
-        } else {
-          setState(() {
-            _smileIdPret = false;
-            _smileIdErreur = e.toString();
-          });
-        }
-      }
+      // Fire-and-forget : déclenche l'init sans await
+      SmileID.initialize(useSandbox: false, enableCrashReporting: false);
+    } catch (_) {
+      // Ignorer toute exception ici (ex: "already initialized")
+    }
+    // Attendre 2s que le natif Android démarre, puis considérer prêt
+    await Future.delayed(const Duration(milliseconds: 2000));
+    if (mounted) {
+      setState(() {
+        _smileIdPret = true;
+        _smileIdErreur = null;
+      });
     }
   }
 
@@ -99,23 +85,9 @@ class _KycScreenState extends State<KycScreen> {
     if (_lancementEnCours) return;
     setState(() => _lancementEnCours = true);
 
-    // Si SDK pas encore prêt → réessayer l'init async
-    if (!_smileIdPret) {
-      await _initSmileIdAsync();
-      if (!mounted) return;
-      if (!_smileIdPret) {
-        setState(() => _lancementEnCours = false);
-        _afficherErreur(
-          'Le service de vérification n\'est pas disponible.\n'
-          'Vérifiez votre connexion et réessayez.',
-        );
-        return;
-      }
-    }
-
     try {
-      // Délai de sécurité supplémentaire avant d'ouvrir la vue native
-      await Future.delayed(const Duration(milliseconds: 300));
+      // Délai de sécurité avant d'ouvrir la vue native Android
+      await Future.delayed(const Duration(milliseconds: 500));
       if (!mounted) return;
 
       final result = await Navigator.push<Map<String, dynamic>?>(
@@ -254,7 +226,6 @@ class _KycScreenState extends State<KycScreen> {
                     _ActionSection(
                       kyc: _kyc,
                       lancementEnCours: _lancementEnCours,
-                      smileIdPret: _smileIdPret,
                       onDemarrer: _lancerSmileId,
                       onRecommencer: _lancerSmileId,
                     ),
@@ -478,14 +449,12 @@ class _Ligne extends StatelessWidget {
 class _ActionSection extends StatelessWidget {
   final KycVerification? kyc;
   final bool lancementEnCours;
-  final bool smileIdPret;
   final VoidCallback onDemarrer;
   final VoidCallback onRecommencer;
 
   const _ActionSection({
     this.kyc,
     required this.lancementEnCours,
-    required this.smileIdPret,
     required this.onDemarrer,
     required this.onRecommencer,
   });
@@ -522,7 +491,6 @@ class _ActionSection extends StatelessWidget {
       return _BoutonDemarrer(
         onTap: onDemarrer,
         lancementEnCours: lancementEnCours,
-        smileIdPret: smileIdPret,
       );
     }
 
@@ -559,11 +527,9 @@ class _ActionSection extends StatelessWidget {
 class _BoutonDemarrer extends StatelessWidget {
   final VoidCallback onTap;
   final bool lancementEnCours;
-  final bool smileIdPret;
   const _BoutonDemarrer({
     required this.onTap,
     required this.lancementEnCours,
-    required this.smileIdPret,
   });
 
   @override
@@ -629,30 +595,6 @@ class _BoutonDemarrer extends StatelessWidget {
           child: Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
             child: CircularProgressIndicator(color: AppColors.or),
-          ),
-        )
-      else if (!smileIdPret)
-        // SDK pas encore prêt → spinner discret + message
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-          decoration: BoxDecoration(
-            color: AppColors.fondSecondaire,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Row(
-            children: [
-              SizedBox(
-                width: 18, height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.encreDoux),
-              ),
-              SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Initialisation du service de vérification…',
-                  style: TextStyle(fontSize: 13, color: AppColors.texteDoux),
-                ),
-              ),
-            ],
           ),
         )
       else
