@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:smile_id/smile_id.dart';
+import 'firebase_options.dart';
 import 'services/storage_service.dart';
 import 'services/tontine_provider.dart';
 import 'services/notification_service.dart';
@@ -25,7 +26,10 @@ void main() async {
   await StorageService.loadSupabaseConfig();
 
   // Initialiser Firebase + notifications push
-  await Firebase.initializeApp();
+  // Utilise DefaultFirebaseOptions pour garantir l'init en release Android
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   await NotificationService.initialiser();
 
   // Initialiser le SDK natif Smile ID (KYC identité Premium)

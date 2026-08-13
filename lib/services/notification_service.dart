@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../firebase_options.dart';
 import 'supabase_service.dart';
 import 'storage_service.dart';
 import 'rappel_service.dart';
@@ -13,7 +14,10 @@ import 'blockchain_service.dart' show BlockchainEntry;
 // ─── Handler background (top-level, hors classe) ───────────────────────────
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp();
+  // Utilise DefaultFirebaseOptions pour garantir l'init correcte en arrière-plan
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   await NotificationService._afficherNotificationLocale(message);
 }
 
