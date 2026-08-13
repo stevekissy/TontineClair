@@ -667,19 +667,19 @@ class _CarteResume extends StatelessWidget {
     );
   }
 
-  // Affiche le montant complet formaté avec séparateur de milliers + XOF
-  // Exemple : 20000 → "20 000 XOF", 1500000 → "1 500 000 XOF"
+  // Affiche le montant complet formaté avec séparateur de milliers + FCFA
+  // Exemple : 20140 → "20 140 FCFA", 1500000 → "1 500 000 FCFA"
   String _formatXof(int xof) {
     final s = xof.abs().toString();
     final buf = StringBuffer();
     int count = 0;
     for (int i = s.length - 1; i >= 0; i--) {
-      if (count > 0 && count % 3 == 0) buf.write('\u00A0'); // espace fine
+      if (count > 0 && count % 3 == 0) buf.write('\u00A0'); // espace fine insécable
       buf.write(s[i]);
       count++;
     }
     final formatted = buf.toString().split('').reversed.join();
-    return '${xof < 0 ? '-' : ''}$formatted XOF';
+    return '${xof < 0 ? '-' : ''}$formatted FCFA';
   }
 
   // Traduit un type_operation (y compris sélecteurs hex 0x…) → label lisible.
@@ -959,7 +959,7 @@ class _CarteEntree extends StatelessWidget {
                   children: [
                     if (entree.montantXof != null)
                       Text(
-                        '${_formatXof(entree.montantXof!)} XOF',
+                        _formatXof(entree.montantXof!),
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 14,
@@ -1132,10 +1132,19 @@ class _CarteEntree extends StatelessWidget {
     }
   }
 
+  // Montant exact avec séparateur de milliers + FCFA (pas d'abréviation k/M)
+  // Exemple : 20140 → "20 140 FCFA", 0 → "0 FCFA"
   String _formatXof(int xof) {
-    if (xof >= 1000000) return '${(xof / 1000000).toStringAsFixed(1)}M';
-    if (xof >= 1000) return '${(xof / 1000).toStringAsFixed(0)} k';
-    return '$xof';
+    final s = xof.abs().toString();
+    final buf = StringBuffer();
+    int count = 0;
+    for (int i = s.length - 1; i >= 0; i--) {
+      if (count > 0 && count % 3 == 0) buf.write('\u00A0');
+      buf.write(s[i]);
+      count++;
+    }
+    final formatted = buf.toString().split('').reversed.join();
+    return '${xof < 0 ? '-' : ''}$formatted FCFA';
   }
 
   String _formatDate(DateTime dt) {
