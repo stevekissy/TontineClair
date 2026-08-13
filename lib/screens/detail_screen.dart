@@ -2412,12 +2412,17 @@ class _BadgeBlockchainState extends State<_BadgeBlockchain> {
   }
 
   void _ouvrir() {
+    // Récupère le solde de caisse réel depuis le provider (si disponible)
+    final tontineData = context.read<TontineProvider>().courante?.data;
+    final soldeCaisse = tontineData?.soldeCaisse;
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => VerificationPubliqueScreen(
           codeTontine: widget.code,
           nomTontine : widget.nom,
+          soldeCaisse: soldeCaisse,
         ),
       ),
     );
