@@ -260,43 +260,29 @@ class _SmileIdDocumentVerificationScreenState
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.close_rounded, color: Colors.white),
-          onPressed: () => Navigator.pop(context, null),
-        ),
-        title: const Text(
-          'Verification Smile ID',
-          style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
-        ),
-      ),
-      body: SmileIDDocumentVerification(
-        countryCode: 'CI',
-        documentType: 'NATIONAL_ID',
-        captureBothSides: true,
-        showInstructions: true,
-        allowGalleryUpload: true,
-        onSuccess: (String resultJson) {
-          try {
-            final Map<String, dynamic> result =
-                jsonDecode(resultJson) as Map<String, dynamic>;
-            if (kDebugMode) debugPrint('[SmileID] Success: $result');
-            Navigator.pop(context, result);
-          } catch (e) {
-            if (kDebugMode) debugPrint('[SmileID] parse error: $e');
-            Navigator.pop(context, {'jobId': 'smile-${DateTime.now().millisecondsSinceEpoch}'});
-          }
-        },
-        onError: (String errorMessage) {
-          if (kDebugMode) debugPrint('[SmileID] DocVerif error: $errorMessage');
-          // Fermer l'écran SmileID et remonter l'erreur à l'écran KYC
-          Navigator.pop(context, {'__error': errorMessage});
-        },
-      ),
+    // PAS de Scaffold ni AppBar — SmileID gère son propre écran natif Compose.
+    // Envelopper dans un Scaffold causait l'overlap visible sur photo 1.
+    return SmileIDDocumentVerification(
+      countryCode: 'CI',
+      documentType: 'NATIONAL_ID',
+      captureBothSides: true,
+      showInstructions: true,
+      allowGalleryUpload: true,
+      onSuccess: (String resultJson) {
+        try {
+          final Map<String, dynamic> result =
+              jsonDecode(resultJson) as Map<String, dynamic>;
+          if (kDebugMode) debugPrint('[SmileID] Success: $result');
+          Navigator.pop(context, result);
+        } catch (e) {
+          if (kDebugMode) debugPrint('[SmileID] parse error: $e');
+          Navigator.pop(context, {'jobId': 'smile-${DateTime.now().millisecondsSinceEpoch}'});
+        }
+      },
+      onError: (String errorMessage) {
+        if (kDebugMode) debugPrint('[SmileID] DocVerif error: $errorMessage');
+        Navigator.pop(context, {'__error': errorMessage});
+      },
     );
   }
 }
