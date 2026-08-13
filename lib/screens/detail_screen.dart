@@ -349,6 +349,7 @@ class _DetailScreenState extends State<DetailScreen> {
                       key: ValueKey('badge_blockchain_${widget.code}'),
                       code: widget.code,
                       nom: data.nom,
+                      soldeCaisse: data.soldeCaisse,
                     ),
                     const SizedBox(height: 20),
                     // Actions rapides
@@ -2305,7 +2306,13 @@ class _LigneRecapCloture extends StatelessWidget {
 class _BadgeBlockchain extends StatefulWidget {
   final String code;
   final String nom;
-  const _BadgeBlockchain({super.key, required this.code, required this.nom});
+  final int soldeCaisse;   // solde réel caisse commune, passé à VerificationPubliqueScreen
+  const _BadgeBlockchain({
+    super.key,
+    required this.code,
+    required this.nom,
+    required this.soldeCaisse,
+  });
 
   @override
   State<_BadgeBlockchain> createState() => _BadgeBlockchainState();
@@ -2418,6 +2425,7 @@ class _BadgeBlockchainState extends State<_BadgeBlockchain> {
         builder: (_) => VerificationPubliqueScreen(
           codeTontine: widget.code,
           nomTontine : widget.nom,
+          soldeCaisse: widget.soldeCaisse,
         ),
       ),
     );

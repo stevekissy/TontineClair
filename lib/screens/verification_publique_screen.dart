@@ -19,11 +19,14 @@ class VerificationPubliqueScreen extends StatefulWidget {
   final String? codeTontine;
   /// Nom tontine affiché dans le titre (optionnel)
   final String? nomTontine;
+  /// Solde réel de la caisse commune (en XOF) — affiché à la place de "Volume XOF"
+  final int? soldeCaisse;
 
   const VerificationPubliqueScreen({
     super.key,
     this.codeTontine,
     this.nomTontine,
+    this.soldeCaisse,
   });
 
   @override
@@ -126,10 +129,6 @@ class _VerificationPubliqueScreenState
   int get _countOnChain =>
       _entrees.where((e) => e.statut == 'confirmed').length;
 
-  int get _totalXof => _entrees
-      .where((e) => e.montantXof != null)
-      .fold(0, (s, e) => s + (e.montantXof ?? 0));
-
   // ── Phase du contrat ───────────────────────────────────────────────────────
   int get _phase => (_contrat['phase'] as num?)?.toInt() ?? 1;
   String? get _contratAddress => _contrat['contract'] as String?;
@@ -157,9 +156,6 @@ class _VerificationPubliqueScreenState
       ),
       body: Column(
         children: [
-          // ── Barre de recherche ─────────────────────────────────────────────
-          _BarreRecherche(ctrl: _ctrl, onRechercher: _rechercher),
-
           // ── Infos contrat ──────────────────────────────────────────────────
           if (_phase == 2 && _contratAddress != null)
             _BandeauContrat(
@@ -211,12 +207,12 @@ class _VerificationPubliqueScreenState
                     : !_recherche
                         ? const _VueAccueil()
                         : _VueResultats(
-                            code       : _codeActif,
-                            entrees    : _entrees,
-                            stats      : _stats,
+                            code        : _codeActif,
+                            entrees     : _entrees,
+                            stats       : _stats,
                             countOnChain: _countOnChain,
-                            totalXof   : _totalXof,
-                            onCopier   : _copier,
+                            soldeCaisse : widget.soldeCaisse,
+                            onCopier    : _copier,
                           ),
           ),
         ],
@@ -500,7 +496,7 @@ class _VueResultats extends StatelessWidget {
   final List<BlockchainEntry> entrees;
   final Map<String, int> stats;
   final int countOnChain;
-  final int totalXof;
+  final int? soldeCaisse;   // solde réel de la caisse commune (XOF)
   final void Function(String, String) onCopier;
 
   const _VueResultats({
@@ -508,7 +504,7 @@ class _VueResultats extends StatelessWidget {
     required this.entrees,
     required this.stats,
     required this.countOnChain,
-    required this.totalXof,
+    required this.soldeCaisse,
     required this.onCopier,
   });
 
@@ -522,7 +518,7 @@ class _VueResultats extends StatelessWidget {
           code        : code,
           totalEntrees: entrees.length,
           countOnChain: countOnChain,
-          totalXof    : totalXof,
+          soldeCaisse : soldeCaisse,
           stats       : stats,
         ),
         const SizedBox(height: 16),
@@ -549,14 +545,14 @@ class _CarteResume extends StatelessWidget {
   final String code;
   final int totalEntrees;
   final int countOnChain;
-  final int totalXof;
+  final int? soldeCaisse;  // null si non fourni (accès public sans login)
   final Map<String, int> stats;
 
   const _CarteResume({
     required this.code,
     required this.totalEntrees,
     required this.countOnChain,
-    required this.totalXof,
+    required this.soldeCaisse,
     required this.stats,
   });
 
@@ -618,9 +614,11 @@ class _CarteResume extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               _MetriqueChip(
-                label: 'Volume XOF',
-                valeur: _formatXof(totalXof),
-                icone: Icons.attach_money,
+                label: 'Solde caisse',
+                valeur: soldeCaisse != null
+                    ? _formatSolde(soldeCaisse!)
+                    : '—',
+                icone: Icons.account_balance_wallet_outlined,
               ),
             ],
           ),
@@ -655,10 +653,17 @@ class _CarteResume extends StatelessWidget {
     );
   }
 
-  String _formatXof(int xof) {
-    if (xof >= 1000000) return '${(xof / 1000000).toStringAsFixed(1)}M';
-    if (xof >= 1000) return '${(xof / 1000).toStringAsFixed(0)}k';
-    return '$xof';
+  /// Format exact avec séparateur de milliers — ex: 20 000 XOF
+  String _formatSolde(int xof) {
+    if (xof == 0) return '0 XOF';
+    final absVal = xof.abs();
+    final str = absVal.toString();
+    final buf = StringBuffer();
+    for (int i = 0; i < str.length; i++) {
+      if (i > 0 && (str.length - i) % 3 == 0) buf.write('\u202f'); // espace fine
+      buf.write(str[i]);
+    }
+    return '${xof < 0 ? '-' : ''}${buf.toString()} XOF';
   }
 
   // Traduit un type_operation (y compris sélecteurs hex 0x…) → label lisible.
