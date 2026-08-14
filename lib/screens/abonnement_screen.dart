@@ -10,6 +10,7 @@ import '../services/subscription_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
+import 'creation_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ÉCRAN ABONNEMENT — détection automatique de la plateforme
@@ -29,6 +30,9 @@ class AbonnementScreen extends StatefulWidget {
   final String? kycStatut;
   /// Nom du gestionnaire (pour le formulaire KYC)
   final String gestNom;
+  /// true = tontine créée en mode Gratuit → ne peut PAS passer Premium.
+  /// Affiche uniquement les avantages + message "créez une nouvelle tontine Premium".
+  final bool estTontineGratuite;
 
   const AbonnementScreen({
     super.key,
@@ -37,6 +41,7 @@ class AbonnementScreen extends StatefulWidget {
     this.montantCagnotte = 0,
     this.kycStatut,
     this.gestNom = '',
+    this.estTontineGratuite = false,
   });
 
   @override
@@ -73,6 +78,11 @@ class _AbonnementScreenState extends State<AbonnementScreen> {
 
     // Statut Premium — depuis SubscriptionService (source unique)
     final isPremium = tontine?.isPremium ?? SubscriptionService.isPremium;
+
+    // ── Cas : tontine créée en Gratuit → upgrade impossible ──────────────
+    if (widget.estTontineGratuite) {
+      return _EcranTontineGratuite(code: widget.code);
+    }
 
     return Scaffold(
       backgroundColor: AppColors.fondPapier,
@@ -1666,6 +1676,354 @@ class _LigneTableau extends StatelessWidget {
             : actif
                 ? AppColors.succes
                 : AppColors.texteDoux,
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ÉCRAN TONTINE GRATUITE — upgrade impossible
+// Affiche : tableau comparatif + formules (lecture seule) + message explicatif
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _EcranTontineGratuite extends StatelessWidget {
+  final String code;
+  const _EcranTontineGratuite({required this.code});
+
+  static const _couleurPremium = Color(0xFFF59E0B);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.fondPapier,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // ── En-tête ────────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+              child: Row(
+                children: [
+                  const LogoTontineClair(),
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.arrow_back, size: 16),
+                    label: const Text('Retour'),
+                    style: TextButton.styleFrom(
+                        foregroundColor: AppColors.encre),
+                  ),
+                ],
+              ),
+            ),
+
+            // ── Contenu scrollable ─────────────────────────────────────────
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 18, 16, 32),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ── Titre ──────────────────────────────────────────────
+                    Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: _couleurPremium.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Center(
+                            child: Text('⭐', style: TextStyle(fontSize: 24)),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Fonctionnalités Premium',
+                                style: GoogleFonts.bricolageGrotesque(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 22,
+                                  color: AppColors.encre,
+                                  letterSpacing: -0.5,
+                                ),
+                              ),
+                              Text(
+                                'Découvrez tout ce que Premium offre',
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  color: AppColors.texteDoux,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+
+                    // ── Bannière d'information importante ─────────────────
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF3CD),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: const Color(0xFFFFC107).withValues(alpha: 0.6),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFC107).withValues(alpha: 0.25),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.info_outline_rounded,
+                              color: Color(0xFFB45309),
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Mise à niveau impossible',
+                                  style: GoogleFonts.inter(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 14,
+                                    color: const Color(0xFF92400E),
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Cette tontine a été créée en mode Gratuit. '
+                                  'Il n\'est pas possible de la passer en Premium.\n\n'
+                                  'Pour accéder aux fonctionnalités Premium '
+                                  '(Caisse, Prêts, Votes, Tirage au sort), '
+                                  'vous devez créer une nouvelle tontine et '
+                                  'choisir l\'option Premium dès le départ.',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    color: const Color(0xFF78350F),
+                                    height: 1.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // ── Tableau comparatif (lecture seule) ─────────────────
+                    Text(
+                      'Avantages Premium',
+                      style: GoogleFonts.bricolageGrotesque(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                        color: AppColors.encre,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _TableauComparatif(),
+                    const SizedBox(height: 24),
+
+                    // ── Formules tarifaires (affichage lecture seule) ──────
+                    Text(
+                      'Nos formules',
+                      style: GoogleFonts.bricolageGrotesque(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                        color: AppColors.encre,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _CarteFormulaLectureSeule(
+                            label: 'Mensuel',
+                            prix: '2 500 FCFA / mois',
+                            description: 'Flexible, sans engagement',
+                            badge: null,
+                            highlighted: true,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _CarteFormulaLectureSeule(
+                            label: 'Annuel',
+                            prix: '25 000 FCFA / an',
+                            description: '2 mois offerts vs mensuel',
+                            badge: '-17%',
+                            highlighted: false,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 32),
+
+                    // ── Bouton CTA : créer une nouvelle tontine Premium ────
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          // Retour à l'accueil puis navigation vers création
+                          Navigator.of(context).popUntil((route) => route.isFirst);
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const CreationScreen(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.add_circle_outline_rounded, size: 20),
+                        label: Text(
+                          'Créer une tontine Premium',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _couleurPremium,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ── Retour discret ─────────────────────────────────────
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.texteDoux,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        child: Text(
+                          'Retour à ma tontine',
+                          style: GoogleFonts.inter(fontSize: 14),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Carte tarif en lecture seule (pour _EcranTontineGratuite)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _CarteFormulaLectureSeule extends StatelessWidget {
+  final String label;
+  final String prix;
+  final String description;
+  final String? badge;
+  final bool highlighted;
+
+  const _CarteFormulaLectureSeule({
+    required this.label,
+    required this.prix,
+    required this.description,
+    required this.badge,
+    required this.highlighted,
+  });
+
+  static const _couleurPremium = Color(0xFFF59E0B);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: highlighted ? AppColors.encre : AppColors.carte,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: highlighted ? AppColors.encre : AppColors.lignes,
+          width: highlighted ? 2 : 1,
+        ),
+        boxShadow: highlighted
+            ? [BoxShadow(
+                color: AppColors.encre.withValues(alpha: 0.15),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              )]
+            : [],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (badge != null) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: _couleurPremium,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                badge!,
+                style: GoogleFonts.inter(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w700,
+              fontSize: 15,
+              color: highlighted ? Colors.white : AppColors.encre,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            prix,
+            style: GoogleFonts.bricolageGrotesque(
+              fontWeight: FontWeight.w800,
+              fontSize: 13,
+              color: highlighted ? Colors.white : _couleurPremium,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            description,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              color: highlighted
+                  ? Colors.white.withValues(alpha: 0.7)
+                  : AppColors.texteDoux,
+            ),
+          ),
+        ],
       ),
     );
   }
