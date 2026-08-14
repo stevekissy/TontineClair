@@ -28,8 +28,7 @@ import 'kyc_screen.dart';
 import 'securite_screen.dart';
 import 'paiement_choix_screen.dart';
 import 'verification_publique_screen.dart';
-import 'certificat_blockchain_screen.dart';
-import 'qr_tontine_screen.dart';
+
 import 'package:flutter/foundation.dart';
 import '../services/blockchain_service.dart';
 
@@ -2531,85 +2530,6 @@ class _BadgeBlockchainState extends State<_BadgeBlockchain> {
             ),
           ),
         ),
-        // ── Actions rapides Phase 4 ──────────────────────────────────────────
-        if (!_loading && (_totalOps > 0 || _derniereTx != null)) ...[
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => CertificatBlockchainScreen(
-                        codeTontine: widget.code,
-                        nomTontine : widget.nom,
-                      ),
-                    ),
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 7),
-                    decoration: BoxDecoration(
-                      color: AppColors.fondCode,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.lignes),
-                    ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.workspace_premium,
-                            size: 13, color: AppColors.encre),
-                        SizedBox(width: 4),
-                        Text('Certificat PDF',
-                            style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.encre)),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => QrTontineScreen(
-                        codeTontine: widget.code,
-                        nomTontine : widget.nom,
-                      ),
-                    ),
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 7),
-                    decoration: BoxDecoration(
-                      color: AppColors.whatsapp.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                          color: AppColors.whatsapp.withValues(alpha: 0.3)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.qr_code,
-                            size: 13,
-                            color: AppColors.whatsapp.withValues(alpha: 0.9)),
-                        const SizedBox(width: 4),
-                        Text('QR Code',
-                            style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.whatsapp.withValues(alpha: 0.9))),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
       ],
     );
   }
