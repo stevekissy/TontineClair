@@ -1025,6 +1025,8 @@ class _LigneGestionnaireState extends State<_LigneGestionnaire> {
         ? 'Gestionnaire ${widget.index + 1}'
         : widget.prenomCtrl.text.trim();
 
+    // Tentative d'envoi email — non bloquant : si le service est indisponible,
+    // le code est affiché directement dans le dialogue (mode dégradé).
     final result = await email_svc.EmailService.envoyerCodeVerification(
       destinataire: email,
       nom:          nom,
@@ -1034,15 +1036,9 @@ class _LigneGestionnaireState extends State<_LigneGestionnaire> {
     if (!mounted) return;
     setState(() => _emailEnCours = false);
 
-    if (!result.ok) {
-      _afficherErreur(
-        'Impossible d\'envoyer le code à $email.\n'
-        '${result.erreur ?? 'Vérifiez votre connexion.'}',
-      );
-      return;
-    }
-
     // ── Dialogue de saisie du code email ─────────────────────────────────
+    // Ouvert même si l'envoi email a échoué — dans ce cas le code est
+    // affiché directement dans le dialogue pour ne pas bloquer la création.
     if (!mounted) return;
     final codeConfirme = await showDialog<bool>(
       context: context,
@@ -1050,6 +1046,7 @@ class _LigneGestionnaireState extends State<_LigneGestionnaire> {
       builder: (_) => _DialogEmailOtp(
         email: email,
         codeAttendu: code,
+        emailEnvoye: result.ok,
         onRenvoyer: () async {
           if (mounted) Navigator.of(context).pop(false);
           await Future.delayed(const Duration(milliseconds: 300));
@@ -1358,11 +1355,13 @@ class _DialogEmailOtp extends StatefulWidget {
   final String email;
   final String codeAttendu;
   final VoidCallback onRenvoyer;
+  final bool emailEnvoye; // false = service email indisponible → afficher le code directement
 
   const _DialogEmailOtp({
     required this.email,
     required this.codeAttendu,
     required this.onRenvoyer,
+    this.emailEnvoye = true,
   });
 
   @override
@@ -1434,15 +1433,67 @@ class _DialogEmailOtpState extends State<_DialogEmailOtp> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Un code à 6 chiffres a été envoyé à\n${_masquerEmail(widget.email)}',
-            style: const TextStyle(fontSize: 14, color: AppColors.texteDoux),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Vérifiez aussi vos spams si vous ne le trouvez pas.',
-            style: TextStyle(fontSize: 12, color: AppColors.encreDoux),
-          ),
+          if (widget.emailEnvoye) ...[  
+            Text(
+              'Un code à 6 chiffres a été envoyé à\n${_masquerEmail(widget.email)}',
+              style: const TextStyle(fontSize: 14, color: AppColors.texteDoux),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Vérifiez aussi vos spams si vous ne le trouvez pas.',
+              style: TextStyle(fontSize: 12, color: AppColors.encreDoux),
+            ),
+          ] else ...[  
+            // ── Mode dégradé : service email indisponible → code affiché ici
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF8E1),
+                border: Border.all(color: const Color(0xFFFFB300).withValues(alpha: 0.5)),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 15, color: Color(0xFF9E6C00)),
+                      SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Service email temporairement indisponible.',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF9E6C00)),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Votre code de vérification :',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF6B4900)),
+                  ),
+                  const SizedBox(height: 4),
+                  Center(
+                    child: SelectableText(
+                      widget.codeAttendu,
+                      style: const TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 10,
+                        color: Color(0xFF6B4900),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Copiez ce code et saisissez-le dans le champ ci-dessous.',
+                    style: TextStyle(fontSize: 11, color: Color(0xFF9E6C00)),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           TextField(
             controller: _codeCtrl,
