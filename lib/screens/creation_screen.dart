@@ -7,7 +7,8 @@ import '../services/storage_service.dart';
 import '../services/echeance_service.dart';
 import '../services/devise_service.dart';
 import '../services/kyc_service.dart';
-import '../services/phone_otp_service.dart';
+import '../services/email_service.dart' as email_svc;
+import 'dart:math' show Random;
 import '../utils/app_colors.dart';
 import '../widgets/app_widgets.dart';
 import 'code_cree_screen.dart';
@@ -39,12 +40,12 @@ class _CreationScreenState extends State<CreationScreen> {
   final List<TextEditingController> _gestPrenomCtrl   = [TextEditingController()];
   final List<TextEditingController> _gestNomFamCtrl   = [TextEditingController()];
   final List<TextEditingController> _gestTelCtrl      = [TextEditingController()];
-  // Confirmation téléphone gestionnaires 2+ (double saisie anti-typo)
+  // Confirmation téléphone — double saisie pour TOUS les gestionnaires
   final List<TextEditingController> _gestTelConfCtrl  = [TextEditingController()];
 
-  // ── OTP gestionnaire principal ────────────────────────────────────────────
-  bool   _otpVerifie      = false;   // true une fois le numéro confirmé par OTP
-  String _otpVerifieNum   = '';      // numéro confirmé (normalisé)
+  // ── Email OTP — un booléen par gestionnaire ───────────────────────────────
+  final List<bool>   _emailVerifie    = [false]; // true une fois code email confirmé
+  final List<String> _emailVerifieAddr = [''];   // email confirmé
 
   bool _loading = false;
   String? _erreur;
@@ -195,28 +196,8 @@ class _CreationScreenState extends State<CreationScreen> {
             'Format accepté : +225XXXXXXXXXX ou 07XXXXXXXX (8 à 15 chiffres).');
         return;
       }
-      // ── Gestionnaire 1 : OTP Firebase obligatoire ────────────────────────
-      if (i == 0) {
-        if (!_otpVerifie) {
-          setState(() => _erreur =
-              'Vous devez vérifier votre numéro de téléphone par SMS avant de créer la tontine.\n'
-              'Appuyez sur "Vérifier par SMS" à côté du numéro.');
-          return;
-        }
-        // Vérifier que le numéro saisi correspond à celui vérifié par OTP
-        if (telNorm != _otpVerifieNum) {
-          setState(() {
-            _otpVerifie    = false;
-            _otpVerifieNum = '';
-            _erreur =
-                'Le numéro saisi ne correspond plus au numéro vérifié par SMS.\n'
-                'Modifiez le numéro et vérifiez à nouveau.';
-          });
-          return;
-        }
-      }
-      // ── Gestionnaires 2+ : double saisie (confirmation anti-typo) ────────
-      if (i > 0) {
+      // ── Double saisie téléphone — TOUS les gestionnaires ─────────────────
+      {
         final telConf = _gestTelConfCtrl[i].text.trim().replaceAll(RegExp(r'[\s\-\.]'), '');
         if (telConf.isEmpty) {
           setState(() => _erreur =
@@ -236,7 +217,7 @@ class _CreationScreenState extends State<CreationScreen> {
         setState(() => _erreur = 'PIN de ${gestNoms[i]} trop court (4 chiffres min.).');
         return;
       }
-      // ── Email de récupération obligatoire ────────────────────────────────
+      // ── Email obligatoire + validité format ──────────────────────────────
       final email = gestEmails[i];
       if (email.isEmpty) {
         setState(() => _erreur = 'Email de récupération de ${gestNoms[i]} manquant.');
@@ -245,6 +226,23 @@ class _CreationScreenState extends State<CreationScreen> {
       final emailReg = RegExp(r'^[\w.+\-]+@[\w\-]+\.[\w.]+$');
       if (!emailReg.hasMatch(email)) {
         setState(() => _erreur = 'Email de ${gestNoms[i]} invalide (ex: nom@gmail.com).');
+        return;
+      }
+      // ── Email OTP obligatoire pour TOUS les gestionnaires ─────────────────
+      if (i >= _emailVerifie.length || !_emailVerifie[i]) {
+        setState(() => _erreur =
+            'Vérifiez l\'email de ${gestNoms[i].isEmpty ? "gestionnaire ${i+1}" : gestNoms[i]}\n'
+            'Appuyez sur "Vérifier l\'email" et entrez le code reçu.');
+        return;
+      }
+      // Vérifier que l'email saisi = email vérifié
+      if (i < _emailVerifieAddr.length && _emailVerifieAddr[i] != email) {
+        setState(() {
+          _emailVerifie[i]     = false;
+          _emailVerifieAddr[i] = '';
+          _erreur = 'L\'email saisi ne correspond plus à celui vérifié.\n'
+              'Corrigez l\'email et vérifiez à nouveau.';
+        });
         return;
       }
     }
@@ -339,6 +337,8 @@ class _CreationScreenState extends State<CreationScreen> {
       _gestNomFamCtrl.add(TextEditingController());
       _gestTelCtrl.add(TextEditingController());
       _gestTelConfCtrl.add(TextEditingController());
+      _emailVerifie.add(false);
+      _emailVerifieAddr.add('');
     });
   }
 
@@ -358,6 +358,8 @@ class _CreationScreenState extends State<CreationScreen> {
       _gestNomFamCtrl.removeAt(i);
       _gestTelCtrl.removeAt(i);
       _gestTelConfCtrl.removeAt(i);
+      if (i < _emailVerifie.length)    _emailVerifie.removeAt(i);
+      if (i < _emailVerifieAddr.length) _emailVerifieAddr.removeAt(i);
     });
   }
 
@@ -772,19 +774,17 @@ class _CreationScreenState extends State<CreationScreen> {
                             telCtrl:        _gestTelCtrl[i],
                             telConfCtrl:    _gestTelConfCtrl[i],
                             index:          i,
-                            otpVerifie:     i == 0 ? _otpVerifie : null,
-                            onOtpVerifie:   i == 0
-                                ? (numVerifie) => setState(() {
-                                    _otpVerifie    = true;
-                                    _otpVerifieNum = numVerifie;
-                                  })
-                                : null,
-                            onOtpReset:     i == 0
-                                ? () => setState(() {
-                                    _otpVerifie    = false;
-                                    _otpVerifieNum = '';
-                                  })
-                                : null,
+                            emailVerifie:   i < _emailVerifie.length ? _emailVerifie[i] : false,
+                            onEmailVerifie: (addrVerifie) => setState(() {
+                              while (_emailVerifie.length <= i)    { _emailVerifie.add(false); }
+                              while (_emailVerifieAddr.length <= i) { _emailVerifieAddr.add(''); }
+                              _emailVerifie[i]     = true;
+                              _emailVerifieAddr[i] = addrVerifie;
+                            }),
+                            onEmailReset:   () => setState(() {
+                              if (i < _emailVerifie.length)    _emailVerifie[i]     = false;
+                              if (i < _emailVerifieAddr.length) _emailVerifieAddr[i] = '';
+                            }),
                             onRetirer: _gestNomCtrl.length > 1
                                 ? () => _retirerGest(i)
                                 : null,
@@ -908,9 +908,10 @@ class _LigneMembre extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// _LigneGestionnaire
-//  - index == 0 → bouton "Vérifier par SMS" (Firebase OTP)
-//  - index  > 0 → double saisie du téléphone (anti-typo)
+// ─────────────────────────────────────────────────────────────────────────────
+// _LigneGestionnaire — uniforme pour TOUS les gestionnaires
+//  • Double saisie téléphone (confirmation anti-typo)
+//  • Vérification email par code OTP (6 chiffres via EmailService)
 // ─────────────────────────────────────────────────────────────────────────────
 class _LigneGestionnaire extends StatefulWidget {
   final TextEditingController nomCtrl;
@@ -919,11 +920,11 @@ class _LigneGestionnaire extends StatefulWidget {
   final TextEditingController prenomCtrl;
   final TextEditingController nomFamCtrl;
   final TextEditingController telCtrl;
-  final TextEditingController telConfCtrl;   // confirmation pour gest 2+
+  final TextEditingController telConfCtrl;
   final int index;
-  final bool? otpVerifie;                    // null pour gest 2+ (non concerné)
-  final void Function(String numVerifie)? onOtpVerifie;
-  final VoidCallback? onOtpReset;
+  final bool emailVerifie;
+  final void Function(String addrVerifie)? onEmailVerifie;
+  final VoidCallback? onEmailReset;
   final VoidCallback? onRetirer;
 
   const _LigneGestionnaire({
@@ -935,9 +936,9 @@ class _LigneGestionnaire extends StatefulWidget {
     required this.telCtrl,
     required this.telConfCtrl,
     required this.index,
-    this.otpVerifie,
-    this.onOtpVerifie,
-    this.onOtpReset,
+    required this.emailVerifie,
+    this.onEmailVerifie,
+    this.onEmailReset,
     this.onRetirer,
   });
 
@@ -947,60 +948,71 @@ class _LigneGestionnaire extends StatefulWidget {
 
 class _LigneGestionnaireState extends State<_LigneGestionnaire> {
 
-  bool _otpEnCours = false;  // spinner pendant envoi/vérif SMS
+  bool _emailEnCours = false;  // spinner pendant envoi code
 
-  // ── Lance le flux OTP Firebase ───────────────────────────────────────────
-  Future<void> _lancerOtp() async {
-    final numero = widget.telCtrl.text.trim().replaceAll(RegExp(r'[\s\-\.]'), '');
-    final telReg = RegExp(r'^\+[0-9]{8,15}$');
+  // ── Génère un code 6 chiffres ────────────────────────────────────────────
+  String _genererCode() {
+    final rng = Random.secure();
+    return List.generate(6, (_) => rng.nextInt(10)).join();
+  }
 
-    if (!telReg.hasMatch(numero)) {
+  // ── Lance le flux Email OTP ──────────────────────────────────────────────
+  Future<void> _lancerEmailOtp() async {
+    final email = widget.emailCtrl.text.trim().toLowerCase();
+    final emailReg = RegExp(r'^[\w.+\-]+@[\w\-]+\.[\w.]+$');
+
+    if (email.isEmpty || !emailReg.hasMatch(email)) {
       _afficherErreur(
-        'Entrez d\'abord un numéro valide avec indicatif pays\n'
-        '(ex: +2250700000000) avant de vérifier.',
+        'Entrez d\'abord un email valide avant de vérifier\n'
+        '(ex: nom@gmail.com).',
       );
       return;
     }
 
-    setState(() => _otpEnCours = true);
+    setState(() => _emailEnCours = true);
 
-    final result = await PhoneOtpService.envoyerOtp(numero);
+    final code = _genererCode();
+    final nom  = widget.prenomCtrl.text.trim().isEmpty
+        ? 'Gestionnaire ${widget.index + 1}'
+        : widget.prenomCtrl.text.trim();
+
+    final result = await email_svc.EmailService.envoyerCodeVerification(
+      destinataire: email,
+      nom:          nom,
+      code:         code,
+    );
 
     if (!mounted) return;
-    setState(() => _otpEnCours = false);
+    setState(() => _emailEnCours = false);
 
-    if (!result.estSucces) {
-      _afficherErreur(result.erreurMessage ?? 'Erreur envoi SMS.');
+    if (!result.ok) {
+      _afficherErreur(
+        'Impossible d\'envoyer le code à $email.\n'
+        '${result.erreur ?? 'Vérifiez votre connexion.'}',
+      );
       return;
     }
 
-    // ── Auto-résolution Android (rare, mais possible) ──────────────────
-    if (result.status == PhoneOtpStatus.autoVerified) {
-      widget.onOtpVerifie?.call(numero);
-      _afficherSucces('Numéro vérifié automatiquement par Android !');
-      return;
-    }
-
-    // ── SMS envoyé → ouvrir le dialogue de saisie du code ─────────────
+    // ── Dialogue de saisie du code email ─────────────────────────────────
     if (!mounted) return;
     final codeConfirme = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _DialogOtp(
-        verificationId: result.verificationId!,
-        numero: numero,
+      builder: (_) => _DialogEmailOtp(
+        email: email,
+        codeAttendu: code,
         onRenvoyer: () async {
-          // Ferme le dialogue et relance depuis le début
           if (mounted) Navigator.of(context).pop(false);
           await Future.delayed(const Duration(milliseconds: 300));
-          if (mounted) _lancerOtp();
+          if (mounted) _lancerEmailOtp();
         },
       ),
     );
 
     if (!mounted) return;
     if (codeConfirme == true) {
-      widget.onOtpVerifie?.call(numero);
+      widget.onEmailVerifie?.call(email);
+      _afficherSucces('Email vérifié ✓');
     }
   }
 
@@ -1023,7 +1035,7 @@ class _LigneGestionnaireState extends State<_LigneGestionnaire> {
   @override
   Widget build(BuildContext context) {
     final estPrincipal = widget.index == 0;
-    final otpOk = widget.otpVerifie == true;
+    final emailOk = widget.emailVerifie;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -1031,7 +1043,7 @@ class _LigneGestionnaireState extends State<_LigneGestionnaire> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
 
-          // ── Entête gestionnaire ────────────────────────────────────────
+          // ── En-tête gestionnaire ───────────────────────────────────────
           Row(
             children: [
               Container(
@@ -1083,7 +1095,7 @@ class _LigneGestionnaireState extends State<_LigneGestionnaire> {
           ),
           const SizedBox(height: 10),
 
-          // ── Ligne 1 : Prénom + Nom de famille ─────────────────────────
+          // ── Prénom + Nom de famille ────────────────────────────────────
           Row(
             children: [
               Expanded(
@@ -1114,7 +1126,7 @@ class _LigneGestionnaireState extends State<_LigneGestionnaire> {
           ),
           const SizedBox(height: 8),
 
-          // ── Ligne 2 : Nom d'affichage + PIN ───────────────────────────
+          // ── Nom d'affichage + PIN ──────────────────────────────────────
           Row(
             children: [
               Expanded(
@@ -1155,144 +1167,97 @@ class _LigneGestionnaireState extends State<_LigneGestionnaire> {
           ),
           const SizedBox(height: 8),
 
-          // ── Ligne 3 : Téléphone ────────────────────────────────────────
-          // Gestionnaire 1 : champ + badge OTP + bouton "Vérifier"
-          // Gestionnaire 2+: champ + champ confirmation (double saisie)
-          if (estPrincipal) ...[
-            // Badge OTP vérifié (affiché quand numéro confirmé)
-            if (otpOk)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE3F1EA),
-                    border: Border.all(
-                      color: const Color(0xFF2E7D5B).withValues(alpha: 0.5),
-                      width: 1.5,
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.verified_rounded,
-                          size: 18, color: Color(0xFF2E7D5B)),
-                      const SizedBox(width: 8),
-                      const Expanded(
-                        child: Text(
-                          'Numéro vérifié par SMS ✓',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF1B5E3B),
-                          ),
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: () {
-                          widget.onOtpReset?.call();
-                          widget.telCtrl.clear();
-                        },
-                        child: const Text(
-                          'Changer',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF2E7D5B),
-                            fontWeight: FontWeight.w600,
-                            decoration: TextDecoration.underline,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            // Champ téléphone (masqué si déjà vérifié)
-            if (!otpOk) ...[
-              TextField(
-                controller: widget.telCtrl,
-                keyboardType: TextInputType.phone,
-                autocorrect: false,
-                maxLength: 20,
-                onChanged: (_) {
-                  // Si on modifie le numéro après vérif, reset OTP
-                  if (widget.otpVerifie == true) {
-                    widget.onOtpReset?.call();
-                  }
-                },
-                decoration: const InputDecoration(
-                  hintText: 'Votre téléphone (+2250700000000)',
-                  prefixIcon: Icon(Icons.phone_outlined, size: 18),
-                  counterText: '',
-                  helperText: 'Indicatif obligatoire : +225, +33, +1…',
-                  helperStyle: TextStyle(fontSize: 11, color: AppColors.encreDoux),
-                ),
-              ),
-              const SizedBox(height: 8),
-              // Bouton "Vérifier par SMS"
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _otpEnCours ? null : _lancerOtp,
-                  icon: _otpEnCours
-                      ? const SizedBox(
-                          width: 16, height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.sms_outlined, size: 18),
-                  label: Text(
-                    _otpEnCours ? 'Envoi du SMS…' : 'Vérifier par SMS',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.encre,
-                    side: const BorderSide(color: AppColors.encre, width: 1.5),
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ] else ...[
-            // ── Gestionnaire 2+ : téléphone + confirmation ───────────────
-            TextField(
-              controller: widget.telCtrl,
-              keyboardType: TextInputType.phone,
-              autocorrect: false,
-              maxLength: 20,
-              decoration: const InputDecoration(
-                hintText: 'Téléphone (ex: +2250700000000)',
-                prefixIcon: Icon(Icons.phone_outlined, size: 18),
-                counterText: '',
-                helperText: 'Avec indicatif pays : +225, +33, +1…',
-                helperStyle: TextStyle(fontSize: 11, color: AppColors.encreDoux),
-              ),
+          // ── Téléphone + Confirmation (double saisie — TOUS) ────────────
+          TextField(
+            controller: widget.telCtrl,
+            keyboardType: TextInputType.phone,
+            autocorrect: false,
+            maxLength: 20,
+            decoration: InputDecoration(
+              hintText: estPrincipal
+                  ? 'Votre téléphone (+2250700000000)'
+                  : 'Téléphone (ex: +2250700000000)',
+              prefixIcon: const Icon(Icons.phone_outlined, size: 18),
+              counterText: '',
+              helperText: estPrincipal
+                  ? 'Indicatif obligatoire : +225, +33, +1…'
+                  : 'Avec indicatif pays : +225, +33, +1…',
+              helperStyle: const TextStyle(fontSize: 11, color: AppColors.encreDoux),
             ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: widget.telConfCtrl,
-              keyboardType: TextInputType.phone,
-              autocorrect: false,
-              maxLength: 20,
-              decoration: const InputDecoration(
-                hintText: 'Confirmer le téléphone',
-                prefixIcon: Icon(Icons.phone_callback_outlined, size: 18),
-                counterText: '',
-                helperText: 'Retapez le même numéro pour confirmer',
-                helperStyle: TextStyle(fontSize: 11, color: AppColors.encreDoux),
-              ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: widget.telConfCtrl,
+            keyboardType: TextInputType.phone,
+            autocorrect: false,
+            maxLength: 20,
+            decoration: const InputDecoration(
+              hintText: 'Confirmer le téléphone',
+              prefixIcon: Icon(Icons.phone_callback_outlined, size: 18),
+              counterText: '',
+              helperText: 'Retapez le même numéro pour confirmer',
+              helperStyle: TextStyle(fontSize: 11, color: AppColors.encreDoux),
             ),
-          ],
+          ),
           const SizedBox(height: 8),
 
-          // ── Ligne 4 : Email de récupération ───────────────────────────
+          // ── Email + badge vérifié / bouton OTP ─────────────────────────
+          // Badge email vérifié
+          if (emailOk)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE3F1EA),
+                  border: Border.all(
+                    color: const Color(0xFF2E7D5B).withValues(alpha: 0.5),
+                    width: 1.5,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.mark_email_read_rounded,
+                        size: 18, color: Color(0xFF2E7D5B)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Email vérifié ✓ — ${widget.emailCtrl.text.trim()}',
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1B5E3B),
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => widget.onEmailReset?.call(),
+                      child: const Text(
+                        'Changer',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF2E7D5B),
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          // Champ email (toujours visible)
           TextField(
             controller: widget.emailCtrl,
             keyboardType: TextInputType.emailAddress,
             autocorrect: false,
             maxLength: 100,
+            onChanged: (_) {
+              // Si on modifie l'email après vérif, reset
+              if (emailOk) widget.onEmailReset?.call();
+            },
             decoration: const InputDecoration(
               hintText: 'Email (ex: nom@gmail.com)',
               prefixIcon: Icon(Icons.email_outlined, size: 18),
@@ -1301,9 +1266,36 @@ class _LigneGestionnaireState extends State<_LigneGestionnaire> {
               helperStyle: TextStyle(fontSize: 11, color: AppColors.encreDoux),
             ),
           ),
+          // Bouton "Vérifier l'email" (masqué quand déjà vérifié)
+          if (!emailOk) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _emailEnCours ? null : _lancerEmailOtp,
+                icon: _emailEnCours
+                    ? const SizedBox(
+                        width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.mark_email_unread_outlined, size: 18),
+                label: Text(
+                  _emailEnCours ? 'Envoi du code…' : 'Vérifier l\'email',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.encre,
+                  side: const BorderSide(color: AppColors.encre, width: 1.5),
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+          ],
 
-          if (widget.index < 999)
-            const Divider(height: 24, color: AppColors.lignes),
+          const Divider(height: 24, color: AppColors.lignes),
         ],
       ),
     );
@@ -1311,24 +1303,24 @@ class _LigneGestionnaireState extends State<_LigneGestionnaire> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Dialogue de saisie du code OTP (6 chiffres)
+// Dialogue de saisie du code OTP Email (6 chiffres)
 // ─────────────────────────────────────────────────────────────────────────────
-class _DialogOtp extends StatefulWidget {
-  final String verificationId;
-  final String numero;
+class _DialogEmailOtp extends StatefulWidget {
+  final String email;
+  final String codeAttendu;
   final VoidCallback onRenvoyer;
 
-  const _DialogOtp({
-    required this.verificationId,
-    required this.numero,
+  const _DialogEmailOtp({
+    required this.email,
+    required this.codeAttendu,
     required this.onRenvoyer,
   });
 
   @override
-  State<_DialogOtp> createState() => _DialogOtpState();
+  State<_DialogEmailOtp> createState() => _DialogEmailOtpState();
 }
 
-class _DialogOtpState extends State<_DialogOtp> {
+class _DialogEmailOtpState extends State<_DialogEmailOtp> {
   final _codeCtrl = TextEditingController();
   bool _verifEnCours = false;
   String? _erreur;
@@ -1339,50 +1331,48 @@ class _DialogOtpState extends State<_DialogOtp> {
     super.dispose();
   }
 
-  Future<void> _verifier() async {
+  void _verifier() {
     final code = _codeCtrl.text.trim();
     if (code.length < 6) {
-      setState(() => _erreur = 'Le code SMS contient 6 chiffres.');
+      setState(() => _erreur = 'Le code contient 6 chiffres.');
       return;
     }
-
     setState(() {
       _verifEnCours = true;
       _erreur = null;
     });
-
-    final err = await PhoneOtpService.verifierOtp(
-      verificationId: widget.verificationId,
-      smsCode: code,
-    );
-
-    if (!mounted) return;
-    setState(() => _verifEnCours = false);
-
-    if (err == null) {
-      // Succès
+    // Vérification locale (code généré côté client, envoyé par email)
+    if (code == widget.codeAttendu) {
       Navigator.of(context).pop(true);
     } else {
-      setState(() => _erreur = err);
+      setState(() {
+        _verifEnCours = false;
+        _erreur = 'Code incorrect. Vérifiez votre email et réessayez.';
+      });
     }
+  }
+
+  // Masquer partiellement l'email : nom***@domaine.com
+  String _masquerEmail(String email) {
+    final parts = email.split('@');
+    if (parts.length != 2) return email;
+    final local  = parts[0];
+    final domain = parts[1];
+    if (local.length <= 2) return '***@$domain';
+    return '${local.substring(0, 2)}***@$domain';
   }
 
   @override
   Widget build(BuildContext context) {
-    // Masquer partiellement le numéro : +225 07XX XX **
-    final numMasque = widget.numero.length > 6
-        ? '${widget.numero.substring(0, widget.numero.length - 4)}****'
-        : widget.numero;
-
     return AlertDialog(
       backgroundColor: AppColors.fondPapier,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: const Row(
         children: [
-          Icon(Icons.sms_outlined, size: 22, color: AppColors.encre),
+          Icon(Icons.mark_email_unread_outlined, size: 22, color: AppColors.encre),
           SizedBox(width: 10),
           Text(
-            'Code SMS',
+            'Code email',
             style: TextStyle(
               fontWeight: FontWeight.w800,
               fontSize: 18,
@@ -1396,11 +1386,13 @@ class _DialogOtpState extends State<_DialogOtp> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Un code à 6 chiffres a été envoyé au\n$numMasque',
-            style: const TextStyle(
-              fontSize: 14,
-              color: AppColors.texteDoux,
-            ),
+            'Un code à 6 chiffres a été envoyé à\n${_masquerEmail(widget.email)}',
+            style: const TextStyle(fontSize: 14, color: AppColors.texteDoux),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Vérifiez aussi vos spams si vous ne le trouvez pas.',
+            style: TextStyle(fontSize: 12, color: AppColors.encreDoux),
           ),
           const SizedBox(height: 16),
           TextField(
@@ -1418,10 +1410,7 @@ class _DialogOtpState extends State<_DialogOtp> {
             decoration: InputDecoration(
               hintText: '000000',
               hintStyle: const TextStyle(
-                fontSize: 26,
-                letterSpacing: 8,
-                color: AppColors.encreDoux,
-              ),
+                fontSize: 26, letterSpacing: 8, color: AppColors.encreDoux),
               counterText: '',
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -1487,8 +1476,7 @@ class _DialogOtpState extends State<_DialogOtp> {
               ? const SizedBox(
                   width: 18, height: 18,
                   child: CircularProgressIndicator(
-                    strokeWidth: 2, color: Colors.white),
-                )
+                      strokeWidth: 2, color: Colors.white))
               : const Text(
                   'Confirmer',
                   style: TextStyle(fontWeight: FontWeight.w700),
