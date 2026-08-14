@@ -359,30 +359,6 @@ class _EtapeContactState extends State<_EtapeContact> {
             'Saisissez l\'email de récupération que vous avez renseigné lors de la création de la tontine.',
             style: TextStyle(fontSize: 14, color: AppColors.texte, height: 1.5),
           ),
-          const SizedBox(height: 10),
-          // ── Encadré conseil tontines anciennes ───────────────────────────
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF0F4FF),
-              border: Border.all(color: const Color(0xFFBFCBF4)),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                Icon(Icons.lightbulb_outline, size: 15, color: Color(0xFF3B4DB8)),
-                SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'Si la tontine a été créée avant la mise à jour, '
-                    'saisissez n\'importe quel email valide — le code y sera envoyé.',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF3B4DB8), height: 1.5),
-                  ),
-                ),
-              ],
-            ),
-          ),
           const SizedBox(height: 12),
           const ChampLabel(label: 'Email de récupération'),
           TextField(
