@@ -7,6 +7,7 @@ import '../services/storage_service.dart';
 import '../services/echeance_service.dart';
 import '../services/devise_service.dart';
 import '../services/kyc_service.dart';
+import '../services/subscription_service.dart';
 import '../services/email_service.dart' as email_svc;
 import 'dart:math' show Random;
 import '../utils/app_colors.dart';
@@ -97,44 +98,48 @@ class _CreationScreenState extends State<CreationScreen> {
     }
 
     // ── Gate KYC Smile ID : obligatoire pour toute tontine Premium ──────────
+    // SKIP si l'utilisateur a déjà un abonnement Premium actif (KYC déjà fait)
     if (_kycRequis && !_kycValide) {
-      // Vérifier le statut KYC actuel depuis Supabase
-      final gestNomKyc = _gestNomCtrl.isNotEmpty
-          ? _gestNomCtrl.first.text.trim()
-          : '';
-      setState(() => _kycEnCours = true);
-      final userId = gestNomKyc.isNotEmpty ? gestNomKyc : 'unknown';
-      final bloquant = await KycService.kycBloquantPourPremium(userId);
-      if (!mounted) { setState(() => _kycEnCours = false); return; }
-      setState(() => _kycEnCours = false);
+      // Si abonnement déjà actif → pas besoin de re-vérifier KYC
+      final abonnementActif = SubscriptionService.isPremium;
+      if (abonnementActif) {
+        // Abonnement actif = KYC déjà validé lors du premier abonnement
+        setState(() => _kycValide = true);
+      } else {
+        // Pas d'abonnement → vérifier KYC avant de créer
+        final gestNomKyc = _gestNomCtrl.isNotEmpty
+            ? _gestNomCtrl.first.text.trim()
+            : '';
+        setState(() => _kycEnCours = true);
+        final userId = gestNomKyc.isNotEmpty ? gestNomKyc : 'unknown';
+        final bloquant = await KycService.kycBloquantPourPremium(userId);
+        if (!mounted) { setState(() => _kycEnCours = false); return; }
+        setState(() => _kycEnCours = false);
 
-      if (bloquant) {
-        // Lancer le parcours KYC Smile ID complet
-        final result = await Navigator.push<bool>(
-          context,
-          MaterialPageRoute(
-            builder: (_) => KycScreen(userId: userId),
-          ),
-        );
-        if (!mounted) return;
-        if (result != true) {
-          // L'utilisateur a fermé sans compléter
-          setState(() => _erreur =
-            'La vérification d\'identité est obligatoire pour créer une tontine Premium. '
-            'Vous devez compléter votre vérification Smile ID avant de continuer.');
-          return;
+        if (bloquant) {
+          // Lancer le parcours KYC Smile ID complet
+          final result = await Navigator.push<bool>(
+            context,
+            MaterialPageRoute(builder: (_) => KycScreen(userId: userId)),
+          );
+          if (!mounted) return;
+          if (result != true) {
+            setState(() => _erreur =
+              'La vérification d\'identité est obligatoire pour créer une tontine Premium. '
+              'Complétez votre vérification Smile ID avant de continuer.');
+            return;
+          }
+          final encoreBloquant = await KycService.kycBloquantPourPremium(userId);
+          if (!mounted) return;
+          if (encoreBloquant) {
+            setState(() => _erreur =
+              'Votre vérification est en cours d\'analyse (Smile ID). '
+              'Vous pourrez créer cette tontine Premium dès que votre identité sera confirmée.');
+            return;
+          }
         }
-        // Re-vérifier après le parcours KYC
-        final encoreBloquant = await KycService.kycBloquantPourPremium(userId);
-        if (!mounted) return;
-        if (encoreBloquant) {
-          setState(() => _erreur =
-            'Votre vérification est en cours d\'analyse (Smile ID). '
-            'Vous pourrez créer cette tontine Premium dès que votre identité sera confirmée.');
-          return;
-        }
+        setState(() => _kycValide = true);
       }
-      setState(() => _kycValide = true);
     }
     if (montantStr.isEmpty || int.tryParse(montantStr) == null) {
       setState(() => _erreur = 'Montant invalide.');
@@ -380,9 +385,53 @@ class _CreationScreenState extends State<CreationScreen> {
   }
 
   /// Bannière KYC — visible uniquement si type = Premium.
-  /// Contient un bouton "Vérifier mon identité" standalone (sans soumettre le formulaire).
+  /// Masquée si abonnement actif (KYC déjà fait lors du premier abonnement).
   Widget _banniereKyc() {
     if (!_kycRequis) return const SizedBox.shrink();
+    // Si abonnement Premium actif → afficher badge "Abonnement actif" au lieu du KYC
+    if (SubscriptionService.isPremium && !_kycValide) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE3F1EA),
+            border: Border.all(
+              color: const Color(0xFF2E7D5B).withValues(alpha: 0.4),
+              width: 1.5,
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.workspace_premium_rounded,
+                  size: 20, color: Color(0xFF2E7D5B)),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Abonnement Premium actif ✓',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF1B5E3B),
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Vous pouvez créer des tontines Premium sans limite.',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF2E7D5B)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     if (_kycEnCours) {
       return const Padding(
         padding: EdgeInsets.only(bottom: 10),

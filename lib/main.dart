@@ -11,6 +11,7 @@ import 'services/tontine_provider.dart';
 import 'services/notification_service.dart';
 import 'services/rappel_service.dart';
 import 'services/locale_service.dart';
+import 'services/subscription_service.dart';
 import 'utils/app_theme.dart';
 import 'utils/app_colors.dart';
 import 'utils/app_localizations.dart';
@@ -46,6 +47,13 @@ void main() async {
     // onError() dans SmileIDDocumentVerification affichera l'erreur.
     if (kDebugMode) debugPrint('[SmileID] ⚠️ initialize error: $e');
   }
+
+  // Initialiser Google Play Billing / Apple StoreKit
+  // (unawaited — ne bloque pas le démarrage, se fait en arrière-plan)
+  SubscriptionService.initialiser();
+
+  // Vérifier l'expiration de l'abonnement au démarrage
+  SubscriptionService.verifierExpiration();
 
   // Vérifier les échéances de toutes les tontines au démarrage
   // (unawaited — ne bloque pas le démarrage de l'app)

@@ -11,6 +11,7 @@ import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import 'creation_screen.dart';
+import 'dart:async';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ÉCRAN ABONNEMENT — détection automatique de la plateforme
@@ -949,7 +950,11 @@ class _SectionWeb extends StatelessWidget {
 // SECTION ANDROID — Google Play Billing
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _SectionAndroid extends StatelessWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION ANDROID — Google Play Billing (in_app_purchase)
+// Flux réel : InAppPurchase.buyNonConsumable → purchaseStream → activation
+// ─────────────────────────────────────────────────────────────────────────────
+class _SectionAndroid extends StatefulWidget {
   final String formule;
   final bool   peutProceder;
   final bool   kycBloquant;
@@ -963,21 +968,80 @@ class _SectionAndroid extends StatelessWidget {
   });
 
   @override
+  State<_SectionAndroid> createState() => _SectionAndroidState();
+}
+
+class _SectionAndroidState extends State<_SectionAndroid> {
+  bool _achatlEnCours = false;
+  StreamSubscription<AchatResult>? _sub;
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _lancerAchat() async {
+    if (_achatlEnCours) return;
+    setState(() => _achatlEnCours = true);
+
+    final productId = widget.formule == 'annuel'
+        ? SubscriptionProductIds.annuel
+        : SubscriptionProductIds.mensuel;
+
+    final result = await SubscriptionService.acheter(productId);
+
+    if (!mounted) return;
+    setState(() => _achatlEnCours = false);
+
+    if (result.estSucces) {
+      afficherToast(
+        context,
+        '✅ Abonnement Premium activé ! Profitez de toutes les fonctionnalités.',
+      );
+      // Retourner à l'écran précédent avec succès
+      if (mounted) Navigator.of(context).pop(true);
+    } else if (result.statut == AchatStatut.annule) {
+      afficherToast(context, 'Achat annulé.');
+    } else {
+      afficherToast(
+        context,
+        result.message ?? 'Erreur lors de l\'achat. Réessayez.',
+        estErreur: true,
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final prixLabel = widget.formule == 'annuel'
+        ? '25 000 FCFA / an'
+        : '2 500 FCFA / mois';
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(
-            onPressed: peutProceder ? () => _lancerGooglePlay(context) : null,
-            icon: const Icon(Icons.play_circle_outline_rounded, size: 20),
-            label: const Text(
-              'Passer en Premium',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+            onPressed: (widget.peutProceder && !_achatlEnCours)
+                ? _lancerAchat
+                : null,
+            icon: _achatlEnCours
+                ? const SizedBox(
+                    width: 20, height: 20,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
+                  )
+                : const Icon(Icons.play_circle_outline_rounded, size: 20),
+            label: Text(
+              _achatlEnCours
+                  ? 'Paiement en cours…'
+                  : 'S\'abonner — $prixLabel',
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
             ),
             style: ElevatedButton.styleFrom(
-              backgroundColor: peutProceder
+              backgroundColor: widget.peutProceder
                   ? const Color(0xFF01875F)
                   : AppColors.lignes,
               foregroundColor: Colors.white,
@@ -990,28 +1054,40 @@ class _SectionAndroid extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          peutProceder
-              ? 'Le passage en Premium sera activé après validation du paiement Google Play.'
-              : kycBloquant
-                  ? '🔒 Soumettez votre KYC avant de continuer. Impossible de payer tant que le KYC n\'est pas validé.'
+          widget.peutProceder
+              ? 'Paiement sécurisé via Google Play. Renouvellement automatique.'
+              : widget.kycBloquant
+                  ? '🔒 Vérification d\'identité requise avant le paiement.'
                   : 'Cochez la case ci-dessus pour activer le bouton.',
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 11.5,
-            color: kycBloquant
+            color: widget.kycBloquant
                 ? const Color(0xFF991B1B)
                 : AppColors.texteDoux,
-            fontWeight: kycBloquant ? FontWeight.w600 : FontWeight.normal,
+            fontWeight: widget.kycBloquant ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Bouton restaurer achats
+        TextButton(
+          onPressed: () async {
+            await SubscriptionService.restaurerAchats();
+            if (context.mounted) {
+              afficherToast(context,
+                  'Restauration en cours… Patientez quelques secondes.');
+            }
+          },
+          child: const Text(
+            'Restaurer un achat précédent',
+            style: TextStyle(
+              fontSize: 12,
+              color: AppColors.texteDoux,
+              decoration: TextDecoration.underline,
+            ),
           ),
         ),
       ],
-    );
-  }
-
-  void _lancerGooglePlay(BuildContext ctx) {
-    afficherToast(
-      ctx,
-      'Google Play Billing sera activé après publication sur le Play Store.',
     );
   }
 }
@@ -1019,8 +1095,7 @@ class _SectionAndroid extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // SECTION iOS — Apple In-App Purchase / StoreKit
 // ─────────────────────────────────────────────────────────────────────────────
-
-class _SectionIOS extends StatelessWidget {
+class _SectionIOS extends StatefulWidget {
   final String formule;
   final bool   peutProceder;
   final bool   kycBloquant;
@@ -1032,21 +1107,69 @@ class _SectionIOS extends StatelessWidget {
   });
 
   @override
+  State<_SectionIOS> createState() => _SectionIOSState();
+}
+
+class _SectionIOSState extends State<_SectionIOS> {
+  bool _achatEnCours = false;
+
+  Future<void> _lancerAchat() async {
+    if (_achatEnCours) return;
+    setState(() => _achatEnCours = true);
+
+    final productId = widget.formule == 'annuel'
+        ? SubscriptionProductIds.annuel
+        : SubscriptionProductIds.mensuel;
+
+    final result = await SubscriptionService.acheter(productId);
+
+    if (!mounted) return;
+    setState(() => _achatEnCours = false);
+
+    if (result.estSucces) {
+      afficherToast(context, '✅ Abonnement Premium activé !');
+      if (mounted) Navigator.of(context).pop(true);
+    } else if (result.statut == AchatStatut.annule) {
+      afficherToast(context, 'Achat annulé.');
+    } else {
+      afficherToast(
+        context,
+        result.message ?? 'Erreur lors de l\'achat.',
+        estErreur: true,
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final prixLabel = widget.formule == 'annuel'
+        ? '25 000 FCFA / an'
+        : '2 500 FCFA / mois';
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(
-            onPressed: peutProceder ? () => _lancerAppStore(context) : null,
-            icon: const Icon(Icons.apple_rounded, size: 20),
-            label: const Text(
-              'Passer en Premium',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+            onPressed: (widget.peutProceder && !_achatEnCours)
+                ? _lancerAchat
+                : null,
+            icon: _achatEnCours
+                ? const SizedBox(
+                    width: 20, height: 20,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
+                  )
+                : const Icon(Icons.apple_rounded, size: 20),
+            label: Text(
+              _achatEnCours
+                  ? 'Paiement en cours…'
+                  : 'S\'abonner — $prixLabel',
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
             ),
             style: ElevatedButton.styleFrom(
-              backgroundColor: peutProceder
+              backgroundColor: widget.peutProceder
                   ? const Color(0xFF0071E3)
                   : AppColors.lignes,
               foregroundColor: Colors.white,
@@ -1059,28 +1182,38 @@ class _SectionIOS extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          peutProceder
-              ? 'Le passage en Premium sera activé après validation du paiement App Store.'
-              : kycBloquant
-                  ? '🔒 Soumettez votre KYC avant de continuer. Impossible de payer tant que le KYC n\'est pas validé.'
+          widget.peutProceder
+              ? 'Paiement sécurisé via l\'App Store. Renouvellement automatique.'
+              : widget.kycBloquant
+                  ? '🔒 Vérification d\'identité requise avant le paiement.'
                   : 'Cochez la case ci-dessus pour activer le bouton.',
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 11.5,
-            color: kycBloquant
+            color: widget.kycBloquant
                 ? const Color(0xFF991B1B)
                 : AppColors.texteDoux,
-            fontWeight: kycBloquant ? FontWeight.w600 : FontWeight.normal,
+            fontWeight: widget.kycBloquant ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextButton(
+          onPressed: () async {
+            await SubscriptionService.restaurerAchats();
+            if (context.mounted) {
+              afficherToast(context, 'Restauration en cours…');
+            }
+          },
+          child: const Text(
+            'Restaurer un achat précédent',
+            style: TextStyle(
+              fontSize: 12,
+              color: AppColors.texteDoux,
+              decoration: TextDecoration.underline,
+            ),
           ),
         ),
       ],
-    );
-  }
-
-  void _lancerAppStore(BuildContext ctx) {
-    afficherToast(
-      ctx,
-      'Apple In-App Purchase sera activé après publication sur l\'App Store.',
     );
   }
 }
