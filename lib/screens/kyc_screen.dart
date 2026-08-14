@@ -16,6 +16,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:smile_id/smile_id.dart';
 import 'package:smile_id/products/document/smile_id_document_verification.dart';
@@ -147,13 +148,25 @@ class _KycScreenState extends State<KycScreen> {
   }
 
   // ── Callback succès SDK ─────────────────────────────────────────────────
+  // Flux complet :
+  //   1. Sauvegarder jobId en BDD, status = pending
+  //   2. Appeler /v1/auth_smile → signature + timestamp
+  //   3. Appeler /v1/job_status (3 tentatives × 3s) → job_complete + job_success ?
+  //   4a. Approuvé  → status = verified + badge ✅ immédiat
+  //   4b. En cours  → status = pending  + message "24-48h"
   Future<void> _onSmileIdSuccess(Map<String, dynamic> result) async {
     try {
       final now = DateTime.now();
-      final jobId = (result['jobId'] as String?)
-          ?? (result['job_id'] as String?)
-          ?? 'smile-${now.millisecondsSinceEpoch}';
+      final jobId = (result['jobId']  as String?)
+                 ?? (result['job_id'] as String?)
+                 ?? 'smile-${now.millisecondsSinceEpoch}';
+      final sdkUserId = (result['userId']  as String?)
+                     ?? (result['user_id'] as String?)
+                     ?? widget.userId;
 
+      if (kDebugMode) debugPrint('[SmileID] onSuccess jobId=$jobId userId=$sdkUserId');
+
+      // ── 1. Sauvegarder jobId + status pending ────────────────────────────
       await SupabaseService.kycSetProviderReference(widget.userId, jobId);
       await SupabaseService.kycUpdateStatus(
         userId:      widget.userId,
@@ -163,50 +176,42 @@ class _KycScreenState extends State<KycScreen> {
         performedBy: 'smile_id_sdk',
       );
 
-      await _charger();
+      // ── 2. Interroger SmileID pour le résultat immédiat ──────────────────
+      bool isApproved = false;
+      try {
+        isApproved = await _fetchJobStatus(jobId: jobId, userId: sdkUserId);
+      } catch (e) {
+        if (kDebugMode) debugPrint('[SmileID] job_status fetch error (non bloquant): $e');
+        // Échec réseau → on laisse pending, webhook prendra le relais
+      }
 
+      // ── 3. Si approuvé → passer directement à verified ──────────────────
+      if (isApproved) {
+        final verifiedAt = DateTime.now();
+        final expiresAt  = verifiedAt.add(const Duration(days: 365));
+        await SupabaseService.kycUpdateStatus(
+          userId:      widget.userId,
+          status:      KycStatus.verified,
+          verifiedAt:  verifiedAt,
+          expiresAt:   expiresAt,
+          performedBy: 'smile_id_job_status',
+        );
+        if (kDebugMode) debugPrint('[SmileID] ✅ KYC verified immédiatement');
+      }
+
+      await _charger();
       if (!mounted) return;
+
+      // ── 4. Dialog adapté au résultat ────────────────────────────────────
       await showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (_) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 72, height: 72,
-                decoration: const BoxDecoration(
-                  color: AppColors.succesFond,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.check_rounded, color: AppColors.succes, size: 36),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Dossier soumis !',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.encre),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Votre dossier a été soumis avec succès via Smile ID. '
-                'La vérification prend généralement 24 à 48 heures. '
-                'Vous serez notifié dès la confirmation.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13.5, color: AppColors.texteDoux, height: 1.5),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                Navigator.pop(context, true);
-              },
-              child: const Text('Retour au profil',
-                style: TextStyle(color: AppColors.or, fontWeight: FontWeight.w700)),
-            ),
-          ],
+        builder: (_) => _SmileIdResultDialog(
+          isVerified: isApproved,
+          onRetourProfil: () {
+            Navigator.pop(context);      // fermer dialog
+            Navigator.pop(context, true); // retour profil
+          },
         ),
       );
     } catch (e) {
@@ -214,6 +219,76 @@ class _KycScreenState extends State<KycScreen> {
       if (!mounted) return;
       _afficherErreur('Vérification soumise mais erreur enregistrement. Contactez le support.');
     }
+  }
+
+  // ── Appel API SmileID : auth_smile → job_status ──────────────────────────
+  // Retourne true si le job est terminé ET approuvé (job_complete + job_success).
+  // Tente 3 fois avec 3s d'intervalle pour laisser SmileID traiter.
+  Future<bool> _fetchJobStatus({
+    required String jobId,
+    required String userId,
+  }) async {
+    const partnerId = '9035';
+    const authToken = 'VpG6p3R7shpe6cgLd6Lx8kZapVLIjiLtCGLPvpiO41+'
+                      '17ooS62Wdx1RJFaSzkIlCZGxR4vp4spqoq5TB0PjhUO0snjxw'
+                      'ErmxRhAiYhyTT+rlYcJ99QvxqQqYKQ44nQCNKTFl6jLledHoo'
+                      'V5UA1eJ6Jn66DJKUcLJ8dCGmNKx4lw=';
+    const baseUrl   = 'https://api.smileidentity.com/v1';
+
+    // — Étape A : auth_smile → signature + timestamp ———————————————————————
+    final authResp = await http.post(
+      Uri.parse('$baseUrl/auth_smile'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'partner_id': partnerId,
+        'auth_token': authToken,
+        'user_id':    userId,
+        'job_id':     jobId,
+        'job_type':   6,       // 6 = Document Verification
+        'production': true,
+      }),
+    ).timeout(const Duration(seconds: 15));
+
+    if (authResp.statusCode != 200) return false;
+    final authBody = jsonDecode(authResp.body) as Map<String, dynamic>;
+    if (authBody['success'] != true) return false;
+
+    final signature = authBody['signature'] as String;
+    final timestamp = authBody['timestamp'] as String;
+
+    // — Étape B : job_status (3 tentatives × 3s) ——————————————————————————
+    for (int attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await Future.delayed(const Duration(seconds: 3));
+
+      final statusResp = await http.post(
+        Uri.parse('$baseUrl/job_status'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'partner_id':  partnerId,
+          'signature':   signature,
+          'timestamp':   timestamp,
+          'user_id':     userId,
+          'job_id':      jobId,
+          'image_links': false,
+          'history':     false,
+        }),
+      ).timeout(const Duration(seconds: 15));
+
+      if (statusResp.statusCode != 200) continue;
+
+      final body = jsonDecode(statusResp.body) as Map<String, dynamic>;
+      if (kDebugMode) debugPrint('[SmileID] job_status attempt=$attempt body=$body');
+
+      final jobComplete = body['job_complete'] == true;
+      if (!jobComplete) continue; // pas encore prêt → réessayer
+
+      final jobSuccess = body['job_success'] == true;
+      return jobSuccess; // terminé → retourner le résultat
+    }
+
+    // Toujours en cours après 3 tentatives → pending (webhook plus tard)
+    if (kDebugMode) debugPrint('[SmileID] job_status: toujours en cours → pending');
+    return false;
   }
 
   void _afficherErreur(String msg) {
@@ -327,6 +402,82 @@ class _SmileIdDocumentVerificationScreenState
         if (kDebugMode) debugPrint('[SmileID] DocVerif error: $errorMessage');
         _finish({'__error': errorMessage});
       },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Dialog résultat SmileID — affiché après onSuccess du SDK
+//
+// isVerified = true  → job_complete + job_success : badge ✅ immédiat
+// isVerified = false → job en cours ou échec      : message 24-48h
+// ─────────────────────────────────────────────────────────────────────────
+class _SmileIdResultDialog extends StatelessWidget {
+  final bool isVerified;
+  final VoidCallback onRetourProfil;
+
+  const _SmileIdResultDialog({
+    required this.isVerified,
+    required this.onRetourProfil,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 72, height: 72,
+            decoration: BoxDecoration(
+              color: isVerified ? AppColors.succesFond : const Color(0xFFFDF3E2),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isVerified ? Icons.verified_rounded : Icons.hourglass_top_rounded,
+              color: isVerified ? AppColors.succes : AppColors.or,
+              size: 36,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            isVerified ? 'Identité vérifiée !' : 'Dossier soumis !',
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 18,
+              color: AppColors.encre,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            isVerified
+                ? 'Votre identité a été vérifiée avec succès via Smile ID. '
+                  'Votre compte bénéficie maintenant du badge vérifié ✅.'
+                : 'Votre dossier a été soumis avec succès via Smile ID. '
+                  'La vérification prend généralement 24 à 48 heures. '
+                  'Vous serez notifié dès la confirmation.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 13.5,
+              color: AppColors.texteDoux,
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: onRetourProfil,
+          child: Text(
+            isVerified ? 'Voir mon profil vérifié' : 'Retour au profil',
+            style: TextStyle(
+              color: isVerified ? AppColors.succes : AppColors.or,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
