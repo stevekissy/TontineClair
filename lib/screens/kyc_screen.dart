@@ -166,14 +166,13 @@ class _KycScreenState extends State<KycScreen> {
 
       if (kDebugMode) debugPrint('[SmileID] onSuccess jobId=$jobId userId=$sdkUserId');
 
-      // ── 1. Sauvegarder jobId + status pending ────────────────────────────
-      await SupabaseService.kycSetProviderReference(widget.userId, jobId);
-      await SupabaseService.kycUpdateStatus(
-        userId:      widget.userId,
-        status:      KycStatus.pending,
-        verifiedAt:  null,
-        expiresAt:   null,
-        performedBy: 'smile_id_sdk',
+      // ── 1. Créer ou mettre à jour l'entrée KYC (UPSERT direct) ──────────
+      // CRITIQUE : kycUpdateStatus retourne si existing == null.
+      // On doit d'abord s'assurer que la ligne existe via upsert direct REST.
+      await _kycUpsertDirect(
+        userId:    widget.userId,
+        jobId:     jobId,
+        status:    'pending',
       );
 
       // ── 2. Interroger SmileID pour le résultat immédiat ──────────────────
@@ -189,12 +188,12 @@ class _KycScreenState extends State<KycScreen> {
       if (isApproved) {
         final verifiedAt = DateTime.now();
         final expiresAt  = verifiedAt.add(const Duration(days: 365));
-        await SupabaseService.kycUpdateStatus(
-          userId:      widget.userId,
-          status:      KycStatus.verified,
-          verifiedAt:  verifiedAt,
-          expiresAt:   expiresAt,
-          performedBy: 'smile_id_job_status',
+        await _kycUpsertDirect(
+          userId:     widget.userId,
+          jobId:      jobId,
+          status:     'verified',
+          verifiedAt: verifiedAt,
+          expiresAt:  expiresAt,
         );
         if (kDebugMode) debugPrint('[SmileID] ✅ KYC verified immédiatement');
       }
@@ -218,6 +217,56 @@ class _KycScreenState extends State<KycScreen> {
       if (kDebugMode) debugPrint('[SmileID] onSuccess persist error: $e');
       if (!mounted) return;
       _afficherErreur('Vérification soumise mais erreur enregistrement. Contactez le support.');
+    }
+  }
+
+  // ── UPSERT direct KYC en Supabase ───────────────────────────────────────
+  // Contourne kycUpdateStatus qui abandonne si existing == null.
+  // Fait un INSERT ... ON CONFLICT (user_id) DO UPDATE directement via REST.
+  Future<void> _kycUpsertDirect({
+    required String userId,
+    required String jobId,
+    required String status,
+    DateTime? verifiedAt,
+    DateTime? expiresAt,
+  }) async {
+    const supabaseUrl = 'https://ubrqtcxbxcmvmxleiglh.supabase.co';
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'
+        '.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVicnF0Y3hieGNtdm14bGVpZ2xoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyNzYwMzYsImV4cCI6MjA5ODg1MjAzNn0'
+        '.GaCZwMG34cFcxR3lkLuq-7uMM7sQoc_VIqiDEzMgEq4';
+
+    final now = DateTime.now().toUtc().toIso8601String();
+    final body = <String, dynamic>{
+      'user_id':            userId,
+      'provider':           'smile_id',
+      'provider_reference': jobId,
+      'status':             status,
+      'document_type':      'national_id',
+      'document_country':   'CI',
+      'submitted_at':       now,
+      'updated_at':         now,
+    };
+    if (verifiedAt != null) body['verified_at'] = verifiedAt.toUtc().toIso8601String();
+    if (expiresAt  != null) body['expires_at']  = expiresAt.toUtc().toIso8601String();
+
+    try {
+      final resp = await http.post(
+        Uri.parse('$supabaseUrl/rest/v1/kyc_verifications'),
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': 'Bearer $supabaseKey',
+          'apikey':        supabaseKey,
+          // Upsert : si user_id existe déjà, on met à jour
+          'Prefer': 'resolution=merge-duplicates,return=minimal',
+        },
+        body: jsonEncode(body),
+      ).timeout(const Duration(seconds: 10));
+
+      if (kDebugMode) {
+        debugPrint('[KYC upsert] status=${resp.statusCode} body=${resp.body}');
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[KYC upsert] error: $e');
     }
   }
 
