@@ -415,6 +415,10 @@ class _CaisseScreenState extends State<CaisseScreen> {
       return;
     }
 
+    // Récupérer la langue avant la navigation (context peut être démontée au retour)
+    final lang = Provider.of<LocaleService>(context, listen: false).langue.code;
+    final montantStr = Formatters.montant(montant, devise: data.devise);
+
     // Paiement via CoinPayments (Crypto)
     await Navigator.push(
       context,
@@ -441,6 +445,18 @@ class _CaisseScreenState extends State<CaisseScreen> {
       gestActif:   provider.gestActifNom ?? '',
       devise:      data.devise,
       description: descCtrl.text.trim(),
+    );
+    // ── Notification push à tous les membres ──
+    final tApport = SupabaseService.notifTexte('caisse', lang, vars: {
+      'libelle': 'Apport en caisse',
+      'montant': montantStr,
+      'desc': descCtrl.text.trim().isNotEmpty ? ' — ${descCtrl.text.trim()}' : '',
+    });
+    SupabaseService.envoyerNotification(
+      code:    tontine.code,
+      type:    'caisse',
+      titre:   tApport['titre']!,
+      message: tApport['message']!,
     );
   }
 
@@ -755,6 +771,10 @@ class _CaisseScreenState extends State<CaisseScreen> {
     // Paiement CoinPayments
     if (!context.mounted) return;
 
+    // Récupérer langue avant navigation
+    final langDep = Provider.of<LocaleService>(context, listen: false).langue.code;
+    final montantStrDep = Formatters.montant(montant, devise: data.devise);
+
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -783,6 +803,18 @@ class _CaisseScreenState extends State<CaisseScreen> {
       gestActif:   provider.gestActifNom ?? '',
       devise:      data.devise,
       description: descCtrl.text.trim(),
+    );
+    // ── Notification push à tous les membres ──
+    final tDep = SupabaseService.notifTexte('caisse', langDep, vars: {
+      'libelle': 'Dépense caisse',
+      'montant': montantStrDep,
+      'desc': descCtrl.text.trim().isNotEmpty ? ' — ${descCtrl.text.trim()}' : '',
+    });
+    SupabaseService.envoyerNotification(
+      code:    tontine.code,
+      type:    'caisse',
+      titre:   tDep['titre']!,
+      message: tDep['message']!,
     );
   }
 
@@ -923,6 +955,10 @@ class _CaisseScreenState extends State<CaisseScreen> {
     final membre = membresOrdre.where((m) => m.id == membrePenaliteId).firstOrNull;
     if (!context.mounted) return;
 
+    // Récupérer langue avant navigation
+    final langPen = Provider.of<LocaleService>(context, listen: false).langue.code;
+    final montantStrPen = Formatters.montant(montant, devise: data.devise);
+
     // Paiement via CoinPayments (Crypto)
     await Navigator.push(
       context,
@@ -952,6 +988,17 @@ class _CaisseScreenState extends State<CaisseScreen> {
       devise:      data.devise,
       description: descCtrl.text.trim(),
       membreNom:   membre?.nom,
+    );
+    // ── Notification push à tous les membres ──
+    final tPen = SupabaseService.notifTexte('penalite', langPen, vars: {
+      'nom': membre?.nom ?? '',
+      'montant': montantStrPen,
+    });
+    SupabaseService.envoyerNotification(
+      code:    tontine.code,
+      type:    'penalite',
+      titre:   tPen['titre']!,
+      message: tPen['message']!,
     );
   }
 

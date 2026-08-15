@@ -241,6 +241,16 @@ class _LigneJournal extends StatelessWidget {
     // ── Fallback : nettoyage générique ─────────────────────────────────────
     return quoi
         .replaceAll('_', ' ')
+        // ── Opérateurs / moyens de paiement (anciens codes en base) ───────
+        .replaceAll('SYCAPAY', 'Orange Money')
+        .replaceAll('ORANGE', 'Orange Money')
+        .replaceAll('MTN', 'MTN Money')
+        .replaceAll('MOOV', 'Moov Money')
+        .replaceAll('WAVE', 'Wave')
+        .replaceAll('FREE MONEY', 'Free Money')
+        .replaceAll('ESPECES', 'Espèces')
+        .replaceAll('VIREMENT', 'Virement bancaire')
+        // ── Types d'opérations ─────────────────────────────────────────────
         .replaceAll('PAIEMENT', 'Paiement')
         .replaceAll('DECAISSEMENT', 'Décaissement')
         .replaceAll('TIRAGE VERROUILLE', 'Tirage verrouillé')

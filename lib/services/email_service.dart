@@ -180,6 +180,11 @@ class EmailService {
       case TypeEmail.resultatVote:
         return '[TontineClair] Résultat du vote — ${v['tontine'] ?? ''}';
       case TypeEmail.alerteSecurite:
+        // Si une action est fournie (ex: mouvement caisse), l'utiliser comme sujet
+        final action = v['action'];
+        if (action != null && action.isNotEmpty) {
+          return '[TontineClair] $action';
+        }
         return '[TontineClair] 🚨 Alerte de sécurité sur votre compte';
       case TypeEmail.messageSupport:
         return '[TontineClair] Votre message au support a été reçu';
@@ -234,6 +239,29 @@ class EmailService {
                 🚨 Si vous n'avez pas demandé cette réinitialisation, contactez support@tontineclair.com
               </p>
             </div>
+          ''',
+        );
+      case TypeEmail.alerteSecurite:
+        final titreEmail = v['action'] ?? '🔔 Notification TontineClair';
+        final messageEmail = v['message'] ?? '';
+        final tontineEmail = v['tontine'] ?? '';
+        final dateEmail = v['date'] ?? '';
+        final gestEmail = v['gest_actif'] ?? '';
+        return _layoutBase(
+          sujet: titreEmail,
+          contenu: '''
+            <h2 style="color:#1C2447;margin-bottom:16px">$titreEmail</h2>
+            <p style="font-size:15px;color:#374151;line-height:1.6;margin-bottom:16px">
+              Bonjour <strong>$nom</strong>,
+            </p>
+            <div style="background:#F7F7F4;border-left:4px solid #D99A2B;border-radius:8px;padding:16px 20px;margin:16px 0">
+              <p style="font-size:15px;color:#1C2447;margin:0;line-height:1.6">
+                $messageEmail
+              </p>
+            </div>
+            ${tontineEmail.isNotEmpty ? '<p style="font-size:13px;color:#6B7280">🏦 Tontine : <strong>$tontineEmail</strong></p>' : ''}
+            ${gestEmail.isNotEmpty ? '<p style="font-size:13px;color:#6B7280">👤 Par : <strong>$gestEmail</strong></p>' : ''}
+            ${dateEmail.isNotEmpty ? '<p style="font-size:13px;color:#6B7280">📅 Le : $dateEmail</p>' : ''}
           ''',
         );
       default:
