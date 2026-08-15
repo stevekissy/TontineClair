@@ -139,11 +139,13 @@ class _VotesScreenState extends State<VotesScreen> {
                             ),
                           ),
                         )
-                      : ListView(
-                      padding: EdgeInsets.all(16),
-                      children: [
-                        Text(
-                          context.tr('votes'),
+                      : RefreshIndicator(
+                          onRefresh: _chargerVoix,
+                          child: ListView(
+                          padding: EdgeInsets.all(16),
+                          children: [
+                            Text(
+                              context.tr('votes'),
                           style: TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: 28,
@@ -205,6 +207,7 @@ class _VotesScreenState extends State<VotesScreen> {
                           ),
                       ],
                     ),
+                ), // RefreshIndicator
             ),
           ],
         ),

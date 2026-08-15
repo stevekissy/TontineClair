@@ -96,6 +96,11 @@ class CaisseScreen extends StatefulWidget {
 
 class _CaisseScreenState extends State<CaisseScreen> {
 
+  Future<void> _recharger() async {
+    if (!mounted) return;
+    await context.read<TontineProvider>().chargerTontine(widget.code);
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<TontineProvider>();
@@ -126,7 +131,9 @@ class _CaisseScreenState extends State<CaisseScreen> {
               ),
             ),
             Expanded(
-              child: ListView(
+              child: RefreshIndicator(
+                onRefresh: _recharger,
+                child: ListView(
                 padding: EdgeInsets.all(16),
                 children: [
                   Text(
@@ -232,6 +239,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
 
                 ],
               ),
+              ), // RefreshIndicator
             ),
           ],
         ),

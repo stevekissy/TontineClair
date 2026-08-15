@@ -6,10 +6,21 @@ import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
 
-class JournalScreen extends StatelessWidget {
+class JournalScreen extends StatefulWidget {
   final String code;
 
   const JournalScreen({super.key, required this.code});
+
+  @override
+  State<JournalScreen> createState() => _JournalScreenState();
+}
+
+class _JournalScreenState extends State<JournalScreen> {
+
+  Future<void> _recharger() async {
+    if (!mounted) return;
+    await context.read<TontineProvider>().chargerTontine(widget.code);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -40,38 +51,41 @@ class JournalScreen extends StatelessWidget {
               ),
             ),
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  const Text(
-                    'Journal d\'audit',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 28,
-                      color: AppColors.encre,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${journal.length} entrée${journal.length > 1 ? 's' : ''} · Horodatées',
-                    style: const TextStyle(fontSize: 14, color: AppColors.texteDoux),
-                  ),
-                  const SizedBox(height: 16),
-                  if (journal.isEmpty)
-                    const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Text(
-                          'Aucune action enregistrée.',
-                          style: TextStyle(color: AppColors.texteDoux),
-                        ),
+              child: RefreshIndicator(
+                onRefresh: _recharger,
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    const Text(
+                      'Journal d\'audit',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 28,
+                        color: AppColors.encre,
                       ),
-                    )
-                  else
-                    ...journal.asMap().entries.map(
-                      (e) => _LigneJournal(entry: e.value, index: e.key),
                     ),
-                ],
+                    const SizedBox(height: 4),
+                    Text(
+                      '${journal.length} entrée${journal.length > 1 ? 's' : ''} · Horodatées',
+                      style: const TextStyle(fontSize: 14, color: AppColors.texteDoux),
+                    ),
+                    const SizedBox(height: 16),
+                    if (journal.isEmpty)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Text(
+                            'Aucune action enregistrée.',
+                            style: TextStyle(color: AppColors.texteDoux),
+                          ),
+                        ),
+                      )
+                    else
+                      ...journal.asMap().entries.map(
+                        (e) => _LigneJournal(entry: e.value, index: e.key),
+                      ),
+                  ],
+                ),
               ),
             ),
           ],

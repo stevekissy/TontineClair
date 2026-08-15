@@ -27,6 +27,11 @@ class _TirageScreenState extends State<TirageScreen> {
   bool _tirageFait = false;
   List<Membre> _membresOrdonnes = [];
 
+  Future<void> _recharger() async {
+    if (!mounted) return;
+    await context.read<TontineProvider>().chargerTontine(widget.code);
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<TontineProvider>();
@@ -60,7 +65,9 @@ class _TirageScreenState extends State<TirageScreen> {
               ),
             ),
             Expanded(
-              child: ListView(
+              child: RefreshIndicator(
+                onRefresh: _recharger,
+                child: ListView(
                 padding: EdgeInsets.all(16),
                 children: [
                   Text(
@@ -152,6 +159,7 @@ class _TirageScreenState extends State<TirageScreen> {
                   ],
                 ],
               ),
+              ), // RefreshIndicator
             ),
           ],
         ),

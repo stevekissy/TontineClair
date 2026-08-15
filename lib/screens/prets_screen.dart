@@ -94,7 +94,9 @@ class _PretsScreenState extends State<PretsScreen> {
               ),
             ),
             Expanded(
-              child: ListView(
+              child: RefreshIndicator(
+                onRefresh: _recharger,
+                child: ListView(
                 padding: EdgeInsets.all(16),
                 children: [
                   Text(
@@ -169,6 +171,7 @@ class _PretsScreenState extends State<PretsScreen> {
                   ],
                 ],
               ),
+              ), // RefreshIndicator
             ),
           ],
         ),
