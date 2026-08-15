@@ -67,9 +67,12 @@ class PaiementChoixScreen extends StatelessWidget {
   }
 
   // ── Navigation vers PayDunya ─────────────────────────────────────────────
+  // IMPORTANT : on utilise push (pas pushReplacement) pour que le bool
+  // retourné par pop() remonte correctement jusqu'à l'écran appelant
+  // (CaisseScreen, CotisationsScreen, etc.).
 
   void _allerPayDunya(BuildContext context) {
-    Navigator.pushReplacement(
+    Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => PaiementPayDunyaScreen(
@@ -87,13 +90,18 @@ class PaiementChoixScreen extends StatelessWidget {
           numeroTour:  numeroTour,
         ),
       ),
-    );
+    ).then((result) {
+      // Propager le résultat à l'écran appelant
+      if (context.mounted) Navigator.pop(context, result);
+    });
   }
 
   // ── Navigation vers CoinPayments ─────────────────────────────────────────
+  // IMPORTANT : on utilise push (pas pushReplacement) pour que le bool
+  // retourné par pop() remonte correctement jusqu'à l'écran appelant.
 
   void _allerCoinPayments(BuildContext context) {
-    Navigator.pushReplacement(
+    Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => PaiementCoinPaymentsScreen(
@@ -110,7 +118,10 @@ class PaiementChoixScreen extends StatelessWidget {
           numeroTour:  numeroTour,
         ),
       ),
-    );
+    ).then((result) {
+      // Propager le résultat à l'écran appelant
+      if (context.mounted) Navigator.pop(context, result);
+    });
   }
 
   // ─────────────────────────────────────────────────────────────────────────

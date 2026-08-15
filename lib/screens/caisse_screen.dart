@@ -249,23 +249,66 @@ class _CaisseScreenState extends State<CaisseScreen> {
 
   // ── Notifie tous les gestionnaires ayant un email d'un mouvement caisse ────
   // Appelé de manière non-bloquante (fire-and-forget) après chaque mouvement.
-  // Récupère les emails directement depuis Supabase (colonne gestionnaires)
-  // car lire_tontine ne retourne jamais les emails dans data.gestionnaires.
+  //
+  // Stratégie double-source pour les emails :
+  //   1. Appel REST direct sur Supabase (colonne gestionnaires) — source principale
+  //   2. Fallback depuis data.gestionnaires (modèle local) si REST retourne []
+  //
+  // Le paramètre [gestionnairesFallback] doit être passé depuis l'appelant
+  // (toujours disponible via data.gestionnaires dans le contexte Pro).
   static Future<void> _envoyerEmailsMouvement({
-    required String      codeTontine, // code de la tontine pour la requête Supabase
+    required String      codeTontine,
     required TontineData data,
     required String      typeLibelle, // 'Apport', 'Dépense', 'Pénalité'
     required int         montant,
-    required String      gestActif,   // nom du gestionnaire qui a effectué l'action
+    required String      gestActif,
     required String      devise,
     String?              description,
-    String?              membreNom,   // pour les pénalités
+    String?              membreNom,
+    List<Gestionnaire>?  gestionnairesFallback, // fallback local si REST retourne []
   }) async {
-    // Récupérer les emails directement depuis Supabase (colonne gestionnaires)
-    // lire_tontine ne retourne que les noms, pas les emails → appel REST direct
-    final destinataires = await SupabaseService.lireEmailsGestionnaires(codeTontine);
+    if (kDebugMode) {
+      debugPrint('[CaisseEmail] ► Début envoi — type=$typeLibelle, tontine=$codeTontine');
+    }
+
+    // ── Source 1 : REST Supabase (colonne gestionnaires) ─────────────────
+    List<Map<String, String>> destinataires =
+        await SupabaseService.lireEmailsGestionnaires(codeTontine);
+
+    if (kDebugMode) {
+      debugPrint('[CaisseEmail] REST → ${destinataires.length} destinataire(s) trouvé(s)');
+      for (final d in destinataires) {
+        debugPrint('[CaisseEmail]   • ${d['nom']} → ${d['email']}');
+      }
+    }
+
+    // ── Source 2 : Fallback depuis le modèle local ────────────────────────
     if (destinataires.isEmpty) {
-      if (kDebugMode) debugPrint('[CaisseEmail] Aucun gestionnaire avec email pour $codeTontine');
+      if (kDebugMode) {
+        debugPrint('[CaisseEmail] REST vide → tentative fallback depuis data.gestionnaires');
+      }
+      final fallback = gestionnairesFallback ?? data.gestionnaires;
+      for (final g in fallback) {
+        final email = g.email.trim();
+        final nom   = g.nom.trim();
+        if (email.isNotEmpty && nom.isNotEmpty) {
+          destinataires.add({'nom': nom, 'email': email});
+        }
+      }
+      if (kDebugMode) {
+        debugPrint('[CaisseEmail] Fallback → ${destinataires.length} destinataire(s)');
+        for (final d in destinataires) {
+          debugPrint('[CaisseEmail]   • ${d['nom']} → ${d['email']}');
+        }
+      }
+    }
+
+    // ── Aucun email disponible ────────────────────────────────────────────
+    if (destinataires.isEmpty) {
+      if (kDebugMode) {
+        debugPrint('[CaisseEmail] ✗ Aucun gestionnaire avec email '
+            '(REST + fallback vides). Envoi annulé pour $codeTontine');
+      }
       return;
     }
 
@@ -273,13 +316,12 @@ class _CaisseScreenState extends State<CaisseScreen> {
     final desc       = description?.isNotEmpty == true ? description! : '';
     final tontineNom = data.nom;
 
-    // Libellé complet selon le type
-    final String detailAction;
-    final String icone;
-    // Bloc motif HTML affiché dans le corps si description présente
     final String motifHtml = desc.isNotEmpty
         ? '<p style="font-size:13px;color:#6B7280;margin-top:10px">📝 Motif : <strong>$desc</strong></p>'
         : '';
+
+    final String detailAction;
+    final String icone;
     switch (typeLibelle) {
       case 'Apport':
         detailAction = 'Un apport de <strong>$montantStr</strong> a été enregistré dans la caisse commune.$motifHtml';
@@ -297,26 +339,35 @@ class _CaisseScreenState extends State<CaisseScreen> {
     }
 
     if (kDebugMode) {
-      debugPrint('[CaisseEmail] Envoi à ${destinataires.length} gestionnaire(s) pour $codeTontine');
+      debugPrint('[CaisseEmail] ► Envoi à ${destinataires.length} gestionnaire(s)…');
     }
 
-    // Envoyer en parallèle à tous les gestionnaires (non-bloquant)
+    // ── Envoi en parallèle ────────────────────────────────────────────────
     for (final gest in destinataires) {
+      final adresse = gest['email']!;
+      final nomGest = gest['nom']!;
+      if (kDebugMode) debugPrint('[CaisseEmail]   → Envoi à $nomGest <$adresse>');
       email_svc.EmailService.envoyer(
-        type:        email_svc.TypeEmail.alerteSecurite,
-        destinataire: gest['email']!,
+        type:         email_svc.TypeEmail.alerteSecurite,
+        destinataire: adresse,
         variables: {
-          'nom':        gest['nom']!,
-          // Sujet : icône + type + motif (si présent) + nom tontine
+          'nom':        nomGest,
           'action':     '$icone $typeLibelle caisse${desc.isNotEmpty ? ' — $desc' : ''} — $tontineNom',
           'message':    detailAction,
           'tontine':    tontineNom,
           'date':       DateTime.now().toLocal().toString().substring(0, 16),
           'gest_actif': gestActif,
         },
-      ).catchError((e) {
-        if (kDebugMode) debugPrint('[CaisseEmail] Erreur envoi à ${gest['email']}: $e');
-        return email_svc.EmailResult.echec(e.toString());
+      ).then((result) {
+        if (kDebugMode) {
+          if (result.ok) {
+            debugPrint('[CaisseEmail]   ✓ Email envoyé à $adresse (id=${result.emailId})');
+          } else {
+            debugPrint('[CaisseEmail]   ✗ Échec envoi à $adresse : ${result.erreur}');
+          }
+        }
+      }).catchError((Object e) {
+        if (kDebugMode) debugPrint('[CaisseEmail]   ✗ Exception envoi à $adresse : $e');
       });
     }
   }
