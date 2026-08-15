@@ -60,6 +60,23 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_color"
             android:resource="@color/notification_color"/>
+
+        <!--
+            CRITIQUE : Service FCM background.
+            Sans cette déclaration, Android ne peut pas démarrer le handler
+            background de firebase_messaging quand l'app est fermée ou en veille.
+            Les notifications n'arrivent alors QUE lorsque l'app est rouverte
+            (FCM les stocke et les livre au prochain lancement).
+            Avec ce service déclaré, FCM réveille l'app en arrière-plan
+            et livre la notification immédiatement, même écran éteint.
+        -->
+        <service
+            android:name="com.google.firebase.messaging.FirebaseMessagingService"
+            android:exported="false">
+            <intent-filter android:priority="-500">
+                <action android:name="com.google.firebase.MESSAGING_EVENT"/>
+            </intent-filter>
+        </service>
     </application>
 
     <queries>
@@ -89,6 +106,10 @@
         </intent>
     </queries>
 </manifest>
+
+
+
+
 
 
 
