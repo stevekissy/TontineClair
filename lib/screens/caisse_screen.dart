@@ -268,19 +268,23 @@ class _CaisseScreenState extends State<CaisseScreen> {
     // Libellé complet selon le type
     final String detailAction;
     final String icone;
+    // Bloc motif HTML affiché dans le corps si description présente
+    final String motifHtml = desc.isNotEmpty
+        ? '<p style="font-size:13px;color:#6B7280;margin-top:10px">📝 Motif : <strong>$desc</strong></p>'
+        : '';
     switch (typeLibelle) {
       case 'Apport':
-        detailAction = 'Un apport de <strong>$montantStr</strong> a été enregistré dans la caisse commune.';
+        detailAction = 'Un apport de <strong>$montantStr</strong> a été enregistré dans la caisse commune.$motifHtml';
         icone = '💰';
       case 'Dépense':
-        detailAction = 'Une dépense de <strong>$montantStr</strong> a été effectuée depuis la caisse commune${desc.isNotEmpty ? ' — $desc' : ''}.';
+        detailAction = 'Une dépense de <strong>$montantStr</strong> a été effectuée depuis la caisse commune.$motifHtml';
         icone = '💸';
       case 'Pénalité':
-        final membre = membreNom?.isNotEmpty == true ? ' sur <strong>$membreNom</strong>' : '';
-        detailAction = 'Une pénalité de <strong>$montantStr</strong>$membre a été appliquée.';
+        final membreStr = membreNom?.isNotEmpty == true ? ' sur <strong>$membreNom</strong>' : '';
+        detailAction = 'Une pénalité de <strong>$montantStr</strong>$membreStr a été appliquée.$motifHtml';
         icone = '⚠️';
       default:
-        detailAction = 'Un mouvement de <strong>$montantStr</strong> a été enregistré.';
+        detailAction = 'Un mouvement de <strong>$montantStr</strong> a été enregistré.$motifHtml';
         icone = '📋';
     }
 
@@ -295,7 +299,8 @@ class _CaisseScreenState extends State<CaisseScreen> {
         destinataire: gest['email']!,
         variables: {
           'nom':        gest['nom']!,
-          'action':     '$icone $typeLibelle caisse — $tontineNom',
+          // Sujet : icône + type + motif (si présent) + nom tontine
+          'action':     '$icone $typeLibelle caisse${desc.isNotEmpty ? ' — $desc' : ''} — $tontineNom',
           'message':    detailAction,
           'tontine':    tontineNom,
           'date':       DateTime.now().toLocal().toString().substring(0, 16),
@@ -425,7 +430,8 @@ class _CaisseScreenState extends State<CaisseScreen> {
     final montantStr = Formatters.montant(montant, devise: data.devise);
 
     // Paiement via CoinPayments (Crypto)
-    await Navigator.push(
+    // Retourne true si paiement confirmé, null si annulé/fermé
+    final paiementOk = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (_) => PaiementChoixScreen(
@@ -442,16 +448,18 @@ class _CaisseScreenState extends State<CaisseScreen> {
     if (context.mounted) {
       provider.chargerTontine(tontine.code, silencieux: true);
     }
-    // ── Email à tous les gestionnaires ──
-    _envoyerEmailsMouvement(
-      codeTontine: tontine.code,
-      data:        data,
-      typeLibelle: 'Apport',
-      montant:     montant,
-      gestActif:   provider.gestActifNom ?? '',
-      devise:      data.devise,
-      description: descCtrl.text.trim(),
-    );
+    // ── Email seulement si paiement vraiment confirmé ──
+    if (paiementOk == true) {
+      _envoyerEmailsMouvement(
+        codeTontine: tontine.code,
+        data:        data,
+        typeLibelle: 'Apport',
+        montant:     montant,
+        gestActif:   provider.gestActifNom ?? '',
+        devise:      data.devise,
+        description: descCtrl.text.trim(),
+      );
+    }
     // ── Notification push à tous les membres ──
     final descApport = descCtrl.text.trim();
     final tApport = SupabaseService.notifTexte('caisse', lang, vars: {
@@ -782,7 +790,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
     final langDep = Provider.of<LocaleService>(context, listen: false).langue.code;
     final montantStrDep = Formatters.montant(montant, devise: data.devise);
 
-    await Navigator.push(
+    final paiementOkDep = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (_) => PaiementChoixScreen(
@@ -802,16 +810,18 @@ class _CaisseScreenState extends State<CaisseScreen> {
     if (context.mounted) {
       provider.chargerTontine(tontine.code, silencieux: true);
     }
-    // ── Email à tous les gestionnaires ──
-    _envoyerEmailsMouvement(
-      codeTontine: tontine.code,
-      data:        data,
-      typeLibelle: 'Dépense',
-      montant:     montant,
-      gestActif:   provider.gestActifNom ?? '',
-      devise:      data.devise,
-      description: descCtrl.text.trim(),
-    );
+    // ── Email seulement si paiement vraiment confirmé ──
+    if (paiementOkDep == true) {
+      _envoyerEmailsMouvement(
+        codeTontine: tontine.code,
+        data:        data,
+        typeLibelle: 'Dépense',
+        montant:     montant,
+        gestActif:   provider.gestActifNom ?? '',
+        devise:      data.devise,
+        description: descCtrl.text.trim(),
+      );
+    }
     // ── Notification push à tous les membres ──
     final descDep = descCtrl.text.trim();
     final tDep = SupabaseService.notifTexte('caisse', langDep, vars: {
@@ -969,7 +979,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
     final montantStrPen = Formatters.montant(montant, devise: data.devise);
 
     // Paiement via CoinPayments (Crypto)
-    await Navigator.push(
+    final paiementOkPen = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (_) => PaiementChoixScreen(
@@ -988,17 +998,19 @@ class _CaisseScreenState extends State<CaisseScreen> {
     if (context.mounted) {
       provider.chargerTontine(tontine.code, silencieux: true);
     }
-    // ── Email à tous les gestionnaires ──
-    _envoyerEmailsMouvement(
-      codeTontine: tontine.code,
-      data:        data,
-      typeLibelle: 'Pénalité',
-      montant:     montant,
-      gestActif:   provider.gestActifNom ?? '',
-      devise:      data.devise,
-      description: descCtrl.text.trim(),
-      membreNom:   membre?.nom,
-    );
+    // ── Email seulement si paiement vraiment confirmé ──
+    if (paiementOkPen == true) {
+      _envoyerEmailsMouvement(
+        codeTontine: tontine.code,
+        data:        data,
+        typeLibelle: 'Pénalité',
+        montant:     montant,
+        gestActif:   provider.gestActifNom ?? '',
+        devise:      data.devise,
+        description: descCtrl.text.trim(),
+        membreNom:   membre?.nom,
+      );
+    }
     // ── Notification push à tous les membres ──
     final tPen = SupabaseService.notifTexte('penalite', langPen, vars: {
       'nom': membre?.nom ?? '',
