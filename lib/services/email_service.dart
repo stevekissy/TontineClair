@@ -91,6 +91,8 @@ class EmailService {
   static final _edgeFunctionUrl = '${SupabaseService.supabaseUrl}/functions/v1/send-email';
 
   // ── Méthode principale : envoyer un e-mail ─────────────────────────────
+  // Compatible avec la fonction déployée qui attend {to, subject, html}
+  // et retourne {success:true, data:{id}} ou {error:"message"}
   static Future<EmailResult> envoyer({
     required TypeEmail         type,
     required String            destinataire,
@@ -100,13 +102,15 @@ class EmailService {
     String? logId,
   }) async {
     try {
+      // Génère sujet + HTML côté Flutter selon le type
+      final sujet = _sujetPourType(type, variables);
+      final html  = _htmlPourType(type, variables);
+
+      // Format attendu par la fonction déployée : {to, subject, html}
       final body = {
-        'type':         type.valeur,
-        'destinataire': destinataire,
-        'variables':    variables,
-        if (tontineCode != null) 'tontine_code': tontineCode,
-        if (gestNom    != null) 'gest_nom':      gestNom,
-        if (logId      != null) 'log_id':        logId,
+        'to':      destinataire,
+        'subject': sujet,
+        'html':    html,
       };
 
       final resp = await http.post(
@@ -121,21 +125,166 @@ class EmailService {
 
       final json = jsonDecode(resp.body) as Map<String, dynamic>;
 
-      if (json['ok'] == true) {
-        return EmailResult.succes(
-          emailId: json['id'] as String?,
-          logId:   json['log_id'] as String?,
-        );
+      // Supporte les deux formats : {success:true} et {ok:true}
+      final estSucces = json['success'] == true || json['ok'] == true;
+      if (estSucces) {
+        final id = (json['data'] as Map<String, dynamic>?)?['id'] as String?
+            ?? json['id'] as String?;
+        return EmailResult.succes(emailId: id);
       } else {
         final err = json['error'] as String? ?? 'Erreur inconnue';
         if (kDebugMode) debugPrint('[EmailService] Échec : $err');
         return EmailResult.echec(err);
       }
     } catch (e) {
-      // Jamais bloquant : on logue l'erreur et on retourne un résultat d'échec
       if (kDebugMode) debugPrint('[EmailService] Exception : $e');
       return EmailResult.echec(e.toString());
     }
+  }
+
+  // ── Génère le sujet selon le type ─────────────────────────────────────
+  static String _sujetPourType(TypeEmail type, Map<String, String> v) {
+    switch (type) {
+      case TypeEmail.codeVerification:
+        return '[TontineClair] Votre code de vérification : ${v['code'] ?? ''}';
+      case TypeEmail.pinReset:
+        return '[TontineClair] Réinitialisation de votre PIN — Code : ${v['code'] ?? ''}';
+      case TypeEmail.pinChangeConfirme:
+        return '[TontineClair] Votre PIN de gestion a été modifié';
+      case TypeEmail.invitationTontine:
+        return '[TontineClair] Invitation à rejoindre "${v['tontine'] ?? ''}"';
+      case TypeEmail.demandePret:
+        return '[TontineClair] Demande de prêt reçue — ${v['tontine'] ?? ''}';
+      case TypeEmail.pretValide:
+        return '[TontineClair] ✅ Votre prêt de ${v['montant'] ?? ''} a été validé';
+      case TypeEmail.pretRejete:
+        return "[TontineClair] Votre demande de prêt n'a pas été accordée";
+      case TypeEmail.rappelCotisation:
+        return '[TontineClair] Rappel : votre cotisation est attendue';
+      case TypeEmail.cotisationEnregistree:
+        return '[TontineClair] ✅ Cotisation enregistrée — ${v['tontine'] ?? ''}';
+      case TypeEmail.retardPaiement:
+        return '[TontineClair] ⚠️ Retard de paiement — ${v['tontine'] ?? ''}';
+      case TypeEmail.demandePremium:
+        return "[TontineClair] Demande d'activation Premium reçue";
+      case TypeEmail.premiumActive:
+        return '[TontineClair] 🌟 Votre tontine est maintenant Premium !';
+      case TypeEmail.premiumExpire:
+        return '[TontineClair] Votre abonnement Premium arrive à expiration';
+      case TypeEmail.kycValide:
+        return "[TontineClair] ✅ Vérification d'identité validée";
+      case TypeEmail.kycRejete:
+        return "[TontineClair] Vérification d'identité — action requise";
+      case TypeEmail.nouveauVote:
+        return '[TontineClair] 🗳️ Nouveau vote ouvert — ${v['tontine'] ?? ''}';
+      case TypeEmail.resultatVote:
+        return '[TontineClair] Résultat du vote — ${v['tontine'] ?? ''}';
+      case TypeEmail.alerteSecurite:
+        return '[TontineClair] 🚨 Alerte de sécurité sur votre compte';
+      case TypeEmail.messageSupport:
+        return '[TontineClair] Votre message au support a été reçu';
+      case TypeEmail.resetMotDePasse:
+        return '[TontineClair] Réinitialisation de votre mot de passe';
+    }
+  }
+
+  // ── Génère le HTML selon le type ──────────────────────────────────────
+  static String _htmlPourType(TypeEmail type, Map<String, String> v) {
+    final nom  = v['nom']  ?? 'Gestionnaire';
+    final code = v['code'] ?? '';
+    switch (type) {
+      case TypeEmail.codeVerification:
+        return _layoutBase(
+          sujet: 'Code de vérification',
+          contenu: '''
+            <h2 style="color:#1C2447;margin-bottom:16px">🔐 Code de vérification</h2>
+            <p style="font-size:15px;color:#374151;line-height:1.6;margin-bottom:16px">
+              Bonjour <strong>$nom</strong>,<br><br>
+              Voici votre code de vérification pour créer votre tontine TontineClair :
+            </p>
+            <div style="background:#F7F7F4;border:2px dashed #D99A2B;border-radius:12px;padding:24px;text-align:center;margin:24px 0">
+              <div style="font-size:42px;font-weight:800;color:#1C2447;letter-spacing:10px;font-family:monospace">$code</div>
+              <div style="font-size:12px;color:#6B7280;margin-top:8px">⏱ Valable 10 minutes</div>
+            </div>
+            <div style="background:#FDECEA;border-left:4px solid #C4453C;border-radius:8px;padding:14px 16px;margin:16px 0">
+              <p style="color:#C4453C;font-size:14px;font-weight:600;margin:0">
+                ⚠️ Ne partagez jamais ce code. TontineClair ne vous le demandera jamais par téléphone.
+              </p>
+            </div>
+            <p style="font-size:13px;color:#6B7280;line-height:1.6">
+              Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail.
+            </p>
+          ''',
+        );
+      case TypeEmail.pinReset:
+        return _layoutBase(
+          sujet: 'Réinitialisation PIN',
+          contenu: '''
+            <h2 style="color:#1C2447;margin-bottom:16px">🔑 Réinitialisation de votre PIN</h2>
+            <p style="font-size:15px;color:#374151;line-height:1.6;margin-bottom:16px">
+              Bonjour <strong>$nom</strong>,<br><br>
+              Voici votre code de réinitialisation PIN pour la tontine <strong>${v['tontine'] ?? ''}</strong> :
+            </p>
+            <div style="background:#F7F7F4;border:2px dashed #C4453C;border-radius:12px;padding:24px;text-align:center;margin:24px 0">
+              <div style="font-size:42px;font-weight:800;color:#1C2447;letter-spacing:10px;font-family:monospace">$code</div>
+              <div style="font-size:12px;color:#6B7280;margin-top:8px">⏱ Valable 10 minutes — usage unique</div>
+            </div>
+            <div style="background:#FDECEA;border-left:4px solid #C4453C;border-radius:8px;padding:14px 16px;margin:16px 0">
+              <p style="color:#C4453C;font-size:14px;font-weight:600;margin:0">
+                🚨 Si vous n'avez pas demandé cette réinitialisation, contactez support@tontineclair.com
+              </p>
+            </div>
+          ''',
+        );
+      default:
+        // Template générique pour tous les autres types
+        return _layoutBase(
+          sujet: _sujetPourType(type, v).replaceAll('[TontineClair] ', ''),
+          contenu: '''
+            <h2 style="color:#1C2447;margin-bottom:16px">${_sujetPourType(type, v).replaceAll('[TontineClair] ', '')}</h2>
+            <p style="font-size:15px;color:#374151;line-height:1.6">
+              Bonjour <strong>$nom</strong>,<br><br>
+              ${v['message'] ?? 'Vous avez reçu une notification de TontineClair.'}
+            </p>
+          ''',
+        );
+    }
+  }
+
+  // ── Layout HTML de base ───────────────────────────────────────────────
+  static String _layoutBase({required String sujet, required String contenu}) {
+    return '''<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>$sujet</title></head>
+<body style="margin:0;padding:0;background:#F7F7F4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+<div style="max-width:600px;margin:0 auto;padding:24px 16px 48px">
+  <div style="background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(28,36,71,0.08)">
+    <!-- Header -->
+    <div style="background:#1C2447;padding:28px 32px;text-align:center">
+      <div style="color:#fff;font-size:24px;font-weight:800">Tontine<span style="color:#D99A2B">Clair</span></div>
+      <div style="color:rgba(255,255,255,0.6);font-size:11px;margin-top:4px">La tontine simple, transparente et sécurisée</div>
+    </div>
+    <div style="height:4px;background:linear-gradient(90deg,#D99A2B,#F5E6C5)"></div>
+    <!-- Corps -->
+    <div style="padding:36px 32px">
+      $contenu
+      <!-- Signature -->
+      <hr style="border:none;border-top:1px solid #E8E8E4;margin:28px 0">
+      <div style="font-size:14px;color:#1C2447;line-height:1.8">
+        Cordialement,<br><br>
+        <strong style="color:#D99A2B">L'équipe TontineClair</strong><br>
+        <em>La tontine simple, transparente et sécurisée</em><br><br>
+        📧 <a href="mailto:support@tontineclair.com" style="color:#D99A2B">support@tontineclair.com</a>
+      </div>
+    </div>
+    <!-- Footer -->
+    <div style="background:#1C2447;padding:20px 32px;text-align:center">
+      <div style="color:rgba(255,255,255,0.5);font-size:11px">© ${DateTime.now().year} TontineClair – Tous droits réservés</div>
+      <div style="color:rgba(255,255,255,0.4);font-size:11px;margin-top:6px;font-style:italic">Message automatique — merci de ne pas répondre directement.</div>
+    </div>
+  </div>
+</div>
+</body></html>''';
   }
 
   // ══════════════════════════════════════════════════════════════════════════
