@@ -23,9 +23,23 @@ import 'package:smile_id/products/document/smile_id_document_verification.dart';
 
 import '../models/kyc_model.dart';
 import '../services/kyc_service.dart';
-import '../services/supabase_service.dart';
 import '../utils/app_colors.dart';
 import '../widgets/app_widgets.dart';
+
+/// Convertit n'importe quel identifiant (nom gestionnaire, email, etc.)
+/// en un userId valide pour le SDK SmileID :
+///   - alphanumérique + tirets uniquement
+///   - max 50 caractères
+///   - stable (même input → même output)
+String _sanitizeSmileUserId(String rawId) {
+  final sanitized = rawId
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]'), '-')
+      .replaceAll(RegExp(r'-{2,}'), '-')
+      .replaceAll(RegExp(r'^-|-$'), '');
+  if (sanitized.isEmpty) return 'user-${DateTime.now().millisecondsSinceEpoch}';
+  return sanitized.length > 50 ? sanitized.substring(0, 50) : sanitized;
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 // Entrée principale : statut KYC depuis le profil
@@ -429,28 +443,38 @@ class _SmileIdDocumentVerificationScreenState
 
   @override
   Widget build(BuildContext context) {
-    // PAS de Scaffold ni AppBar — SmileID gère son propre écran natif Compose.
-    return SmileIDDocumentVerification(
-      countryCode: 'CI',
-      documentType: 'NATIONAL_ID',
-      captureBothSides: true,
-      showInstructions: true,
-      allowGalleryUpload: true,
-      onSuccess: (String resultJson) {
-        try {
-          final Map<String, dynamic> result =
-              jsonDecode(resultJson) as Map<String, dynamic>;
-          if (kDebugMode) debugPrint('[SmileID] Success: $result');
-          _finish(result);
-        } catch (e) {
-          if (kDebugMode) debugPrint('[SmileID] parse error: $e');
-          _finish({'jobId': 'smile-${DateTime.now().millisecondsSinceEpoch}'});
-        }
-      },
-      onError: (String errorMessage) {
-        if (kDebugMode) debugPrint('[SmileID] DocVerif error: $errorMessage');
-        _finish({'__error': errorMessage});
-      },
+    // Le SDK SmileID (Compose/Android) a besoin d'un Scaffold comme surface
+    // hôte. Sans lui, le PlatformView n'a pas de layout anchor et l'écran
+    // se ferme immédiatement après l'ouverture.
+    final smileUserId = _sanitizeSmileUserId(widget.userId);
+    if (kDebugMode) {
+      debugPrint('[SmileID] userId brut="${widget.userId}" → sanitized="$smileUserId"');
+    }
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SmileIDDocumentVerification(
+        countryCode: 'CI',
+        documentType: 'NATIONAL_ID',
+        userId: smileUserId,
+        captureBothSides: true,
+        showInstructions: true,
+        allowGalleryUpload: true,
+        onSuccess: (String resultJson) {
+          try {
+            final Map<String, dynamic> result =
+                jsonDecode(resultJson) as Map<String, dynamic>;
+            if (kDebugMode) debugPrint('[SmileID] ✅ Success: $result');
+            _finish(result);
+          } catch (e) {
+            if (kDebugMode) debugPrint('[SmileID] parse error: $e');
+            _finish({'jobId': 'smile-${DateTime.now().millisecondsSinceEpoch}'});
+          }
+        },
+        onError: (String errorMessage) {
+          if (kDebugMode) debugPrint('[SmileID] ❌ onError: $errorMessage');
+          _finish({'__error': errorMessage});
+        },
+      ),
     );
   }
 }
