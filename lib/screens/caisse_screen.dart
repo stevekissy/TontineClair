@@ -241,7 +241,10 @@ class _CaisseScreenState extends State<CaisseScreen> {
 
   // ── Notifie tous les gestionnaires ayant un email d'un mouvement caisse ────
   // Appelé de manière non-bloquante (fire-and-forget) après chaque mouvement.
+  // Récupère les emails directement depuis Supabase (colonne gestionnaires)
+  // car lire_tontine ne retourne jamais les emails dans data.gestionnaires.
   static Future<void> _envoyerEmailsMouvement({
+    required String      codeTontine, // code de la tontine pour la requête Supabase
     required TontineData data,
     required String      typeLibelle, // 'Apport', 'Dépense', 'Pénalité'
     required int         montant,
@@ -250,11 +253,13 @@ class _CaisseScreenState extends State<CaisseScreen> {
     String?              description,
     String?              membreNom,   // pour les pénalités
   }) async {
-    // Filtre : gestionnaires avec email renseigné
-    final destinataires = data.gestionnaires
-        .where((g) => g.email.trim().isNotEmpty)
-        .toList();
-    if (destinataires.isEmpty) return;
+    // Récupérer les emails directement depuis Supabase (colonne gestionnaires)
+    // lire_tontine ne retourne que les noms, pas les emails → appel REST direct
+    final destinataires = await SupabaseService.lireEmailsGestionnaires(codeTontine);
+    if (destinataires.isEmpty) {
+      if (kDebugMode) debugPrint('[CaisseEmail] Aucun gestionnaire avec email pour $codeTontine');
+      return;
+    }
 
     final montantStr = Formatters.montant(montant, devise: devise);
     final desc       = description?.isNotEmpty == true ? description! : '';
@@ -279,25 +284,25 @@ class _CaisseScreenState extends State<CaisseScreen> {
         icone = '📋';
     }
 
+    if (kDebugMode) {
+      debugPrint('[CaisseEmail] Envoi à ${destinataires.length} gestionnaire(s) pour $codeTontine');
+    }
+
     // Envoyer en parallèle à tous les gestionnaires (non-bloquant)
     for (final gest in destinataires) {
-      final nomAffiche = gest.prenom.isNotEmpty
-          ? '${gest.prenom} ${gest.nomFamille}'.trim()
-          : gest.nom;
-
       email_svc.EmailService.envoyer(
-        type:        email_svc.TypeEmail.alerteSecurite, // type générique pour le layout
-        destinataire: gest.email.trim(),
+        type:        email_svc.TypeEmail.alerteSecurite,
+        destinataire: gest['email']!,
         variables: {
-          'nom':     nomAffiche,
-          'action':  '$icone $typeLibelle caisse — $tontineNom',
-          'message': detailAction,
-          'tontine': tontineNom,
-          'date':    DateTime.now().toLocal().toString().substring(0, 16),
+          'nom':        gest['nom']!,
+          'action':     '$icone $typeLibelle caisse — $tontineNom',
+          'message':    detailAction,
+          'tontine':    tontineNom,
+          'date':       DateTime.now().toLocal().toString().substring(0, 16),
           'gest_actif': gestActif,
         },
       ).catchError((e) {
-        if (kDebugMode) debugPrint('[CaisseEmail] Erreur envoi à ${gest.email}: $e');
+        if (kDebugMode) debugPrint('[CaisseEmail] Erreur envoi à ${gest['email']}: $e');
         return email_svc.EmailResult.echec(e.toString());
       });
     }
@@ -439,6 +444,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
     }
     // ── Email à tous les gestionnaires ──
     _envoyerEmailsMouvement(
+      codeTontine: tontine.code,
       data:        data,
       typeLibelle: 'Apport',
       montant:     montant,
@@ -798,6 +804,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
     }
     // ── Email à tous les gestionnaires ──
     _envoyerEmailsMouvement(
+      codeTontine: tontine.code,
       data:        data,
       typeLibelle: 'Dépense',
       montant:     montant,
@@ -983,6 +990,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
     }
     // ── Email à tous les gestionnaires ──
     _envoyerEmailsMouvement(
+      codeTontine: tontine.code,
       data:        data,
       typeLibelle: 'Pénalité',
       montant:     montant,
@@ -1277,6 +1285,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
           type == 'penalite' ? 'Pénalité appliquée !' : 'Mouvement enregistré !');
       // ── Email à tous les gestionnaires (mouvement manuel caisse gratuite) ──
       _envoyerEmailsMouvement(
+        codeTontine: widget.code,
         data:        data,
         typeLibelle: type == 'apport' ? 'Apport'
                    : type == 'depense' ? 'Dépense'

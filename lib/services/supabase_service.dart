@@ -2800,6 +2800,49 @@ class SupabaseService {
   // Admin — Réinitialisation PIN gestionnaire via Edge Function send-manager-pin
   // ─────────────────────────────────────────────────────────────────────────────
 
+  /// Récupère la liste {nom, email} de tous les gestionnaires d'une tontine.
+  /// Appel REST direct sur la colonne `gestionnaires` (sans clé admin).
+  /// Ne retourne jamais les PINs — uniquement nom + email.
+  /// Retourne [] si la tontine est introuvable ou si aucun email n'est renseigné.
+  static Future<List<Map<String, String>>> lireEmailsGestionnaires(String code) async {
+    try {
+      final uri = Uri.parse(
+        '$_url/rest/v1/tontines?select=gestionnaires&code=eq.${code.toUpperCase()}',
+      );
+      final res = await http.get(
+        uri,
+        headers: {
+          'apikey':        _key,
+          'Authorization': 'Bearer $_key',
+          'Accept':        'application/json',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (res.statusCode != 200 && res.statusCode != 206) return [];
+
+      final body = jsonDecode(res.body);
+      if (body is! List || body.isEmpty) return [];
+
+      final gests = body[0]['gestionnaires'];
+      if (gests is! List) return [];
+
+      final result = <Map<String, String>>[];
+      for (final g in gests) {
+        if (g is Map) {
+          final nom   = (g['nom']   as String? ?? '').trim();
+          final email = (g['email'] as String? ?? '').trim();
+          if (nom.isNotEmpty && email.isNotEmpty) {
+            result.add({'nom': nom, 'email': email});
+          }
+        }
+      }
+      return result;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[lireEmailsGestionnaires] Erreur: $e');
+      return [];
+    }
+  }
+
   /// Lit l'e-mail enregistré d'un gestionnaire dans la colonne `gestionnaires`.
   /// Retourne {ok: true, email, gest_nom} ou {ok: false, erreur}.
   static Future<Map<String, dynamic>> adminGetGestionnaireEmail({
