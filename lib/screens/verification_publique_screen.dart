@@ -158,6 +158,20 @@ class _VerificationPubliqueScreenState
               ),
           ],
         ),
+        actions: [
+          // Bouton actualiser manuel dans l'AppBar
+          if (_recherche)
+            IconButton(
+              icon: _loading
+                  ? const SizedBox(
+                      width: 18, height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.refresh_rounded),
+              tooltip: 'Actualiser',
+              onPressed: _loading ? null : _rechercher,
+            ),
+        ],
       ),
       body: Column(
         children: [
@@ -217,13 +231,14 @@ class _VerificationPubliqueScreenState
                     : !_recherche
                         ? const _VueAccueil()
                         : _VueResultats(
-                            code       : _codeActif,
-                            entrees    : _entrees,
-                            stats      : _stats,
+                            code        : _codeActif,
+                            entrees     : _entrees,
+                            stats       : _stats,
                             countOnChain: _countOnChain,
-                            totalXof   : _totalXof,
-                            soldeCaisse: widget.soldeCaisse,
-                            onCopier   : _copier,
+                            totalXof    : _totalXof,
+                            soldeCaisse : widget.soldeCaisse,
+                            onCopier    : _copier,
+                            onRefresh   : _rechercher,
                           ),
           ),
         ],
@@ -510,6 +525,7 @@ class _VueResultats extends StatelessWidget {
   final int totalXof;
   final int? soldeCaisse;
   final void Function(String, String) onCopier;
+  final Future<void> Function() onRefresh;
 
   const _VueResultats({
     required this.code,
@@ -519,37 +535,59 @@ class _VueResultats extends StatelessWidget {
     required this.totalXof,
     this.soldeCaisse,
     required this.onCopier,
+    required this.onRefresh,
   });
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        // En-tête résultats
-        _CarteResume(
-          code        : code,
-          totalEntrees: entrees.length,
-          countOnChain: countOnChain,
-          totalXof    : totalXof,
-          soldeCaisse : soldeCaisse,
-          stats       : stats,
-        ),
-        const SizedBox(height: 16),
-
-        // Timeline des opérations
-        const Text(
-          'Journal des opérations',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: AppColors.encre,
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      color: AppColors.encre,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        children: [
+          // En-tête résultats
+          _CarteResume(
+            code        : code,
+            totalEntrees: entrees.length,
+            countOnChain: countOnChain,
+            totalXof    : totalXof,
+            soldeCaisse : soldeCaisse,
+            stats       : stats,
           ),
-        ),
-        const SizedBox(height: 12),
+          const SizedBox(height: 16),
 
-        ...entrees.map((e) => _CarteEntree(entree: e, onCopier: onCopier)),
-      ],
+          // Timeline des opérations
+          const Text(
+            'Journal des opérations',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: AppColors.encre,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          ...entrees.map((e) => _CarteEntree(entree: e, onCopier: onCopier)),
+
+          // Petit hint pull-to-refresh en bas de liste
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.arrow_upward, size: 12, color: AppColors.texteDoux),
+                SizedBox(width: 6),
+                Text(
+                  'Glisser vers le bas pour actualiser',
+                  style: TextStyle(fontSize: 11, color: AppColors.texteDoux),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

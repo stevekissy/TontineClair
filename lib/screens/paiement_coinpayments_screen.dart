@@ -8,6 +8,7 @@ import '../services/tontine_provider.dart';
 import '../services/coinpayments_service.dart';
 import '../services/supabase_service.dart';
 import '../services/locale_service.dart';
+import '../services/blockchain_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import 'paiement_crypto_wallet_screen.dart';
@@ -362,6 +363,46 @@ class _PaiementCoinPaymentsScreenState
       await provider.chargerTontine(widget.code).timeout(const Duration(seconds: 15));
     } catch (_) {}
     if (!mounted) return;
+
+    // ── Blockchain : enregistrer l'apport CoinPayments (non-bloquant) ──────
+    // Déterminer le type d'opération pour le choix de la fonction blockchain
+    final typeOp = widget.typeFlux.toLowerCase();
+    if (typeOp.contains('apport') || typeOp.contains('caisse')) {
+      BlockchainService.enregistrerApport(
+        tontineCode: widget.code,
+        membreId   : _membreId.isNotEmpty ? _membreId : (provider.gestActifNom ?? 'gest'),
+        membreNom  : _membreNom.isNotEmpty ? _membreNom : (provider.gestActifNom ?? ''),
+        montantXof : montant,
+        refInterne : _txid ?? _numCommande ?? '',
+      ).catchError((e) {
+        if (kDebugMode) debugPrint('[Blockchain] CoinPayments apport erreur: $e');
+        return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+      });
+    } else if (typeOp.contains('cotisation')) {
+      BlockchainService.enregistrerCotisation(
+        tontineCode: widget.code,
+        membreId   : _membreId.isNotEmpty ? _membreId : (provider.gestActifNom ?? 'gest'),
+        membreNom  : _membreNom.isNotEmpty ? _membreNom : '',
+        montantXof : montant,
+        refInterne : _txid ?? _numCommande ?? '',
+      ).catchError((e) {
+        if (kDebugMode) debugPrint('[Blockchain] CoinPayments cotisation erreur: $e');
+        return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+      });
+    } else {
+      // Fallback : enregistrer comme apport générique
+      BlockchainService.enregistrerApport(
+        tontineCode: widget.code,
+        membreId   : _membreId.isNotEmpty ? _membreId : (provider.gestActifNom ?? 'gest'),
+        membreNom  : _membreNom.isNotEmpty ? _membreNom : '',
+        montantXof : montant,
+        refInterne : _txid ?? _numCommande ?? '',
+      ).catchError((e) {
+        if (kDebugMode) debugPrint('[Blockchain] CoinPayments fallback erreur: $e');
+        return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+      });
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     // Notification push
     try {
