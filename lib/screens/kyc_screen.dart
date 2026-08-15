@@ -46,7 +46,16 @@ String _sanitizeSmileUserId(String rawId) {
 // ─────────────────────────────────────────────────────────────────────────
 class KycScreen extends StatefulWidget {
   final String userId;
-  const KycScreen({super.key, required this.userId});
+  /// Si true et que le statut est déjà `verified` à l'ouverture,
+  /// retourne automatiquement `true` à l'écran appelant (caisse_screen, etc.)
+  /// sans demander à l'utilisateur de refaire la vérification.
+  final bool autoRetourSiVerifie;
+
+  const KycScreen({
+    super.key,
+    required this.userId,
+    this.autoRetourSiVerifie = false,
+  });
 
   @override
   State<KycScreen> createState() => _KycScreenState();
@@ -80,10 +89,37 @@ class _KycScreenState extends State<KycScreen> {
     }
   }
 
+  /// Charge le statut KYC depuis Supabase.
+  /// Double-lookup : userId brut d'abord, puis userId sanitized si null.
+  /// Si autoRetourSiVerifie = true et statut = verified → pop(true) immédiat.
   Future<void> _charger() async {
-    setState(() => _loading = true);
-    final kyc = await KycService.getStatus(widget.userId);
-    if (mounted) setState(() { _kyc = kyc; _loading = false; });
+    if (mounted) setState(() => _loading = true);
+
+    KycVerification kyc = await KycService.getStatus(widget.userId);
+
+    // Double-lookup : si le brut retourne notStarted, essayer le sanitized
+    // (cas où une session précédente a enregistré avec l'id sanitized)
+    if (kyc.status == KycStatus.notStarted) {
+      final sanitized = _sanitizeSmileUserId(widget.userId);
+      if (sanitized != widget.userId) {
+        final kyc2 = await KycService.getStatus(sanitized);
+        if (kyc2.status != KycStatus.notStarted) {
+          if (kDebugMode) {
+            debugPrint('[KYC] Double-lookup: trouvé avec userId sanitized "$sanitized"');
+          }
+          kyc = kyc2;
+        }
+      }
+    }
+
+    if (!mounted) return;
+    setState(() { _kyc = kyc; _loading = false; });
+
+    // Auto-retour si déjà vérifié et appelé depuis caisse_screen
+    if (widget.autoRetourSiVerifie && kyc.status == KycStatus.verified) {
+      if (kDebugMode) debugPrint('[KYC] Statut verified → auto-retour true');
+      Navigator.pop(context, true);
+    }
   }
 
   // ── Lancer le SDK natif Smile ID ────────────────────────────────────────
@@ -147,6 +183,43 @@ class _KycScreenState extends State<KycScreen> {
         if (result.containsKey('__error')) {
           final errMsg = result['__error'] as String? ?? 'Erreur inconnue';
           if (kDebugMode) debugPrint('[SmileID] onError reçu: $errMsg');
+
+          // ── Récupération intelligente en cas d'erreur réseau SDK ──────────
+          // PROTOCOL_ERROR / network error = problème réseau Smile ID.
+          // Si l'utilisateur était déjà vérifié (session précédente réussie),
+          // on ne le bloque pas — on vérifie en base et on affiche le succès.
+          final estErreurReseau = errMsg.contains('PROTOCOL_ERROR')
+              || errMsg.contains('stream was reset')
+              || errMsg.contains('SocketException')
+              || errMsg.contains('Connection refused')
+              || errMsg.contains('Failed to connect')
+              || errMsg.contains('network');
+
+          if (estErreurReseau && mounted) {
+            if (kDebugMode) debugPrint('[SmileID] Erreur réseau — vérification statut en base...');
+            // Recharger le statut depuis Supabase
+            await _charger();
+            if (!mounted) return;
+
+            // Si déjà vérifié → afficher succès sans relancer le SDK
+            if (_kyc?.status == KycStatus.verified) {
+              if (kDebugMode) debugPrint('[SmileID] Déjà verified en base → dialog succès');
+              await showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (_) => _SmileIdResultDialog(
+                  isVerified: true,
+                  onRetourProfil: () {
+                    Navigator.pop(context);
+                    Navigator.pop(context, true);
+                  },
+                ),
+              );
+              return;
+            }
+          }
+
+          // Erreur non-réseau ou non encore vérifié → afficher l'erreur normalement
           _afficherErreur('Smile ID : $errMsg');
         } else {
           await _onSmileIdSuccess(result);
@@ -355,6 +428,8 @@ class _KycScreenState extends State<KycScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final estVerifie = _kyc?.status == KycStatus.verified;
+
     return Scaffold(
       backgroundColor: AppColors.fondPapier,
       appBar: AppBar(
@@ -362,7 +437,8 @@ class _KycScreenState extends State<KycScreen> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded, color: AppColors.encre),
-          onPressed: () => Navigator.pop(context),
+          // Si vérifié → retourner true (débloquer l'action financière)
+          onPressed: () => Navigator.pop(context, estVerifie ? true : null),
         ),
         title: const Text(
           'Vérification d\'identité',
@@ -391,6 +467,31 @@ class _KycScreenState extends State<KycScreen> {
                       onDemarrer: _lancerSmileId,
                       onRecommencer: _lancerSmileId,
                     ),
+                    // ── Bouton "Continuer" si déjà vérifié ────────────────────
+                    // Permet à l'utilisateur de sortir de l'écran en retournant
+                    // true à caisse_screen pour débloquer l'action financière.
+                    if (estVerifie) ...[
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () => Navigator.pop(context, true),
+                          icon: const Icon(Icons.check_circle_rounded),
+                          label: const Text(
+                            'Continuer',
+                            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.succes,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 32),
                     _InfoLegale(),
                   ],

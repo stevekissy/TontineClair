@@ -593,7 +593,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
             // Attendre le retour du KycScreen (retourne true si vérifié)
             final kycDone = await Navigator.push<bool>(
               context,
-              MaterialPageRoute(builder: (_) => KycScreen(userId: gestNom)),
+              MaterialPageRoute(builder: (_) => KycScreen(userId: gestNom, autoRetourSiVerifie: true)),
             );
             // Si KYC validé → re-vérifier et continuer automatiquement
             if (kycDone == true && context.mounted) {
