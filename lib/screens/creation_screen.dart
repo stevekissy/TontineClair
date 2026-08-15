@@ -998,6 +998,51 @@ class _LigneGestionnaire extends StatefulWidget {
 class _LigneGestionnaireState extends State<_LigneGestionnaire> {
 
   bool _emailEnCours = false;  // spinner pendant envoi code
+  bool _telIdentique = false;  // les deux numéros sont identiques
+  bool _telSaisiConf = false;  // le champ confirmation a été touché
+
+  @override
+  void initState() {
+    super.initState();
+    // Auto-alimenter nomCtrl depuis Prénom + Nom de famille
+    widget.prenomCtrl.addListener(_majNomAffiche);
+    widget.nomFamCtrl.addListener(_majNomAffiche);
+    // Feedback temps réel sur la confirmation téléphone
+    widget.telCtrl.addListener(_verifierTel);
+    widget.telConfCtrl.addListener(_verifierTel);
+  }
+
+  @override
+  void dispose() {
+    widget.prenomCtrl.removeListener(_majNomAffiche);
+    widget.nomFamCtrl.removeListener(_majNomAffiche);
+    widget.telCtrl.removeListener(_verifierTel);
+    widget.telConfCtrl.removeListener(_verifierTel);
+    super.dispose();
+  }
+
+  /// Met à jour nomCtrl = Prénom + Nom de famille (automatiquement)
+  void _majNomAffiche() {
+    final prenom = widget.prenomCtrl.text.trim();
+    final nom    = widget.nomFamCtrl.text.trim();
+    final compose = [prenom, nom].where((s) => s.isNotEmpty).join(' ');
+    if (widget.nomCtrl.text != compose) {
+      widget.nomCtrl.text = compose;
+    }
+  }
+
+  /// Compare les deux numéros de téléphone et met à jour l'état visuel
+  void _verifierTel() {
+    final t1 = widget.telCtrl.text.trim().replaceAll(RegExp(r'[\s\-\.]'), '');
+    final t2 = widget.telConfCtrl.text.trim().replaceAll(RegExp(r'[\s\-\.]'), '');
+    final confEstRempli = t2.isNotEmpty;
+    if (!_telSaisiConf && confEstRempli) {
+      setState(() => _telSaisiConf = true);
+    }
+    if (_telSaisiConf) {
+      setState(() => _telIdentique = (t1 == t2 && t1.isNotEmpty));
+    }
+  }
 
   // ── Génère un code 6 chiffres ────────────────────────────────────────────
   String _genererCode() {
@@ -1172,44 +1217,25 @@ class _LigneGestionnaireState extends State<_LigneGestionnaire> {
           ),
           const SizedBox(height: 8),
 
-          // ── Nom d'affichage + PIN ──────────────────────────────────────
-          Row(
-            children: [
-              Expanded(
-                flex: 3,
-                child: TextField(
-                  controller: widget.nomCtrl,
-                  maxLength: 40,
-                  decoration: InputDecoration(
-                    hintText: 'Nom affiché (ex: Arnaud)',
-                    prefixIcon: const Icon(Icons.badge_outlined, size: 18),
-                    counterText: '',
-                    helperText: 'Nom visible dans la tontine',
-                    helperStyle: const TextStyle(
-                        fontSize: 11, color: AppColors.encreDoux),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                flex: 2,
-                child: TextField(
-                  controller: widget.pinCtrl,
-                  keyboardType: TextInputType.number,
-                  obscureText: true,
-                  maxLength: 6,
-                  textAlign: TextAlign.center,
-                  decoration: const InputDecoration(
-                    hintText: 'PIN (4-6)',
-                    counterText: '',
-                  ),
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.15,
-                  ),
-                ),
-              ),
-            ],
+          // ── PIN (nom affiché supprimé — généré auto depuis Prénom + Nom) ──
+          // Le nom dans la tontine = Prénom + Nom de famille (rempli auto)
+          TextField(
+            controller: widget.pinCtrl,
+            keyboardType: TextInputType.number,
+            obscureText: true,
+            maxLength: 6,
+            textAlign: TextAlign.center,
+            decoration: const InputDecoration(
+              hintText: 'PIN personnel (4 à 6 chiffres)',
+              prefixIcon: Icon(Icons.lock_outline, size: 18),
+              counterText: '',
+              helperText: 'Code secret pour valider vos opérations',
+              helperStyle: TextStyle(fontSize: 11, color: AppColors.encreDoux),
+            ),
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.15,
+            ),
           ),
           const SizedBox(height: 8),
 
@@ -1237,12 +1263,48 @@ class _LigneGestionnaireState extends State<_LigneGestionnaire> {
             keyboardType: TextInputType.phone,
             autocorrect: false,
             maxLength: 20,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               hintText: 'Confirmer le téléphone',
-              prefixIcon: Icon(Icons.phone_callback_outlined, size: 18),
+              prefixIcon: Icon(
+                Icons.phone_callback_outlined,
+                size: 18,
+                color: _telSaisiConf
+                    ? (_telIdentique ? AppColors.succes : AppColors.alerte)
+                    : null,
+              ),
               counterText: '',
-              helperText: 'Retapez le même numéro pour confirmer',
-              helperStyle: TextStyle(fontSize: 11, color: AppColors.encreDoux),
+              // Message en temps réel : vert si identiques, rouge si différents
+              helperText: _telSaisiConf
+                  ? (_telIdentique
+                      ? '✓ Numéros identiques'
+                      : '✗ Les numéros ne correspondent pas')
+                  : 'Retapez le même numéro pour confirmer',
+              helperStyle: TextStyle(
+                fontSize: 11,
+                fontWeight: _telSaisiConf ? FontWeight.w600 : FontWeight.normal,
+                color: _telSaisiConf
+                    ? (_telIdentique ? AppColors.succes : AppColors.alerte)
+                    : AppColors.encreDoux,
+              ),
+              // Bordure colorée selon l'état
+              enabledBorder: _telSaisiConf
+                  ? OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(
+                        color: _telIdentique ? AppColors.succes : AppColors.alerte,
+                        width: 1.5,
+                      ),
+                    )
+                  : null,
+              focusedBorder: _telSaisiConf
+                  ? OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(
+                        color: _telIdentique ? AppColors.succes : AppColors.alerte,
+                        width: 2.0,
+                      ),
+                    )
+                  : null,
             ),
           ),
           const SizedBox(height: 8),
