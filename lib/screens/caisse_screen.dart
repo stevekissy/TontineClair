@@ -539,9 +539,26 @@ class _CaisseScreenState extends State<CaisseScreen> {
             ),
           );
           if (context.mounted && allerKyc == true) {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => KycScreen(userId: gestNom)));
+            // Attendre le retour du KycScreen (retourne true si vérifié)
+            final kycDone = await Navigator.push<bool>(
+              context,
+              MaterialPageRoute(builder: (_) => KycScreen(userId: gestNom)),
+            );
+            // Si KYC validé → re-vérifier et continuer automatiquement
+            if (kycDone == true && context.mounted) {
+              final kycResultApres = await KycService.canPerformFinancialAction(
+                userId:     gestNom,
+                actionType: 'withdrawal',
+                amount:     data.soldeCaisse.toDouble(),
+              );
+              if (!kycResultApres.allowed) return; // toujours pas OK
+              // KYC OK → on laisse passer (ne pas return)
+            } else {
+              return; // annulé ou non vérifié
+            }
+          } else {
+            return;
           }
-          return;
         }
       }
     }

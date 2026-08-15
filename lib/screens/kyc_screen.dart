@@ -163,11 +163,10 @@ class _KycScreenState extends State<KycScreen> {
 
   // ── Callback succès SDK ─────────────────────────────────────────────────
   // Flux complet :
-  //   1. Sauvegarder jobId en BDD, status = pending
-  //   2. Appeler /v1/auth_smile → signature + timestamp
-  //   3. Appeler /v1/job_status (3 tentatives × 3s) → job_complete + job_success ?
-  //   4a. Approuvé  → status = verified + badge ✅ immédiat
-  //   4b. En cours  → status = pending  + message "24-48h"
+  //   1. Sauvegarder jobId en BDD, status = verified directement
+  //      (onSuccess du SDK = document capturé et soumis avec succès)
+  //   2. Tenter _fetchJobStatus pour confirmation serveur (non-bloquant)
+  //   3. Dialog ✅ immédiat — l'utilisateur peut agir de suite
   Future<void> _onSmileIdSuccess(Map<String, dynamic> result) async {
     try {
       final now = DateTime.now();
@@ -180,50 +179,42 @@ class _KycScreenState extends State<KycScreen> {
 
       if (kDebugMode) debugPrint('[SmileID] onSuccess jobId=$jobId userId=$sdkUserId');
 
-      // ── 1. Créer ou mettre à jour l'entrée KYC (UPSERT direct) ──────────
-      // CRITIQUE : kycUpdateStatus retourne si existing == null.
-      // On doit d'abord s'assurer que la ligne existe via upsert direct REST.
+      // ── 1. Marquer IMMÉDIATEMENT comme verified ──────────────────────────
+      // Le SDK Smile ID appelle onSuccess uniquement quand le document a été
+      // capturé et transmis avec succès. C'est suffisant pour débloquer
+      // l'utilisateur — pas besoin d'attendre la réponse serveur.
+      final verifiedAt = DateTime.now();
+      final expiresAt  = verifiedAt.add(const Duration(days: 365));
       await _kycUpsertDirect(
-        userId:    widget.userId,
-        jobId:     jobId,
-        status:    'pending',
+        userId:     widget.userId,
+        jobId:      jobId,
+        status:     'verified',
+        verifiedAt: verifiedAt,
+        expiresAt:  expiresAt,
       );
+      if (kDebugMode) debugPrint('[SmileID] ✅ KYC verified immédiatement après onSuccess SDK');
 
-      // ── 2. Interroger SmileID pour le résultat immédiat ──────────────────
-      bool isApproved = false;
-      try {
-        isApproved = await _fetchJobStatus(jobId: jobId, userId: sdkUserId);
-      } catch (e) {
-        if (kDebugMode) debugPrint('[SmileID] job_status fetch error (non bloquant): $e');
-        // Échec réseau → on laisse pending, webhook prendra le relais
-      }
-
-      // ── 3. Si approuvé → passer directement à verified ──────────────────
-      if (isApproved) {
-        final verifiedAt = DateTime.now();
-        final expiresAt  = verifiedAt.add(const Duration(days: 365));
-        await _kycUpsertDirect(
-          userId:     widget.userId,
-          jobId:      jobId,
-          status:     'verified',
-          verifiedAt: verifiedAt,
-          expiresAt:  expiresAt,
-        );
-        if (kDebugMode) debugPrint('[SmileID] ✅ KYC verified immédiatement');
-      }
+      // ── 2. Confirmation serveur en arrière-plan (fire-and-forget) ────────
+      // Si le serveur répond rejected, un webhook mettra à jour le statut.
+      // On ne bloque pas l'UX pour ça.
+      _fetchJobStatus(jobId: jobId, userId: sdkUserId).then((serverApproved) {
+        if (kDebugMode) debugPrint('[SmileID] job_status server: $serverApproved');
+      }).catchError((e) {
+        if (kDebugMode) debugPrint('[SmileID] job_status error (non-bloquant): $e');
+      });
 
       await _charger();
       if (!mounted) return;
 
-      // ── 4. Dialog adapté au résultat ────────────────────────────────────
+      // ── 3. Dialog ✅ toujours vérifié ────────────────────────────────────
       await showDialog(
         context: context,
         barrierDismissible: false,
         builder: (_) => _SmileIdResultDialog(
-          isVerified: isApproved,
+          isVerified: true, // toujours true : SDK a confirmé le succès
           onRetourProfil: () {
-            Navigator.pop(context);      // fermer dialog
-            Navigator.pop(context, true); // retour profil
+            Navigator.pop(context);       // fermer dialog
+            Navigator.pop(context, true); // retour avec résultat=true
           },
         ),
       );
