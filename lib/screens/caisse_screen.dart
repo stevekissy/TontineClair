@@ -263,25 +263,20 @@ class _CaisseScreenState extends State<CaisseScreen> {
     // Libellé complet selon le type
     final String detailAction;
     final String icone;
-    final String couleur;
     switch (typeLibelle) {
       case 'Apport':
         detailAction = 'Un apport de <strong>$montantStr</strong> a été enregistré dans la caisse commune.';
         icone = '💰';
-        couleur = '#2E7D5B';
       case 'Dépense':
         detailAction = 'Une dépense de <strong>$montantStr</strong> a été effectuée depuis la caisse commune${desc.isNotEmpty ? ' — $desc' : ''}.';
         icone = '💸';
-        couleur = '#C4453C';
       case 'Pénalité':
         final membre = membreNom?.isNotEmpty == true ? ' sur <strong>$membreNom</strong>' : '';
         detailAction = 'Une pénalité de <strong>$montantStr</strong>$membre a été appliquée.';
         icone = '⚠️';
-        couleur = '#D99A2B';
       default:
         detailAction = 'Un mouvement de <strong>$montantStr</strong> a été enregistré.';
         icone = '📋';
-        couleur = '#1C2447';
     }
 
     // Envoyer en parallèle à tous les gestionnaires (non-bloquant)
@@ -547,7 +542,6 @@ class _CaisseScreenState extends State<CaisseScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) {
           final membreSel = membres.where((m) => m.id == membreSelId).firstOrNull;
-          final mmPreRempli = membreSel != null && (membreSel.numeroBenef?.isNotEmpty ?? false);
           return Padding(
           padding: EdgeInsets.only(
             left: 16,
@@ -584,7 +578,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
                 if (membres.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String?>(
-                    value: membreSelId,
+                    initialValue: membreSelId,
                     decoration: InputDecoration(
                       labelText: 'Bénéficiaire membre (optionnel)',
                       labelStyle: const TextStyle(fontSize: 13, color: AppColors.texteDoux),
@@ -620,7 +614,8 @@ class _CaisseScreenState extends State<CaisseScreen> {
                     },
                   ),
                   // Badge pré-rempli
-                  if (mmPreRempli) ...[
+                  if (membreSel != null &&
+                      (membreSel.numeroBenef?.isNotEmpty ?? false)) ...[
                     const SizedBox(height: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -635,7 +630,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
-                              'PayDunya utilisera automatiquement : ${Formatters.methodePaiement(membreSel!.operateur ?? '')}  ·  ${membreSel.numeroBenef}',
+                              'PayDunya utilisera automatiquement : ${Formatters.methodePaiement(membreSel.operateur ?? '')}  ·  ${membreSel.numeroBenef ?? ''}',
                               style: const TextStyle(fontSize: 11, color: Color(0xFF1B5E3B), fontWeight: FontWeight.w600),
                             ),
                           ),

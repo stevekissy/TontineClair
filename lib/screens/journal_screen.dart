@@ -88,38 +88,44 @@ class _LigneJournal extends StatelessWidget {
   const _LigneJournal({required this.entry, required this.index});
 
   IconData _icone(String quoi) {
-    if (quoi.contains('PAIEMENT'))    return Icons.payments_outlined;
-    if (quoi.contains('DECAISSEMENT')) return Icons.arrow_outward;
-    if (quoi.contains('TIRAGE'))      return Icons.shuffle;
-    if (quoi.contains('CLOS_ADOPTE') || quoi.contains('ADOPTE'))
-                                       return Icons.check_circle_outline;
-    if (quoi.contains('CLOS_REJETE') || quoi.contains('REJETE'))
-                                       return Icons.cancel_outlined;
-    if (quoi.contains('VOTE_CREE') || quoi.contains('RETRAIT_CREE'))
-                                       return Icons.ballot_outlined;
-    if (quoi.contains('VOTE') || quoi.contains('RETRAIT_CLOS'))
-                                       return Icons.how_to_vote_outlined;
-    if (quoi.contains('PRET'))         return Icons.handshake_outlined;
-    if (quoi.contains('CAISSE'))       return Icons.account_balance_wallet_outlined;
-    if (quoi.contains('PREMIUM'))      return Icons.star;
-    if (quoi.contains('APPORT'))       return Icons.add_box_outlined;
-    if (quoi.contains('PENALITE'))     return Icons.warning_amber_outlined;
-    if (quoi.contains('REMBOURSEMENT')) return Icons.price_check_outlined;
+    if (quoi.contains('PAIEMENT'))    { return Icons.payments_outlined; }
+    if (quoi.contains('DECAISSEMENT')) { return Icons.arrow_outward; }
+    if (quoi.contains('TIRAGE'))      { return Icons.shuffle; }
+    if (quoi.contains('CLOS_ADOPTE') || quoi.contains('ADOPTE')) {
+      return Icons.check_circle_outline;
+    }
+    if (quoi.contains('CLOS_REJETE') || quoi.contains('REJETE')) {
+      return Icons.cancel_outlined;
+    }
+    if (quoi.contains('VOTE_CREE') || quoi.contains('RETRAIT_CREE')) {
+      return Icons.ballot_outlined;
+    }
+    if (quoi.contains('VOTE') || quoi.contains('RETRAIT_CLOS')) {
+      return Icons.how_to_vote_outlined;
+    }
+    if (quoi.contains('PRET'))         { return Icons.handshake_outlined; }
+    if (quoi.contains('CAISSE'))       { return Icons.account_balance_wallet_outlined; }
+    if (quoi.contains('PREMIUM'))      { return Icons.star; }
+    if (quoi.contains('APPORT'))       { return Icons.add_box_outlined; }
+    if (quoi.contains('PENALITE'))     { return Icons.warning_amber_outlined; }
+    if (quoi.contains('REMBOURSEMENT')) { return Icons.price_check_outlined; }
     return Icons.history;
   }
 
   Color _couleurIcone(String quoi) {
-    if (quoi.contains('ADOPTE'))    return const Color(0xFF2E7D5B);
-    if (quoi.contains('REJETE'))    return const Color(0xFFE53935);
-    if (quoi.contains('VOTE_CREE') || quoi.contains('RETRAIT_CREE'))
-                                    return const Color(0xFF00ACC1);
-    if (quoi.contains('VOTE'))      return const Color(0xFF00838F);
-    if (quoi.contains('PAIEMENT') || quoi.contains('DECAISSEMENT'))
-                                    return const Color(0xFFE53935);
-    if (quoi.contains('APPORT'))    return const Color(0xFF1976D2);
-    if (quoi.contains('PRET'))      return const Color(0xFFF57C00);
-    if (quoi.contains('PENALITE'))  return const Color(0xFFFF8F00);
-    if (quoi.contains('PREMIUM'))   return const Color(0xFFD4AC0D);
+    if (quoi.contains('ADOPTE'))    { return const Color(0xFF2E7D5B); }
+    if (quoi.contains('REJETE'))    { return const Color(0xFFE53935); }
+    if (quoi.contains('VOTE_CREE') || quoi.contains('RETRAIT_CREE')) {
+      return const Color(0xFF00ACC1);
+    }
+    if (quoi.contains('VOTE'))      { return const Color(0xFF00838F); }
+    if (quoi.contains('PAIEMENT') || quoi.contains('DECAISSEMENT')) {
+      return const Color(0xFFE53935);
+    }
+    if (quoi.contains('APPORT'))    { return const Color(0xFF1976D2); }
+    if (quoi.contains('PRET'))      { return const Color(0xFFF57C00); }
+    if (quoi.contains('PENALITE'))  { return const Color(0xFFFF8F00); }
+    if (quoi.contains('PREMIUM'))   { return const Color(0xFFD4AC0D); }
     return AppColors.encre;
   }
 
