@@ -15,6 +15,7 @@ import '../services/locale_service.dart';
 import 'paiement_choix_screen.dart';
 import 'kyc_screen.dart';
 import '../services/subscription_service.dart';
+import '../services/email_service.dart' as email_svc;
 
 // ─── Widget animé pour le solde caisse ────────────────────────────────────────
 /// Affiche le solde avec une animation de compteur fun quand la valeur change.
@@ -238,6 +239,75 @@ class _CaisseScreenState extends State<CaisseScreen> {
     );
   }
 
+  // ── Notifie tous les gestionnaires ayant un email d'un mouvement caisse ────
+  // Appelé de manière non-bloquante (fire-and-forget) après chaque mouvement.
+  static Future<void> _envoyerEmailsMouvement({
+    required TontineData data,
+    required String      typeLibelle, // 'Apport', 'Dépense', 'Pénalité'
+    required int         montant,
+    required String      gestActif,   // nom du gestionnaire qui a effectué l'action
+    required String      devise,
+    String?              description,
+    String?              membreNom,   // pour les pénalités
+  }) async {
+    // Filtre : gestionnaires avec email renseigné
+    final destinataires = data.gestionnaires
+        .where((g) => g.email.trim().isNotEmpty)
+        .toList();
+    if (destinataires.isEmpty) return;
+
+    final montantStr = Formatters.montant(montant, devise: devise);
+    final desc       = description?.isNotEmpty == true ? description! : '';
+    final tontineNom = data.nom;
+
+    // Libellé complet selon le type
+    final String detailAction;
+    final String icone;
+    final String couleur;
+    switch (typeLibelle) {
+      case 'Apport':
+        detailAction = 'Un apport de <strong>$montantStr</strong> a été enregistré dans la caisse commune.';
+        icone = '💰';
+        couleur = '#2E7D5B';
+      case 'Dépense':
+        detailAction = 'Une dépense de <strong>$montantStr</strong> a été effectuée depuis la caisse commune${desc.isNotEmpty ? ' — $desc' : ''}.';
+        icone = '💸';
+        couleur = '#C4453C';
+      case 'Pénalité':
+        final membre = membreNom?.isNotEmpty == true ? ' sur <strong>$membreNom</strong>' : '';
+        detailAction = 'Une pénalité de <strong>$montantStr</strong>$membre a été appliquée.';
+        icone = '⚠️';
+        couleur = '#D99A2B';
+      default:
+        detailAction = 'Un mouvement de <strong>$montantStr</strong> a été enregistré.';
+        icone = '📋';
+        couleur = '#1C2447';
+    }
+
+    // Envoyer en parallèle à tous les gestionnaires (non-bloquant)
+    for (final gest in destinataires) {
+      final nomAffiche = gest.prenom.isNotEmpty
+          ? '${gest.prenom} ${gest.nomFamille}'.trim()
+          : gest.nom;
+
+      email_svc.EmailService.envoyer(
+        type:        email_svc.TypeEmail.alerteSecurite, // type générique pour le layout
+        destinataire: gest.email.trim(),
+        variables: {
+          'nom':     nomAffiche,
+          'action':  '$icone $typeLibelle caisse — $tontineNom',
+          'message': detailAction,
+          'tontine': tontineNom,
+          'date':    DateTime.now().toLocal().toString().substring(0, 16),
+          'gest_actif': gestActif,
+        },
+      ).catchError((e) {
+        if (kDebugMode) debugPrint('[CaisseEmail] Erreur envoi à ${gest.email}: $e');
+        return email_svc.EmailResult.echec(e.toString());
+      });
+    }
+  }
+
   // ── Apport Pro : saisie montant + description → CoinPayments ─────────────
   Future<void> _apportPro(
     BuildContext context,
@@ -368,6 +438,15 @@ class _CaisseScreenState extends State<CaisseScreen> {
     if (context.mounted) {
       provider.chargerTontine(tontine.code, silencieux: true);
     }
+    // ── Email à tous les gestionnaires ──
+    _envoyerEmailsMouvement(
+      data:        data,
+      typeLibelle: 'Apport',
+      montant:     montant,
+      gestActif:   provider.gestActifNom ?? '',
+      devise:      data.devise,
+      description: descCtrl.text.trim(),
+    );
   }
 
   // ── Dépense Premium : Mobile Money uniquement → statut pending → validation admin ──
@@ -701,6 +780,15 @@ class _CaisseScreenState extends State<CaisseScreen> {
     if (context.mounted) {
       provider.chargerTontine(tontine.code, silencieux: true);
     }
+    // ── Email à tous les gestionnaires ──
+    _envoyerEmailsMouvement(
+      data:        data,
+      typeLibelle: 'Dépense',
+      montant:     montant,
+      gestActif:   provider.gestActifNom ?? '',
+      devise:      data.devise,
+      description: descCtrl.text.trim(),
+    );
   }
 
   // ── Pénalité Pro : sélection membre + montant → CoinPayments ───────────────
@@ -860,6 +948,16 @@ class _CaisseScreenState extends State<CaisseScreen> {
     if (context.mounted) {
       provider.chargerTontine(tontine.code, silencieux: true);
     }
+    // ── Email à tous les gestionnaires ──
+    _envoyerEmailsMouvement(
+      data:        data,
+      typeLibelle: 'Pénalité',
+      montant:     montant,
+      gestActif:   provider.gestActifNom ?? '',
+      devise:      data.devise,
+      description: descCtrl.text.trim(),
+      membreNom:   membre?.nom,
+    );
   }
 
   Future<void> _mouvement(
@@ -1133,6 +1231,18 @@ class _CaisseScreenState extends State<CaisseScreen> {
     if (ok == true && context.mounted) {
       afficherToast(context,
           type == 'penalite' ? 'Pénalité appliquée !' : 'Mouvement enregistré !');
+      // ── Email à tous les gestionnaires (mouvement manuel caisse gratuite) ──
+      _envoyerEmailsMouvement(
+        data:        data,
+        typeLibelle: type == 'apport' ? 'Apport'
+                   : type == 'depense' ? 'Dépense'
+                   : 'Pénalité',
+        montant:     montant,
+        gestActif:   provider.gestActifNom ?? '',
+        devise:      data.devise,
+        description: descFinale,
+        membreNom:   type == 'penalite' ? nomMembre : null,
+      );
       final lang = Provider.of<LocaleService>(context, listen: false).langue.code;
       final typeNotif = type == 'penalite' ? 'penalite' : 'caisse';
       final montantStr = Formatters.montant(montant, devise: data.devise);
