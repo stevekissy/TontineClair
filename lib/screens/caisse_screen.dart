@@ -1476,7 +1476,7 @@ class _LigneMouvement extends StatelessWidget {
   }
 
   /// Motif saisi par l'utilisateur — extrait le motif des chaînes techniques
-  /// Ex: "Apport Caisse via SycaPay (COINPAYMENTS) — 700 XOF — location"
+  /// Ex: "Apport Caisse via CoinPayments — 700 XOF — location"
   ///      → retourne "location"
   /// Ex: "TontineClair - APPORT — location" → retourne "location"
   /// Ex: "location" (texte pur) → retourne "location"
@@ -1488,7 +1488,6 @@ class _LigneMouvement extends StatelessWidget {
     // ── Chaînes techniques : tenter d'extraire le motif après le dernier " — "
     final estTechnique = lower.startsWith('tontineclair') ||
         lower.contains('coinpayments') ||
-        lower.contains('sycapay') ||
         lower.contains('apport en caisse') ||
         lower.contains('apport caisse') ||
         lower.contains('dépense caisse') ||
@@ -1509,7 +1508,6 @@ class _LigneMouvement extends StatelessWidget {
             candidatLower == 'eur' ||
             candidatLower == 'usd' ||
             candidatLower.contains('coinpayments') ||
-            candidatLower.contains('sycapay') ||
             candidatLower.contains('tontineclair') ||
             candidat.isEmpty;
         if (!estDonnee) return candidat;
@@ -1523,7 +1521,6 @@ class _LigneMouvement extends StatelessWidget {
             !RegExp(r'^\d').hasMatch(last) &&
             !lastL.contains('xof') &&
             !lastL.contains('coinpayments') &&
-            !lastL.contains('sycapay') &&
             !lastL.contains('apport') &&
             !lastL.contains('caisse')) {
           return last;

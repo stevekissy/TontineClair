@@ -239,7 +239,7 @@ class _LigneJournal extends StatelessWidget {
 
   /// Extrait le motif utilisateur depuis une chaîne technique de journal.
   /// Le motif se trouve après le dernier " — " séparateur, s'il existe.
-  /// Ex: "Apport Caisse via SycaPay (COINPAYMENTS) — 700 XOF — location"
+  /// Ex: "Apport Caisse via CoinPayments — 700 XOF — location"
   ///      → "location"
   /// Ex: "TontineClair - APPORT" → "" (pas de motif)
   String _extraireMotif(String quoi) {
@@ -252,7 +252,7 @@ class _LigneJournal extends StatelessWidget {
     if (RegExp(r'^\d').hasMatch(candidat)) return ''; // commence par chiffre = montant
     if (cLower == 'xof' || cLower == 'eur' || cLower == 'usd' ||
         cLower == 'fcfa' || cLower == 'cfa') { return ''; }
-    if (cLower.contains('coinpayments') || cLower.contains('sycapay') ||
+    if (cLower.contains('coinpayments') ||
         cLower.contains('tontineclair') || cLower.contains('apport') ||
         cLower.contains('caisse') || cLower.contains('cotisation') ||
         cLower.contains('pénalité') || cLower.contains('penalite') ||
@@ -264,9 +264,9 @@ class _LigneJournal extends StatelessWidget {
     final lower = quoi.toLowerCase();
 
     // ── Cas : Paiement CoinPayments (Crypto) ──────────────────────────────────
-    // Patterns DB : "Apport Caisse via SycaPay (COINPAYMENTS) — 700 XOF — location"
+    // Patterns DB : "Apport Caisse via CoinPayments — 700 XOF — location"
     //               "TontineClair - APPORT — location"
-    if (lower.contains('coinpayments') || lower.contains('sycapay')) {
+    if (lower.contains('coinpayments')) {
       // Détecter le type d'opération
       String typeOp;
       if (lower.contains('apport caisse') || lower.contains('apport en caisse') ||
@@ -296,10 +296,10 @@ class _LigneJournal extends StatelessWidget {
     }
 
     // ── Cas : Paiement PayDunya (Mobile Money) ────────────────────────────────
-    // Pattern DB : "Cotisation Manuella — Tour 1 (SycaPay MTN)"
-    //              "Apport caisse — location (SycaPay Orange)"
+    // Pattern DB : "Cotisation Manuella — Tour 1 (PayDunya MTN)"
+    //              "Apport caisse — location (PayDunya Orange)"
     final mmMatch = RegExp(
-      r'\(SycaPay\s+(\w+[-]?\w*)\)',
+      r'\(PayDunya\s+(\w+[-]?\w*)\)',
       caseSensitive: false,
     ).firstMatch(quoi);
     if (mmMatch != null) {
@@ -307,12 +307,11 @@ class _LigneJournal extends StatelessWidget {
       final opLabel = _mmLabels[opCode] ?? _mmLabels.entries
           .firstWhere((e) => opCode.contains(e.key), orElse: () => const MapEntry('', 'Mobile Money'))
           .value;
-      // Extraire le vrai libellé sans la partie "(SycaPay …)"
+      // Extraire le vrai libellé sans la partie "(PayDunya …)"
       final titre = quoi
           .replaceAll(mmMatch.group(0)!, '')
           .replaceAll(RegExp(r'\s{2,}'), ' ')
           .trim();
-      // Le titre peut contenir "Apport caisse — location", conserver tel quel (lisible)
       return '${titre.isNotEmpty ? titre : 'Paiement'} — $opLabel';
     }
 
@@ -356,7 +355,6 @@ class _LigneJournal extends StatelessWidget {
     final base = quoi
         .replaceAll('_', ' ')
         // ── Opérateurs / moyens de paiement (anciens codes en base) ───────
-        .replaceAll('SYCAPAY', 'Orange Money')
         .replaceAll('ORANGE', 'Orange Money')
         .replaceAll('MTN', 'MTN Money')
         .replaceAll('MOOV', 'Moov Money')

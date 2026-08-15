@@ -142,7 +142,7 @@ class Formatters {
   /// Extrait, à partir des champs bruts d'un mouvement, un libellé de paiement
   /// lisible et professionnel.
   ///
-  /// [par]         : champ `par` du JSON (ex: 'SycaPay', 'orange-money-ci', 'Arnaud')
+  /// [par]         : champ `par` du JSON (ex: 'CoinPayments', 'orange-money-ci', 'Arnaud')
   /// [description] : champ `motif`/`description` (peut contenir '(COINPAYMENTS)', 'USDT')
   /// [reference]   : champ `recu` (ex: 'CPKH4WBV2NQ…' pour CoinPayments)
   ///
@@ -162,9 +162,8 @@ class Formatters {
 
     // ── 1. Détecter CoinPayments / Crypto ────────────────────────────────────
     // Indices : reference commençant par 'cpkh' ou 'cp_', description contenant
-    // 'coinpayments', par == 'sycapay' ou 'coinpayments'
-    final isCrypto = parLower == 'sycapay'
-        || parLower == 'coinpayments'
+    // par == 'coinpayments'
+    final isCrypto = parLower == 'coinpayments'
         || descLower.contains('coinpayments')
         || descLower.contains('coinpay')
         || refLower.startsWith('cpkh')
