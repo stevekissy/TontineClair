@@ -27,6 +27,12 @@ class NotificationService {
   static final FlutterLocalNotificationsPlugin _local =
       FlutterLocalNotificationsPlugin();
 
+  /// Timestamp du démarrage de l'app — les notifications FCM reçues dans les
+  /// 5 premières secondes sont des "backlog" stockés par FCM pendant que
+  /// l'app était fermée. On les ignore pour éviter le flood à l'ouverture.
+  static final DateTime _demarrage = DateTime.now();
+  static const Duration _fenetreBacklog = Duration(seconds: 5);
+
   static const AndroidNotificationChannel _canal = AndroidNotificationChannel(
     'tontineclair_mouvements',
     'Mouvements TontineClair',
@@ -68,6 +74,17 @@ class NotificationService {
 
     // 5. Notification reçue quand app au premier plan
     FirebaseMessaging.onMessage.listen((message) {
+      // Ignorer les notifications FCM qui arrivent dans les 5 premières secondes
+      // après le démarrage : ce sont des messages en backlog FCM (accumulés
+      // pendant que l'app était fermée) et non des événements temps réel.
+      final depuisDemarrage = DateTime.now().difference(_demarrage);
+      if (depuisDemarrage < _fenetreBacklog) {
+        if (kDebugMode) {
+          debugPrint('[FCM] ⏩ Backlog ignoré (${depuisDemarrage.inMilliseconds}ms après démarrage): '
+              '${message.notification?.title}');
+        }
+        return;
+      }
       _afficherNotificationLocale(message);
     });
 

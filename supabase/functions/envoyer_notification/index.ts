@@ -114,6 +114,8 @@ async function envoyerAuTopic(
       data,
       android: {
         priority: "high",
+        ttl: "86400s",                      // ← expiration 24h (au lieu de 4 semaines par défaut)
+        collapse_key: `tontine_${topic}`,   // ← déduplique : si 10 notifs en attente → 1 seule livrée
         notification: {
           channel_id: "tontineclair_mouvements",
           priority: "high",
@@ -182,6 +184,8 @@ async function envoyerAuxTokens(
         data,
         android: {
           priority: "high",
+          ttl: "86400s",                    // ← expiration 24h
+          collapse_key: `tontine_${codeUp}`,// ← déduplique les notifs en attente par tontine
           notification: { channel_id: "tontineclair_mouvements", priority: "high", default_sound: true },
         },
       },
