@@ -447,15 +447,16 @@ class _CaisseScreenState extends State<CaisseScreen> {
       description: descCtrl.text.trim(),
     );
     // ── Notification push à tous les membres ──
+    final descApport = descCtrl.text.trim();
     final tApport = SupabaseService.notifTexte('caisse', lang, vars: {
       'libelle': 'Apport en caisse',
       'montant': montantStr,
-      'desc': descCtrl.text.trim().isNotEmpty ? ' — ${descCtrl.text.trim()}' : '',
+      'desc': descApport.isNotEmpty ? ' — $descApport' : '',
     });
     SupabaseService.envoyerNotification(
       code:    tontine.code,
       type:    'caisse',
-      titre:   tApport['titre']!,
+      titre:   '💰 Apport en caisse',
       message: tApport['message']!,
     );
   }
@@ -805,15 +806,16 @@ class _CaisseScreenState extends State<CaisseScreen> {
       description: descCtrl.text.trim(),
     );
     // ── Notification push à tous les membres ──
+    final descDep = descCtrl.text.trim();
     final tDep = SupabaseService.notifTexte('caisse', langDep, vars: {
       'libelle': 'Dépense caisse',
       'montant': montantStrDep,
-      'desc': descCtrl.text.trim().isNotEmpty ? ' — ${descCtrl.text.trim()}' : '',
+      'desc': descDep.isNotEmpty ? ' — $descDep' : '',
     });
     SupabaseService.envoyerNotification(
       code:    tontine.code,
       type:    'caisse',
-      titre:   tDep['titre']!,
+      titre:   '💸 Dépense caisse',
       message: tDep['message']!,
     );
   }
