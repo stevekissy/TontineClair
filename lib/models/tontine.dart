@@ -13,6 +13,7 @@ class Gestionnaire {
   final String prenom;     // prénom du gestionnaire
   final String nomFamille; // nom de famille du gestionnaire
   final String telephone;  // numéro de téléphone (avec indicatif)
+  final String role;       // rôle/titre personnalisé (ex: président, secrétaire)
 
   Gestionnaire({
     required this.nom,
@@ -21,6 +22,7 @@ class Gestionnaire {
     this.prenom     = '',
     this.nomFamille = '',
     this.telephone  = '',
+    this.role       = '',
   });
 
   factory Gestionnaire.fromJson(Map<String, dynamic> json) {
@@ -31,6 +33,7 @@ class Gestionnaire {
       prenom:     json['prenom']      as String? ?? '',
       nomFamille: json['nom_famille'] as String? ?? '',
       telephone:  json['telephone']   as String? ?? '',
+      role:       json['role']        as String? ?? '',
     );
   }
 
@@ -41,6 +44,7 @@ class Gestionnaire {
     'prenom':      prenom,
     'nom_famille': nomFamille,
     'telephone':   telephone,
+    'role':        role,
   };
 }
 

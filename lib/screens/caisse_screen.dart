@@ -375,7 +375,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
                     SizedBox(width: 6),
                     Flexible(
                       child: Text(
-                        'Le paiement sera effectué automatiquement via Mobile Money',
+                        'Le paiement sera effectué automatiquement',
                         style: TextStyle(fontSize: 12, color: Color(0xFF1A6B3C)),
                         softWrap: true,
                       ),
@@ -671,7 +671,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
                   ],
                   const SizedBox(height: 8),
                 ],
-                // Badge paiement crypto
+                // Bandeau paiement automatique
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
@@ -679,14 +679,14 @@ class _CaisseScreenState extends State<CaisseScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Row(
-                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.currency_bitcoin_rounded, size: 13, color: Color(0xFF1A6B3C)),
+                      Icon(Icons.rocket_launch_rounded, size: 13, color: Color(0xFF1A6B3C)),
                       SizedBox(width: 6),
                       Flexible(
                         child: Text(
-                          'Paiement crypto — CoinPayments',
+                          'Le paiement sera effectué automatiquement',
                           style: TextStyle(fontSize: 12, color: Color(0xFF1A6B3C)),
+                          softWrap: true,
                         ),
                       ),
                     ],
@@ -889,22 +889,22 @@ class _CaisseScreenState extends State<CaisseScreen> {
                   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20, color: AppColors.encre),
                 ),
                 const SizedBox(height: 4),
-                // Badge paiement crypto
+                // Bandeau paiement automatique
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: AppColors.orFonce.withValues(alpha: 0.10),
+                    color: const Color(0xFFEAF4EE),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Row(
-                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.currency_bitcoin_rounded, size: 13, color: AppColors.orFonce),
+                      Icon(Icons.rocket_launch_rounded, size: 13, color: Color(0xFF1A6B3C)),
                       SizedBox(width: 6),
                       Flexible(
                         child: Text(
-                          'Paiement de la pénalité via CoinPayments Crypto',
-                          style: TextStyle(fontSize: 12, color: AppColors.orFonce),
+                          'Le paiement sera effectué automatiquement',
+                          style: TextStyle(fontSize: 12, color: Color(0xFF1A6B3C)),
+                          softWrap: true,
                         ),
                       ),
                     ],

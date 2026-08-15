@@ -43,6 +43,8 @@ class _CreationScreenState extends State<CreationScreen> {
   final List<TextEditingController> _gestTelCtrl      = [TextEditingController()];
   // Confirmation téléphone — double saisie pour TOUS les gestionnaires
   final List<TextEditingController> _gestTelConfCtrl  = [TextEditingController()];
+  // Rôle/titre personnalisé (président, secrétaire, trésorier…)
+  final List<TextEditingController> _gestRoleCtrl     = [TextEditingController()];
 
   // ── Email OTP — un booléen par gestionnaire ───────────────────────────────
   final List<bool>   _emailVerifie    = [false]; // true une fois code email confirmé
@@ -74,6 +76,7 @@ class _CreationScreenState extends State<CreationScreen> {
     for (final c in _gestNomFamCtrl)  { c.dispose(); }
     for (final c in _gestTelCtrl)     { c.dispose(); }
     for (final c in _gestTelConfCtrl) { c.dispose(); }
+    for (final c in _gestRoleCtrl)    { c.dispose(); }
     super.dispose();
   }
 
@@ -90,6 +93,7 @@ class _CreationScreenState extends State<CreationScreen> {
     final gestPrenoms   = _gestPrenomCtrl.map((c) => c.text.trim()).toList();
     final gestNomsFam   = _gestNomFamCtrl.map((c) => c.text.trim()).toList();
     final gestTels      = _gestTelCtrl.map((c) => c.text.trim()).toList();
+    final gestRoles     = _gestRoleCtrl.map((c) => c.text.trim()).toList();
 
     // Validations
     if (nom.isEmpty) {
@@ -276,6 +280,7 @@ class _CreationScreenState extends State<CreationScreen> {
         prenom:     gestPrenoms[i],
         nomFamille: gestNomsFam[i],
         telephone:  gestTels[i].replaceAll(RegExp(r'[\s\-\.]'), ''), // normalisé
+        role:       i < gestRoles.length ? gestRoles[i] : '',
       ),
     );
 
@@ -342,6 +347,7 @@ class _CreationScreenState extends State<CreationScreen> {
       _gestNomFamCtrl.add(TextEditingController());
       _gestTelCtrl.add(TextEditingController());
       _gestTelConfCtrl.add(TextEditingController());
+      _gestRoleCtrl.add(TextEditingController());
       _emailVerifie.add(false);
       _emailVerifieAddr.add('');
     });
@@ -355,6 +361,7 @@ class _CreationScreenState extends State<CreationScreen> {
     _gestNomFamCtrl[i].dispose();
     _gestTelCtrl[i].dispose();
     _gestTelConfCtrl[i].dispose();
+    _gestRoleCtrl[i].dispose();
     setState(() {
       _gestNomCtrl.removeAt(i);
       _gestPinCtrl.removeAt(i);
@@ -363,6 +370,7 @@ class _CreationScreenState extends State<CreationScreen> {
       _gestNomFamCtrl.removeAt(i);
       _gestTelCtrl.removeAt(i);
       _gestTelConfCtrl.removeAt(i);
+      _gestRoleCtrl.removeAt(i);
       if (i < _emailVerifie.length)    _emailVerifie.removeAt(i);
       if (i < _emailVerifieAddr.length) _emailVerifieAddr.removeAt(i);
     });
@@ -822,6 +830,7 @@ class _CreationScreenState extends State<CreationScreen> {
                             nomFamCtrl:     _gestNomFamCtrl[i],
                             telCtrl:        _gestTelCtrl[i],
                             telConfCtrl:    _gestTelConfCtrl[i],
+                            roleCtrl:       i < _gestRoleCtrl.length ? _gestRoleCtrl[i] : TextEditingController(),
                             index:          i,
                             emailVerifie:   i < _emailVerifie.length ? _emailVerifie[i] : false,
                             onEmailVerifie: (addrVerifie) => setState(() {
@@ -970,6 +979,7 @@ class _LigneGestionnaire extends StatefulWidget {
   final TextEditingController nomFamCtrl;
   final TextEditingController telCtrl;
   final TextEditingController telConfCtrl;
+  final TextEditingController roleCtrl;
   final int index;
   final bool emailVerifie;
   final void Function(String addrVerifie)? onEmailVerifie;
@@ -984,6 +994,7 @@ class _LigneGestionnaire extends StatefulWidget {
     required this.nomFamCtrl,
     required this.telCtrl,
     required this.telConfCtrl,
+    required this.roleCtrl,
     required this.index,
     required this.emailVerifie,
     this.onEmailVerifie,
@@ -1214,6 +1225,21 @@ class _LigneGestionnaireState extends State<_LigneGestionnaire> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 8),
+
+          // ── Rôle / Titre (optionnel) ──────────────────────────────────────
+          TextField(
+            controller: widget.roleCtrl,
+            maxLength: 50,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              hintText: 'Rôle / Titre (ex: Président, Secrétaire…)',
+              prefixIcon: Icon(Icons.badge_outlined, size: 18),
+              counterText: '',
+              helperText: 'Optionnel — s\'affichera dans la tontine',
+              helperStyle: TextStyle(fontSize: 11, color: AppColors.encreDoux),
+            ),
           ),
           const SizedBox(height: 8),
 
