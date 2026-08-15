@@ -175,7 +175,7 @@ class _LigneJournal extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${Formatters.nettoyerAuteur(gest)} · ${Formatters.dateHeure(date)}',
+                  '${Formatters.decrypterPaiement(par: gest, description: quoi, reference: ref ?? '')} · ${Formatters.dateHeure(date)}',
                   style: const TextStyle(
                     fontSize: 11.5,
                     color: AppColors.texteDoux,
@@ -203,15 +203,76 @@ class _LigneJournal extends StatelessWidget {
   /// Transforme le champ `quoi` brut en texte lisible pour un novice.
   /// Gère les anciens formats concaténés (ex: VOTE_CLOS_ADOPTE_TC123:oui=3:non=1:…)
   /// ET les nouveaux formats structurés.
+  // ── Libellés crypto pour le journal ────────────────────────────────────────
+  static const _cryptoLabels = <String, String>{
+    'USDT.TRC20': 'USDT (TRC20)', 'USDT.ERC20': 'USDT (ERC20)',
+    'USDT': 'USDT', 'BTC': 'Bitcoin', 'ETH': 'Ethereum',
+    'LTC': 'Litecoin', 'BNB': 'BNB', 'XRP': 'Ripple',
+    'DOGE': 'Dogecoin', 'TRX': 'TRON', 'SOL': 'Solana',
+  };
+
+  // ── Libellés Mobile Money PayDunya pour le journal ─────────────────────────
+  static const _mmLabels = <String, String>{
+    'orange-money-ci': 'Orange Money', 'orange-money-sn': 'Orange Money',
+    'orange-money-ml': 'Orange Money', 'orange-money-bf': 'Orange Money',
+    'orange-money-gn': 'Orange Money', 'orange': 'Orange Money',
+    'wave-ci': 'Wave', 'wave-sn': 'Wave', 'wave': 'Wave',
+    'mtn-ci': 'MTN Mobile Money', 'mtn-gh': 'MTN Mobile Money', 'mtn': 'MTN Mobile Money',
+    'moov-ci': 'Moov Money', 'moov-bf': 'Moov Money', 'moov': 'Moov Money',
+    'free-money-sn': 'Free Money', 'free': 'Free Money',
+    'wizall': 'Wizall', 'tmoney': 'T-Money', 'flooz': 'Flooz',
+  };
+
   String _formaterQuoi(String quoi) {
-    // ── Pré-nettoyage : remplace les noms de prestataires historiques ────────
-    // (les entrées PayDunya/SycaPay en DB contiennent le mot en casse mixte)
-    final quoiPropre = quoi
-        .replaceAll(RegExp(r'SycaPay', caseSensitive: false), 'Orange Money')
-        .replaceAll(RegExp(r'CoinPayments', caseSensitive: false), 'Mobile Money')
-        .replaceAll(RegExp(r'COINPAYMENTS', caseSensitive: false), 'Mobile Money');
-    // Redirige le reste de la fonction sur la chaîne nettoyée
-    quoi = quoiPropre;
+    final lower = quoi.toLowerCase();
+
+    // ── Cas : Paiement CoinPayments (Crypto) ──────────────────────────────────
+    // Patterns DB : "Apport Caisse via SycaPay (COINPAYMENTS) — 700 XOF — …"
+    //               "Cotisation … via SycaPay (COINPAYMENTS) — …"
+    if (lower.contains('coinpayments') || lower.contains('sycapay')) {
+      // Détecter le type d'opération
+      String typeOp;
+      if (lower.contains('apport caisse') || lower.contains('apport en caisse')) {
+        typeOp = 'Apport caisse';
+      } else if (lower.contains('cotisation')) {
+        typeOp = 'Cotisation';
+      } else if (lower.contains('pénalité') || lower.contains('penalite')) {
+        typeOp = 'Pénalité';
+      } else if (lower.contains('dépense') || lower.contains('depense')) {
+        typeOp = 'Dépense caisse';
+      } else if (lower.contains('remboursement')) {
+        typeOp = 'Remboursement prêt';
+      } else {
+        typeOp = 'Paiement';
+      }
+      // Détecter la crypto éventuelle dans la chaîne brute
+      String crypto = '';
+      for (final entry in _cryptoLabels.entries) {
+        if (quoi.contains(entry.key)) { crypto = entry.value; break; }
+      }
+      final detail = crypto.isNotEmpty ? ' · $crypto' : '';
+      return '$typeOp — Crypto$detail';
+    }
+
+    // ── Cas : Paiement PayDunya (Mobile Money) ────────────────────────────────
+    // Pattern DB : "Cotisation Manuella — Tour 1 (SycaPay MTN)"
+    //              ou description contenant l'opérateur
+    final mmMatch = RegExp(
+      r'\(SycaPay\s+(\w+[-]?\w*)\)',
+      caseSensitive: false,
+    ).firstMatch(quoi);
+    if (mmMatch != null) {
+      final opCode  = mmMatch.group(1)?.toLowerCase() ?? '';
+      final opLabel = _mmLabels[opCode] ?? _mmLabels.entries
+          .firstWhere((e) => opCode.contains(e.key), orElse: () => const MapEntry('', 'Mobile Money'))
+          .value;
+      // Extraire le vrai libellé sans la partie "(SycaPay …)"
+      final titre = quoi
+          .replaceAll(mmMatch.group(0)!, '')
+          .replaceAll(RegExp(r'\s{2,}'), ' ')
+          .trim();
+      return '${titre.isNotEmpty ? titre : 'Paiement'} — $opLabel';
+    }
 
     // ── Cas : VOTE_CLOS (format historique concaténé) ──────────────────────
     // Exemples :

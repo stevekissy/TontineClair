@@ -1414,7 +1414,7 @@ class _LigneMouvement extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '${Formatters.nettoyerAuteur(mouvement.gestionnaire)} · ${Formatters.dateFormatee(date)}',
+                  '${Formatters.decrypterPaiement(par: mouvement.gestionnaire, description: mouvement.description, reference: mouvement.reference)} · ${Formatters.dateFormatee(date)}',
                   style: const TextStyle(
                     fontSize: 11.5,
                     color: AppColors.texteDoux,

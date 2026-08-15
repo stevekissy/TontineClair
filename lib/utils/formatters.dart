@@ -100,16 +100,116 @@ class Formatters {
     return s[0].toUpperCase() + s.substring(1);
   }
 
-  /// Nettoie le champ "par" / "gestionnaire" stocké en base de données.
-  /// Remplace les anciens noms de prestataires (SycaPay, CoinPayments…)
-  /// par un libellé lisible, sans modifier les noms de vrais gestionnaires.
-  static String nettoyerAuteur(String auteur) {
-    final lower = auteur.toLowerCase().trim();
-    if (lower == 'sycapay')      return 'Orange Money';
-    if (lower == 'coinpayments') return 'CoinPayments';
-    if (lower.startsWith('sycapay')) return 'Orange Money';
-    return auteur.trim().isEmpty ? 'Système' : auteur.trim();
+  // ── Labels Mobile Money PayDunya (codes operateur → libellé) ────────────
+  static const _labelsPaydunya = <String, String>{
+    'orange-money-ci': 'Orange Money',
+    'orange-money-sn': 'Orange Money',
+    'orange-money-ml': 'Orange Money',
+    'orange-money-bf': 'Orange Money',
+    'orange-money-gn': 'Orange Money',
+    'orange':          'Orange Money',
+    'wave-ci':         'Wave',
+    'wave-sn':         'Wave',
+    'wave':            'Wave',
+    'mtn-ci':          'MTN Mobile Money',
+    'mtn-gh':          'MTN Mobile Money',
+    'mtn':             'MTN Mobile Money',
+    'moov-ci':         'Moov Money',
+    'moov-bf':         'Moov Money',
+    'moov':            'Moov Money',
+    'free-money-sn':   'Free Money',
+    'free':            'Free Money',
+    'wizall':          'Wizall',
+    'tmoney':          'T-Money',
+    'flooz':           'Flooz',
+  };
+
+  // ── Labels crypto CoinPayments (currency2 → libellé court) ───────────────
+  static const _labelsCrypto = <String, String>{
+    'USDT.TRC20': 'USDT (TRC20)',
+    'USDT.ERC20': 'USDT (ERC20)',
+    'USDT':       'USDT',
+    'BTC':        'Bitcoin (BTC)',
+    'ETH':        'Ethereum (ETH)',
+    'LTC':        'Litecoin (LTC)',
+    'BNB':        'BNB',
+    'XRP':        'Ripple (XRP)',
+    'DOGE':       'Dogecoin (DOGE)',
+    'TRX':        'TRON (TRX)',
+    'SOL':        'Solana (SOL)',
+  };
+
+  /// Extrait, à partir des champs bruts d'un mouvement, un libellé de paiement
+  /// lisible et professionnel.
+  ///
+  /// [par]         : champ `par` du JSON (ex: 'SycaPay', 'orange-money-ci', 'Arnaud')
+  /// [description] : champ `motif`/`description` (peut contenir '(COINPAYMENTS)', 'USDT')
+  /// [reference]   : champ `recu` (ex: 'CPKH4WBV2NQ…' pour CoinPayments)
+  ///
+  /// Retourne :
+  ///   - Crypto  : 'Crypto · USDT (TRC20)'  ou  'Crypto · CoinPayments'
+  ///   - MM      : 'Mobile Money · Orange Money'
+  ///   - Vrai gestionnaire (nom propre) : retourné tel quel
+  ///   - Inconnu : 'Système'
+  static String decrypterPaiement({
+    required String par,
+    String description = '',
+    String reference  = '',
+  }) {
+    final parLower  = par.trim().toLowerCase();
+    final descLower = description.toLowerCase();
+    final refLower  = reference.toLowerCase();
+
+    // ── 1. Détecter CoinPayments / Crypto ────────────────────────────────────
+    // Indices : reference commençant par 'cpkh' ou 'cp_', description contenant
+    // 'coinpayments', par == 'sycapay' ou 'coinpayments'
+    final isCrypto = parLower == 'sycapay'
+        || parLower == 'coinpayments'
+        || descLower.contains('coinpayments')
+        || descLower.contains('coinpay')
+        || refLower.startsWith('cpkh')
+        || refLower.startsWith('cp_');
+
+    if (isCrypto) {
+      // Chercher la crypto exacte dans la description
+      // Ex: '... (COINPAYMENTS) — 700 XOF ...' ne contient pas forcément la devise crypto
+      // Ex: description peut contenir 'USDT.TRC20', 'BTC', 'ETH'…
+      for (final entry in _labelsCrypto.entries) {
+        if (description.contains(entry.key) || reference.toUpperCase().contains(entry.key)) {
+          return 'Crypto · ${entry.value}';
+        }
+      }
+      return 'Crypto · CoinPayments';
+    }
+
+    // ── 2. Détecter PayDunya / Mobile Money ──────────────────────────────────
+    // Indices : par contient un code opérateur PayDunya, ou description contient 'paydunya'
+    final isPaydunya = descLower.contains('paydunya')
+        || _labelsPaydunya.containsKey(parLower)
+        || _labelsPaydunya.containsKey(par.trim());
+
+    if (isPaydunya) {
+      final label = _labelsPaydunya[parLower]
+          ?? _labelsPaydunya[par.trim()]
+          ?? 'Mobile Money';
+      return 'Mobile Money · $label';
+    }
+
+    // Cas : par contient un code opérateur sans paydunya dans la description
+    // (certaines versions écrivent juste 'orange', 'wave', 'mtn'…)
+    if (_labelsPaydunya.containsKey(parLower)) {
+      return 'Mobile Money · ${_labelsPaydunya[parLower]}';
+    }
+
+    // ── 3. Vrai nom de gestionnaire — retourner tel quel ─────────────────────
+    final trimmed = par.trim();
+    return trimmed.isEmpty ? 'Système' : trimmed;
   }
+
+  /// Compatibilité descendante — ancienne méthode nettoyerAuteur().
+  /// Utiliser decrypterPaiement() à la place pour un affichage complet.
+  static String nettoyerAuteur(String auteur) =>
+      decrypterPaiement(par: auteur);
 
   static String heureFormatee(DateTime? date) {
     if (date == null) return '';
