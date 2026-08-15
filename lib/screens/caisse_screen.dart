@@ -1460,9 +1460,91 @@ class _LigneMouvement extends StatelessWidget {
       mouvement.type == 'penalite' ||
       mouvement.type == 'remboursement';
 
+  /// Libellé lisible du type de mouvement (jamais de chaîne technique)
+  String get _typeLabel {
+    switch (mouvement.type) {
+      case 'apport':         return 'Apport';
+      case 'depense':        return 'Dépense';
+      case 'penalite':       return 'Pénalité';
+      case 'cotisation':     return 'Cotisation';
+      case 'remboursement':  return 'Remboursement';
+      case 'pret':           return 'Prêt';
+      case 'correction':     return 'Correction';
+      case 'decaissement':   return 'Décaissement';
+      default:               return Formatters.capitaliser(mouvement.type);
+    }
+  }
+
+  /// Motif saisi par l'utilisateur — extrait le motif des chaînes techniques
+  /// Ex: "Apport Caisse via SycaPay (COINPAYMENTS) — 700 XOF — location"
+  ///      → retourne "location"
+  /// Ex: "TontineClair - APPORT — location" → retourne "location"
+  /// Ex: "location" (texte pur) → retourne "location"
+  String get _motif {
+    final d = mouvement.description.trim();
+    if (d.isEmpty) return '';
+    final lower = d.toLowerCase();
+
+    // ── Chaînes techniques : tenter d'extraire le motif après le dernier " — "
+    final estTechnique = lower.startsWith('tontineclair') ||
+        lower.contains('coinpayments') ||
+        lower.contains('sycapay') ||
+        lower.contains('apport en caisse') ||
+        lower.contains('apport caisse') ||
+        lower.contains('dépense caisse') ||
+        lower.contains('depense caisse') ||
+        lower.contains('pénalité caisse') ||
+        lower.contains('penalite caisse') ||
+        lower.contains('cotisation caisse');
+
+    if (estTechnique) {
+      // Chercher le motif après le dernier " — " (séparateur tiret cadratin)
+      final lastDash = d.lastIndexOf(' — ');
+      if (lastDash != -1) {
+        final candidat = d.substring(lastDash + 3).trim();
+        // Vérifier que ce n'est pas une donnée technique (montant, code devise…)
+        final candidatLower = candidat.toLowerCase();
+        final estDonnee = RegExp(r'^\d').hasMatch(candidat) || // commence par chiffre (montant)
+            candidatLower == 'xof' ||
+            candidatLower == 'eur' ||
+            candidatLower == 'usd' ||
+            candidatLower.contains('coinpayments') ||
+            candidatLower.contains('sycapay') ||
+            candidatLower.contains('tontineclair') ||
+            candidat.isEmpty;
+        if (!estDonnee) return candidat;
+      }
+      // Aussi tenter avec " - " (tiret simple, format "TontineClair - APPORT — location")
+      final segments = d.split(' — ');
+      if (segments.length >= 2) {
+        final last = segments.last.trim();
+        final lastL = last.toLowerCase();
+        if (last.isNotEmpty &&
+            !RegExp(r'^\d').hasMatch(last) &&
+            !lastL.contains('xof') &&
+            !lastL.contains('coinpayments') &&
+            !lastL.contains('sycapay') &&
+            !lastL.contains('apport') &&
+            !lastL.contains('caisse')) {
+          return last;
+        }
+      }
+      return ''; // Pas de motif extractible
+    }
+
+    return d;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final date = DateTime.tryParse(mouvement.date);
+    final date   = DateTime.tryParse(mouvement.date);
+    final motif  = _motif;
+    final modePaiement = Formatters.decrypterPaiement(
+      par: mouvement.gestionnaire,
+      description: mouvement.description,
+      reference: mouvement.reference,
+    );
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(14),
@@ -1491,18 +1573,20 @@ class _LigneMouvement extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // ── Ligne 1 : Type + motif ─────────────────────────────────
+                // Affiche toujours le type lisible (Apport, Dépense, Pénalité)
+                // suivi du motif s'il existe : "Apport — location"
                 Text(
-                  mouvement.description.isNotEmpty
-                      ? mouvement.description
-                      : Formatters.capitaliser(mouvement.type),
+                  motif.isNotEmpty ? '$_typeLabel — $motif' : _typeLabel,
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
                     color: AppColors.texte,
                   ),
                 ),
+                // ── Ligne 2 : Mode de paiement · date ─────────────────────
                 Text(
-                  '${Formatters.decrypterPaiement(par: mouvement.gestionnaire, description: mouvement.description, reference: mouvement.reference)} · ${Formatters.dateFormatee(date)}',
+                  '$modePaiement · ${Formatters.dateFormatee(date)}',
                   style: const TextStyle(
                     fontSize: 11.5,
                     color: AppColors.texteDoux,

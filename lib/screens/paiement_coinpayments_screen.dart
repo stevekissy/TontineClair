@@ -169,6 +169,8 @@ class _PaiementCoinPaymentsScreenState
         membreNom:     _membreNom.isNotEmpty ? _membreNom : null,
         pretId:        widget.pretId,
         currency2:     _crypto,
+        // Passer le motif saisi par l'utilisateur → stocké dans le mouvement caisse
+        description:   widget.description.isNotEmpty ? widget.description : null,
       );
 
       _enTraitement = false;

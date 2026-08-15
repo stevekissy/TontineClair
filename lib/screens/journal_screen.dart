@@ -237,16 +237,40 @@ class _LigneJournal extends StatelessWidget {
     'wizall': 'Wizall', 'tmoney': 'T-Money', 'flooz': 'Flooz',
   };
 
+  /// Extrait le motif utilisateur depuis une chaîne technique de journal.
+  /// Le motif se trouve après le dernier " — " séparateur, s'il existe.
+  /// Ex: "Apport Caisse via SycaPay (COINPAYMENTS) — 700 XOF — location"
+  ///      → "location"
+  /// Ex: "TontineClair - APPORT" → "" (pas de motif)
+  String _extraireMotif(String quoi) {
+    final segments = quoi.split(' — ');
+    if (segments.length < 2) return '';
+    final candidat = segments.last.trim();
+    final cLower = candidat.toLowerCase();
+    // Rejeter si c'est une donnée technique (montant, devise, code opération…)
+    if (candidat.isEmpty) return '';
+    if (RegExp(r'^\d').hasMatch(candidat)) return ''; // commence par chiffre = montant
+    if (cLower == 'xof' || cLower == 'eur' || cLower == 'usd' ||
+        cLower == 'fcfa' || cLower == 'cfa') { return ''; }
+    if (cLower.contains('coinpayments') || cLower.contains('sycapay') ||
+        cLower.contains('tontineclair') || cLower.contains('apport') ||
+        cLower.contains('caisse') || cLower.contains('cotisation') ||
+        cLower.contains('pénalité') || cLower.contains('penalite') ||
+        cLower.contains('dépense') || cLower.contains('depense')) { return ''; }
+    return candidat;
+  }
+
   String _formaterQuoi(String quoi) {
     final lower = quoi.toLowerCase();
 
     // ── Cas : Paiement CoinPayments (Crypto) ──────────────────────────────────
-    // Patterns DB : "Apport Caisse via SycaPay (COINPAYMENTS) — 700 XOF — …"
-    //               "Cotisation … via SycaPay (COINPAYMENTS) — …"
+    // Patterns DB : "Apport Caisse via SycaPay (COINPAYMENTS) — 700 XOF — location"
+    //               "TontineClair - APPORT — location"
     if (lower.contains('coinpayments') || lower.contains('sycapay')) {
       // Détecter le type d'opération
       String typeOp;
-      if (lower.contains('apport caisse') || lower.contains('apport en caisse')) {
+      if (lower.contains('apport caisse') || lower.contains('apport en caisse') ||
+          lower.contains('tontineclair') && lower.contains('apport')) {
         typeOp = 'Apport caisse';
       } else if (lower.contains('cotisation')) {
         typeOp = 'Cotisation';
@@ -264,13 +288,16 @@ class _LigneJournal extends StatelessWidget {
       for (final entry in _cryptoLabels.entries) {
         if (quoi.contains(entry.key)) { crypto = entry.value; break; }
       }
-      final detail = crypto.isNotEmpty ? ' · $crypto' : '';
-      return '$typeOp — Crypto$detail';
+      // Extraire le motif utilisateur (après le dernier " — ")
+      final motif = _extraireMotif(quoi);
+      final cryptoPart = crypto.isNotEmpty ? ' · $crypto' : '';
+      final motifPart  = motif.isNotEmpty  ? ' · $motif'  : '';
+      return '$typeOp — Crypto$cryptoPart$motifPart';
     }
 
     // ── Cas : Paiement PayDunya (Mobile Money) ────────────────────────────────
     // Pattern DB : "Cotisation Manuella — Tour 1 (SycaPay MTN)"
-    //              ou description contenant l'opérateur
+    //              "Apport caisse — location (SycaPay Orange)"
     final mmMatch = RegExp(
       r'\(SycaPay\s+(\w+[-]?\w*)\)',
       caseSensitive: false,
@@ -285,6 +312,7 @@ class _LigneJournal extends StatelessWidget {
           .replaceAll(mmMatch.group(0)!, '')
           .replaceAll(RegExp(r'\s{2,}'), ' ')
           .trim();
+      // Le titre peut contenir "Apport caisse — location", conserver tel quel (lisible)
       return '${titre.isNotEmpty ? titre : 'Paiement'} — $opLabel';
     }
 
@@ -323,7 +351,9 @@ class _LigneJournal extends StatelessWidget {
     if (quoi.startsWith('RETRAIT_CLOS_REJETE')) return 'Vote retrait rejeté ❌';
 
     // ── Fallback : nettoyage générique ─────────────────────────────────────
-    return quoi
+    // Tenter d'extraire un motif éventuel avant de tout remplacer
+    final motifFallback = _extraireMotif(quoi);
+    final base = quoi
         .replaceAll('_', ' ')
         // ── Opérateurs / moyens de paiement (anciens codes en base) ───────
         .replaceAll('SYCAPAY', 'Orange Money')
@@ -352,6 +382,11 @@ class _LigneJournal extends StatelessWidget {
         .replaceAll('DEMANDE PREMIUM', 'Demande Premium')
         .replaceAll('TOUR', 'Tour')
         .trim();
+    // Si un motif a été extrait et n'est pas déjà dans la chaîne nettoyée, l'ajouter
+    if (motifFallback.isNotEmpty && !base.contains(motifFallback)) {
+      return '$base · $motifFallback';
+    }
+    return base;
   }
 
   /// Traduit le type de vote en label humain.
