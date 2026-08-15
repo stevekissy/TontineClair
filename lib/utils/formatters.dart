@@ -100,6 +100,17 @@ class Formatters {
     return s[0].toUpperCase() + s.substring(1);
   }
 
+  /// Nettoie le champ "par" / "gestionnaire" stocké en base de données.
+  /// Remplace les anciens noms de prestataires (SycaPay, CoinPayments…)
+  /// par un libellé lisible, sans modifier les noms de vrais gestionnaires.
+  static String nettoyerAuteur(String auteur) {
+    final lower = auteur.toLowerCase().trim();
+    if (lower == 'sycapay')      return 'Orange Money';
+    if (lower == 'coinpayments') return 'CoinPayments';
+    if (lower.startsWith('sycapay')) return 'Orange Money';
+    return auteur.trim().isEmpty ? 'Système' : auteur.trim();
+  }
+
   static String heureFormatee(DateTime? date) {
     if (date == null) return '';
     return DateFormat('HH:mm', 'fr_FR').format(date.toLocal());

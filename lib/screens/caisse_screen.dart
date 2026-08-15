@@ -1414,7 +1414,7 @@ class _LigneMouvement extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '${mouvement.gestionnaire} · ${Formatters.dateFormatee(date)}',
+                  '${Formatters.nettoyerAuteur(mouvement.gestionnaire)} · ${Formatters.dateFormatee(date)}',
                   style: const TextStyle(
                     fontSize: 11.5,
                     color: AppColors.texteDoux,

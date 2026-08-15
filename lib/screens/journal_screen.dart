@@ -175,7 +175,7 @@ class _LigneJournal extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${gest.isEmpty ? 'Système' : gest} · ${Formatters.dateHeure(date)}',
+                  '${Formatters.nettoyerAuteur(gest)} · ${Formatters.dateHeure(date)}',
                   style: const TextStyle(
                     fontSize: 11.5,
                     color: AppColors.texteDoux,
@@ -204,6 +204,15 @@ class _LigneJournal extends StatelessWidget {
   /// Gère les anciens formats concaténés (ex: VOTE_CLOS_ADOPTE_TC123:oui=3:non=1:…)
   /// ET les nouveaux formats structurés.
   String _formaterQuoi(String quoi) {
+    // ── Pré-nettoyage : remplace les noms de prestataires historiques ────────
+    // (les entrées PayDunya/SycaPay en DB contiennent le mot en casse mixte)
+    final quoiPropre = quoi
+        .replaceAll(RegExp(r'SycaPay', caseSensitive: false), 'Orange Money')
+        .replaceAll(RegExp(r'CoinPayments', caseSensitive: false), 'Mobile Money')
+        .replaceAll(RegExp(r'COINPAYMENTS', caseSensitive: false), 'Mobile Money');
+    // Redirige le reste de la fonction sur la chaîne nettoyée
+    quoi = quoiPropre;
+
     // ── Cas : VOTE_CLOS (format historique concaténé) ──────────────────────
     // Exemples :
     //   VOTE_CLOS_ADOPTE_TC80294701:oui=0:non=0:abs=0:participation=0/5
