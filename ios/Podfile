@@ -1,0 +1,80 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# TontineClair — Podfile iOS
+# Flutter 3.35.4  |  Bundle ID : com.tontineclair.app
+# iOS Deployment Target : 14.0
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Platform minimale ─────────────────────────────────────────────────────────
+# iOS 14.0 minimum requis par :
+#   • smile_id 11.x  (SDK biométrique Smile ID)
+#   • firebase_messaging 15.x
+#   • in_app_purchase 3.x
+platform :ios, '14.0'
+
+# ── CocoaPods config ──────────────────────────────────────────────────────────
+ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+project 'Runner', {
+  'Debug'   => :debug,
+  'Profile' => :release,
+  'Release' => :release,
+}
+
+def flutter_root
+  generated_xcode_build_settings_path = File.expand_path(
+    File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__
+  )
+  unless File.exist?(generated_xcode_build_settings_path)
+    raise "#{generated_xcode_build_settings_path} must exist. If you're " \
+          "running pod install manually, make sure flutter pub get is executed first"
+  end
+  File.foreach(generated_xcode_build_settings_path) do |line|
+    matches = line.match(/FLUTTER_ROOT=(.*)/)
+    return matches[1].strip if matches
+  end
+  raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. " \
+        "Try deleting Generated.xcconfig and running flutter pub get"
+end
+
+require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'),
+                         flutter_root)
+
+flutter_ios_podfile_setup
+
+target 'Runner' do
+  use_frameworks!
+  use_modular_headers!
+
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+
+  target 'RunnerTests' do
+    inherit! :search_paths
+  end
+end
+
+# ── Post-install : fix common build issues ────────────────────────────────────
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+
+    target.build_configurations.each do |config|
+      # Forcer iOS 14.0 sur tous les pods
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
+
+      # Désactiver les warnings de pods tiers (garde les logs propres)
+      config.build_settings['GCC_WARN_INHIBIT_ALL_WARNINGS'] = 'YES'
+      config.build_settings['SWIFT_SUPPRESS_WARNINGS'] = 'YES'
+
+      # Fix bitcode (désactivé depuis Xcode 14)
+      config.build_settings['ENABLE_BITCODE'] = 'NO'
+
+      # Fix architecture Apple Silicon (M1/M2/M3)
+      config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64'
+
+      # Fix Smile ID SDK — nécessite C++ libs
+      if target.name == 'smile_id' || target.name.include?('SmileID')
+        config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+      end
+    end
+  end
+end

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  TontineClair — ExportOptions.plist
+  Utilisé par : xcodebuild -exportArchive -exportOptionsPlist ExportOptions.plist
+  
+  ⚠️  AVANT D'UTILISER : remplacer les valeurs entre < > par vos vraies infos
+      dans Xcode → Signing & Capabilities ou Apple Developer Portal
+-->
+<plist version="1.0">
+<dict>
+    <!-- Distribution : "app-store", "ad-hoc", "development", "enterprise" -->
+    <key>method</key>
+    <string>app-store</string>
+
+    <!-- Votre Team ID (10 caractères) — Apple Developer Portal → Membership -->
+    <key>teamID</key>
+    <string>VOTRE_TEAM_ID</string>
+
+    <!-- Signature automatique (recommandé pour débuter) -->
+    <key>signingStyle</key>
+    <string>automatic</string>
+
+    <!-- Bundle ID principal -->
+    <key>bundleIDsForProvisioningProfiles</key>
+    <dict>
+        <key>com.tontineclair.app</key>
+        <!-- Nom de votre Provisioning Profile (laisser vide si signingStyle=automatic) -->
+        <string></string>
+    </dict>
+
+    <!-- Options App Store -->
+    <key>uploadBitcode</key>
+    <false/>
+    <key>uploadSymbols</key>
+    <true/>
+    <key>compileBitcode</key>
+    <false/>
+    <key>stripSwiftSymbols</key>
+    <true/>
+    <key>thinning</key>
+    <string>&lt;none&gt;</string>
+</dict>
+</plist>

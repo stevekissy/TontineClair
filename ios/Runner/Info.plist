@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Tontine</string>
+	<string>TontineClair</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>tontine</string>
+	<string>TontineClair</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -24,10 +24,8 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>UILaunchStoryboardName</key>
-	<string>LaunchScreen</string>
-	<key>UIMainStoryboardFile</key>
-	<string>Main</string>
+
+	<!-- ── Orientations ─────────────────────────────────────────────── -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
@@ -41,9 +39,86 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+
+	<!-- ── Storyboards ──────────────────────────────────────────────── -->
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIMainStoryboardFile</key>
+	<string>Main</string>
+
+	<!-- ── Performance ──────────────────────────────────────────────── -->
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+	<!-- ── Permissions utilisateur ──────────────────────────────────── -->
+	<key>NSCameraUsageDescription</key>
+	<string>TontineClair a besoin de la caméra pour la vérification d'identité Smile ID et la photo de profil.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>TontineClair a besoin d'accéder à vos photos pour la photo de profil et la vérification d'identité.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>TontineClair souhaite sauvegarder des images dans votre galerie photo.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>TontineClair a besoin du microphone pour la vérification d'identité Smile ID.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>TontineClair utilise Face ID pour sécuriser l'accès à votre compte tontine.</string>
+
+	<!-- ── Notifications push (Firebase Cloud Messaging) ────────────── -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>remote-notification</string>
+	</array>
+
+	<!-- ── Firebase Google Sign-In URL scheme ───────────────────────── -->
+	<!-- À compléter avec le REVERSED_CLIENT_ID de votre GoogleService-Info.plist -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.tontineclair.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<!-- Remplacer par votre REVERSED_CLIENT_ID depuis GoogleService-Info.plist -->
+				<!-- Exemple: com.googleusercontent.apps.XXXXXX-XXXXXXXXXXXX -->
+				<string>com.tontineclair.app</string>
+			</array>
+		</dict>
+	</array>
+
+	<!-- ── Sécurité réseau ───────────────────────────────────────────── -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<false/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>ubrqtcxbxcmvmxleiglh.supabase.co</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<false/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+			<key>smileidentity.com</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<false/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
+
+	<!-- ── URL Schemes ouverts (WhatsApp, Wave) ─────────────────────── -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>whatsapp</string>
+		<string>wave</string>
+		<string>mailto</string>
+	</array>
 </dict>
 </plist>
