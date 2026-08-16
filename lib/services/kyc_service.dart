@@ -211,9 +211,24 @@ class SmileIdKycProvider implements KycProvider {
   @override
   Future<KycVerification> getStatus(String userId) async {
     // Récupère le statut depuis Supabase (mis à jour par le webhook)
+    // Double-lookup : userId brut d'abord, puis userId sanitized si notStarted
+    // (cas où une session précédente a enregistré avec l'id sanitized)
     try {
       final row = await SupabaseService.kycGetStatus(userId);
-      if (row != null) return KycVerification.fromMap(row);
+      if (row != null) {
+        final kyc = KycVerification.fromMap(row);
+        // Si trouvé et pas notStarted → retourner directement
+        if (kyc.status != KycStatus.notStarted) return kyc;
+      }
+      // Essayer avec userId sanitized (suppression caractères spéciaux)
+      final sanitized = userId
+          .replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '-')
+          .replaceAll(RegExp(r'-{2,}'), '-')
+          .replaceAll(RegExp(r'^-|-$'), '');
+      if (sanitized.isNotEmpty && sanitized != userId) {
+        final row2 = await SupabaseService.kycGetStatus(sanitized);
+        if (row2 != null) return KycVerification.fromMap(row2);
+      }
     } catch (e) {
       if (kDebugMode) debugPrint('[SmileID] getStatus error: $e');
     }

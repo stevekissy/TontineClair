@@ -184,10 +184,16 @@ class _KycScreenState extends State<KycScreen> {
           final errMsg = result['__error'] as String? ?? 'Erreur inconnue';
           if (kDebugMode) debugPrint('[SmileID] onError reçu: $errMsg');
 
-          // ── Récupération intelligente en cas d'erreur réseau SDK ──────────
-          // PROTOCOL_ERROR / network error = problème réseau Smile ID.
-          // Si l'utilisateur était déjà vérifié (session précédente réussie),
-          // on ne le bloque pas — on vérifie en base et on affiche le succès.
+          // ── Récupération intelligente en cas d'erreur SDK ────────────────
+          // Cas 1 : PROTOCOL_ERROR / erreur réseau → vérifier en base
+          // Cas 2 : "already enrolled" / "Wrong job type" → l'utilisateur est
+          //         déjà enregistré chez Smile ID = déjà vérifié. On marque
+          //         directement verified en base et on retourne succès.
+          final estDejaEnrolle = errMsg.toLowerCase().contains('already enrolled')
+              || errMsg.toLowerCase().contains('wrong job type')
+              || errMsg.toLowerCase().contains('user is already enrolled')
+              || errMsg.toLowerCase().contains('already registered');
+
           final estErreurReseau = errMsg.contains('PROTOCOL_ERROR')
               || errMsg.contains('stream was reset')
               || errMsg.contains('SocketException')
@@ -195,13 +201,48 @@ class _KycScreenState extends State<KycScreen> {
               || errMsg.contains('Failed to connect')
               || errMsg.contains('network');
 
-          if (estErreurReseau && mounted) {
-            if (kDebugMode) debugPrint('[SmileID] Erreur réseau — vérification statut en base...');
-            // Recharger le statut depuis Supabase
+          // Cas "already enrolled" : l'utilisateur EST vérifié chez Smile ID
+          // → on sauvegarde verified en base si pas encore fait, puis succès
+          if (estDejaEnrolle && mounted) {
+            if (kDebugMode) debugPrint('[SmileID] "already enrolled" → utilisateur déjà vérifié, sauvegarde en base...');
             await _charger();
             if (!mounted) return;
 
-            // Si déjà vérifié → afficher succès sans relancer le SDK
+            // Si pas encore marqué verified en base → le marquer maintenant
+            if (_kyc?.status != KycStatus.verified) {
+              if (kDebugMode) debugPrint('[SmileID] Marquage verified en base (was: ${_kyc?.status})');
+              final now = DateTime.now();
+              await _kycUpsertDirect(
+                userId:     widget.userId,
+                jobId:      'smile-already-enrolled-${now.millisecondsSinceEpoch}',
+                status:     'verified',
+                verifiedAt: now,
+                expiresAt:  now.add(const Duration(days: 365)),
+              );
+              await _charger();
+              if (!mounted) return;
+            }
+
+            // Afficher dialog succès
+            await showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (_) => _SmileIdResultDialog(
+                isVerified: true,
+                onRetourProfil: () {
+                  Navigator.pop(context);
+                  Navigator.pop(context, true);
+                },
+              ),
+            );
+            return;
+          }
+
+          if (estErreurReseau && mounted) {
+            if (kDebugMode) debugPrint('[SmileID] Erreur réseau — vérification statut en base...');
+            await _charger();
+            if (!mounted) return;
+
             if (_kyc?.status == KycStatus.verified) {
               if (kDebugMode) debugPrint('[SmileID] Déjà verified en base → dialog succès');
               await showDialog(
@@ -219,7 +260,7 @@ class _KycScreenState extends State<KycScreen> {
             }
           }
 
-          // Erreur non-réseau ou non encore vérifié → afficher l'erreur normalement
+          // Erreur non gérée → afficher l'erreur normalement
           _afficherErreur('Smile ID : $errMsg');
         } else {
           await _onSmileIdSuccess(result);
