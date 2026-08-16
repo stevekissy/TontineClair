@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Désactiver Swift Package Manager — CocoaPods uniquement -->
+	<key>IDEPackageResolutionDisabled</key>
+	<true/>
+	<!-- Désactiver les previews SwiftUI (non nécessaires) -->
 	<key>PreviewsEnabled</key>
 	<false/>
 </dict>
