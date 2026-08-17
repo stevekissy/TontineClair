@@ -26,12 +26,22 @@ void main() async {
   // Charger la config Supabase stockée
   await StorageService.loadSupabaseConfig();
 
-  // Initialiser Firebase + notifications push
-  // firebase_options.dart garantit l'init correcte en release Android
+  // Initialiser Firebase
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  await NotificationService.initialiser();
+
+  // Initialiser les notifications push — non-bloquant : une erreur ici ne doit
+  // jamais empêcher runApp() de démarrer. L'app sera fonctionnelle sans notifs.
+  try {
+    await NotificationService.initialiser();
+  } catch (e, st) {
+    if (kDebugMode) {
+      debugPrint('[main] ⚠️ NotificationService.initialiser() failed: $e');
+      debugPrintStack(stackTrace: st);
+    }
+    // Continue — runApp() sera appelé normalement ci-dessous.
+  }
 
   // Initialiser le SDK natif Smile ID (KYC identité Premium).
   // AWAIT obligatoire : le SDK doit être prêt avant que l'utilisateur

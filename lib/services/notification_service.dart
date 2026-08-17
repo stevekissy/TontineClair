@@ -39,73 +39,148 @@ class NotificationService {
   static const _kDernierReabonnement = 'fcm_dernier_reabonnement';
 
   // ── Initialisation complète ────────────────────────────────────────────────
+  // Chaque étape est isolée dans son propre try/catch.
+  // Aucune erreur de notification ne doit jamais empêcher runApp() de démarrer.
   static Future<void> initialiser() async {
     // 1. Plugin local notifications — Android + iOS (Darwin)
-    const androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: false, // on demande via FCM ci-dessous
-      requestBadgePermission: false,
-      requestSoundPermission: false,
-    );
-    const initSettings = InitializationSettings(
-      android: androidSettings,
-      iOS: iosSettings,
-    );
-    await _local.initialize(
-      initSettings,
-      onDidReceiveNotificationResponse: _surTapNotification,
-    );
+    try {
+      const androidSettings =
+          AndroidInitializationSettings('@mipmap/ic_launcher');
+      const iosSettings = DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
+      );
+      const initSettings = InitializationSettings(
+        android: androidSettings,
+        iOS: iosSettings,
+      );
+      await _local.initialize(
+        initSettings,
+        onDidReceiveNotificationResponse: _surTapNotification,
+      );
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[NotifService] ⚠️ étape 1 (_local.initialize) error: $e');
+        debugPrintStack(stackTrace: st);
+      }
+    }
 
     // 2. Créer le canal Android haute importance (ignoré sur iOS)
-    await _local
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(_canal);
+    try {
+      await _local
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(_canal);
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[NotifService] ⚠️ étape 2 (createNotificationChannel) error: $e');
+        debugPrintStack(stackTrace: st);
+      }
+    }
 
-    // 3. Demander la permission notifications (Android 13+ / iOS)
-    final messaging = FirebaseMessaging.instance;
-    await messaging.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
+    // 3. Firebase Messaging — permission + listeners
+    FirebaseMessaging? messaging;
+    try {
+      messaging = FirebaseMessaging.instance;
+      await messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[NotifService] ⚠️ étape 3 (requestPermission) error: $e');
+        debugPrintStack(stackTrace: st);
+      }
+    }
 
     // 4. Handler background
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    try {
+      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[NotifService] ⚠️ étape 4 (onBackgroundMessage) error: $e');
+        debugPrintStack(stackTrace: st);
+      }
+    }
 
-    // 5. Notification reçue quand app au premier plan (foreground).
-    //    FCM livre le message → on affiche la notification locale.
-    FirebaseMessaging.onMessage.listen((message) {
-      _afficherNotificationLocale(message);
-    });
+    // 5. Notification foreground
+    try {
+      FirebaseMessaging.onMessage.listen((message) {
+        _afficherNotificationLocale(message);
+      });
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[NotifService] ⚠️ étape 5 (onMessage) error: $e');
+        debugPrintStack(stackTrace: st);
+      }
+    }
 
     // 6. App ouverte depuis une notification (arrière-plan)
-    FirebaseMessaging.onMessageOpenedApp.listen((message) {
-      _traiterDonnees(message.data);
-    });
+    try {
+      FirebaseMessaging.onMessageOpenedApp.listen((message) {
+        _traiterDonnees(message.data);
+      });
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[NotifService] ⚠️ étape 6 (onMessageOpenedApp) error: $e');
+        debugPrintStack(stackTrace: st);
+      }
+    }
 
     // 7. App lancée depuis une notification (complètement fermée)
-    final initial = await messaging.getInitialMessage();
-    if (initial != null) {
-      _traiterDonnees(initial.data);
+    try {
+      final initial = await messaging?.getInitialMessage();
+      if (initial != null) {
+        _traiterDonnees(initial.data);
+      }
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[NotifService] ⚠️ étape 7 (getInitialMessage) error: $e');
+        debugPrintStack(stackTrace: st);
+      }
     }
 
     // 8. Initialiser le canal des rappels d'échéances
-    await RappelService.initialiserCanal();
+    // RappelService.initialiserCanal() a son propre try/catch interne
+    try {
+      await RappelService.initialiserCanal();
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[NotifService] ⚠️ étape 8 (RappelService.initialiserCanal) error: $e');
+        debugPrintStack(stackTrace: st);
+      }
+    }
 
     // 9. Sauvegarder le token FCM
-    await _sauvegarderToken();
-    messaging.onTokenRefresh.listen(_enregistrerToken);
+    try {
+      if (messaging != null) {
+        await _sauvegarderToken();
+        messaging.onTokenRefresh.listen(_enregistrerToken);
+      }
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[NotifService] ⚠️ étape 9 (sauvegarderToken) error: $e');
+        debugPrintStack(stackTrace: st);
+      }
+    }
 
-    // 10. Ré-abonner aux topics FCM de TOUTES les tontines au démarrage
-    //     Garanti même si l'app a été réinstallée ou le token FCM a changé.
-    //     Fait en background — non-bloquant.
-    _reabonnerTousTopic();
+    // 10. Ré-abonner aux topics (non-bloquant, fire-and-forget)
+    try {
+      _reabonnerTousTopic();
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[NotifService] ⚠️ étape 10 (reabonnerTousTopic) error: $e');
+        debugPrintStack(stackTrace: st);
+      }
+    }
 
     if (kDebugMode) {
-      final token = await messaging.getToken();
-      debugPrint('[FCM] Token: $token');
+      try {
+        final token = await messaging?.getToken();
+        debugPrint('[FCM] Token: $token');
+      } catch (_) {}
     }
   }
 

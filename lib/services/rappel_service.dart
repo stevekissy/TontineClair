@@ -41,22 +41,42 @@ class RappelService {
   // Initialisation du canal rappels
   // ─────────────────────────────────────────────────────────────────────────
   static Future<void> initialiserCanal() async {
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const initSettings = InitializationSettings(android: androidSettings);
-    await _local.initialize(initSettings);
+    // Initialisation du canal de rappels — ne doit jamais bloquer l'app.
+    // Sur iOS, flutter_local_notifications nécessite DarwinInitializationSettings
+    // sinon lève une PlatformException qui remonte et crashe le démarrage.
+    try {
+      const androidSettings =
+          AndroidInitializationSettings('@mipmap/ic_launcher');
+      const iosSettings = DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
+      );
+      const initSettings = InitializationSettings(
+        android: androidSettings,
+        iOS: iosSettings,
+      );
+      await _local.initialize(initSettings);
 
-    await _local
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(
-          const AndroidNotificationChannel(
-            _canalId,
-            _canalNom,
-            description: _canalDesc,
-            importance: Importance.high,
-            playSound: true,
-          ),
-        );
+      await _local
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(
+            const AndroidNotificationChannel(
+              _canalId,
+              _canalNom,
+              description: _canalDesc,
+              importance: Importance.high,
+              playSound: true,
+            ),
+          );
+    } catch (e, st) {
+      // Échec non-fatal : les rappels seront indisponibles mais l'app démarre.
+      if (kDebugMode) {
+        debugPrint('[RappelService] ⚠️ initialiserCanal error: $e');
+        debugPrintStack(stackTrace: st);
+      }
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
