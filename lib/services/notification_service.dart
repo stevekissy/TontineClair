@@ -40,22 +40,30 @@ class NotificationService {
 
   // ── Initialisation complète ────────────────────────────────────────────────
   static Future<void> initialiser() async {
-    // 1. Plugin local notifications
+    // 1. Plugin local notifications — Android + iOS (Darwin)
     const androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
-    const initSettings = InitializationSettings(android: androidSettings);
+    const iosSettings = DarwinInitializationSettings(
+      requestAlertPermission: false, // on demande via FCM ci-dessous
+      requestBadgePermission: false,
+      requestSoundPermission: false,
+    );
+    const initSettings = InitializationSettings(
+      android: androidSettings,
+      iOS: iosSettings,
+    );
     await _local.initialize(
       initSettings,
       onDidReceiveNotificationResponse: _surTapNotification,
     );
 
-    // 2. Créer le canal Android haute importance
+    // 2. Créer le canal Android haute importance (ignoré sur iOS)
     await _local
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(_canal);
 
-    // 3. Demander la permission (Android 13+)
+    // 3. Demander la permission notifications (Android 13+ / iOS)
     final messaging = FirebaseMessaging.instance;
     await messaging.requestPermission(
       alert: true,
@@ -174,6 +182,11 @@ class NotificationService {
           styleInformation: BigTextStyleInformation(
             notification.body ?? '',
           ),
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
         ),
       ),
       payload: jsonEncode(message.data),

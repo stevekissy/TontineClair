@@ -1,10 +1,6 @@
-// Généré depuis android/app/google-services.json + config iOS Firebase
+// Configuration Firebase — TontineClair
 // project_id : tontineclair | project_number : 1095188462472
-//
-// ⚠️  iOS GOOGLE_APP_ID : remplacer la valeur ci-dessous après avoir créé
-//     l'app iOS dans Firebase Console → Project settings → Add app → iOS
-//     Bundle ID : com.tontineclair.app
-//     Puis récupérer GOOGLE_APP_ID depuis GoogleService-Info.plist téléchargé.
+// Généré depuis google-services.json (Android) et GoogleService-Info.plist (iOS)
 
 import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart'
@@ -13,7 +9,6 @@ import 'package:flutter/foundation.dart'
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
-      // Web non configuré — Firebase Web nécessite une config séparée
       throw UnsupportedError(
         'Firebase Web non configuré. Ajouter une app Web dans Firebase Console.',
       );
@@ -24,7 +19,7 @@ class DefaultFirebaseOptions {
       case TargetPlatform.iOS:
         return ios;
       case TargetPlatform.macOS:
-        return ios; // macOS utilise la même config que iOS
+        return ios;
       default:
         throw UnsupportedError(
           'Plateforme ${defaultTargetPlatform.name} non supportée par Firebase.',
@@ -42,9 +37,8 @@ class DefaultFirebaseOptions {
   );
 
   // ── iOS ───────────────────────────────────────────────────────────────────
-  // App iOS enregistrée dans Firebase Console — clés officielles.
-  // GOOGLE_APP_ID : 1:1095188462472:ios:0bdc2a4d895ba93b77d83d
-  // API_KEY iOS (distincte de la clé Android) : AIzaSyDkLrJhHQo_trXGxOECLqJ5e7mzY5anAzw
+  // App iOS : com.tontineclair.app — enregistrée dans Firebase Console.
+  // Clés issues de GoogleService-Info.plist officiel (téléchargé le 2025-08-13).
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey:            'AIzaSyDkLrJhHQo_trXGxOECLqJ5e7mzY5anAzw',
     appId:             '1:1095188462472:ios:0bdc2a4d895ba93b77d83d',
