@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:smile_id/smile_id.dart';
+// import 'package:smile_id/smile_id.dart';  // Réactiver avec SmileID.initialize() (voir bloc désactivé ci-dessous)
 import 'firebase_options.dart';
 import 'services/storage_service.dart';
 import 'services/tontine_provider.dart';
@@ -43,24 +43,48 @@ void main() async {
     // Continue — runApp() sera appelé normalement ci-dessous.
   }
 
-  // Initialiser le SDK natif Smile ID (KYC identité Premium).
-  // AWAIT obligatoire : le SDK doit être prêt avant que l'utilisateur
-  // puisse appuyer sur le bouton. L'init se fait pendant le splash screen,
-  // donc l'utilisateur ne voit aucun délai.
-  // En cas d'échec, l'app démarre quand même — onError() du widget gère
-  // les erreurs au moment de l'utilisation.
-  try {
-    await SmileID.initialize(useSandbox: false, enableCrashReporting: false);
-    if (kDebugMode) debugPrint('[SmileID] ✅ initialized OK');
-  } catch (e, st) {
-    // Init a échoué mais on ne bloque pas l'app.
-    // onError() dans SmileIDDocumentVerification affichera l'erreur.
-    // On catch Object (inclut Error + Exception + PlatformException iOS)
-    if (kDebugMode) {
-      debugPrint('[SmileID] ⚠️ initialize error: $e');
-      debugPrint('[SmileID] ⚠️ stacktrace: $st');
-    }
+  // ── SMILE ID — DÉSACTIVÉ TEMPORAIREMENT (diagnostic crash iOS) ────────────
+  //
+  // CAUSE DU CRASH (Swift runtime fatal, non-catchable en Dart) :
+  //   SmileIDPlugin s'enregistre dans GeneratedPluginRegistrant.m lors de
+  //   didFinishLaunchingWithOptions, AVANT que Dart s'exécute.
+  //   Un force-unwrap nil dans le SDK natif (SmileIDSDK.xcframework) tue le
+  //   processus avec "Swift runtime failure: Unexpectedly found nil while
+  //   unwrapping an Optional value". Ce crash se produit côté natif Swift/ObjC
+  //   et NE PEUT PAS être intercepté par un try/catch Dart.
+  //
+  // ACTIONS REQUISES CÔTÉ XCODE (avant de réactiver) :
+  //   1. Nettoyer complètement les Pods sur votre Mac :
+  //        cd ios
+  //        rm -rf Pods Podfile.lock .symlinks
+  //        pod cache clean --all
+  //        pod install --repo-update
+  //   2. Nettoyer DerivedData dans Xcode :
+  //        Xcode → Product → Clean Build Folder (⇧⌘K)
+  //        Xcode → Window → Organizer → Delete derived data
+  //        rm -rf ~/Library/Developer/Xcode/DerivedData/Runner-*
+  //   3. Vérifier que Podfile.lock résolu contient bien SmileIDSDK 11.2.1+ :
+  //        grep -A2 "SmileIDSDK" ios/Podfile.lock
+  //   4. Si SmileIDSDK 11.2.0 est encore dans le cache CocoaPods :
+  //        pod cache clean SmileIDSDK --all
+  //        pod install --repo-update
+  //   5. Une fois le cache propre et la version 11.2.1+ confirmée,
+  //      réactiver en décommentant le bloc ci-dessous.
+  //
+  // RÉACTIVER en décommentant ce bloc quand SmileIDSDK 11.2.1+ est confirmé :
+  // try {
+  //   await SmileID.initialize(useSandbox: false, enableCrashReporting: false);
+  //   if (kDebugMode) debugPrint('[SmileID] ✅ initialized OK');
+  // } catch (e, st) {
+  //   if (kDebugMode) {
+  //     debugPrint('[SmileID] ⚠️ initialize error: $e');
+  //     debugPrint('[SmileID] ⚠️ stacktrace: $st');
+  //   }
+  // }
+  if (kDebugMode) {
+    debugPrint('[SmileID] ⏭️ initialize() DÉSACTIVÉ — crash iOS diagnostiqué (voir commentaire)');
   }
+  // ── FIN DÉSACTIVATION TEMPORAIRE ──────────────────────────────────────────
 
   // Initialiser Google Play Billing / Apple StoreKit
   // (unawaited — ne bloque pas le démarrage, se fait en arrière-plan)

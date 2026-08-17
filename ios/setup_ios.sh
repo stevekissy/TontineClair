@@ -60,13 +60,24 @@ echo "  FLUTTER_ROOT détecté : $FLUTTER_ROOT_MAC"
 ok "Generated.xcconfig valide — FLUTTER_ROOT=$FLUTTER_ROOT_MAC"
 
 # ── Étape 2 : Nettoyage complet iOS ──────────────────────────────────────────
-step "2/5 — Nettoyage (Pods, .symlinks, Podfile.lock, DerivedData)"
+step "2/5 — Nettoyage (Pods, .symlinks, Podfile.lock, DerivedData, cache SmileIDSDK)"
 
 cd ios
 
 rm -rf Pods
 rm -rf .symlinks
 rm -f  Podfile.lock
+
+# ── Nettoyage du cache CocoaPods SmileIDSDK ───────────────────────────────────
+# CRITIQUE : si SmileIDSDK 11.2.0 (bugguée) est en cache, pod install la réutilise
+# même si pubspec.yaml demande smile_id: 11.2.12 (SmileIDSDK 11.2.1+).
+# Le crash "Swift runtime failure: Unexpectedly found nil while unwrapping an
+# Optional value" vient de SmileIDSDK 11.2.0 qui a un force-unwrap non-protégé
+# lors de l'enregistrement du plugin (GeneratedPluginRegistrant.m, natif).
+echo "  → Nettoyage cache CocoaPods SmileIDSDK (force la version 11.2.1+) ..."
+pod cache clean SmileIDSDK --all 2>/dev/null || true
+pod cache clean smile_id   --all 2>/dev/null || true
+ok "Cache SmileIDSDK nettoyé"
 
 # Forcer SPM désactivé dans le workspace (Xcode peut le réactiver)
 mkdir -p Runner.xcworkspace/xcshareddata
@@ -114,8 +125,34 @@ ok "Specs CocoaPods à jour"
 
 # ── Étape 4 : pod install ─────────────────────────────────────────────────────
 step "4/5 — pod install"
-pod install
+pod install --repo-update
 ok "Pods installés avec succès"
+
+# ── Vérification version SmileIDSDK post-install ──────────────────────────────
+echo ""
+echo "  Vérification de la version SmileIDSDK installée ..."
+SMILEID_VERSION=$(grep -A2 "SmileIDSDK" Podfile.lock 2>/dev/null | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1 || true)
+if [ -z "$SMILEID_VERSION" ]; then
+  warn "SmileIDSDK non trouvé dans Podfile.lock — vérifier pod install"
+else
+  echo "  SmileIDSDK installé : $SMILEID_VERSION"
+  # Version minimale requise : 11.2.1 (corrige le crash force-unwrap nil)
+  MAJOR=$(echo "$SMILEID_VERSION" | cut -d. -f1)
+  MINOR=$(echo "$SMILEID_VERSION" | cut -d. -f2)
+  PATCH=$(echo "$SMILEID_VERSION" | cut -d. -f3)
+  if [ "$MAJOR" -gt 11 ] || \
+     ([ "$MAJOR" -eq 11 ] && [ "$MINOR" -gt 2 ]) || \
+     ([ "$MAJOR" -eq 11 ] && [ "$MINOR" -eq 2 ] && [ "$PATCH" -ge 1 ]); then
+    ok "SmileIDSDK $SMILEID_VERSION ✅ (≥ 11.2.1 — crash force-unwrap corrigé)"
+  else
+    warn "SmileIDSDK $SMILEID_VERSION ⚠️ — VERSION TROP ANCIENNE !"
+    warn "11.2.0 a un bug Swift force-unwrap nil qui crashe au démarrage iOS."
+    warn "Nettoyer le cache CocoaPods et relancer ce script :"
+    warn "  pod cache clean SmileIDSDK --all"
+    warn "  pod cache clean smile_id --all"
+    warn "  ./ios/setup_ios.sh"
+  fi
+fi
 
 cd ..
 
@@ -146,8 +183,14 @@ echo ""
 echo "  Dans Xcode :"
 echo "  1. Signing & Capabilities → sélectionner votre Team"
 echo "  2. Bundle ID = com.tontineclair.app  ✅"
-echo "  3. Ajouter GoogleService-Info.plist (depuis Firebase Console)"
-echo "  4. Product → Run (appareil) ou Archive (distribution)"
+echo "  3. GoogleService-Info.plist déjà présent dans Runner/ ✅"
+echo "  4. Product → Clean Build Folder (⇧⌘K) — IMPORTANT après nettoyage Pods"
+echo "  5. Product → Run (appareil) ou Archive (distribution)"
+echo ""
+echo -e "${YELLOW}  ⚠️  IMPORTANT — SmileID désactivé temporairement${NC}"
+echo    "     SmileID.initialize() est commenté dans lib/main.dart"
+echo    "     (crash Swift force-unwrap nil diagnostiqué)."
+echo    "     Réactiver après confirmation que SmileIDSDK ≥ 11.2.1 est bien installé."
 echo ""
 
 read -p "  Ouvrir Xcode maintenant ? [o/N] " OPEN_XCODE
