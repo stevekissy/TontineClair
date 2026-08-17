@@ -62,7 +62,8 @@ flutter_ios_podfile_setup
 
 target 'Runner' do
   use_frameworks!
-  use_modular_headers!
+  # use_modular_headers! supprimé — incompatible avec SmileIDSDK.xcframework statique
+  # (causait des doublons de symboles ObjC avec FingerprintJS/Sentry bundlés dans le binaire)
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
 
@@ -72,6 +73,23 @@ target 'Runner' do
 end
 
 post_install do |installer|
+  # ── Supprimer les pods fantômes de SmileIDSDK ─────────────────────────────
+  # SmileIDSDK 11.2.0 déclarait FingerprintJS, Sentry et ZIPFoundation comme
+  # dépendances CocoaPods alors que leurs symboles ObjC sont déjà statiquement
+  # embarqués dans SmileIDSDK.xcframework → double définition au runtime →
+  # crash "Class X implemented in both SmileIDSDK.framework and FingerprintJS.framework".
+  # SmileIDSDK 11.2.1+ a supprimé ces déclarations (PR #514). Si ces pods sont
+  # encore présents (cache CocoaPods ancienne version), on les neutralise ici.
+  SMILEID_PHANTOM_PODS = %w[FingerprintJS FingerprintJSPro Sentry SentryPrivate ZIPFoundation].freeze
+  installer.pods_project.targets.each do |target|
+    if SMILEID_PHANTOM_PODS.any? { |phantom| target.name == phantom }
+      target.build_configurations.each do |config|
+        # Désactiver le target fantôme — ses symboles sont déjà dans SmileIDSDK.xcframework
+        config.build_settings['EXCLUDED_ARCHS'] = 'arm64 x86_64'
+      end
+    end
+  end
+
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
 
@@ -86,8 +104,6 @@ post_install do |installer|
       config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64'
 
       # ── Supprimer toute référence FlutterGeneratedPluginSwiftPackage ───
-      # Ce package SPM généré automatiquement par Flutter ≥ 3.24 peut
-      # entrer en conflit avec CocoaPods. On force sa suppression.
       config.build_settings['SWIFT_PACKAGE_MANAGER_ENABLED'] = 'NO'
 
       # ── Fix warnings pods tiers ───────────────────────────────────────

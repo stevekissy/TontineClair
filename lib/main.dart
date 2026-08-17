@@ -42,10 +42,14 @@ void main() async {
   try {
     await SmileID.initialize(useSandbox: false, enableCrashReporting: false);
     if (kDebugMode) debugPrint('[SmileID] ✅ initialized OK');
-  } catch (e) {
+  } catch (e, st) {
     // Init a échoué mais on ne bloque pas l'app.
     // onError() dans SmileIDDocumentVerification affichera l'erreur.
-    if (kDebugMode) debugPrint('[SmileID] ⚠️ initialize error: $e');
+    // On catch Object (inclut Error + Exception + PlatformException iOS)
+    if (kDebugMode) {
+      debugPrint('[SmileID] ⚠️ initialize error: $e');
+      debugPrint('[SmileID] ⚠️ stacktrace: $st');
+    }
   }
 
   // Initialiser Google Play Billing / Apple StoreKit
