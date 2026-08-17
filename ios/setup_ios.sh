@@ -1,10 +1,9 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────────────────
 # TontineClair — Script de nettoyage et setup iOS
-# À exécuter depuis la racine du projet flutter_app/ sur votre Mac
+# CocoaPods uniquement (SPM désactivé)
 #
-# Usage :
-#   cd /chemin/vers/flutter_app
+# Usage : depuis la racine du projet flutter_app/
 #   chmod +x ios/setup_ios.sh
 #   ./ios/setup_ios.sh
 # ─────────────────────────────────────────────────────────────────────────────
@@ -21,35 +20,55 @@ ok()   { echo -e "${GREEN}✅ $1${NC}"; }
 warn() { echo -e "${YELLOW}⚠️  $1${NC}"; }
 err()  { echo -e "${RED}❌ $1${NC}"; exit 1; }
 
+# ── Vérifier qu'on est bien à la racine du projet ─────────────────────────────
+[ -f "pubspec.yaml" ] || err "Exécuter ce script depuis la racine du projet flutter_app/ (là où se trouve pubspec.yaml)"
+
 # ── Vérifications préalables ──────────────────────────────────────────────────
-step "Vérification de l'environnement"
+step "0/5 — Vérification de l'environnement"
 
-command -v flutter >/dev/null 2>&1 || err "Flutter non trouvé. Installer Flutter 3.35.4"
-command -v pod     >/dev/null 2>&1 || err "CocoaPods non trouvé. Installer : sudo gem install cocoapods"
-command -v xcodebuild >/dev/null 2>&1 || err "Xcode non trouvé. Installer Xcode depuis le Mac App Store"
+command -v flutter    >/dev/null 2>&1 || err "Flutter non trouvé. Installer Flutter 3.35.4 : https://docs.flutter.dev/get-started/install/macos"
+command -v pod        >/dev/null 2>&1 || err "CocoaPods non trouvé. Exécuter : sudo gem install cocoapods"
+command -v xcodebuild >/dev/null 2>&1 || err "Xcode non trouvé. Installer depuis le Mac App Store"
 
-FLUTTER_VER=$(flutter --version 2>/dev/null | head -1 | grep -o '3\.[0-9]*\.[0-9]*' || echo "inconnu")
-echo "  Flutter    : $FLUTTER_VER"
-echo "  CocoaPods  : $(pod --version)"
+echo "  Flutter    : $(flutter --version 2>/dev/null | head -1)"
+echo "  CocoaPods  : $(pod --version 2>/dev/null)"
 echo "  Xcode      : $(xcodebuild -version 2>/dev/null | head -1)"
 ok "Environnement OK"
 
-# ── Étape 1 : flutter pub get ────────────────────────────────────────────────
-step "1/6 — flutter pub get"
+# ── Étape 1 : flutter pub get → génère Generated.xcconfig ────────────────────
+# CRITIQUE : doit être fait AVANT pod install.
+# Generated.xcconfig contient FLUTTER_ROOT= pointant vers le SDK Flutter
+# de CETTE machine. Le Podfile le lit pour charger podhelper.rb.
+step "1/5 — flutter pub get (génère ios/Flutter/Generated.xcconfig)"
 flutter pub get
 ok "Dépendances Flutter installées"
 
+# ── Vérification que Generated.xcconfig est bien régénéré ────────────────────
+GENERATED="ios/Flutter/Generated.xcconfig"
+if ! grep -q "^FLUTTER_ROOT=" "$GENERATED" 2>/dev/null; then
+  err "Generated.xcconfig ne contient pas FLUTTER_ROOT après flutter pub get.\nVérifier que Flutter est bien dans votre PATH."
+fi
+
+FLUTTER_ROOT_MAC=$(grep "^FLUTTER_ROOT=" "$GENERATED" | cut -d= -f2 | tr -d '[:space:]')
+echo "  FLUTTER_ROOT détecté : $FLUTTER_ROOT_MAC"
+
+# Vérifier que le SDK existe vraiment sur ce Mac
+[ -d "$FLUTTER_ROOT_MAC" ] || err "FLUTTER_ROOT=$FLUTTER_ROOT_MAC introuvable sur ce Mac.\nVérifier votre installation Flutter."
+[ -f "$FLUTTER_ROOT_MAC/packages/flutter_tools/bin/podhelper.rb" ] || \
+  err "podhelper.rb introuvable dans $FLUTTER_ROOT_MAC/packages/flutter_tools/bin/\nFlutter SDK incomplet ou mauvaise version."
+
+ok "Generated.xcconfig valide — FLUTTER_ROOT=$FLUTTER_ROOT_MAC"
+
 # ── Étape 2 : Nettoyage complet iOS ──────────────────────────────────────────
-step "2/6 — Nettoyage Pods, .symlinks, Podfile.lock, DerivedData"
+step "2/5 — Nettoyage (Pods, .symlinks, Podfile.lock, DerivedData)"
 
 cd ios
 
-# Pods et fichiers CocoaPods
 rm -rf Pods
 rm -rf .symlinks
 rm -f  Podfile.lock
 
-# Désactiver SPM dans le workspace (au cas où Xcode l'aurait réactivé)
+# Forcer SPM désactivé dans le workspace (Xcode peut le réactiver)
 mkdir -p Runner.xcworkspace/xcshareddata
 cat > Runner.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings << 'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -64,87 +83,73 @@ cat > Runner.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings << 'PLIST'
 </plist>
 PLIST
 
-# Nettoyer DerivedData Xcode (peut prendre de la place)
+# Nettoyer DerivedData pour Runner uniquement
 DERIVED_DATA="$HOME/Library/Developer/Xcode/DerivedData"
 if [ -d "$DERIVED_DATA" ]; then
-  # Supprimer uniquement les entrées TontineClair/Runner
-  find "$DERIVED_DATA" -maxdepth 1 -name "Runner-*" -exec rm -rf {} + 2>/dev/null || true
-  find "$DERIVED_DATA" -maxdepth 1 -name "tontine-*" -exec rm -rf {} + 2>/dev/null || true
+  find "$DERIVED_DATA" -maxdepth 1 \( -name "Runner-*" -o -name "tontine-*" \) -exec rm -rf {} + 2>/dev/null || true
   ok "DerivedData nettoyé"
-else
-  warn "DerivedData non trouvé (premier build ?)"
 fi
 
-# Nettoyer le cache CocoaPods local (optionnel mais recommandé)
-warn "Nettoyage cache Pod local (peut être long)..."
-pod cache clean --all 2>/dev/null || true
+# Supprimer FlutterGeneratedPluginSwiftPackage du pbxproj si présent
+PBXPROJ="Runner.xcodeproj/project.pbxproj"
+SPM_COUNT=$(grep -c "FlutterGeneratedPluginSwiftPackage\|XCRemoteSwiftPackageReference\|XCSwiftPackageProductDependency" "$PBXPROJ" 2>/dev/null || true)
+if [ "${SPM_COUNT:-0}" -gt "0" ]; then
+  warn "Références SPM trouvées ($SPM_COUNT) dans project.pbxproj — suppression..."
+  cp "$PBXPROJ" "${PBXPROJ}.bak"
+  sed -i '' '/FlutterGeneratedPluginSwiftPackage/d' "$PBXPROJ"
+  sed -i '' '/XCRemoteSwiftPackageReference/d'      "$PBXPROJ"
+  sed -i '' '/XCSwiftPackageProductDependency/d'    "$PBXPROJ"
+  perl -i '' -0pe 's/packageReferences\s*=\s*\([^)]*\);//g' "$PBXPROJ"
+  ok "Références SPM supprimées"
+else
+  ok "Aucune référence SPM dans project.pbxproj"
+fi
 
 ok "Nettoyage terminé"
 
-# ── Étape 3 : Supprimer FlutterGeneratedPluginSwiftPackage du pbxproj ────────
-step "3/6 — Vérification références SPM dans project.pbxproj"
-
-PBXPROJ="Runner.xcodeproj/project.pbxproj"
-SPM_COUNT=$(grep -c "FlutterGeneratedPluginSwiftPackage\|XCRemoteSwiftPackageReference\|XCSwiftPackageProductDependency\|packageReferences" "$PBXPROJ" 2>/dev/null || echo 0)
-
-if [ "$SPM_COUNT" -gt "0" ]; then
-  warn "Références SPM détectées ($SPM_COUNT lignes) — suppression en cours..."
-  # Supprimer les lignes FlutterGeneratedPluginSwiftPackage
-  sed -i.bak '/FlutterGeneratedPluginSwiftPackage/d' "$PBXPROJ"
-  sed -i.bak '/XCRemoteSwiftPackageReference/d' "$PBXPROJ"
-  sed -i.bak '/XCSwiftPackageProductDependency/d' "$PBXPROJ"
-  # Supprimer les blocs packageReferences = ( ... );
-  perl -i.bak -0pe 's/packageReferences\s*=\s*\([^)]*\);//g' "$PBXPROJ"
-  rm -f Runner.xcodeproj/project.pbxproj.bak
-  ok "Références SPM supprimées"
-else
-  ok "Aucune référence SPM trouvée dans project.pbxproj"
-fi
-
-# ── Étape 4 : pod repo update + pod install ───────────────────────────────────
-step "4/6 — pod repo update (mise à jour des specs)"
+# ── Étape 3 : pod repo update ─────────────────────────────────────────────────
+step "3/5 — pod repo update (mise à jour des specs CocoaPods)"
 pod repo update
+ok "Specs CocoaPods à jour"
 
-step "5/6 — pod install"
-pod install --repo-update
+# ── Étape 4 : pod install ─────────────────────────────────────────────────────
+step "4/5 — pod install"
+pod install
 ok "Pods installés avec succès"
 
 cd ..
 
-# ── Étape 5 : Vérification finale ────────────────────────────────────────────
-step "6/6 — Vérification finale"
+# ── Étape 5 : Vérification finale ─────────────────────────────────────────────
+step "5/5 — Vérification finale"
+
+[ -d "ios/Pods" ]               || err "Dossier Pods absent — pod install a échoué"
+[ -f "ios/Pods/Podfile.lock" ] 2>/dev/null || true
+[ -d "ios/Runner.xcworkspace" ] || err "Runner.xcworkspace absent"
 
 echo ""
 echo "  Bundle ID    : com.tontineclair.app"
-echo "  iOS target   : 15.0 (min)"
-echo "  SPM disabled : IDEPackageResolutionDisabled = true"
-echo "  Workspace    : ios/Runner.xcworkspace"
+echo "  iOS target   : 15.0"
+echo "  Flutter root : $FLUTTER_ROOT_MAC"
+echo "  SPM          : désactivé (IDEPackageResolutionDisabled = true)"
 echo ""
+ok "Tout est prêt !"
 
-# Vérifier que le workspace existe
-[ -d "ios/Runner.xcworkspace" ] || err "Runner.xcworkspace introuvable !"
-[ -d "ios/Pods" ]               || err "Pods non installés !"
-
-ok "Configuration iOS prête !"
-
-# ── Message final ─────────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}═══════════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}  Prochaine étape : ouvrir dans Xcode${NC}"
+echo -e "${GREEN}  Ouvrir le projet dans Xcode :${NC}"
 echo -e "${GREEN}  open ios/Runner.xcworkspace${NC}"
 echo ""
-echo -e "${YELLOW}  ⚠️  IMPORTANT : ouvrir Runner.xcworkspace${NC}"
-echo -e "${YELLOW}     et NON Runner.xcodeproj${NC}"
+echo -e "${YELLOW}  ⚠️  Toujours ouvrir Runner.xcworkspace${NC}"
+echo -e "${YELLOW}     JAMAIS Runner.xcodeproj${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════════════════${NC}"
 echo ""
 echo "  Dans Xcode :"
-echo "  1. Runner → Signing & Capabilities"
-echo "  2. Sélectionner votre Team Apple Developer"
-echo "  3. Bundle ID = com.tontineclair.app  ✅ déjà configuré"
-echo "  4. Product → Archive → Distribute App"
+echo "  1. Signing & Capabilities → sélectionner votre Team"
+echo "  2. Bundle ID = com.tontineclair.app  ✅"
+echo "  3. Ajouter GoogleService-Info.plist (depuis Firebase Console)"
+echo "  4. Product → Run (appareil) ou Archive (distribution)"
 echo ""
 
-# Optionnel : ouvrir Xcode automatiquement
 read -p "  Ouvrir Xcode maintenant ? [o/N] " OPEN_XCODE
 if [[ "$OPEN_XCODE" =~ ^[oOyY]$ ]]; then
   open ios/Runner.xcworkspace

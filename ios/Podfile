@@ -16,17 +16,41 @@ project 'Runner', {
 }
 
 def flutter_root
+  # Generated.xcconfig est créé par `flutter pub get` sur la machine courante.
+  # Il contient FLUTTER_ROOT= pointant vers le SDK Flutter local.
+  # Ne jamais mettre de chemin absolu ici — ce fichier doit être regénéré sur chaque Mac.
   generated_xcode_build_settings_path = File.expand_path(
     File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__
   )
+
   unless File.exist?(generated_xcode_build_settings_path)
-    raise "#{generated_xcode_build_settings_path} must exist. Run: flutter pub get"
+    raise "\n\n[TontineClair] Generated.xcconfig introuvable.\n" \
+          "→ Exécuter depuis la racine du projet : flutter pub get\n" \
+          "  puis relancer : pod install\n"
   end
+
+  root = nil
   File.foreach(generated_xcode_build_settings_path) do |line|
-    matches = line.match(/FLUTTER_ROOT=(.*)/)
-    return matches[1].strip if matches
+    m = line.match(/\AFLUTTER_ROOT=(.+)/)
+    root = m[1].strip if m
   end
-  raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try: flutter pub get"
+
+  raise "\n\n[TontineClair] FLUTTER_ROOT introuvable dans Generated.xcconfig.\n" \
+        "→ Exécuter depuis la racine du projet : flutter pub get\n" \
+        "  puis relancer : pod install\n" if root.nil?
+
+  # Garde : si Generated.xcconfig pointe vers /opt/flutter (chemin de la sandbox
+  # de build — pas votre Mac), cela signifie que flutter pub get n'a pas encore
+  # été exécuté sur cette machine. On lève une erreur explicite.
+  if root.start_with?('/opt/flutter')
+    raise "\n\n[TontineClair] Generated.xcconfig contient un chemin de sandbox (/opt/flutter).\n" \
+          "→ Ce fichier doit être regénéré sur votre Mac :\n" \
+          "   cd #{File.expand_path('..', File.dirname(__FILE__))}\n" \
+          "   flutter pub get\n" \
+          "   cd ios && pod install\n"
+  end
+
+  root
 end
 
 require File.expand_path(
