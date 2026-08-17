@@ -7,10 +7,9 @@
 //   _onSmileIdSuccess  → persiste le résultat dans Supabase via KycService
 //
 // SDK : smile_id 11.2.12
-// Init : SmileID.initializeWithConfig() dans main() — UNE SEULE fois, non-bloquant.
-//        Credentials injectés en Dart (FlutterConfig) → pas de lecture native
-//        de smile_config.json → élimine le crash getConfig(from:) force-unwrap nil.
-//        smile_config.json conservé dans le bundle iOS comme ressource de secours.
+// Init lazy : SmileID.initializeWithConfig() appelé dans _lancerSmileId(),
+//             uniquement à l'entrée dans l'écran KYC. Aucune init au démarrage
+//             de l'app — élimine tout crash SmileID pré-runApp().
 // ═══════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
@@ -19,7 +18,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
-// smile_id.dart non importé ici — SmileID initialisé une seule fois dans main().
+import 'package:smile_id/smile_id.dart';
+import 'package:smile_id/generated/smileid_messages.g.dart';
 import 'package:smile_id/products/document/smile_id_document_verification.dart';
 
 import '../models/kyc_model.dart';
@@ -66,12 +66,13 @@ class _KycScreenState extends State<KycScreen> {
   KycVerification? _kyc;
   bool _loading = true;
   bool _lancementEnCours = false;
+  // Garde lazy : évite de réinitialiser SmileID si déjà fait dans cette session.
+  static bool _smileIdReady = false;
+
   @override
   void initState() {
     super.initState();
     _charger();
-    // SmileID déjà initialisé dans main() via initializeWithConfig.
-    // Pas de réinit locale nécessaire.
   }
 
   /// Charge le statut KYC depuis Supabase.
@@ -126,6 +127,32 @@ class _KycScreenState extends State<KycScreen> {
     setState(() => _lancementEnCours = true);
 
     try {
+      // Init lazy SmileID — une seule fois par session d'app.
+      // Aucune init dans main() : on évite tout crash natif au démarrage.
+      if (!_smileIdReady) {
+        if (kDebugMode) debugPrint('[SmileID] Init lazy…');
+        const smilePartnerId   = '9035';
+        const smileAuthToken   =
+            'VpG6p3R7shpe6cgLd6Lx8kZapVLIjiLtCGLPvpiO41+'
+            '17ooS62Wdx1RJFaSzkIlCZGxR4vp4spqoq5TB0PjhUO0snjxw'
+            'ErmxRhAiYhyTT+rlYcJ99QvxqQqYKQ44nQCNKTFl6jLledHoo'
+            'V5UA1eJ6Jn66DJKUcLJ8dCGmNKx4lw=';
+        const smileProdUrl     = 'https://api.smileidentity.com/v1/';
+        const smileSandboxUrl  = 'https://testapi.smileidentity.com/v1/';
+        await SmileID.initializeWithConfig(
+          config: FlutterConfig(
+            partnerId:      smilePartnerId,
+            authToken:      smileAuthToken,
+            prodBaseUrl:    smileProdUrl,
+            sandboxBaseUrl: smileSandboxUrl,
+          ),
+          useSandbox:           false,
+          enableCrashReporting: false,
+        );
+        _smileIdReady = true;
+        if (kDebugMode) debugPrint('[SmileID] ✅ initializeWithConfig OK (lazy)');
+      }
+
       if (!mounted) return;
 
       // Completer pour recevoir le résultat depuis onDone callback

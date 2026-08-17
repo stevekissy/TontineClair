@@ -4,8 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:smile_id/smile_id.dart';
-import 'package:smile_id/generated/smileid_messages.g.dart';
+// SmileID initialisé en lazy dans KycScreen uniquement (pas au démarrage).
 import 'firebase_options.dart';
 import 'services/storage_service.dart';
 import 'services/tontine_provider.dart';
@@ -43,65 +42,6 @@ void main() async {
     }
     // Continue — runApp() sera appelé normalement ci-dessous.
   }
-
-  // ── SMILE ID — initializeWithConfig (credentials injectés en Dart) ────────
-  //
-  // POURQUOI initializeWithConfig et NON initialize() :
-  //   SmileID.initialize() (sans config) appelle SmileID.getConfig(from:) côté
-  //   natif Swift pour lire smile_config.json depuis le bundle iOS. Cette méthode
-  //   contient un force-unwrap non protégé qui lève "Swift runtime failure:
-  //   Unexpectedly found nil while unwrapping an Optional value" si le fichier
-  //   est absent, mal formé, ou si le bundle n'est pas encore prêt.
-  //   Ce crash est natif (SmileIDSDK.xcframework) et IMPOSSIBLE à intercepter
-  //   depuis Dart — il tue le processus avant que le moteur Dart ne reprenne.
-  //
-  //   initializeWithConfig(config:) contourne getConfig(from:) en passant les
-  //   credentials directement via Pigeon (channel Flutter↔natif) : le SDK n'a
-  //   plus besoin de lire le fichier JSON au démarrage.
-  //   smile_config.json est conservé dans le target Runner comme ressource de
-  //   secours pour la compatibilité Android et les outils CLI SmileID, mais
-  //   l'app iOS ne dépend plus de son parsing natif pour démarrer.
-  //
-  // UNE SEULE INITIALISATION : ici dans main(). Les appels SmileID.initialize()
-  // redondants dans KycScreen ont été supprimés.
-  //
-  // CREDENTIALS (source : smile_config.json + kyc_screen.dart) :
-  //   partner_id  : 9035
-  //   prodBaseUrl : https://api.smileidentity.com/v1/
-  //   sandboxUrl  : https://testapi.smileidentity.com/v1/
-  //   useSandbox  : false (production)
-  try {
-    const smilePartnerId   = '9035';
-    const smileAuthToken   =
-        'VpG6p3R7shpe6cgLd6Lx8kZapVLIjiLtCGLPvpiO41+'
-        '17ooS62Wdx1RJFaSzkIlCZGxR4vp4spqoq5TB0PjhUO0snjxw'
-        'ErmxRhAiYhyTT+rlYcJ99QvxqQqYKQ44nQCNKTFl6jLledHoo'
-        'V5UA1eJ6Jn66DJKUcLJ8dCGmNKx4lw=';
-    const smileProdUrl     = 'https://api.smileidentity.com/v1/';
-    const smileSandboxUrl  = 'https://testapi.smileidentity.com/v1/';
-
-    final smileConfig = FlutterConfig(
-      partnerId:      smilePartnerId,
-      authToken:      smileAuthToken,
-      prodBaseUrl:    smileProdUrl,
-      sandboxBaseUrl: smileSandboxUrl,
-    );
-
-    await SmileID.initializeWithConfig(
-      config:               smileConfig,
-      useSandbox:           false,
-      enableCrashReporting: false,
-    );
-
-    if (kDebugMode) debugPrint('[SmileID] ✅ initializeWithConfig OK (partner=$smilePartnerId)');
-  } catch (e, st) {
-    // Non-bloquant : KYC sera indisponible mais l'app démarre normalement.
-    if (kDebugMode) {
-      debugPrint('[SmileID] ⚠️ initializeWithConfig error: $e');
-      debugPrintStack(stackTrace: st);
-    }
-  }
-  // ── FIN INITIALISATION SMILE ID ───────────────────────────────────────────
 
   // Initialiser Google Play Billing / Apple StoreKit
   // (unawaited — ne bloque pas le démarrage, se fait en arrière-plan)
