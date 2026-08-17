@@ -18,8 +18,12 @@ android/*.keystore
 *.keystore
 
 # Clés de service Firebase / Google
+# NOTE: google-services.json et GoogleService-Info.plist sont EXCLUS du dépôt.
+# Chaque développeur doit télécharger ces fichiers depuis Firebase Console
+# et les placer aux bons endroits (android/app/ et ios/Runner/).
+# Le placeholder ios/Runner/GoogleService-Info.plist EST inclus (pas de vraies clés).
 google-services.json
-GoogleService-Info.plist
+# GoogleService-Info.plist  ← commenté : placeholder inclus, remplacer par le vrai fichier
 serviceAccountKey.json
 firebase-adminsdk*.json
 

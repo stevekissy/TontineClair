@@ -1,8 +1,19 @@
 import Flutter
 import UIKit
-import FirebaseCore
-import FirebaseMessaging
-import UserNotifications
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AppDelegate — TontineClair
+//
+// Firebase est initialisé UNIQUEMENT via Dart (firebase_options.dart) :
+//   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform)
+//
+// NE PAS appeler FirebaseApp.configure() ici — cela provoquerait une double
+// initialisation et crasherait l'app si GoogleService-Info.plist est absent
+// ou incomplet (GOOGLE_APP_ID placeholder).
+//
+// Les notifications push (FCM) sont gérées par le plugin firebase_messaging
+// via FlutterFire, qui s'enregistre automatiquement après Firebase.initializeApp().
+// ─────────────────────────────────────────────────────────────────────────────
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -10,33 +21,7 @@ import UserNotifications
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    // ── Firebase ────────────────────────────────────────────────────────
-    FirebaseApp.configure()
-
-    // ── Notifications push ──────────────────────────────────────────────
-    UNUserNotificationCenter.current().delegate = self
-    let authOptions: UNAuthorizationOptions = [.alert, .badge, .sound]
-    UNUserNotificationCenter.current().requestAuthorization(
-      options: authOptions,
-      completionHandler: { _, _ in }
-    )
-    application.registerForRemoteNotifications()
-    Messaging.messaging().delegate = self
-
-    // ── Flutter plugins ─────────────────────────────────────────────────
     GeneratedPluginRegistrant.register(with: self)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
-  }
-}
-
-// ── FCM Token ──────────────────────────────────────────────────────────────
-extension AppDelegate: MessagingDelegate {
-  func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
-    let tokenDict = ["token": fcmToken ?? ""]
-    NotificationCenter.default.post(
-      name: Notification.Name("FCMToken"),
-      object: nil,
-      userInfo: tokenDict
-    )
   }
 }
