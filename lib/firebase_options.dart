@@ -42,19 +42,14 @@ class DefaultFirebaseOptions {
   );
 
   // ── iOS ───────────────────────────────────────────────────────────────────
-  // ⚠️  appId : remplacer par la valeur GOOGLE_APP_ID de votre
-  //     GoogleService-Info.plist (format : 1:1095188462472:ios:XXXXXXXX)
-  //     après avoir créé l'app iOS dans Firebase Console.
-  //
-  // Les autres clés (apiKey, messagingSenderId, projectId, storageBucket)
-  // sont partagées avec le projet Firebase et sont déjà correctes.
+  // App iOS enregistrée dans Firebase Console — clés officielles.
+  // GOOGLE_APP_ID : 1:1095188462472:ios:0bdc2a4d895ba93b77d83d
+  // API_KEY iOS (distincte de la clé Android) : AIzaSyDkLrJhHQo_trXGxOECLqJ5e7mzY5anAzw
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey:            'AIzaSyDTDJv-sdY07yD4rlSfDvdRIYzEWUvlggo',
-    appId:             '1:1095188462472:ios:REPLACE_WITH_IOS_APP_ID',
+    apiKey:            'AIzaSyDkLrJhHQo_trXGxOECLqJ5e7mzY5anAzw',
+    appId:             '1:1095188462472:ios:0bdc2a4d895ba93b77d83d',
     messagingSenderId: '1095188462472',
     projectId:         'tontineclair',
     storageBucket:     'tontineclair.firebasestorage.app',
-    // iosClientId : optionnel, requis uniquement pour Google Sign-In iOS
-    // iosClientId: '1095188462472-REPLACE.apps.googleusercontent.com',
   );
 }
