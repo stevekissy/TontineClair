@@ -133,14 +133,8 @@ class _CreationScreenState extends State<CreationScreen> {
               'Complétez votre vérification Smile ID avant de continuer.');
             return;
           }
-          final encoreBloquant = await KycService.kycBloquantPourPremium(userId);
-          if (!mounted) return;
-          if (encoreBloquant) {
-            setState(() => _erreur =
-              'Votre vérification est en cours d\'analyse (Smile ID). '
-              'Vous pourrez créer cette tontine Premium dès que votre identité sera confirmée.');
-            return;
-          }
+          // SmileID a confirmé le succès → on accepte directement sans re-vérification réseau
+          // (le statut en base peut mettre quelques secondes à se mettre à jour)
         }
         setState(() => _kycValide = true);
       }
@@ -560,21 +554,15 @@ class _CreationScreenState extends State<CreationScreen> {
     if (!mounted) return;
 
     if (result == true) {
-      // Re-vérifier le statut KYC après retour
-      setState(() => _kycEnCours = true);
-      final encoreBloquant = await KycService.kycBloquantPourPremium(userId);
+      // SmileID a confirmé le succès → marquer KYC valide directement
+      // sans re-vérification réseau (le statut en base peut prendre quelques secondes)
       if (!mounted) return;
-      setState(() {
-        _kycEnCours = false;
-        _kycValide = !encoreBloquant;
-      });
-      if (_kycValide) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Identite verifiee avec succes !'),
-          backgroundColor: Color(0xFF2E7D5B),
-          duration: Duration(seconds: 3),
-        ));
-      }
+      setState(() => _kycValide = true);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Identite verifiee avec succes !'),
+        backgroundColor: Color(0xFF2E7D5B),
+        duration: Duration(seconds: 3),
+      ));
     }
   }
 

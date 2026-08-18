@@ -6,15 +6,12 @@ import '../services/tontine_provider.dart';
 import '../services/devise_service.dart';
 import '../services/supabase_service.dart';
 import '../services/blockchain_service.dart';
-import '../services/kyc_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
 import 'paiement_choix_screen.dart';
-import 'kyc_screen.dart';
-import '../services/subscription_service.dart';
 import '../services/email_service.dart' as email_svc;
 
 // ─── Widget animé pour le solde caisse ────────────────────────────────────────
@@ -541,78 +538,8 @@ class _CaisseScreenState extends State<CaisseScreen> {
     dynamic tontine,
     TontineData data,
   ) async {
-    // ── Garde KYC — ignoré pour les abonnés Premium actifs ──────────────
-    // Un abonnement Premium actif dispense de la vérification KYC pour les
-    // dépenses de caisse. Sinon, on vérifie le statut KYC normalement.
-    final bool abonnementActif = SubscriptionService.isPremium;
-    if (!abonnementActif) {
-      final gestNom = provider.gestActifNom ?? '';
-      if (gestNom.isNotEmpty) {
-        final kycResult = await KycService.canPerformFinancialAction(
-          userId:     gestNom,
-          actionType: 'withdrawal',
-          amount:     data.soldeCaisse.toDouble(),
-        );
-        if (!kycResult.allowed && context.mounted) {
-          final allerKyc = await showDialog<bool>(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              backgroundColor: AppColors.fondPapier,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-              title: const Row(children: [
-                Icon(Icons.verified_user_outlined, color: AppColors.or, size: 22),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Text('Vérification d\'identité requise',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.encre)),
-                ),
-              ]),
-              content: Text(
-                kycResult.reason ??
-                'Les dépenses de caisse Premium nécessitent une vérification d\'identité préalable.',
-                style: const TextStyle(color: AppColors.texte, height: 1.5),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('Plus tard', style: TextStyle(color: AppColors.texteDoux)),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.encre,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  onPressed: () => Navigator.pop(ctx, true),
-                  child: const Text('Vérifier mon identité', style: TextStyle(fontWeight: FontWeight.w700)),
-                ),
-              ],
-            ),
-          );
-          if (context.mounted && allerKyc == true) {
-            // Attendre le retour du KycScreen (retourne true si vérifié)
-            final kycDone = await Navigator.push<bool>(
-              context,
-              MaterialPageRoute(builder: (_) => KycScreen(userId: gestNom, autoRetourSiVerifie: true)),
-            );
-            // Si KYC validé → re-vérifier et continuer automatiquement
-            if (kycDone == true && context.mounted) {
-              final kycResultApres = await KycService.canPerformFinancialAction(
-                userId:     gestNom,
-                actionType: 'withdrawal',
-                amount:     data.soldeCaisse.toDouble(),
-              );
-              if (!kycResultApres.allowed) return; // toujours pas OK
-              // KYC OK → on laisse passer (ne pas return)
-            } else {
-              return; // annulé ou non vérifié
-            }
-          } else {
-            return;
-          }
-        }
-      }
-    }
+    // KYC gate supprimé : les tontines Premium peuvent effectuer des dépenses
+    // sans blocage de vérification d'identité.
 
     final montantCtrl = TextEditingController();
     final descCtrl    = TextEditingController();
