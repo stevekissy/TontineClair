@@ -1114,10 +1114,22 @@ class SupabaseService {
     required String token,
   }) async {
     try {
+      // Détecter la plateforme réelle — ne jamais hardcoder 'android' sur iOS
+      final String plateforme;
+      if (kIsWeb) {
+        plateforme = 'web';
+      } else if (Platform.isIOS) {
+        plateforme = 'ios';
+      } else if (Platform.isAndroid) {
+        plateforme = 'android';
+      } else {
+        plateforme = 'android'; // fallback desktop
+      }
+
       await rpc('sauvegarder_token', {
         'p_code':     code.toUpperCase(),
         'p_token':    token,
-        'p_appareil': 'android',
+        'p_appareil': plateforme,
       });
     } catch (_) {
       // Silencieux — non bloquant

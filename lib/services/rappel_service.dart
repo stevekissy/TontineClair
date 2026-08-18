@@ -18,6 +18,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/tontine.dart';
 import '../services/echeance_service.dart';
+import '../services/storage_service.dart';
 import '../services/supabase_service.dart';
 
 class RappelService {
@@ -162,13 +163,34 @@ class RappelService {
 
   /// Vérifie toutes les tontines locales connues au démarrage de l'app.
   /// Appelé une fois dans main() après initialisation.
+  ///
+  /// SOURCE PRIMAIRE : StorageService.getListe() (tontines_liste) — fiable
+  /// après toute réinstallation ou changement d'appareil.
+  /// SOURCE SECONDAIRE : tontines_codes (ancienne clé SharedPrefs) — filet
+  /// de sécurité rétrocompatible pour les tontines pas encore en StorageService.
   static Future<void> verifierToutesAuDemarrage() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final codes = prefs.getStringList('tontines_codes') ?? [];
-      if (codes.isEmpty) return;
+      // Source 1 : StorageService — source de vérité locale principale
+      final tontinesStockees = await StorageService.getListe();
+      final codesStorage = tontinesStockees.map((t) => t.code.toUpperCase()).toList();
 
-      for (final code in codes) {
+      // Source 2 : ancienne clé tontines_codes (rétrocompabilité)
+      final prefs = await SharedPreferences.getInstance();
+      final codesAnciens = prefs.getStringList('tontines_codes') ?? [];
+
+      // Union des deux sources → aucune tontine ratée
+      final tousLesCodes = <String>{...codesStorage, ...codesAnciens};
+
+      if (tousLesCodes.isEmpty) {
+        if (kDebugMode) debugPrint('[Rappel] Aucune tontine connue au démarrage — vérification ignorée');
+        return;
+      }
+
+      if (kDebugMode) {
+        debugPrint('[Rappel] Vérification démarrage: ${tousLesCodes.length} tontine(s) — $tousLesCodes');
+      }
+
+      for (final code in tousLesCodes) {
         try {
           final tontine = await SupabaseService.lireTontine(code);
           await verifierEtNotifier(

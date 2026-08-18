@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/tontine.dart';
 import '../services/supabase_service.dart';
 import '../services/storage_service.dart';
@@ -27,6 +28,32 @@ class TontineProvider extends ChangeNotifier {
     notifyListeners();
 
     // ── FIX NOTIFICATIONS BROADCAST ────────────────────────────────────────
+    // ÉTAPE CRITIQUE : synchroniser tontines_codes (ancienne clé SharedPrefs)
+    // avec StorageService (source de vérité = tontines_liste) AVANT de
+    // ré-abonner aux topics FCM.
+    //
+    // Sans cette synchro, après réinstallation ou changement d'appareil :
+    //   • tontines_codes est VIDE (jamais alimentée)
+    //   • _reabonnerTousTopic ne trouve aucun code → 0 topic FCM → 0 notif
+    //
+    // Cette synchro garantit que les deux clés sont cohérentes au démarrage.
+    try {
+      if (_mesTontines.isNotEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        final codesStorageService =
+            _mesTontines.map((t) => t.code.toUpperCase()).toList();
+        // Fusionner avec les codes déjà présents (au lieu d'écraser)
+        final codesExistants = prefs.getStringList('tontines_codes') ?? [];
+        final codesFusionnes = <String>{...codesStorageService, ...codesExistants}.toList();
+        await prefs.setStringList('tontines_codes', codesFusionnes);
+        if (kDebugMode) {
+          debugPrint('[TontineProvider] ✅ tontines_codes synchronisé: $codesFusionnes');
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[TontineProvider] ⚠️ synchro tontines_codes: $e');
+    }
+
     // Re-abonner aux topics FCM de TOUTES les tontines au démarrage.
     // Garantit que chaque membre reçoit les notifications même après :
     //   - Réinstallation de l'app

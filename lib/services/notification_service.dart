@@ -187,6 +187,13 @@ class NotificationService {
   // ── Ré-abonner aux topics de toutes les tontines connues ──────────────────
   // Appelé au démarrage de l'app. Garantit que le topic est actif même après
   // réinstallation, changement d'appareil ou expiration du token FCM.
+  //
+  // ARCHITECTURE DOUBLE SOURCE (robuste) :
+  //   1. StorageService.getListe()  → source de vérité (tontines_liste JSON)
+  //   2. tontines_codes             → filet de sécurité rétrocompat
+  //
+  // La clé tontines_codes est MISE À JOUR ici depuis StorageService pour
+  // garantir la cohérence même après réinstallation ou changement d'appareil.
   static Future<void> _reabonnerTousTopic() async {
     try {
       final prefs        = await SharedPreferences.getInstance();
@@ -202,18 +209,33 @@ class NotificationService {
         return;
       }
 
-      // Récupérer tous les codes de tontines connus
+      // SOURCE 1 : StorageService — source de vérité principale
       final tontinesStockees = await StorageService.getListe();
       final codesStorage     = tontinesStockees.map((t) => t.code.toUpperCase()).toList();
+
+      // SOURCE 2 : tontines_codes — filet de sécurité rétrocompatible
       final codesPrefs       = prefs.getStringList('tontines_codes') ?? [];
+
+      // Union des deux sources → aucune tontine ratée
       final tousLesCodes     = <String>{...codesStorage, ...codesPrefs};
+
+      // SYNCHRO CRITIQUE : mettre à jour tontines_codes avec les données fraîches
+      // de StorageService. Sans ça, après réinstallation, tontines_codes reste
+      // vide et aucun topic n'est actif.
+      if (codesStorage.isNotEmpty) {
+        final codesFusionnes = <String>{...codesStorage, ...codesPrefs}.toList();
+        await prefs.setStringList('tontines_codes', codesFusionnes);
+        if (kDebugMode) debugPrint('[FCM] tontines_codes synchronisé: $codesFusionnes');
+      }
 
       if (tousLesCodes.isEmpty) {
         if (kDebugMode) debugPrint('[FCM] Aucune tontine connue — ré-abonnement ignoré');
         return;
       }
 
-      if (kDebugMode) debugPrint('[FCM] Ré-abonnement topics pour ${tousLesCodes.length} tontine(s): $tousLesCodes');
+      if (kDebugMode) {
+        debugPrint('[FCM] Ré-abonnement topics pour ${tousLesCodes.length} tontine(s): $tousLesCodes');
+      }
 
       int ok = 0;
       for (final code in tousLesCodes) {
@@ -229,7 +251,9 @@ class NotificationService {
 
       // Mémoriser la date du dernier ré-abonnement réussi
       await prefs.setString(_kDernierReabonnement, maintenant.toIso8601String());
-      if (kDebugMode) debugPrint('[FCM] ✅ Ré-abonnement terminé: $ok/${tousLesCodes.length} topics OK');
+      if (kDebugMode) {
+        debugPrint('[FCM] ✅ Ré-abonnement terminé: $ok/${tousLesCodes.length} topics OK');
+      }
 
     } catch (e) {
       if (kDebugMode) debugPrint('[FCM] ❌ _reabonnerTousTopic erreur: $e');
