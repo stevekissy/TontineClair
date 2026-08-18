@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/tontine_provider.dart';
 import '../services/supabase_service.dart';
 import '../services/storage_service.dart';
@@ -91,10 +93,7 @@ class AccueilScreen extends StatelessWidget {
       bottomSheet: _BarreActions(
         onRejoindre: () => _aller(context, const RejoindreScreen()),
         onCreer:     () => _aller(context, const CreationScreen()),
-        onSupport:   () {
-          final gestNom = context.read<TontineProvider>().gestActifNom ?? '';
-          _aller(context, SupportScreen(gestionnaire: gestNom));
-        },
+        onSupport:   () => _ouvrirSupportWhatsApp(context),
         onKyc: () {
           final gestNom = context.read<TontineProvider>().gestActifNom ?? '';
           _aller(context, KycScreen(userId: gestNom));
@@ -116,6 +115,36 @@ class AccueilScreen extends StatelessWidget {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => screen),
     );
+  }
+
+  // ── Support client → WhatsApp Business TontineClair ──────────────────────
+  // Ouvre directement la conversation WhatsApp Business avec un message
+  // prédéfini. Fallback vers le SupportScreen si WhatsApp n'est pas installé.
+  static const _whatsappNumero  = '22502432176';
+  static const _whatsappMessage =
+      'Bonjour TontineClair 👋, j\'ai besoin d\'aide avec l\'application.';
+
+  static Future<void> _ouvrirSupportWhatsApp(BuildContext context) async {
+    final msgEncode = Uri.encodeComponent(_whatsappMessage);
+    final uri = Uri.parse('https://wa.me/$_whatsappNumero?text=$msgEncode');
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok && context.mounted) {
+        // WhatsApp non disponible → fallback SupportScreen
+        final gestNom = context.read<TontineProvider>().gestActifNom ?? '';
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => SupportScreen(gestionnaire: gestNom)),
+        );
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Support] Erreur ouverture WhatsApp: $e');
+      if (context.mounted) {
+        final gestNom = context.read<TontineProvider>().gestActifNom ?? '';
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => SupportScreen(gestionnaire: gestNom)),
+        );
+      }
+    }
   }
 
   void _reconfigurer(BuildContext context) {
