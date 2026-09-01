@@ -2026,10 +2026,21 @@ class _BarreDetail extends StatelessWidget {
     // 1. Réinitialiser paiements{}
     newData['paiements'] = {};
 
-    // 2. Réinitialiser membres[].paye à false (en préservant tous les champs)
-    newData['membres'] = membres.map((m) => {
-      ...m.toJson(),
-      'paye': false,
+    // 2. Réinitialiser membres[].paye à false + effacer tous les champs
+    //    liés au paiement du tour écoulé (ref, méthode, date, statut, approbation).
+    //    Les coordonnées de décaissement (moyenPaiementCode, numeroBenef…) sont
+    //    conservées car elles appartiennent au profil du membre, pas au tour.
+    newData['membres'] = membres.map((m) {
+      final json = m.toJson();
+      // Champs à effacer entre deux tours
+      json['paye']                   = false;
+      json.remove('datePaiement');
+      json.remove('methodePaiement');
+      json.remove('referencePaiement');
+      json.remove('paiementStatut');
+      json.remove('paiementDeclareParGest');
+      json.remove('validePar');
+      return json;
     }).toList();
 
     // 3. Avancer tourActuel ou marquer cycleTermine
