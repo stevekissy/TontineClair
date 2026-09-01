@@ -197,6 +197,37 @@ class TontineProvider extends ChangeNotifier {
     }
   }
 
+  /// Écrit les données sans PIN gestionnaire.
+  /// Utilisé pour les paiements initiés par un membre ordinaire
+  /// (cotisation Premium auto-déclarée) — la vérification d'identité
+  /// est assurée par la confirmation explicite dans l'UI.
+  Future<bool> ecrireSansPin(
+    Map<String, dynamic> data, {
+    String?  membreId,
+    String?  membreNom,
+    int?     montantXof,
+    String?  typeOperationBlockchain,
+    String?  refInterne,
+  }) async {
+    if (_courante == null) return false;
+    try {
+      final code = _courante!.code;
+      final ok = await SupabaseService.ecrireTontineSansPIN(
+        code:                    code,
+        data:                    data,
+        membreId:                membreId,
+        membreNom:               membreNom,
+        montantXof:              montantXof,
+        typeOperationBlockchain: typeOperationBlockchain,
+        refInterne:              refInterne,
+      );
+      if (ok) await chargerTontine(code);
+      return ok;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<String?> creer({
     required String nom,
     required int montant,

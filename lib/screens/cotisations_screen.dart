@@ -172,16 +172,12 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
                                     e.value,
                                   )
                               : null,
-                          // ── Bouton "Payer" Pro — visible si Pro + non-payé
-                          // Accessible à TOUS (gest et membres) en mode Pro
-                          // Le gest conserve aussi son toggle manuel (onToggle)
-                          // ── Bouton "Payer" Premium : ouvre l'écran manuel,
-                          // puis si confirmé (result == true) enregistre via
-                          // _togglePaiement exactement comme le toggle Lite.
+                          // ── Bouton "Payer" : visible pour TOUT membre non-payé
+                          // en tontine Premium + cycle non terminé.
+                          // N'exige PAS le PIN gestionnaire → accessible à tous.
+                          // Le gestionnaire peut toujours approuver via onToggle.
                           onPayer: tontine.isPremium && !e.value.paye && !data.cycleTermine
                               ? () async {
-                                  // PaiementChoixScreen retourne Map<String,String>?
-                                  // {'methode': '...', 'reference': '...'} ou null
                                   final result = await Navigator.push<Map<String,String>>(
                                     context,
                                     MaterialPageRoute(
@@ -189,19 +185,17 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
                                         code:     tontine.code,
                                         typeFlux: 'cotisation',
                                         membre:   e.value,
+                                        montant:  data.montant,
                                       ),
                                     ),
                                   );
                                   if (result != null && context.mounted) {
-                                    // Passer méthode + référence déjà saisies pour
-                                    // éviter le double-choix dans _togglePaiement.
-                                    await _togglePaiement(
+                                    await _payerCotisationMembre(
                                       context,
                                       provider,
                                       tontine,
                                       e.value,
-                                      methodePrechoisie:   result['methode'],
-                                      referencePrechoisie: result['reference'],
+                                      result,
                                     );
                                   }
                                 }
@@ -498,6 +492,133 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
           donneesExtra: {'membre': membre.nom},
         );
       }
+    }
+  }
+
+  // ── Paiement auto-déclaré par un membre (sans PIN gestionnaire) ──────────
+  /// Accessible à TOUS les membres (Premium), cycle non terminé.
+  /// Flux : PaiementChoixScreen → confirmation dialog → ecrireSansPin().
+  /// L'annulation reste réservée au gestionnaire via _togglePaiement().
+  Future<void> _payerCotisationMembre(
+    BuildContext context,
+    TontineProvider provider,
+    dynamic tontine,
+    Membre membre,
+    Map<String, String> paiementResult,
+  ) async {
+    final data   = tontine.data;
+    final methode  = paiementResult['methode'] ?? 'mobile_money';
+    final refSaisie = paiementResult['reference'] ?? '';
+    final nowStr = DateTime.now().toIso8601String();
+    final ref    = refSaisie.isNotEmpty ? refSaisie : Formatters.genererReference();
+
+    // ── Construire le nouveau JSON ──────────────────────────────────────
+    final newData = data.toJson();
+
+    // 1. Marquer le membre payé
+    final membres = List<Map<String, dynamic>>.from(
+      (newData['membres'] as List<dynamic>).cast<Map<String, dynamic>>(),
+    );
+    final idx = membres.indexWhere((m) => m['id'] == membre.id);
+    if (idx >= 0) {
+      membres[idx]['paye']              = true;
+      membres[idx]['datePaiement']      = nowStr;
+      membres[idx]['methodePaiement']   = methode;
+      membres[idx]['referencePaiement'] = ref;
+    }
+    newData['membres'] = membres;
+
+    // 2. paiements{} — source de vérité
+    final paiements = Map<String, dynamic>.from(
+      (newData['paiements'] as Map<String, dynamic>?) ?? {},
+    );
+    paiements[membre.id] = {
+      'date'      : nowStr,
+      'methode'   : methode,
+      'reference' : ref,
+      'montant'   : data.montant,
+      'autoDeclare': true,
+    };
+    newData['paiements'] = paiements;
+
+    // 3. Caisse : entrée cotisation
+    final caisseMap = newData['caisse'];
+    final caisse = List<Map<String, dynamic>>.from(
+      caisseMap is Map<String, dynamic>
+          ? ((caisseMap['mouvements'] as List<dynamic>?)
+                  ?.cast<Map<String, dynamic>>() ?? [])
+          : caisseMap is List
+              ? caisseMap.cast<Map<String, dynamic>>()
+              : [],
+    );
+    caisse.add({
+      'id'          : '${ref}C',
+      'type'        : 'cotisation',
+      'montant'     : data.montant,
+      'description' : 'Cotisation ${membre.nom} — Tour ${data.numerTour} (auto-déclarée)',
+      'gestionnaire': membre.nom,
+      'date'        : nowStr,
+      'reference'   : ref,
+    });
+    newData['caisse'] = {'mouvements': caisse};
+
+    // 4. Journal public
+    final journal = List<Map<String, dynamic>>.from(
+      (newData['journal'] as List<dynamic>?)
+              ?.cast<Map<String, dynamic>>() ?? [],
+    );
+    journal.insert(0, {
+      'quoi'       : 'COTISATION_${membre.nom}_TOUR_${data.numerTour} — ${Formatters.methodePaiement(methode)} — Réf: $ref',
+      'gestionnaire': membre.nom,
+      'quand'      : nowStr,
+      'reference'  : ref,
+    });
+    newData['journal'] = journal;
+
+    // ── Écrire en DB sans PIN (membre ordinaire) ────────────────────────
+    final ok = await provider.ecrireSansPin(
+      newData,
+      membreId               : membre.id,
+      membreNom              : membre.nom,
+      montantXof             : data.montant,
+      typeOperationBlockchain: 'cotisation',
+      refInterne             : ref,
+    );
+
+    if (!context.mounted) return;
+
+    if (ok) {
+      afficherToast(context, '✅ Cotisation de ${membre.nom} enregistrée !');
+
+      // Notification push tous membres
+      final lang = Provider.of<LocaleService>(context, listen: false).langue.code;
+      final t = SupabaseService.notifTexte('cotisation', lang, vars: {'nom': membre.nom});
+      SupabaseService.envoyerNotification(
+        code       : provider.courante!.code,
+        type       : 'cotisation',
+        titre      : t['titre']!,
+        message    : t['message']!,
+        donneesExtra: {'membre': membre.nom},
+      );
+
+      // Proposer reçu WhatsApp / PDF
+      final membreActualise = Membre(
+        id               : membre.id,
+        nom              : membre.nom,
+        tel              : membre.tel,
+        role             : membre.role,
+        paye             : true,
+        datePaiement     : nowStr,
+        methodePaiement  : methode,
+        referencePaiement: ref,
+        score            : membre.score,
+      );
+      await _proposerRecuPostPaiement(context, tontine, membreActualise, ref, methode);
+    } else {
+      afficherToast(context,
+        'Erreur lors de l\'enregistrement. Réessayez.',
+        estErreur: true,
+      );
     }
   }
 
