@@ -5,7 +5,6 @@ import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
 import '../services/echeance_service.dart';
 import '../services/supabase_service.dart';
-import '../services/kyc_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
@@ -24,9 +23,7 @@ import 'nouveau_cycle_screen.dart';
 import 'supprimer_tontine_screen.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
-import 'kyc_screen.dart';
 import 'securite_screen.dart';
-import 'paiement_choix_screen.dart';
 import 'verification_publique_screen.dart';
 
 import 'package:flutter/foundation.dart';
@@ -1686,492 +1683,275 @@ class _BarreDetail extends StatelessWidget {
     final payesIds     = membresPayes.isNotEmpty
         ? membresPayes.map((m) => m.id).toList()
         : data.paiements.keys.toList();
-    final nbPayesClot = payesIds.isNotEmpty ? payesIds.length : data.membres.length;
+    final nbPayesClot  = payesIds.isNotEmpty ? payesIds.length : data.membres.length;
     final montantVerse = data.montant * data.membres.length;
-    final commission   = isPremium ? (montantVerse * 0.025).round() : 0;
-    final montantNet   = montantVerse - commission;
+    // ── Aucun frais : montant net = montant brut ──────────────────────────
 
-    // ── Garde KYC — obligatoire pour les décaissements Premium ────────────
-    if (isPremium && context.mounted) {
-      final kycResult = await KycService.canPerformFinancialAction(
-        userId:     gestNom,
-        actionType: 'disbursement',
-        amount:     montantNet.toDouble(),
-      );
-      if (!kycResult.allowed) {
-        if (!context.mounted) return;
-        final allerKyc = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            backgroundColor: AppColors.fondPapier,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-            title: Row(children: [
-              const Icon(Icons.verified_user_outlined, color: AppColors.or, size: 22),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Text('Vérification d\'identité requise',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.encre)),
-              ),
-            ]),
-            content: Text(
-              kycResult.reason ??
-              'Le décaissement requiert une vérification d\'identité (KYC) préalable.\n\n'
-              'Complétez votre vérification d\'identité pour accéder à cette fonctionnalité.',
-              style: const TextStyle(color: AppColors.texte, height: 1.5),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Plus tard', style: TextStyle(color: AppColors.texteDoux)),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.encre,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Vérifier mon identité', style: TextStyle(fontWeight: FontWeight.w700)),
-              ),
-            ],
-          ),
-        );
-        if (!context.mounted) return;
-        if (allerKyc == true) {
-          Navigator.push(context, MaterialPageRoute(builder: (_) => KycScreen(userId: gestNom)));
-        }
-        return;
-      }
-    }
-
-    // ── Branchement Premium / Lite ─────────────────────────────────────────
+    // ── Flux unique (Lite ET Premium) : décaissement 100% manuel ─────────
     if (!context.mounted) return;
-    if (isPremium) {
-      await _cloturerTourPremium(
-        context:           context,
-        provider:          provider,
-        data:              data,
-        membres:           membres,
-        beneficiaire:      beneficiaire,
-        benefId:           benefId,
-        benefNom:          benefNom,
-        numerTourAffiche:  numerTourAffiche,
-        ref:               ref,
-        payesIds:          payesIds,
-        nbPayesClot:       nbPayesClot,
-        montantVerse:      montantVerse,
-        commission:        commission,
-        montantNet:        montantNet,
-      );
-    } else {
-      await _cloturerTourLite(
-        context:           context,
-        provider:          provider,
-        data:              data,
-        membres:           membres,
-        benefId:           benefId,
-        benefNom:          benefNom,
-        numerTourAffiche:  numerTourAffiche,
-        ref:               ref,
-        payesIds:          payesIds,
-        nbPayesClot:       nbPayesClot,
-        montantVerse:      montantVerse,
-      );
-    }
+    await _cloturerTourManuel(
+      context:          context,
+      provider:         provider,
+      data:             data,
+      membres:          membres,
+      benefId:          benefId,
+      benefNom:         benefNom,
+      numerTourAffiche: numerTourAffiche,
+      ref:              ref,
+      payesIds:         payesIds,
+      nbPayesClot:      nbPayesClot,
+      montantVerse:     montantVerse,
+    );
   }
 
-  /// ── Clôture Lite : PIN → débite caisse → tour suivant ─────────────────────
-  Future<void> _cloturerTourLite({
-    required BuildContext              context,
-    required TontineProvider           provider,
-    required TontineData               data,
-    required List<Membre>              membres,
-    required String                    benefId,
-    required String                    benefNom,
-    required int                       numerTourAffiche,
-    required String                    ref,
-    required List<String>              payesIds,
-    required int                       nbPayesClot,
-    required int                       montantVerse,
+  /// ── Clôture UNIFIÉE (Lite ET Premium) : décaissement 100% manuel ─────────
+  /// Flux : saisie référence → PIN gestionnaire → caisse débitée
+  ///        → journal + blockchain + notif.
+  /// Aucun frais. Aucun paiement automatisé. Aucune dépendance PayDunya/Crypto.
+  Future<void> _cloturerTourManuel({
+    required BuildContext    context,
+    required TontineProvider provider,
+    required TontineData     data,
+    required List<Membre>    membres,
+    required String          benefId,
+    required String          benefNom,
+    required int             numerTourAffiche,
+    required String          ref,
+    required List<String>    payesIds,
+    required int             nbPayesClot,
+    required int             montantVerse,
   }) async {
+    // ── Étape 1 : saisie de la référence / preuve de décaissement ────────────
+    final refCtrl = TextEditingController();
+    String? refPreuve;
+
+    final continuer = await showModalBottomSheet<bool>(
+      context:            context,
+      isScrollControlled: true,
+      backgroundColor:    Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (sCtx, setSt) {
+          final ok = refCtrl.text.trim().isNotEmpty;
+          return Container(
+            decoration: const BoxDecoration(
+              color: AppColors.fondPapier,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            padding: EdgeInsets.fromLTRB(
+              20, 20, 20,
+              20 + MediaQuery.of(sCtx).viewInsets.bottom,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Poignée
+                  Center(
+                    child: Container(
+                      width: 40, height: 4,
+                      decoration: BoxDecoration(color: AppColors.lignes, borderRadius: BorderRadius.circular(2)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    '💸 Décaissement — Tour',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.encre),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Bénéficiaire : $benefNom · Tour $numerTourAffiche',
+                    style: const TextStyle(fontSize: 13, color: AppColors.texteDoux),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Récap montant (sans frais)
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppColors.fondCode,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.lignes),
+                    ),
+                    child: Column(
+                      children: [
+                        _LigneRecapCloture('Bénéficiaire', benefNom),
+                        _LigneRecapCloture('Cotisants payés', '$nbPayesClot / ${data.membres.length}'),
+                        const Divider(height: 12, color: AppColors.lignes),
+                        _LigneRecapCloture(
+                          'Montant à décaisser',
+                          Formatters.montant(montantVerse, devise: data.devise),
+                          gras: true,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Champ référence / preuve obligatoire
+                  Row(
+                    children: [
+                      const Text(
+                        'Référence / preuve de décaissement',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.encre),
+                      ),
+                      const SizedBox(width: 4),
+                      const Text('*', style: TextStyle(color: AppColors.alerte, fontSize: 14, fontWeight: FontWeight.w700)),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: refCtrl,
+                    onChanged: (_) => setSt(() {}),
+                    decoration: InputDecoration(
+                      hintText: 'N° transaction, reçu, capture...',
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(
+                          color: refCtrl.text.trim().isEmpty ? AppColors.alerte.withValues(alpha: 0.5) : AppColors.lignes,
+                        ),
+                      ),
+                      prefixIcon: const Icon(Icons.receipt_long_outlined, size: 18),
+                      errorText: refCtrl.text.trim().isEmpty ? 'Obligatoire — preuve du décaissement' : null,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Note informationnelle (pas de PayDunya, pas de frais)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.succesFond,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.verified_outlined, size: 15, color: AppColors.succes),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Décaissement manuel — 0 frais.\nCe versement sera ancré sur la blockchain.',
+                            style: TextStyle(fontSize: 11.5, color: AppColors.succes, height: 1.4),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Bouton confirmer (bloqué si référence vide)
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: ok ? AppColors.encre : AppColors.lignes,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: ok
+                          ? () {
+                              refPreuve = refCtrl.text.trim();
+                              Navigator.pop(sCtx, true);
+                            }
+                          : () => setSt(() {}),
+                      child: Text(
+                        ok ? 'Continuer avec le PIN' : 'Saisissez la référence',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          color: ok ? Colors.white : AppColors.texteDoux,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Center(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(sCtx, false),
+                      child: const Text('Annuler', style: TextStyle(color: AppColors.texteDoux)),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    if (continuer != true || refPreuve == null || !context.mounted) return;
+
+    // ── Étape 2 : confirmation PIN ──────────────────────────────────────────
     final ok = await afficherModalePin(
       context,
-      titre:     'Clôturer le tour $numerTourAffiche',
-      sousTitre: 'Cette action est définitive et déclenche le versement.',
+      titre:     'Confirmer le décaissement',
+      sousTitre: 'Cette action est définitive — tour $numerTourAffiche clôturé.',
       recap: [
-        (label: 'Bénéficiaire',    valeur: benefNom),
-        (label: 'Montant versé',   valeur: Formatters.montant(montantVerse, devise: data.devise)),
-        (label: 'Cotisants payés', valeur: '$nbPayesClot / ${data.membres.length}'),
-        (label: 'Tour',            valeur: 'N° $numerTourAffiche → N° ${numerTourAffiche + 1}'),
+        (label: 'Bénéficiaire',        valeur: benefNom),
+        (label: 'Montant à décaisser', valeur: Formatters.montant(montantVerse, devise: data.devise)),
+        (label: 'Cotisants payés',     valeur: '$nbPayesClot / ${data.membres.length}'),
+        (label: 'Tour',                valeur: 'N° $numerTourAffiche → N° ${numerTourAffiche + 1}'),
+        (label: '📋 Référence',        valeur: refPreuve!),
+        (label: '⛓ Mode',             valeur: 'Manuel · ancrage blockchain'),
       ],
       onValider: (pin) async {
-        final newData = _preparerNouvellesDonnees(
-          data: data, membres: membres, payesIds: payesIds,
-          nbPayesClot: nbPayesClot, numerTourAffiche: numerTourAffiche,
-          ref: ref, gestNom: provider.gestActifNom ?? '',
-          debiterCaisse: true,  // Lite : caisse débitée immédiatement
-          montantVerse: montantVerse,
-          benefNom: benefNom,
+        // Utiliser refPreuve comme référence principale (preuve du décaissement)
+        final refFinal = refPreuve!;
+        final newData  = _preparerNouvellesDonnees(
+          data:             data,
+          membres:          membres,
+          payesIds:         payesIds,
+          nbPayesClot:      nbPayesClot,
+          numerTourAffiche: numerTourAffiche,
+          ref:              refFinal,
+          gestNom:          provider.gestActifNom ?? '',
+          montantVerse:     montantVerse,
+          benefNom:         benefNom,
         );
         return provider.ecrire(newData, pin);
       },
     );
 
-    // ── BLOCKCHAIN : distribution tour Lite (non-bloquant) ─────────────────
+    // ── BLOCKCHAIN : distribution (non-bloquant) ─────────────────────────────
     if (ok == true) {
       BlockchainService.enregistrerDistribution(
-        tontineCode : provider.courante!.code,
-        membreId    : benefId,
-        membreNom   : benefNom,
-        montantXof  : montantVerse,
-        refInterne  : ref,
+        tontineCode: provider.courante!.code,
+        membreId   : benefId,
+        membreNom  : benefNom,
+        montantXof : montantVerse,
+        refInterne : refPreuve!,
       ).catchError((e) {
-        if (kDebugMode) debugPrint('[Blockchain] distribution_lite erreur: $e');
+        if (kDebugMode) debugPrint('[Blockchain] distribution erreur: $e');
         return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
       });
     }
-    // ────────────────────────────────────────────────────────────────────────
 
     if (ok == true && context.mounted) {
       afficherToast(
         context,
         data.cycleTermine
             ? 'Cycle terminé 🎊 Chaque membre a été servi !'
-            : 'Tour $numerTourAffiche clôturé avec succès.',
+            : 'Tour $numerTourAffiche clôturé — décaissement enregistré.',
       );
       final lang      = Provider.of<LocaleService>(context, listen: false).langue.code;
       final typeNotif = data.cycleTermine ? 'decaissement_cycle_fin' : 'decaissement';
       final t         = SupabaseService.notifTexte(typeNotif, lang,
           vars: {'nom': benefNom, 'tour': numerTourAffiche.toString()});
       SupabaseService.envoyerNotification(
-        code:    provider.courante!.code,
-        type:    'decaissement',
-        titre:   t['titre']!,
-        message: t['message']!,
+        code:         provider.courante!.code,
+        type:         'decaissement',
+        titre:        t['titre']!,
+        message:      t['message']!,
         donneesExtra: {'beneficiaire': benefNom},
       );
     }
   }
 
-  /// ── Clôture Premium : formulaire Mobile Money → PIN → pending → admin valide ─
-  Future<void> _cloturerTourPremium({
-    required BuildContext              context,
-    required TontineProvider           provider,
-    required TontineData               data,
-    required List<Membre>              membres,
-    required Membre?                   beneficiaire,
-    required String                    benefId,
-    required String                    benefNom,
-    required int                       numerTourAffiche,
-    required String                    ref,
-    required List<String>              payesIds,
-    required int                       nbPayesClot,
-    required int                       montantVerse,
-    required int                       commission,
-    required int                       montantNet,
-  }) async {
-    // ── Coordonnées pré-enregistrées dans le profil membre ───────────────────
-    String? operateur   = beneficiaire?.operateur;
-    String  numeroBenef = beneficiaire?.numeroBenef ?? '';
-
-    final bool profileMmDispo = operateur != null && numeroBenef.isNotEmpty;
-
-    // ── Étape 1 : formulaire Mobile Money ────────────────────────────────────
-    // Si le membre a déjà un numéro MM enregistré → afficher en mode "pré-rempli"
-    // avec possibilité de modifier. Sinon → saisie manuelle complète.
-    const ops = ['orange', 'moov', 'mtn', 'wave'];
-
-    // Libellés lisibles des opérateurs
-    const opLabels = {
-      'orange': 'Orange Money',
-      'moov':   'Moov Money',
-      'mtn':    'MTN MoMo',
-      'wave':   'Wave',
-    };
-
-    final numCtrl = TextEditingController(text: numeroBenef);
-
-    final mmOk = await showModalBottomSheet<bool>(
-      context:         context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => StatefulBuilder(
-        builder: (sCtx, setSt) => Container(
-          decoration: const BoxDecoration(
-            color: AppColors.fondPapier,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          padding: EdgeInsets.fromLTRB(
-            20, 20, 20,
-            20 + MediaQuery.of(sCtx).viewInsets.bottom,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Poignée
-                Center(
-                  child: Container(
-                    width: 40, height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.lignes,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  '💸 Décaissement — Tour',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.encre),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Bénéficiaire : $benefNom · Tour $numerTourAffiche',
-                  style: const TextStyle(fontSize: 13, color: AppColors.texteDoux),
-                ),
-                const SizedBox(height: 16),
-
-                // Récap montants
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.fondCode,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.lignes),
-                  ),
-                  child: Column(
-                    children: [
-                      _LigneRecapCloture('Montant versé',      Formatters.montant(montantVerse, devise: data.devise)),
-                      _LigneRecapCloture('Frais réseau (2,5%)', '− ${Formatters.montant(commission, devise: data.devise)}', rouge: true),
-                      const Divider(height: 12, color: AppColors.lignes),
-                      _LigneRecapCloture('Montant net à décaisser', Formatters.montant(montantNet, devise: data.devise), gras: true),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // ── Bandeau "pré-enregistré" si le membre a déjà son MM ──────
-                if (profileMmDispo) ...[
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE8F5E9),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFF2E7D5B).withValues(alpha: 0.4)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.check_circle_rounded, color: Color(0xFF2E7D5B), size: 20),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Mobile Money pré-enregistré',
-                                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF1B5E3B)),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '${opLabels[operateur] ?? operateur}  ·  $numeroBenef',
-                                style: const TextStyle(fontSize: 13, color: Color(0xFF2E7D5B), fontWeight: FontWeight.w600),
-                              ),
-                            ],
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () => setSt(() {
-                            // Permettre de modifier
-                          }),
-                          style: TextButton.styleFrom(
-                            padding: EdgeInsets.zero,
-                            minimumSize: const Size(0, 0),
-                          ),
-                          child: const Text('Modifier', style: TextStyle(fontSize: 12, color: Color(0xFF2E7D5B))),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-
-                // Opérateur (affiché en édition si pas de profil MM OU si utilisateur clique Modifier)
-                if (!profileMmDispo) ...[
-                  const Text('Opérateur Mobile Money *',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.texteDoux)),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    children: ops.map((op) {
-                      final sel = operateur == op;
-                      return GestureDetector(
-                        onTap: () => setSt(() => operateur = op),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: sel ? AppColors.encre : AppColors.fondCode,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: sel ? AppColors.encre : AppColors.lignes),
-                          ),
-                          child: Text(
-                            opLabels[op] ?? '${op[0].toUpperCase()}${op.substring(1)}',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13,
-                              color: sel ? Colors.white : AppColors.encre,
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Numéro (saisie manuelle uniquement si pas de profil)
-                  const Text('Numéro Mobile Money *',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.texteDoux)),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: numCtrl,
-                    keyboardType: TextInputType.phone,
-                    decoration: InputDecoration(
-                      hintText: 'Ex : +225 07 00 00 00',
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(color: AppColors.lignes),
-                      ),
-                      prefixIcon: const Icon(Icons.phone_outlined, size: 18),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-
-                // ── Note PayDunya ─────────────────────────────────────────────
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF2FBF6),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.phone_android_rounded, size: 15, color: Color(0xFF1AA259)),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          profileMmDispo
-                              ? 'PayDunya utilisera automatiquement le numéro enregistré pour le décaissement.'
-                              : 'PayDunya enverra le montant sur le numéro Mobile Money saisi.',
-                          style: const TextStyle(fontSize: 11, color: Color(0xFF1AA259), height: 1.4),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // Bouton continuer
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.encre,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    onPressed: () {
-                      // Si profil MM dispo : utiliser directement, pas de validation numéro
-                      if (profileMmDispo) {
-                        Navigator.pop(sCtx, true);
-                        return;
-                      }
-                      if (operateur == null || numCtrl.text.trim().isEmpty) {
-                        ScaffoldMessenger.of(sCtx).showSnackBar(
-                          const SnackBar(content: Text('Choisissez un opérateur et saisissez le numéro.')),
-                        );
-                        return;
-                      }
-                      Navigator.pop(sCtx, true);
-                    },
-                    child: Text(
-                      profileMmDispo ? 'Confirmer — ${opLabels[operateur] ?? operateur}  $numeroBenef' : 'Continuer avec le PIN',
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Colors.white),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-
-    if (mmOk != true || !context.mounted) return;
-    // Si profil MM pré-enregistré : garder numeroBenef/operateur du profil
-    if (!profileMmDispo) {
-      numeroBenef = numCtrl.text.trim();
-    }
-
-    // ── Étape 2 : confirmation PIN ───────────────────────────────────────────
-    // operateur est garanti non-null ici (vérifié dans le bottom sheet avant pop)
-    final String op = operateur ?? '';
-    final operateurLabel = op.isEmpty ? '' : '${op[0].toUpperCase()}${op.substring(1)}';
-
-    final ok = await afficherModalePin(
-      context,
-      titre:     'Confirmer la clôture',
-      sousTitre: 'La demande de décaissement sera envoyée à l\'Admin.',
-      recap: [
-        (label: 'Bénéficiaire',               valeur: benefNom),
-        (label: 'Opérateur',                  valeur: operateurLabel),
-        (label: 'Numéro',                     valeur: numeroBenef),
-        (label: 'Montant brut',               valeur: Formatters.montant(montantVerse, devise: data.devise)),
-        (label: 'Frais réseau (2,5%)', valeur: '− ${Formatters.montant(commission, devise: data.devise)}'),
-        (label: 'Montant net à décaisser',    valeur: Formatters.montant(montantNet, devise: data.devise)),
-        (label: 'Tour',                       valeur: 'N° $numerTourAffiche → N° ${numerTourAffiche + 1}'),
-        (label: '⚡ Mode',                    valeur: 'Paiement automatisé'),
-      ],
-      onValider: (pin) async {
-        // ── A. Avancer le tour dans le JSON (débiter la caisse immédiatement) ──
-        final newData = _preparerNouvellesDonnees(
-          data: data, membres: membres, payesIds: payesIds,
-          nbPayesClot: nbPayesClot, numerTourAffiche: numerTourAffiche,
-          ref: ref, gestNom: provider.gestActifNom ?? '',
-          debiterCaisse: true,
-          montantVerse: montantVerse,
-          benefNom: benefNom,
-        );
-        return provider.ecrire(newData, pin);
-      },
-    );
-
-    if (ok == true && context.mounted) {
-      // ── B. Naviguer vers CoinPayments pour le décaissement ──────────
-      await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PaiementChoixScreen(
-            code:        provider.courante!.code,
-            typeFlux:    'decaissement_cagnotte',
-            montant:     montantNet,
-            description: 'Cagnotte tour $numerTourAffiche → $benefNom',
-            membreId:    benefId,
-            membreNom:   benefNom,
-            telephone:   numeroBenef,
-            operateur:   op,
-            numeroTour:  numerTourAffiche,
-          ),
-        ),
-      );
-    }
-  }
-
-  /// ── Helper : prépare le JSON du tour suivant (commun Lite & Premium) ────────
+  /// ── Helper : prépare le JSON du tour suivant ────────────────────────────────
   Map<String, dynamic> _preparerNouvellesDonnees({
     required TontineData           data,
     required List<Membre>          membres,
@@ -2180,7 +1960,6 @@ class _BarreDetail extends StatelessWidget {
     required int                   numerTourAffiche,
     required String                ref,
     required String                gestNom,
-    required bool                  debiterCaisse,
     required int                   montantVerse,
     required String                benefNom,
   }) {
@@ -2219,38 +1998,35 @@ class _BarreDetail extends StatelessWidget {
     });
     newData['historique'] = historique;
 
-    // 5. Caisse : débiter seulement en mode Lite
-    if (debiterCaisse) {
-      final caisseMapRaw = newData['caisse'];
-      final List<Map<String, dynamic>> caisseMvts;
-      if (caisseMapRaw is Map<String, dynamic>) {
-        caisseMvts = List<Map<String, dynamic>>.from(
-          (caisseMapRaw['mouvements'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
-        );
-      } else if (caisseMapRaw is List) {
-        caisseMvts = List<Map<String, dynamic>>.from(caisseMapRaw.cast<Map<String, dynamic>>());
-      } else {
-        caisseMvts = [];
-      }
-      caisseMvts.insert(0, {
-        'id':          '${ref}D',
-        'type':        'decaissement',
-        'montant':     total,
-        'description': 'Décaissement Tour $numerTourAffiche — $benefNom',
-        'gestionnaire': gestNom,
-        'date':        DateTime.now().toIso8601String(),
-        'reference':   ref,
-      });
-      newData['caisse'] = {'mouvements': caisseMvts};
+    // 5. Caisse : débiter (décaissement manuel — toujours immédiat)
+    final caisseMapRaw = newData['caisse'];
+    final List<Map<String, dynamic>> caisseMvts;
+    if (caisseMapRaw is Map<String, dynamic>) {
+      caisseMvts = List<Map<String, dynamic>>.from(
+        (caisseMapRaw['mouvements'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
+      );
+    } else if (caisseMapRaw is List) {
+      caisseMvts = List<Map<String, dynamic>>.from(caisseMapRaw.cast<Map<String, dynamic>>());
+    } else {
+      caisseMvts = [];
     }
+    caisseMvts.insert(0, {
+      'id':           '${ref}D',
+      'type':         'decaissement',
+      'montant':      total,
+      'description':  'Décaissement Tour $numerTourAffiche — $benefNom',
+      'gestionnaire': gestNom,
+      'date':         DateTime.now().toIso8601String(),
+      'reference':    ref,
+    });
+    newData['caisse'] = {'mouvements': caisseMvts};
 
     // 6. Journal
     final journal = List<Map<String, dynamic>>.from(
       (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
     );
-    final modeStr = debiterCaisse ? 'décaissement immédiat' : 'décaissement en attente TontineClair';
     journal.insert(0, {
-      'quoi':         'DECAISSEMENT — Tour $numerTourAffiche clôturé — ${Formatters.montant(montantVerse, devise: data.devise)} pour $benefNom ($modeStr)',
+      'quoi':         'DECAISSEMENT — Tour $numerTourAffiche clôturé — ${Formatters.montant(montantVerse, devise: data.devise)} pour $benefNom (décaissement manuel · blockchain)',
       'gestionnaire': gestNom,
       'quand':        DateTime.now().toIso8601String(),
       'reference':    ref,
@@ -2265,10 +2041,9 @@ class _BarreDetail extends StatelessWidget {
 class _LigneRecapCloture extends StatelessWidget {
   final String label;
   final String valeur;
-  final bool rouge;
   final bool gras;
 
-  const _LigneRecapCloture(this.label, this.valeur, {this.rouge = false, this.gras = false});
+  const _LigneRecapCloture(this.label, this.valeur, {this.gras = false});
 
   @override
   Widget build(BuildContext context) {
@@ -2281,7 +2056,7 @@ class _LigneRecapCloture extends StatelessWidget {
               label,
               style: TextStyle(
                 fontSize: 12,
-                color: rouge ? AppColors.alerte : AppColors.texteDoux,
+                color: AppColors.texteDoux,
                 fontWeight: gras ? FontWeight.w700 : FontWeight.w500,
               ),
             ),
@@ -2291,7 +2066,7 @@ class _LigneRecapCloture extends StatelessWidget {
             style: TextStyle(
               fontSize: 13,
               fontWeight: gras ? FontWeight.w800 : FontWeight.w600,
-              color: rouge ? AppColors.alerte : AppColors.encre,
+              color: AppColors.encre,
             ),
           ),
         ],
