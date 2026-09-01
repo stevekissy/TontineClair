@@ -1204,8 +1204,15 @@ class TontineData {
           m.validePar         = (p['validePar'] as String?) ?? m.validePar;
         }
       } else {
+        // Membre NON présent dans paiements{} → tour pas encore payé (ou clôturé).
+        // On efface TOUS les champs liés au paiement du tour précédent pour
+        // éviter qu'ils s'affichent à tort dans le tour suivant.
         m.paiementStatut         = null;
         m.paiementDeclareParGest = null;
+        m.datePaiement           = null;
+        m.methodePaiement        = null;
+        m.referencePaiement      = null;
+        m.validePar              = null;
       }
     }
     // ── Fin réconciliation ──────────────────────────────────────────────────
