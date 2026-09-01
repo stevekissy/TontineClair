@@ -28,6 +28,7 @@ import 'verification_publique_screen.dart';
 
 import 'package:flutter/foundation.dart';
 import '../services/blockchain_service.dart';
+import '../services/paiement_methodes_service.dart';
 
 class DetailScreen extends StatefulWidget {
   final String code;
@@ -1694,6 +1695,7 @@ class _BarreDetail extends StatelessWidget {
       provider:         provider,
       data:             data,
       membres:          membres,
+      beneficiaire:     beneficiaire,
       benefId:          benefId,
       benefNom:         benefNom,
       numerTourAffiche: numerTourAffiche,
@@ -1713,6 +1715,7 @@ class _BarreDetail extends StatelessWidget {
     required TontineProvider provider,
     required TontineData     data,
     required List<Membre>    membres,
+    required Membre?         beneficiaire,
     required String          benefId,
     required String          benefNom,
     required int             numerTourAffiche,
@@ -1783,6 +1786,56 @@ class _BarreDetail extends StatelessWidget {
                           Formatters.montant(montantVerse, devise: data.devise),
                           gras: true,
                         ),
+                        // Coordonnées de décaissement du bénéficiaire (si renseignées)
+                        if (beneficiaire?.aCoordonneesDecaissement == true) ...[ 
+                          const Divider(height: 12, color: AppColors.lignes),
+                          Row(
+                            children: [
+                              Text(
+                                PaiementMethodesService.icone(beneficiaire!.moyenPaiementEffectif),
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      PaiementMethodesService.label(beneficiaire.moyenPaiementEffectif),
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.texteDoux,
+                                      ),
+                                    ),
+                                    Text(
+                                      beneficiaire.coordonneesEffectives ?? '',
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.encre,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ] else ...[ 
+                          const Divider(height: 12, color: AppColors.lignes),
+                          Row(
+                            children: [
+                              const Icon(Icons.warning_amber_rounded, size: 14, color: AppColors.orFonce),
+                              const SizedBox(width: 6),
+                              const Expanded(
+                                child: Text(
+                                  'Aucune coordonnée de paiement — à renseigner dans la fiche membre.',
+                                  style: TextStyle(fontSize: 11, color: AppColors.orFonce),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -1893,6 +1946,11 @@ class _BarreDetail extends StatelessWidget {
       recap: [
         (label: 'Bénéficiaire',        valeur: benefNom),
         (label: 'Montant à décaisser', valeur: Formatters.montant(montantVerse, devise: data.devise)),
+        if (beneficiaire?.aCoordonneesDecaissement == true)
+          (
+            label: PaiementMethodesService.affichage(beneficiaire!.moyenPaiementEffectif),
+            valeur: beneficiaire.coordonneesEffectives ?? '',
+          ),
         (label: 'Cotisants payés',     valeur: '$nbPayesClot / ${data.membres.length}'),
         (label: 'Tour',                valeur: 'N° $numerTourAffiche → N° ${numerTourAffiche + 1}'),
         (label: '📋 Référence',        valeur: refPreuve!),

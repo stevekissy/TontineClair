@@ -69,12 +69,16 @@ class Membre {
   String? dateOverride;  // ISO 8601 de la modification
   String? adminOverride; // nom du gestionnaire ayant modifié
 
-  // ── Mobile Money — coordonnées de décaissement ────────────────────────────
-  // Renseignées par le gestionnaire dans la fiche membre (membres_screen).
-  // Pré-remplies automatiquement lors de la clôture de tour (decaissements_pending).
-  String? operateur;     // 'orange' | 'moov' | 'mtn' | 'wave'
-  String? numeroBenef;   // numéro Mobile Money du bénéficiaire
-  String? validePar;     // nom du gestionnaire ayant enregistré le paiement
+  // ── Coordonnées de décaissement ──────────────────────────────────────────────
+  // Renseignées par le gestionnaire dans la fiche membre.
+  // Version 2 : moyenPaiementCode + coordonneesPaiement (tous moyens de paiement)
+  // Version 1 (rétro-compat) : operateur + numeroBenef (Mobile Money Afrique Ouest)
+  String? moyenPaiementCode;   // ex: 'orange_money', 'wave', 'virement_iban', 'paypal'...
+  String? coordonneesPaiement; // numéro, IBAN, email, tag... selon moyenPaiementCode
+  // Champs v1 conservés pour rétro-compat (anciens membres avant migration)
+  String? operateur;     // 'orange' | 'moov' | 'mtn' | 'wave' (v1)
+  String? numeroBenef;   // numéro Mobile Money (v1)
+  String? validePar;     // nom du gestionnaire ayant enregistré les coordonnées
 
   // ── Workflow approbation ────────────────────────────────────────────────
   // Statut du paiement : null | 'en_attente' | 'approuve'
@@ -98,6 +102,8 @@ class Membre {
     this.motifOverride,
     this.dateOverride,
     this.adminOverride,
+    this.moyenPaiementCode,
+    this.coordonneesPaiement,
     this.operateur,
     this.numeroBenef,
     this.validePar,
@@ -115,6 +121,31 @@ class Membre {
   // ── Getters workflow approbation ──────────────────────────────────────
   bool get paiementEnAttente => paiementStatut == 'en_attente';
   bool get paiementApprouve  => paiementStatut == 'approuve';
+
+  // ── Getters coordonnées de décaissement (v1 + v2 fusionnés) ─────────────
+  // Retourne le code du moyen de paiement effectif :
+  //   v2 présent  → moyenPaiementCode
+  //   v1 seulement → convertit 'orange'→'orange_money' etc.
+  String? get moyenPaiementEffectif {
+    if (moyenPaiementCode != null && moyenPaiementCode!.isNotEmpty) {
+      return moyenPaiementCode;
+    }
+    if (operateur != null && operateur!.isNotEmpty) {
+      const map = {'orange': 'orange_money', 'moov': 'moov_money', 'mtn': 'mtn_momo', 'wave': 'wave'};
+      return map[operateur!.toLowerCase()] ?? operateur;
+    }
+    return null;
+  }
+
+  // Coordonnées effectives (v2 ou fallback v1)
+  String? get coordonneesEffectives =>
+      (coordonneesPaiement != null && coordonneesPaiement!.isNotEmpty)
+          ? coordonneesPaiement
+          : numeroBenef;
+
+  // true si des coordonnées de décaissement sont renseignées
+  bool get aCoordonneesDecaissement =>
+      moyenPaiementEffectif != null && coordonneesEffectives != null && coordonneesEffectives!.isNotEmpty;
 
   factory Membre.fromJson(Map<String, dynamic> json) {
     return Membre(
@@ -134,7 +165,10 @@ class Membre {
       motifOverride: json['motifOverride'] as String?,
       dateOverride:  json['dateOverride']  as String?,
       adminOverride: json['adminOverride'] as String?,
-      // Mobile Money
+      // Coordonnées de décaissement
+      moyenPaiementCode:    json['moyenPaiementCode']    as String?,
+      coordonneesPaiement:  json['coordonneesPaiement']  as String?,
+      // Champs v1 (rétro-compat)
       operateur:   json['operateur']   as String?,
       numeroBenef: json['numeroBenef'] as String?,
       validePar:   json['validePar']   as String?,
@@ -159,7 +193,10 @@ class Membre {
         if (motifOverride != null) 'motifOverride': motifOverride,
         if (dateOverride  != null) 'dateOverride':  dateOverride,
         if (adminOverride != null) 'adminOverride': adminOverride,
-        // Mobile Money
+        // Coordonnées de décaissement v2
+        if (moyenPaiementCode   != null) 'moyenPaiementCode':   moyenPaiementCode,
+        if (coordonneesPaiement != null) 'coordonneesPaiement': coordonneesPaiement,
+        // Champs v1 conservés pour rétro-compat
         if (operateur   != null) 'operateur':   operateur,
         if (numeroBenef != null) 'numeroBenef': numeroBenef,
         if (validePar   != null) 'validePar':   validePar,

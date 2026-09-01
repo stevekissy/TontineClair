@@ -13,6 +13,7 @@ import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
 import '../services/score_service.dart';
 import '../services/supabase_service.dart';
+import '../services/paiement_methodes_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
@@ -1251,9 +1252,10 @@ class _CarteMembreState extends State<_CarteMembre> {
                         const SizedBox(height: 12),
                         const Divider(height: 1, color: AppColors.lignes),
                         const SizedBox(height: 12),
-                        _SectionMobileMoney(
+                        _SectionCoordonneesPaiement(
                           membre: m,
                           code: widget.code,
+                          devise: widget.data.devise,
                         ),
                       ],
                     ),
@@ -1466,45 +1468,55 @@ class _ChampPin extends StatelessWidget {
   }
 }
 
-// ─── Section Mobile Money \u2014 coordonn\u00e9es de d\u00e9caissement d'un membre ─────────────
-const _operateurs = ['orange', 'moov', 'mtn', 'wave'];
+// ─── Section Coordonnées de décaissement ─────────────────────────────────────
+// Remplace _SectionMobileMoney — supporte tous les moyens de paiement
+// selon la devise de la tontine (détection automatique via PaiementMethodesService).
+class _SectionCoordonneesPaiement extends StatefulWidget {
+  final Membre  membre;
+  final String  code;
+  final String? devise;
 
-class _SectionMobileMoney extends StatefulWidget {
-  final Membre membre;
-  final String code;
-
-  const _SectionMobileMoney({required this.membre, required this.code});
+  const _SectionCoordonneesPaiement({
+    required this.membre,
+    required this.code,
+    this.devise,
+  });
 
   @override
-  State<_SectionMobileMoney> createState() => _SectionMobileMoneyState();
+  State<_SectionCoordonneesPaiement> createState() => _SectionCoordonneesPaiementState();
 }
 
-class _SectionMobileMoneyState extends State<_SectionMobileMoney> {
-  bool _enEdition = false;
-  bool _saving = false;
-  late String? _operateur;
-  late String  _numero;
-  final _numCtrl = TextEditingController();
+class _SectionCoordonneesPaiementState extends State<_SectionCoordonneesPaiement> {
+  bool    _enEdition = false;
+  bool    _saving    = false;
+  String? _moyenCode;   // code sélectionné
+  final   _coordCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _operateur = widget.membre.operateur;
-    _numero    = widget.membre.numeroBenef ?? '';
-    _numCtrl.text = _numero;
+    // Initialiser depuis v2, puis fallback v1
+    _moyenCode = widget.membre.moyenPaiementEffectif;
+    _coordCtrl.text = widget.membre.coordonneesEffectives ?? '';
   }
 
   @override
   void dispose() {
-    _numCtrl.dispose();
+    _coordCtrl.dispose();
     super.dispose();
   }
 
+  List<PaiementMethode> get _methodes =>
+      PaiementMethodesService.methodesParDevise(widget.devise);
+
+  PaiementMethode? get _moyenSelectionne =>
+      _moyenCode != null ? PaiementMethodesService.parCode(_moyenCode) : null;
+
   Future<void> _sauvegarder() async {
-    final num = _numCtrl.text.trim();
-    if (_operateur == null || num.isEmpty) {
+    final coord = _coordCtrl.text.trim();
+    if (_moyenCode == null || coord.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Choisissez un opérateur et saisissez le numéro.')),
+        const SnackBar(content: Text('Choisissez un moyen de paiement et saisissez les coordonnées.')),
       );
       return;
     }
@@ -1513,36 +1525,38 @@ class _SectionMobileMoneyState extends State<_SectionMobileMoney> {
       final provider = context.read<TontineProvider>();
       final data     = provider.courante!.data;
 
-      // Mettre à jour le membre dans la liste
       final newMembres = data.membres.map((m) {
         if (m.id != widget.membre.id) return m;
         return Membre(
-          id:               m.id,
-          nom:              m.nom,
-          tel:              m.tel,
-          role:             m.role,
-          paye:             m.paye,
-          score:            m.score,
-          pinVote:          m.pinVote,
-          scoreOverride:    m.scoreOverride,
-          motifOverride:    m.motifOverride,
-          dateOverride:     m.dateOverride,
-          adminOverride:    m.adminOverride,
-          operateur:        _operateur,
-          numeroBenef:      num,
+          id:                   m.id,
+          nom:                  m.nom,
+          tel:                  m.tel,
+          role:                 m.role,
+          paye:                 m.paye,
+          score:                m.score,
+          pinVote:              m.pinVote,
+          scoreOverride:        m.scoreOverride,
+          motifOverride:        m.motifOverride,
+          dateOverride:         m.dateOverride,
+          adminOverride:        m.adminOverride,
+          moyenPaiementCode:    _moyenCode,
+          coordonneesPaiement:  coord,
+          // conserver v1 si préexistant, mais le nouveau prend la priorité (getters)
+          operateur:            m.operateur,
+          numeroBenef:          m.numeroBenef,
+          validePar:            provider.gestActifNom,
         );
       }).toList();
 
       final newData = data.toJson();
       newData['membres'] = newMembres.map((m) => m.toJson()).toList();
 
-      // Écrire sans PIN (modification non-financière — coordonnées MM uniquement)
       await SupabaseService.ecrireTontineSansPIN(code: widget.code, data: newData);
       await provider.chargerTontine(widget.code, silencieux: true);
 
       if (mounted) {
-        setState(() { _enEdition = false; _numero = num; });
-        afficherToast(context, '✅ Coordonnées Mobile Money sauvegardées !');
+        setState(() { _enEdition = false; });
+        afficherToast(context, '✅ Coordonnées de décaissement sauvegardées !');
       }
     } catch (e) {
       if (mounted) afficherToast(context, 'Erreur : $e', estErreur: true);
@@ -1553,17 +1567,19 @@ class _SectionMobileMoneyState extends State<_SectionMobileMoney> {
 
   @override
   Widget build(BuildContext context) {
-    final aCoords = (_operateur != null && _numero.isNotEmpty);
+    final aCoords = widget.membre.aCoordonneesDecaissement;
+    final moyen   = _moyenSelectionne;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // ── En-tête ──────────────────────────────────────────────────────────
         Row(
           children: [
-            const Icon(Icons.phone_android_rounded, size: 14, color: AppColors.encreDoux),
+            const Icon(Icons.account_balance_wallet_rounded, size: 14, color: AppColors.encreDoux),
             const SizedBox(width: 6),
             Text(
-              'Mobile Money (décaissement)',
+              'Coordonnées de décaissement',
               style: GoogleFonts.inter(
                 fontWeight: FontWeight.w700,
                 fontSize: 13,
@@ -1595,8 +1611,7 @@ class _SectionMobileMoneyState extends State<_SectionMobileMoney> {
         ),
         const SizedBox(height: 8),
 
-        if (!_enEdition) ...[
-          // Affichage lecture
+        if (!_enEdition) ...[ // ── Vue lecture ─────────────────────────────
           if (aCoords)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
@@ -1607,18 +1622,35 @@ class _SectionMobileMoneyState extends State<_SectionMobileMoney> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.check_circle_outline, size: 15, color: AppColors.succes),
+                  Text(
+                    PaiementMethodesService.icone(widget.membre.moyenPaiementEffectif),
+                    style: const TextStyle(fontSize: 18),
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      '${_operateur![0].toUpperCase()}${_operateur!.substring(1)} · $_numero',
-                      style: GoogleFonts.inter(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                        color: AppColors.succes,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          PaiementMethodesService.label(widget.membre.moyenPaiementEffectif),
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                            color: AppColors.succes,
+                          ),
+                        ),
+                        Text(
+                          widget.membre.coordonneesEffectives ?? '',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                            color: AppColors.succes,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
+                  const Icon(Icons.check_circle_outline, size: 15, color: AppColors.succes),
                 ],
               ),
             )
@@ -1636,71 +1668,122 @@ class _SectionMobileMoneyState extends State<_SectionMobileMoney> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Aucune coordonnée Mobile Money — requises pour les décaissements Premium.',
+                      'Aucune coordonnée — requises pour les décaissements.',
                       style: GoogleFonts.inter(fontSize: 12, color: AppColors.orFonce),
                     ),
                   ),
                 ],
               ),
             ),
-        ] else ...[
-          // Formulaire édition
-          // Opérateur
+
+        ] else ...[ // ── Formulaire édition ──────────────────────────────────
           Text(
-            'Opérateur',
+            'Moyen de paiement',
             style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.texteDoux),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
+
+          // ── Grille des moyens disponibles pour cette devise ─────────────
           Wrap(
             spacing: 8,
-            children: _operateurs.map((op) {
-              final sel = _operateur == op;
+            runSpacing: 8,
+            children: _methodes.map((m) {
+              final sel = _moyenCode == m.code;
               return GestureDetector(
-                onTap: () => setState(() => _operateur = op),
+                onTap: () {
+                  setState(() {
+                    _moyenCode = m.code;
+                    // Vider le champ quand on change de moyen
+                    if (_moyenCode != widget.membre.moyenPaiementEffectif) {
+                      _coordCtrl.clear();
+                    } else {
+                      _coordCtrl.text = widget.membre.coordonneesEffectives ?? '';
+                    }
+                  });
+                },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                   decoration: BoxDecoration(
                     color: sel ? AppColors.encre : AppColors.fondCode,
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: sel ? AppColors.encre : AppColors.lignes,
-                    ),
+                    border: Border.all(color: sel ? AppColors.encre : AppColors.lignes),
                   ),
-                  child: Text(
-                    op[0].toUpperCase() + op.substring(1),
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: sel ? Colors.white : AppColors.encre,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(m.icone, style: const TextStyle(fontSize: 14)),
+                      const SizedBox(width: 6),
+                      Text(
+                        m.label,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: sel ? Colors.white : AppColors.encre,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               );
             }).toList(),
           ),
-          const SizedBox(height: 10),
-          // Numéro
-          Text(
-            'Numéro Mobile Money',
-            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.texteDoux),
-          ),
-          const SizedBox(height: 6),
-          TextField(
-            controller: _numCtrl,
-            keyboardType: TextInputType.phone,
-            decoration: InputDecoration(
-              hintText: 'Ex : +225 07 00 00 00',
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: AppColors.lignes),
-              ),
-              prefixIcon: const Icon(Icons.phone_outlined, size: 18),
+
+          const SizedBox(height: 14),
+
+          // ── Champ de saisie adaptatif selon le moyen sélectionné ────────
+          if (moyen != null) ...[ 
+            Text(
+              moyen.labelChamp,
+              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.texteDoux),
             ),
-          ),
-          const SizedBox(height: 12),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _coordCtrl,
+              keyboardType: moyen.typeChamp == TypeChampPaiement.phone
+                  ? TextInputType.phone
+                  : moyen.typeChamp == TypeChampPaiement.email
+                      ? TextInputType.emailAddress
+                      : TextInputType.text,
+              textCapitalization: moyen.typeChamp == TypeChampPaiement.iban
+                  ? TextCapitalization.characters
+                  : TextCapitalization.none,
+              decoration: InputDecoration(
+                hintText: moyen.hintTexte,
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: AppColors.lignes),
+                ),
+                prefixIcon: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(moyen.icone, style: const TextStyle(fontSize: 18)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            // Hint contextuel
+            Text(
+              'Ex : ${moyen.hintTexte}',
+              style: GoogleFonts.inter(fontSize: 11, color: AppColors.texteDoux),
+            ),
+          ] else ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.fondCode,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.lignes),
+              ),
+              child: Text(
+                'Sélectionnez un moyen de paiement ci-dessus.',
+                style: GoogleFonts.inter(fontSize: 12, color: AppColors.texteDoux),
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 14),
           Row(
             children: [
               Expanded(
@@ -1718,8 +1801,8 @@ class _SectionMobileMoneyState extends State<_SectionMobileMoney> {
                   onTap: () {
                     setState(() {
                       _enEdition = false;
-                      _operateur = widget.membre.operateur;
-                      _numCtrl.text = widget.membre.numeroBenef ?? '';
+                      _moyenCode = widget.membre.moyenPaiementEffectif;
+                      _coordCtrl.text = widget.membre.coordonneesEffectives ?? '';
                     });
                   },
                 ),
