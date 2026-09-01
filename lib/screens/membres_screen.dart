@@ -4,6 +4,7 @@
 //                 scoreConfiance, definirPinMembre, changerMonPin)
 // ─────────────────────────────────────────────────────────────────────────────
 
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -1097,6 +1098,14 @@ class _CarteMembreState extends State<_CarteMembre> {
               children: [
                 const Divider(height: 1, color: AppColors.lignes),
 
+                // ── Photo de preuve de paiement (si disponible) ──
+                if (widget.membre.photoPreuveBase64 != null &&
+                    widget.membre.photoPreuveBase64!.isNotEmpty)
+                  _PhotoPreuve(
+                    base64Data: widget.membre.photoPreuveBase64!,
+                    nomMembre:  widget.membre.nom,
+                  ),
+
                 // Historique des votes
                 if (widget.voixMembre.isNotEmpty)
                   Padding(
@@ -1264,6 +1273,125 @@ class _CarteMembreState extends State<_CarteMembre> {
                   const SizedBox(height: 14),
               ],
             ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Photo preuve de paiement ─────────────────────────────────────────────────
+class _PhotoPreuve extends StatelessWidget {
+  final String base64Data;
+  final String nomMembre;
+
+  const _PhotoPreuve({required this.base64Data, required this.nomMembre});
+
+  void _voirEnPleinEcran(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: EdgeInsets.zero,
+        child: Stack(
+          children: [
+            InteractiveViewer(
+              child: Center(
+                child: Image.memory(
+                  base64Decode(base64Data),
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+            Positioned(
+              top: 16, right: 16,
+              child: GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.close_rounded,
+                      color: Colors.white, size: 22),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    late final imageBytes = base64Decode(base64Data);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Preuve de paiement',
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+              color: AppColors.encre,
+            ),
+          ),
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: () => _voirEnPleinEcran(context),
+            child: Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.memory(
+                    imageBytes,
+                    height: 160,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: AppColors.fondSecondaire,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Center(
+                        child: Text('Image non disponible',
+                            style: TextStyle(color: AppColors.texteDoux)),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: 8, right: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.zoom_in_rounded,
+                            size: 13, color: Colors.white),
+                        SizedBox(width: 4),
+                        Text('Agrandir',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

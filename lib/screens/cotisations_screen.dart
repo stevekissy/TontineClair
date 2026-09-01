@@ -507,9 +507,10 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
     Membre membre,
     Map<String, String> paiementResult,
   ) async {
-    final data      = tontine.data;
-    final methode   = paiementResult['methode']   ?? 'mobile_money';
-    final refSaisie = paiementResult['reference'] ?? '';
+    final data            = tontine.data;
+    final methode         = paiementResult['methode']          ?? 'mobile_money';
+    final refSaisie       = paiementResult['reference']        ?? '';
+    final photoPreuveB64  = paiementResult['photoPreuveBase64'];
     final nowStr    = DateTime.now().toIso8601String();
     final ref       = refSaisie.isNotEmpty ? refSaisie : Formatters.genererReference();
 
@@ -542,9 +543,10 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
       'methode'   : methode,
       'reference' : ref,
       'montant'   : data.montant,
-      'statut'    : 'en_attente',           // ← NOUVEAU : en attente d'approbation
+      'statut'    : 'en_attente',           // ← en attente d'approbation
       'autoDeclare': declareParGest == null, // true si déclaré par membre ordinaire
       if (declareParGest != null) 'declareParGest': declareParGest,
+      if (photoPreuveB64 != null) 'photo_preuve': photoPreuveB64, // preuve photo optionnelle
     };
     newData['paiements'] = paiements;
 

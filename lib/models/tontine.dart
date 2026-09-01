@@ -87,6 +87,11 @@ class Membre {
   String? paiementStatut;         // null | 'en_attente' | 'approuve'
   String? paiementDeclareParGest; // nom du gestionnaire déclarant (si gest)
 
+  // ── Preuve photo (optionnelle) ──────────────────────────────────────────
+  // Jointe au moment de la déclaration via PaiementChoixScreen.
+  // Stockée en base64 dans paiements{}.photo_preuve.
+  String? photoPreuveBase64;
+
   Membre({
     required this.id,
     required this.nom,
@@ -109,6 +114,7 @@ class Membre {
     this.validePar,
     this.paiementStatut,
     this.paiementDeclareParGest,
+    this.photoPreuveBase64,
   });
 
   /// Score effectif : scoreOverride s'il existe, sinon score calculé.
@@ -174,6 +180,7 @@ class Membre {
       validePar:   json['validePar']   as String?,
       paiementStatut:         json['paiementStatut']         as String?,
       paiementDeclareParGest: json['paiementDeclareParGest'] as String?,
+      photoPreuveBase64:      json['photoPreuveBase64']       as String?,
     );
   }
 
@@ -202,6 +209,7 @@ class Membre {
         if (validePar   != null) 'validePar':   validePar,
         if (paiementStatut         != null) 'paiementStatut':         paiementStatut,
         if (paiementDeclareParGest != null) 'paiementDeclareParGest': paiementDeclareParGest,
+        if (photoPreuveBase64      != null) 'photoPreuveBase64':      photoPreuveBase64,
       };
 }
 
@@ -1202,6 +1210,8 @@ class TontineData {
           m.methodePaiement   = (p['methode']   as String?) ?? m.methodePaiement;
           m.referencePaiement = (p['reference'] as String?) ?? m.referencePaiement;
           m.validePar         = (p['validePar'] as String?) ?? m.validePar;
+          // Photo de preuve (optionnelle)
+          m.photoPreuveBase64 = p['photo_preuve'] as String?;
         }
       } else {
         // Membre NON présent dans paiements{} → tour pas encore payé (ou clôturé).
@@ -1213,6 +1223,7 @@ class TontineData {
         m.methodePaiement        = null;
         m.referencePaiement      = null;
         m.validePar              = null;
+        m.photoPreuveBase64      = null;
       }
     }
     // ── Fin réconciliation ──────────────────────────────────────────────────

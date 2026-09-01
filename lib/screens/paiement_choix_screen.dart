@@ -1,5 +1,9 @@
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/tontine.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
@@ -50,6 +54,10 @@ class _PaiementChoixScreenState extends State<PaiementChoixScreen> {
   String _methodePaiement = 'mobile_money';
   bool _confirme = false;
 
+  // Photo de preuve
+  XFile?  _photoFichier;
+  String? _photoBase64;
+
   static const _methodes = [
     ('mobile_money', '📱 Mobile Money', 'Orange Money, Wave, MTN, Moov…'),
     ('virement',     '🏦 Virement bancaire', 'Virement ou dépôt bancaire'),
@@ -61,6 +69,79 @@ class _PaiementChoixScreenState extends State<PaiementChoixScreen> {
   void dispose() {
     _referenceCtrl.dispose();
     super.dispose();
+  }
+
+  // ── Picker photo ────────────────────────────────────────────────────────────
+  Future<void> _prendrePhoto(ImageSource source) async {
+    try {
+      final picker = ImagePicker();
+      final fichier = await picker.pickImage(
+        source: source,
+        maxWidth: 1200,
+        maxHeight: 1200,
+        imageQuality: 70,
+      );
+      if (fichier == null) return;
+      final bytes = await fichier.readAsBytes();
+      if (!mounted) return;
+      setState(() {
+        _photoFichier = fichier;
+        _photoBase64  = base64Encode(bytes);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur photo : $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  void _afficherChoixPhoto() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.camera_alt_rounded, color: AppColors.or),
+                title: const Text('Prendre une photo'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _prendrePhoto(ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_rounded, color: AppColors.or),
+                title: const Text('Choisir dans la galerie'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _prendrePhoto(ImageSource.gallery);
+                },
+              ),
+              if (_photoBase64 != null)
+                ListTile(
+                  leading: const Icon(Icons.delete_outline_rounded, color: AppColors.alerte),
+                  title: const Text('Supprimer la photo',
+                      style: TextStyle(color: AppColors.alerte)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    setState(() {
+                      _photoFichier = null;
+                      _photoBase64  = null;
+                    });
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   String _libelleFlux() {
@@ -131,11 +212,11 @@ class _PaiementChoixScreenState extends State<PaiementChoixScreen> {
     );
 
     if (ok == true && mounted) {
-      // Retourner la méthode et la référence pour que le caller puisse
-      // les passer directement à _togglePaiement (évite double-sélection).
+      // Retourner la méthode, la référence et éventuellement la photo.
       Navigator.of(context).pop(<String, String>{
-        'methode':   _methodePaiement,
-        'reference': ref,
+        'methode':          _methodePaiement,
+        'reference':        ref,
+        if (_photoBase64 != null) 'photoPreuveBase64': _photoBase64!,
       });
     }
   }
@@ -385,6 +466,129 @@ class _PaiementChoixScreenState extends State<PaiementChoixScreen> {
                         },
                       )
                     : null,
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // ── Photo de preuve (OPTIONNELLE) ─────────────────────────────
+            GestureDetector(
+              onTap: _afficherChoixPhoto,
+              child: Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: AppColors.fondSecondaire,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _photoBase64 != null ? AppColors.or : AppColors.lignes,
+                    width: _photoBase64 != null ? 1.5 : 1,
+                  ),
+                ),
+                child: _photoBase64 != null && _photoFichier != null
+                    // ── Aperçu de la photo sélectionnée ──
+                    ? Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(11),
+                            child: kIsWeb
+                                ? Image.memory(
+                                    base64Decode(_photoBase64!),
+                                    height: 160,
+                                    width: double.infinity,
+                                    fit: BoxFit.cover,
+                                  )
+                                : Image.file(
+                                    File(_photoFichier!.path),
+                                    height: 160,
+                                    width: double.infinity,
+                                    fit: BoxFit.cover,
+                                  ),
+                          ),
+                          Positioned(
+                            top: 8, right: 8,
+                            child: GestureDetector(
+                              onTap: () => setState(() {
+                                _photoFichier = null;
+                                _photoBase64  = null;
+                              }),
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.55),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.close_rounded,
+                                    size: 16, color: Colors.white),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            bottom: 8, right: 8,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppColors.or,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.edit_outlined,
+                                      size: 12, color: Colors.white),
+                                  SizedBox(width: 4),
+                                  Text('Changer',
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    // ── Placeholder invite ──
+                    : Padding(
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 14, horizontal: 14),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppColors.or.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(Icons.add_a_photo_outlined,
+                                  size: 20, color: AppColors.or),
+                            ),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Joindre une photo de preuve',
+                                    style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.encre),
+                                  ),
+                                  SizedBox(height: 2),
+                                  Text(
+                                    'Optionnel — capture d\'écran, reçu photo…',
+                                    style: TextStyle(
+                                        fontSize: 11.5,
+                                        color: AppColors.texteDoux),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.chevron_right_rounded,
+                                size: 18, color: AppColors.texteDoux),
+                          ],
+                        ),
+                      ),
               ),
             ),
             const SizedBox(height: 20),
