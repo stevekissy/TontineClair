@@ -515,12 +515,16 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
     final ref       = refSaisie.isNotEmpty ? refSaisie : Formatters.genererReference();
 
     // ── Détecter si c'est un gestionnaire qui déclare ──────────────────
-    final declareParGest = provider.estDebloque ? provider.gestActifNom : null;
+    // Un gestionnaire débloqué qui paie pour un membre = approbation immédiate
+    // (pas besoin d'un second gestionnaire pour valider).
+    // Un membre ordinaire déclare → statut 'en_attente' → approbation requise.
+    final declareParGest  = provider.estDebloque ? provider.gestActifNom : null;
+    final estDeclarationGest = declareParGest != null; // true = gest, false = membre
 
     // ── Construire le nouveau JSON ──────────────────────────────────────
     final newData = data.toJson();
 
-    // 1. Marquer le membre payé dans membres[] (paye=true pour affichage)
+    // 1. Marquer le membre payé dans membres[]
     final membres = List<Map<String, dynamic>>.from(
       (newData['membres'] as List<dynamic>).cast<Map<String, dynamic>>(),
     );
@@ -530,11 +534,14 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
       membres[idx]['datePaiement']      = nowStr;
       membres[idx]['methodePaiement']   = methode;
       membres[idx]['referencePaiement'] = ref;
-      if (declareParGest != null) membres[idx]['paiementDeclareParGest'] = declareParGest;
+      if (estDeclarationGest) {
+        // Gestionnaire → directement validé, pas de déclarant en attente
+        membres[idx]['validePar'] = declareParGest;
+      }
     }
     newData['membres'] = membres;
 
-    // 2. paiements{} — source de vérité — statut 'en_attente' (pas encore approuvé)
+    // 2. paiements{} — source de vérité
     final paiements = Map<String, dynamic>.from(
       (newData['paiements'] as Map<String, dynamic>?) ?? {},
     );
@@ -543,24 +550,51 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
       'methode'   : methode,
       'reference' : ref,
       'montant'   : data.montant,
-      'statut'    : 'en_attente',           // ← en attente d'approbation
-      'autoDeclare': declareParGest == null, // true si déclaré par membre ordinaire
-      if (declareParGest != null) 'declareParGest': declareParGest,
-      if (photoPreuveB64 != null) 'photo_preuve': photoPreuveB64, // preuve photo optionnelle
+      // Gestionnaire → approuvé directement ; Membre → en attente d'approbation
+      'statut'         : estDeclarationGest ? 'approuve' : 'en_attente',
+      'autoDeclare'    : !estDeclarationGest,
+      if (estDeclarationGest) 'approuvePar'     : declareParGest,
+      if (estDeclarationGest) 'dateApprobation' : nowStr,
+      if (!estDeclarationGest) 'declareParGest'  : null, // membre ordinaire
+      if (photoPreuveB64 != null) 'photo_preuve' : photoPreuveB64,
     };
     newData['paiements'] = paiements;
 
-    // 3. CAISSE : NON créditée ici — caisse créditée UNIQUEMENT à l'approbation
+    // 3. CAISSE : créditée immédiatement si gestionnaire, sinon à l'approbation
+    if (estDeclarationGest) {
+      final caisseMap = newData['caisse'];
+      final caisse = List<Map<String, dynamic>>.from(
+        caisseMap is Map<String, dynamic>
+            ? ((caisseMap['mouvements'] as List<dynamic>?)
+                    ?.cast<Map<String, dynamic>>() ?? [])
+            : caisseMap is List
+                ? caisseMap.cast<Map<String, dynamic>>()
+                : [],
+      );
+      final refCaisse = 'GEST_$ref';
+      caisse.add({
+        'id'          : '${refCaisse}C',
+        'type'        : 'cotisation',
+        'montant'     : data.montant,
+        'description' : 'Cotisation ${membre.nom} — Tour ${data.numerTour} — par $declareParGest',
+        'gestionnaire': declareParGest,
+        'date'        : nowStr,
+        'reference'   : refCaisse,
+      });
+      newData['caisse'] = {'mouvements': caisse};
+    }
 
-    // 4. Journal public — déclaration en attente
+    // 4. Journal public
     final journal = List<Map<String, dynamic>>.from(
       (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
     );
     journal.insert(0, {
-      'quoi'       : 'DECLARATION_EN_ATTENTE — ${membre.nom} — Tour ${data.numerTour} — ${Formatters.methodePaiement(methode)} — Réf: $ref',
+      'quoi'        : estDeclarationGest
+          ? 'COTISATION_GESTIONNAIRE — ${membre.nom} — Tour ${data.numerTour} — ${Formatters.methodePaiement(methode)} — Réf: $ref — par $declareParGest'
+          : 'DECLARATION_EN_ATTENTE — ${membre.nom} — Tour ${data.numerTour} — ${Formatters.methodePaiement(methode)} — Réf: $ref',
       'gestionnaire': declareParGest ?? membre.nom,
-      'quand'      : nowStr,
-      'reference'  : ref,
+      'quand'       : nowStr,
+      'reference'   : ref,
     });
     newData['journal'] = journal;
 
@@ -570,25 +604,69 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
       membreId               : membre.id,
       membreNom              : membre.nom,
       montantXof             : data.montant,
-      typeOperationBlockchain: 'cotisation_en_attente',
+      typeOperationBlockchain: 'cotisation',
       refInterne             : ref,
     );
 
     if (!context.mounted) return;
 
     if (ok) {
-      afficherToast(context, '⏳ Cotisation de ${membre.nom} en attente d\'approbation.');
+      if (estDeclarationGest) {
+        // ── Gestionnaire : approbation immédiate ──
+        afficherToast(context,
+          '✅ Cotisation de ${membre.nom} enregistrée et approuvée.');
 
-      // Notification push tous membres
-      final lang = Provider.of<LocaleService>(context, listen: false).langue.code;
-      final t = SupabaseService.notifTexte('cotisation', lang, vars: {'nom': membre.nom});
-      SupabaseService.envoyerNotification(
-        code        : provider.courante!.code,
-        type        : 'cotisation',
-        titre       : t['titre']!,
-        message     : '${membre.nom} a déclaré sa cotisation — en attente d\'approbation',
-        donneesExtra: {'membre': membre.nom, 'statut': 'en_attente'},
-      );
+        // Blockchain direct (non-bloquant)
+        BlockchainService.enregistrerCotisation(
+          tontineCode: provider.courante!.code,
+          membreId   : membre.id,
+          membreNom  : membre.nom,
+          montantXof : data.montant,
+          refInterne : ref,
+        ).catchError((e) {
+          if (kDebugMode) debugPrint('[Blockchain] cotisation_gest erreur: $e');
+          return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+        });
+
+        // Notification push
+        SupabaseService.envoyerNotification(
+          code        : provider.courante!.code,
+          type        : 'cotisation',
+          titre       : '✅ Cotisation enregistrée',
+          message     : '${membre.nom} — cotisation enregistrée par $declareParGest',
+          donneesExtra: {'membre': membre.nom, 'statut': 'approuve'},
+        );
+
+        // Proposer reçu
+        final membreActualise = Membre(
+          id               : membre.id,
+          nom              : membre.nom,
+          tel              : membre.tel,
+          role             : membre.role,
+          paye             : true,
+          datePaiement     : nowStr,
+          methodePaiement  : methode,
+          referencePaiement: ref,
+          score            : membre.score,
+          validePar        : declareParGest,
+        );
+        if (context.mounted) {
+          await _proposerRecuPostPaiement(context, tontine, membreActualise, ref, methode);
+        }
+      } else {
+        // ── Membre ordinaire : en attente d'approbation ──
+        afficherToast(context, '⏳ Cotisation de ${membre.nom} en attente d\'approbation.');
+
+        final lang = Provider.of<LocaleService>(context, listen: false).langue.code;
+        final t = SupabaseService.notifTexte('cotisation', lang, vars: {'nom': membre.nom});
+        SupabaseService.envoyerNotification(
+          code        : provider.courante!.code,
+          type        : 'cotisation',
+          titre       : t['titre']!,
+          message     : '${membre.nom} a déclaré sa cotisation — en attente d\'approbation',
+          donneesExtra: {'membre': membre.nom, 'statut': 'en_attente'},
+        );
+      }
     } else {
       afficherToast(context,
         'Erreur lors de l\'enregistrement. Réessayez.',
