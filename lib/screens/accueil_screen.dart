@@ -17,7 +17,6 @@ import 'detail_screen.dart';
 import 'support_screen.dart';
 import 'config_screen.dart';
 import 'langue_screen.dart';
-import 'kyc_screen.dart';
 import '../utils/app_localizations.dart';
 
 class AccueilScreen extends StatelessWidget {
@@ -94,11 +93,6 @@ class AccueilScreen extends StatelessWidget {
         onRejoindre: () => _aller(context, const RejoindreScreen()),
         onCreer:     () => _aller(context, const CreationScreen()),
         onSupport:   () => _ouvrirSupportWhatsApp(context),
-        onKyc: () {
-          final gestNom = context.read<TontineProvider>().gestActifNom ?? '';
-          _aller(context, KycScreen(userId: gestNom));
-        },
-
       ),
     );
   }
@@ -815,12 +809,10 @@ class _BarreActions extends StatelessWidget {
   final VoidCallback onRejoindre;
   final VoidCallback onCreer;
   final VoidCallback onSupport;
-  final VoidCallback onKyc;
   const _BarreActions({
     required this.onRejoindre,
     required this.onCreer,
     required this.onSupport,
-    required this.onKyc,
   });
 
   @override
@@ -880,27 +872,6 @@ class _BarreActions extends StatelessWidget {
                   ),
                 ),
               ),
-              Text(' · ',
-                style: TextStyle(color: AppColors.encre.withValues(alpha: 0.25), fontSize: 13)),
-              GestureDetector(
-                onTap: onKyc,
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.verified_user_outlined, size: 13,
-                          color: AppColors.or.withValues(alpha: 0.7)),
-                      const SizedBox(width: 4),
-                      Text('Vérification ID',
-                          style: TextStyle(fontSize: 11.5,
-                              color: AppColors.or.withValues(alpha: 0.75))),
-                    ],
-                  ),
-                ),
-              ),
-
             ],
           ),
           const SizedBox(height: 4),

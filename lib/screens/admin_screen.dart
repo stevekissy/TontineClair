@@ -813,7 +813,7 @@ class _AdminScreenState extends State<AdminScreen> {
             : _onglet == 8 ? KycAdminScreen(cleAdmin: _cle, modeOnglet: true)
             : _onglet == 9 ? _ListeEmails()
             : _onglet == 10 ? _ListeSupport()
-            : _onglet == 11 ? CoinPaymentsAdminScreen(cleAdmin: _cle)
+            : _onglet == 11 ? CoinPaymentsAdminScreen()
             : _onglet == 12 ? BlockchainAdminScreen(cleAdmin: _cle)
             : AdminSoldesScreen(cleAdmin: _cle),
         ),

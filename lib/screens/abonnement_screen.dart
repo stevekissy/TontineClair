@@ -25,11 +25,11 @@ class AbonnementScreen extends StatefulWidget {
   final String code;
   /// Forcer la plateforme (utilisé depuis création sans tontine chargée)
   final PlatformType? platformeForce;
-  /// Montant de la cagnotte — pour détecter si le KYC est obligatoire
+  /// Montant de la cagnotte
   final int montantCagnotte;
-  /// Statut KYC du gestionnaire
+  /// Statut KYC (conservé pour compatibilité — non utilisé comme condition d'accès)
   final String? kycStatut;
-  /// Nom du gestionnaire (pour le formulaire KYC)
+  /// Nom du gestionnaire
   final String gestNom;
   /// true = tontine créée en mode Gratuit → ne peut PAS passer Premium.
   /// Affiche uniquement les avantages + message "créez une nouvelle tontine Premium".
@@ -53,23 +53,17 @@ class _AbonnementScreenState extends State<AbonnementScreen> {
   bool _demandeEnvoyee = false;
   String _formule = 'mensuel';
   bool _checkboxLu = false;
-  String? _kycStatut;
 
   static const _couleurPremium = Color(0xFFF59E0B);
 
   PlatformType get _platform =>
       widget.platformeForce ?? PlatformService.current;
 
-  bool get _kycRequis    => widget.montantCagnotte >= TontineData.kSeuilKyc;
-  bool get _kycValide    => _kycStatut == 'valide';
-  bool get _kycPending   => _kycStatut == 'pending';
-  bool get _kycBloquant  => _kycRequis && !_kycValide;
-  bool get _peutProceder => _checkboxLu && !_kycBloquant;
+  bool get _peutProceder => _checkboxLu;
 
   @override
   void initState() {
     super.initState();
-    _kycStatut = widget.kycStatut;
   }
 
   @override
@@ -205,93 +199,12 @@ class _AbonnementScreenState extends State<AbonnementScreen> {
                     _CarteIrreversible(),
                     const SizedBox(height: 16),
 
-                    // ── Carte rouge KYC (si cagnotte >= 200 000 XOF) ─────────
-                    if (_kycRequis && !_kycValide) ...[
-                      _CarteKycObligatoire(
-                        kycStatut:       _kycStatut,
-                        montantCagnotte: widget.montantCagnotte,
-                        gestNom:         widget.gestNom,
-                        code:            widget.code,
-                        onSoumis:        () => setState(() => _kycStatut = 'pending'),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-
-                    // ── KYC validé : bandeau succès ───────────────────────────
-                    if (_kycValide) ...[
-                      _BandeauKycValide(),
-                      const SizedBox(height: 16),
-                    ],
-
                     // ── Checkbox confirmation ─────────────────────────────────
-                    if (!_kycBloquant) ...[
-                      _CheckboxConfirmation(
-                        valeur:   _checkboxLu,
-                        onChange: (v) => setState(() => _checkboxLu = v),
-                      ),
-                      const SizedBox(height: 20),
-                    ],
-
-                    // ── Message KYC bloquant ──────────────────────────────────
-                    if (_kycBloquant) ...[
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFEF2F2),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFFCA5A5)),
-                        ),
-                        child: const Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('🔒', style: TextStyle(fontSize: 16)),
-                            SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                'Soumettez votre KYC avant de continuer.\n'
-                                'Impossible de payer tant que le KYC n\'est pas validé.',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Color(0xFF991B1B),
-                                  fontWeight: FontWeight.w600,
-                                  height: 1.4,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                    ],
-
-                    // ── KYC pending ───────────────────────────────────────────
-                    if (_kycPending && !_kycValide && !_kycBloquant) ...[
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFFBEB),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFFDE68A)),
-                        ),
-                        child: const Row(
-                          children: [
-                            Text('⏳', style: TextStyle(fontSize: 16)),
-                            SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                'KYC soumis — en attente de validation TontineClair. Vous pourrez continuer après validation.',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Color(0xFF92400E),
-                                  height: 1.4,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                    ],
+                    _CheckboxConfirmation(
+                      valeur:   _checkboxLu,
+                      onChange: (v) => setState(() => _checkboxLu = v),
+                    ),
+                    const SizedBox(height: 20),
                   ],
 
                   const SizedBox(height: 32),
@@ -335,14 +248,11 @@ class _AbonnementScreenState extends State<AbonnementScreen> {
         return _SectionAndroid(
           formule:       _formule,
           peutProceder:  _peutProceder,
-          kycBloquant:   _kycBloquant,
-          kycPending:    _kycPending && !_kycValide,
         );
       case PlatformType.ios:
         return _SectionIOS(
           formule:      _formule,
           peutProceder: _peutProceder,
-          kycBloquant:  _kycBloquant,
         );
       case PlatformType.web:
         return _SectionWeb(
@@ -604,260 +514,6 @@ class _CarteIrreversible extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // CARTE ROUGE — KYC obligatoire (cagnotte >= 200 000 XOF)
 // ─────────────────────────────────────────────────────────────────────────────
-
-class _CarteKycObligatoire extends StatelessWidget {
-  final String? kycStatut;
-  final int     montantCagnotte;
-  final String  gestNom;
-  final String  code;
-  final VoidCallback onSoumis;
-
-  const _CarteKycObligatoire({
-    required this.kycStatut,
-    required this.montantCagnotte,
-    required this.gestNom,
-    required this.code,
-    required this.onSoumis,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isPending = kycStatut == 'pending';
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFEF2F2),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.4), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFFEF4444).withValues(alpha: 0.07),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEF4444).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Center(
-                  child: Text('🚨', style: TextStyle(fontSize: 18)),
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'KYC obligatoire',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14.5,
-                        color: Color(0xFF991B1B),
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Cette cagnotte dépasse 200 000 XOF.',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Color(0xFFB91C1C),
-                        height: 1.4,
-                      ),
-                    ),
-                    Text(
-                      'Une vérification d\'identité est obligatoire avant de pouvoir activer Premium.',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Color(0xFFB91C1C),
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (!isPending) ...[
-            const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () => _ouvrirKyc(context),
-                icon: const Icon(Icons.description_outlined, size: 16),
-                label: const Text(
-                  'Soumettre le KYC',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFEF4444),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  elevation: 0,
-                ),
-              ),
-            ),
-          ],
-          if (isPending) ...[
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFFBEB),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Row(
-                children: [
-                  Text('⏳', style: TextStyle(fontSize: 14)),
-                  SizedBox(width: 8),
-                  Text(
-                    'KYC soumis — en attente de validation',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: Color(0xFF92400E),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  void _ouvrirKyc(BuildContext context) async {
-    final soumis = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => ModaleKyc(code: code, gestNom: gestNom),
-    );
-    if (soumis == true) onSoumis();
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// BANDEAU KYC VALIDÉ
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _BandeauKycValide extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.succesFond,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.succes.withValues(alpha: 0.4)),
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.verified_user, color: AppColors.succes, size: 22),
-          SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Identité vérifiée — vous pouvez procéder au paiement.',
-              style: TextStyle(
-                fontSize: 13.5,
-                color: AppColors.succes,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// CHECKBOX CONFIRMATION
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _CheckboxConfirmation extends StatelessWidget {
-  final bool valeur;
-  final ValueChanged<bool> onChange;
-
-  const _CheckboxConfirmation({required this.valeur, required this.onChange});
-
-  static const _couleurPremium = Color(0xFFF59E0B);
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => onChange(!valeur),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: valeur
-              ? _couleurPremium.withValues(alpha: 0.06)
-              : AppColors.carte,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: valeur ? _couleurPremium : AppColors.lignes,
-            width: valeur ? 1.5 : 1,
-          ),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              width: 22,
-              height: 22,
-              decoration: BoxDecoration(
-                color: valeur ? _couleurPremium : Colors.transparent,
-                border: Border.all(
-                  color: valeur ? _couleurPremium : AppColors.lignes,
-                  width: 2,
-                ),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: valeur
-                  ? const Icon(Icons.check, size: 14, color: Colors.white)
-                  : null,
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text(
-                'J\'ai compris que le passage en Premium est définitif et irréversible.',
-                style: TextStyle(
-                  fontSize: 13.5,
-                  color: AppColors.encre,
-                  height: 1.4,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SECTION WEB — formulaire de demande manuelle
-// Visible UNIQUEMENT sur plateforme web
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _SectionWeb extends StatelessWidget {
   final String formule;
   final String code;
@@ -957,14 +613,9 @@ class _SectionWeb extends StatelessWidget {
 class _SectionAndroid extends StatefulWidget {
   final String formule;
   final bool   peutProceder;
-  final bool   kycBloquant;
-  final bool   kycPending;
-
   const _SectionAndroid({
     required this.formule,
     required this.peutProceder,
-    required this.kycBloquant,
-    required this.kycPending,
   });
 
   @override
@@ -1056,16 +707,11 @@ class _SectionAndroidState extends State<_SectionAndroid> {
         Text(
           widget.peutProceder
               ? 'Paiement sécurisé via Google Play. Renouvellement automatique.'
-              : widget.kycBloquant
-                  ? '🔒 Vérification d\'identité requise avant le paiement.'
-                  : 'Cochez la case ci-dessus pour activer le bouton.',
+              : 'Cochez la case ci-dessus pour activer le bouton.',
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 11.5,
-            color: widget.kycBloquant
-                ? const Color(0xFF991B1B)
-                : AppColors.texteDoux,
-            fontWeight: widget.kycBloquant ? FontWeight.w600 : FontWeight.normal,
+            color: AppColors.texteDoux,
           ),
         ),
         const SizedBox(height: 8),
@@ -1098,12 +744,9 @@ class _SectionAndroidState extends State<_SectionAndroid> {
 class _SectionIOS extends StatefulWidget {
   final String formule;
   final bool   peutProceder;
-  final bool   kycBloquant;
-
   const _SectionIOS({
     required this.formule,
     required this.peutProceder,
-    required this.kycBloquant,
   });
 
   @override
@@ -1184,16 +827,11 @@ class _SectionIOSState extends State<_SectionIOS> {
         Text(
           widget.peutProceder
               ? 'Paiement sécurisé via l\'App Store. Renouvellement automatique.'
-              : widget.kycBloquant
-                  ? '🔒 Vérification d\'identité requise avant le paiement.'
-                  : 'Cochez la case ci-dessus pour activer le bouton.',
+              : 'Cochez la case ci-dessus pour activer le bouton.',
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 11.5,
-            color: widget.kycBloquant
-                ? const Color(0xFF991B1B)
-                : AppColors.texteDoux,
-            fontWeight: widget.kycBloquant ? FontWeight.w600 : FontWeight.normal,
+            color: AppColors.texteDoux,
           ),
         ),
         const SizedBox(height: 8),
@@ -2154,6 +1792,44 @@ class _CarteFormulaLectureSeule extends StatelessWidget {
               color: highlighted
                   ? Colors.white.withValues(alpha: 0.7)
                   : AppColors.texteDoux,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CHECKBOX CONFIRMATION
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _CheckboxConfirmation extends StatelessWidget {
+  final bool valeur;
+  final ValueChanged<bool> onChange;
+  const _CheckboxConfirmation({required this.valeur, required this.onChange});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => onChange(!valeur),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Checkbox(
+            value: valeur,
+            onChanged: (v) => onChange(v ?? false),
+            activeColor: AppColors.or,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'J\'ai lu et je comprends que cette action est irréversible.',
+              style: TextStyle(
+                fontSize: 14,
+                color: AppColors.texte,
+                height: 1.5,
+              ),
             ),
           ),
         ],

@@ -33,10 +33,9 @@ class KycConfig {
   /// URL de la Supabase Edge Function kyc-session
   static String edgeFunctionBaseUrl = '${SupabaseService.supabaseUrl}/functions/v1';
 
-  /// Règle métier : KYC requis si et seulement si la tontine est Premium.
-  /// Indépendant du montant ou de la devise.
-  /// Compte Gratuit → jamais de KYC.
-  static bool kycRequisPourPremium = true;
+  /// Règle métier : KYC désactivé — plus de blocage KYC dans TontineClair.
+  /// Toutes les opérations sont accessibles sans vérification d'identité.
+  static bool kycRequisPourPremium = false;
 
   /// Seuil montant (conservé pour compatibilité interne, non utilisé en logique principale)
   static const double kycThreshold = 0;
@@ -379,42 +378,16 @@ class KycService {
   ///   'loan'            → prêt
   ///   'large_transfer'  → virement > seuil
   ///   'premium_create'  → création tontine Premium avec paiements réels
+  /// KYC désactivé — toujours autorisé quelle que soit l'action.
   static Future<FinancialActionResult> canPerformFinancialAction({
     required String userId,
     required String actionType,
     double amount = 0,
   }) async {
-    final kyc = await getStatus(userId);
-
-    // Toujours autorisé si KYC vérifié et non expiré
-    if (kyc.status.isVerified) {
-      if (kyc.expiresAt == null || kyc.expiresAt!.isAfter(DateTime.now())) {
-        return FinancialActionResult(allowed: true, kycStatus: kyc.status);
-      }
-    }
-
-    // Actions toujours bloquées sans KYC vérifié
-    const alwaysBlocked = {'withdrawal', 'disbursement', 'loan', 'premium_create'};
-    if (alwaysBlocked.contains(actionType)) {
-      return FinancialActionResult(
-        allowed:   false,
-        kycStatus: kyc.status,
-        reason:    kyc.status.description,
-      );
-    }
-
-    // Vérification par montant pour les autres actions
-    if (amount >= KycConfig.kycThreshold) {
-      return FinancialActionResult(
-        allowed:   false,
-        kycStatus: kyc.status,
-        reason:    'Votre identité doit être vérifiée pour les transactions '
-                   'supérieures à ${KycConfig.kycThreshold.toStringAsFixed(0)} XOF.',
-      );
-    }
-
-    // En dessous du seuil → autorisé
-    return FinancialActionResult(allowed: true, kycStatus: kyc.status);
+    return FinancialActionResult(
+      allowed: true,
+      kycStatus: KycStatus.verified,
+    );
   }
 
   // ── Statistiques admin ──────────────────────────────────────────────────

@@ -6,14 +6,11 @@ import '../services/feature_gate_service.dart';
 import '../services/storage_service.dart';
 import '../services/echeance_service.dart';
 import '../services/devise_service.dart';
-import '../services/kyc_service.dart';
-import '../services/subscription_service.dart';
 import '../services/email_service.dart' as email_svc;
 import 'dart:math' show Random;
 import '../utils/app_colors.dart';
 import '../widgets/app_widgets.dart';
 import 'code_cree_screen.dart';
-import 'kyc_screen.dart';
 import '../utils/app_localizations.dart';
 
 class CreationScreen extends StatefulWidget {
@@ -54,14 +51,6 @@ class _CreationScreenState extends State<CreationScreen> {
   String? _erreur;
   String _typeTontine = 'gratuite'; // 'gratuite' | 'premium'
 
-  // ── KYC Smile ID ─────────────────────────────────────────────
-  bool _kycValide = false;     // true une fois que Smile ID a confirmé verified
-  bool _kycEnCours = false;    // spinner pendant la vérification du statut
-
-  /// KYC obligatoire si et seulement si la tontine est de type Premium.
-  /// Compte Gratuit → jamais de KYC.
-  bool get _kycRequis => _typeTontine == 'premium';
-
   @override
   void dispose() {
     _nomCtrl.dispose();
@@ -101,50 +90,6 @@ class _CreationScreenState extends State<CreationScreen> {
       return;
     }
 
-    // ── Gate KYC Smile ID : obligatoire pour toute tontine Premium ──────────
-    // SKIP si l'utilisateur a déjà un abonnement Premium actif (KYC déjà fait)
-    if (_kycRequis && !_kycValide) {
-      // Si abonnement déjà actif → pas besoin de re-vérifier KYC
-      final abonnementActif = SubscriptionService.isPremium;
-      if (abonnementActif) {
-        // Abonnement actif = KYC déjà validé lors du premier abonnement
-        setState(() => _kycValide = true);
-      } else {
-        // Pas d'abonnement → vérifier KYC avant de créer
-        final gestNomKyc = _gestNomCtrl.isNotEmpty
-            ? _gestNomCtrl.first.text.trim()
-            : '';
-        setState(() => _kycEnCours = true);
-        final userId = gestNomKyc.isNotEmpty ? gestNomKyc : 'unknown';
-        final bloquant = await KycService.kycBloquantPourPremium(userId);
-        if (!mounted) { setState(() => _kycEnCours = false); return; }
-        setState(() => _kycEnCours = false);
-
-        if (bloquant) {
-          // Lancer le parcours KYC Smile ID complet
-          final result = await Navigator.push<bool>(
-            context,
-            MaterialPageRoute(builder: (_) => KycScreen(userId: userId)),
-          );
-          if (!mounted) return;
-          if (result != true) {
-            setState(() => _erreur =
-              'La vérification d\'identité est obligatoire pour créer une tontine Premium. '
-              'Complétez votre vérification Smile ID avant de continuer.');
-            return;
-          }
-          final encoreBloquant = await KycService.kycBloquantPourPremium(userId);
-          if (!mounted) return;
-          if (encoreBloquant) {
-            setState(() => _erreur =
-              'Votre vérification est en cours d\'analyse (Smile ID). '
-              'Vous pourrez créer cette tontine Premium dès que votre identité sera confirmée.');
-            return;
-          }
-        }
-        setState(() => _kycValide = true);
-      }
-    }
     if (montantStr.isEmpty || int.tryParse(montantStr) == null) {
       setState(() => _erreur = 'Montant invalide.');
       return;
@@ -394,189 +339,9 @@ class _CreationScreenState extends State<CreationScreen> {
 
   /// Bannière KYC — visible uniquement si type = Premium.
   /// Masquée si abonnement actif (KYC déjà fait lors du premier abonnement).
-  Widget _banniereKyc() {
-    if (!_kycRequis) return const SizedBox.shrink();
-    // Si abonnement Premium actif → afficher badge "Abonnement actif" au lieu du KYC
-    if (SubscriptionService.isPremium && !_kycValide) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-          decoration: BoxDecoration(
-            color: const Color(0xFFE3F1EA),
-            border: Border.all(
-              color: const Color(0xFF2E7D5B).withValues(alpha: 0.4),
-              width: 1.5,
-            ),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.workspace_premium_rounded,
-                  size: 20, color: Color(0xFF2E7D5B)),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Abonnement Premium actif ✓',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF1B5E3B),
-                      ),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      'Vous pouvez créer des tontines Premium sans limite.',
-                      style: TextStyle(fontSize: 12, color: Color(0xFF2E7D5B)),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-    if (_kycEnCours) {
-      return const Padding(
-        padding: EdgeInsets.only(bottom: 10),
-        child: Row(children: [
-          SizedBox(width: 18, height: 18,
-            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.or)),
-          SizedBox(width: 10),
-          Text('Vérification identité en cours…',
-            style: TextStyle(fontSize: 13, color: AppColors.texteDoux)),
-        ]),
-      );
-    }
-    final valide = _kycValide;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-        decoration: BoxDecoration(
-          color: valide ? const Color(0xFFE3F1EA) : const Color(0xFFFFF3CD),
-          border: Border.all(
-            color: valide
-                ? const Color(0xFF2E7D5B).withValues(alpha: 0.4)
-                : const Color(0xFFF59E0B).withValues(alpha: 0.6),
-            width: 1.5,
-          ),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Ligne icone + texte ──────────────────────────────────────
-            Row(
-              children: [
-                Icon(
-                  valide ? Icons.shield_rounded : Icons.fingerprint_rounded,
-                  size: 20,
-                  color: valide ? const Color(0xFF2E7D5B) : const Color(0xFFF59E0B),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        valide
-                            ? 'Identite verifiee (Smile ID)'
-                            : 'Verification d\'identite obligatoire',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: valide
-                              ? const Color(0xFF1B5E3B)
-                              : const Color(0xFF78350F),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        valide
-                            ? 'Votre identite a ete confirmee par Smile ID.'
-                            : 'Tontine Premium — verifiez votre identite avant la creation.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: valide
-                              ? const Color(0xFF2E7D5B)
-                              : const Color(0xFF92400E),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-
-            // ── Bouton "Vérifier mon identité" (visible seulement si pas encore vérifié) ──
-            if (!valide) ...[
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _verifierIdentiteStandalone,
-                  icon: const Icon(Icons.verified_user_rounded, size: 18),
-                  label: const Text(
-                    'Verifier mon identite',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFF59E0B),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 11),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    elevation: 0,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
 
   /// Lance la vérification Smile ID directement depuis la bannière,
   /// sans nécessiter la soumission du formulaire de création.
-  Future<void> _verifierIdentiteStandalone() async {
-    final gestNomKyc = _gestNomCtrl.isNotEmpty
-        ? _gestNomCtrl.first.text.trim()
-        : '';
-    final userId = gestNomKyc.isNotEmpty ? gestNomKyc : 'unknown';
-
-    final result = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => KycScreen(userId: userId),
-      ),
-    );
-    if (!mounted) return;
-
-    if (result == true) {
-      // Re-vérifier le statut KYC après retour de SmileID
-      setState(() => _kycEnCours = true);
-      final encoreBloquant = await KycService.kycBloquantPourPremium(userId);
-      if (!mounted) return;
-      setState(() {
-        _kycEnCours = false;
-        _kycValide = !encoreBloquant;
-      });
-      if (_kycValide) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Identite verifiee avec succes !'),
-          backgroundColor: Color(0xFF2E7D5B),
-          duration: Duration(seconds: 3),
-        ));
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -627,7 +392,6 @@ class _CreationScreenState extends State<CreationScreen> {
                   ),
                   SizedBox(height: 16),
                   // ── Bannière KYC — visible si Premium ─────────────
-                  _banniereKyc(),
                   _SelecteurTypeTontine(
                     valeur: _typeTontine,
                     onChanged: (v) => setState(() {
