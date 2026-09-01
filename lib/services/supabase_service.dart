@@ -415,13 +415,14 @@ class SupabaseService {
     });
     // Supabase peut retourner : true (bool), "true" (String), 1 (int), ou null.
     // On normalise tous les cas positifs → true, comme ecrireTontineSansPIN.
-    if (result == null) return false;
+    // null sans exception = void SQL return = succès
+    if (result == null) return true;
     if (result is bool) return result;
     if (result is int) return result != 0;
     if (result is String) return result.toLowerCase() == 'true';
     // Map {ok: true} — certaines versions de la RPC retournent un objet
     if (result is Map<String, dynamic>) return result['ok'] == true;
-    return false;
+    return true; // tout autre type non-null = succès
   }
 
   /// Écrit les données d'une tontine SANS vérification de PIN gestionnaire.
@@ -453,16 +454,19 @@ class SupabaseService {
         debugPrint('[Paiement] ecrire_tontine_sans_pin → result=$result (${result.runtimeType})');
       }
 
-      // Supabase peut retourner true, "true", 1, ou null
-      bool ok = false;
+      // Supabase retourne void → HTTP body vide → rpc() retourne null.
+      // null sans exception = succès (la fonction SQL a retourné VOID = OK).
+      bool ok = true; // défaut : pas d'exception lancée = succès
       if (result == null) {
-        ok = false;
+        ok = true;   // void SQL return = succès garanti
       } else if (result is bool) {
         ok = result;
       } else if (result is int) {
         ok = result != 0;
       } else if (result is String) {
         ok = result.toLowerCase() == 'true';
+      } else if (result is Map<String, dynamic>) {
+        ok = result['ok'] == true;
       }
 
       // ── BLOCKCHAIN : ancrage cotisation/apport après succès (non-bloquant) ─
