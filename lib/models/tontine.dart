@@ -76,6 +76,13 @@ class Membre {
   String? numeroBenef;   // numéro Mobile Money du bénéficiaire
   String? validePar;     // nom du gestionnaire ayant enregistré le paiement
 
+  // ── Workflow approbation ────────────────────────────────────────────────
+  // Statut du paiement : null | 'en_attente' | 'approuve'
+  // Un paiement 'en_attente' apparaît dans paiements{} mais la caisse n'est
+  // pas encore créditée. La caisse est créditée UNIQUEMENT à l'approbation.
+  String? paiementStatut;         // null | 'en_attente' | 'approuve'
+  String? paiementDeclareParGest; // nom du gestionnaire déclarant (si gest)
+
   Membre({
     required this.id,
     required this.nom,
@@ -94,6 +101,8 @@ class Membre {
     this.operateur,
     this.numeroBenef,
     this.validePar,
+    this.paiementStatut,
+    this.paiementDeclareParGest,
   });
 
   /// Score effectif : scoreOverride s'il existe, sinon score calculé.
@@ -102,6 +111,10 @@ class Membre {
 
   /// true si ce membre a un score forcé manuellement
   bool get aScoreOverride => scoreOverride != null;
+
+  // ── Getters workflow approbation ──────────────────────────────────────
+  bool get paiementEnAttente => paiementStatut == 'en_attente';
+  bool get paiementApprouve  => paiementStatut == 'approuve';
 
   factory Membre.fromJson(Map<String, dynamic> json) {
     return Membre(
@@ -125,6 +138,8 @@ class Membre {
       operateur:   json['operateur']   as String?,
       numeroBenef: json['numeroBenef'] as String?,
       validePar:   json['validePar']   as String?,
+      paiementStatut:         json['paiementStatut']         as String?,
+      paiementDeclareParGest: json['paiementDeclareParGest'] as String?,
     );
   }
 
@@ -148,6 +163,8 @@ class Membre {
         if (operateur   != null) 'operateur':   operateur,
         if (numeroBenef != null) 'numeroBenef': numeroBenef,
         if (validePar   != null) 'validePar':   validePar,
+        if (paiementStatut         != null) 'paiementStatut':         paiementStatut,
+        if (paiementDeclareParGest != null) 'paiementDeclareParGest': paiementDeclareParGest,
       };
 }
 
@@ -925,6 +942,12 @@ class TontineData {
   /// Nombre de membres qui ont payé (selon paiements{} — source de vérité)
   int get nbPayes => membres.where((m) => m.paye).length;
 
+  /// Nombre de paiements en attente d'approbation (statut 'en_attente')
+  int get nbEnAttente => membres.where((m) => m.paiementEnAttente).length;
+
+  /// Nombre de paiements approuvés (caisse créditée)
+  int get nbApprouves => membres.where((m) => m.paiementApprouve).length;
+
   int get soldeCaisse {
     int total = 0;
     for (final m in caisse) {
@@ -1131,6 +1154,22 @@ class TontineData {
     // Appliquer aux membres : paye=true ssi son ID est dans paiements{}
     for (final m in membres) {
       m.paye = idsPayesTourCourant.contains(m.id);
+      if (m.paye) {
+        final p = paiements[m.id] as Map<String, dynamic>?;
+        if (p != null) {
+          // ── Statut approbation ────────────────────────────────────────────
+          m.paiementStatut         = p['statut']         as String?;
+          m.paiementDeclareParGest = p['declareParGest'] as String?;
+          // Conserver les champs de référence depuis paiements{} si absents
+          m.datePaiement      = (p['date']      as String?) ?? m.datePaiement;
+          m.methodePaiement   = (p['methode']   as String?) ?? m.methodePaiement;
+          m.referencePaiement = (p['reference'] as String?) ?? m.referencePaiement;
+          m.validePar         = (p['validePar'] as String?) ?? m.validePar;
+        }
+      } else {
+        m.paiementStatut         = null;
+        m.paiementDeclareParGest = null;
+      }
     }
     // ── Fin réconciliation ──────────────────────────────────────────────────
 

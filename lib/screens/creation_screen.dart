@@ -102,6 +102,18 @@ class _CreationScreenState extends State<CreationScreen> {
     final provider = context.read<TontineProvider>();
     final estGratuite = _typeTontine == 'gratuite';
 
+    // ── Premium : minimum 2 gestionnaires obligatoires ────────────────────
+    // Le workflow approbation exige qu'un autre gestionnaire approuve chaque
+    // paiement. Avec 1 seul gestionnaire, personne ne peut approuver ses
+    // propres déclarations.
+    if (!estGratuite && gestNoms.length < 2) {
+      setState(() => _erreur =
+          'La formule Premium exige au moins 2 gestionnaires.\n'
+          'Cela garantit qu\'un paiement déclaré par un gestionnaire\n'
+          'puisse être approuvé par un autre gestionnaire.');
+      return;
+    }
+
     // ── Limite Gratuite : 5 membres MAX par tontine ───────────────────────
     if (estGratuite && membres.length > FeatureGate.maxMembresGratuit) {
       setState(() => _erreur =
@@ -634,6 +646,37 @@ class _CreationScreenState extends State<CreationScreen> {
                             ),
                           ),
                         ),
+                        // ── Bandeau info : minimum 2 gestionnaires en Premium ──
+                        if (_typeTontine == 'premium' && _gestNomCtrl.length < 2) ...[
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFF3E0),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: const Color(0xFFFF9800).withValues(alpha: 0.5),
+                              ),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.info_outline_rounded,
+                                    size: 16, color: Color(0xFFE65100)),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'La formule Premium exige au moins 2 gestionnaires pour le workflow d\'approbation des cotisations.',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFFE65100),
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         ChampErreur(texte: _erreur),
                       ],
                     ),

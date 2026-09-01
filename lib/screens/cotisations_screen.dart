@@ -155,67 +155,67 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
                     else
                       // Liste dans l'ordre de passage (ordre[]) — badge BÉNÉF. indépendant de paye
                       ...membresOrdre.asMap().entries.map(
-                        (e) => _CarteMembre(
-                          membre: e.value,
-                          rang: e.key + 1,
-                          montant: data.montant,
-                          estGest: estGest,
-                          echeance: data.echeance,
-                          tontine: tontine,
-                          // Badge BÉNÉFICIAIRE : indépendant du statut paye
-                          isBeneficiaire: !data.cycleTermine && e.value.id == benefId,
-                          onToggle: estGest && !data.cycleTermine
-                              ? () => _togglePaiement(
-                                    context,
-                                    provider,
-                                    tontine,
-                                    e.value,
-                                  )
-                              : null,
-                          // ── Bouton "Payer" : visible pour TOUT membre non-payé
-                          // en tontine Premium + cycle non terminé.
-                          // N'exige PAS le PIN gestionnaire → accessible à tous.
-                          // Le gestionnaire peut toujours approuver via onToggle.
-                          onPayer: tontine.isPremium && !e.value.paye && !data.cycleTermine
-                              ? () async {
-                                  final result = await Navigator.push<Map<String,String>>(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => PaiementChoixScreen(
-                                        code:     tontine.code,
-                                        typeFlux: 'cotisation',
-                                        membre:   e.value,
-                                        montant:  data.montant,
-                                      ),
-                                    ),
-                                  );
-                                  if (result != null && context.mounted) {
-                                    await _payerCotisationMembre(
+                        (e) {
+                          final m = e.value;
+                          return _CarteMembre(
+                            membre: m,
+                            rang: e.key + 1,
+                            montant: data.montant,
+                            estGest: estGest,
+                            echeance: data.echeance,
+                            tontine: tontine,
+                            gestActifNom: provider.gestActifNom,
+                            // Badge BÉNÉFICIAIRE : indépendant du statut paye
+                            isBeneficiaire: !data.cycleTermine && m.id == benefId,
+                            onToggle: estGest && !data.cycleTermine
+                                ? () => _togglePaiement(context, provider, tontine, m)
+                                : null,
+                            // ── Bouton "Payer" : visible pour TOUT membre non-payé
+                            // en tontine Premium + cycle non terminé.
+                            // N'exige PAS le PIN gestionnaire → accessible à tous.
+                            onPayer: tontine.isPremium && !m.paye && !data.cycleTermine
+                                ? () async {
+                                    final result = await Navigator.push<Map<String,String>>(
                                       context,
-                                      provider,
-                                      tontine,
-                                      e.value,
-                                      result,
+                                      MaterialPageRoute(
+                                        builder: (_) => PaiementChoixScreen(
+                                          code:     tontine.code,
+                                          typeFlux: 'cotisation',
+                                          membre:   m,
+                                          montant:  data.montant,
+                                        ),
+                                      ),
                                     );
+                                    if (result != null && context.mounted) {
+                                      await _payerCotisationMembre(
+                                        context, provider, tontine, m, result,
+                                      );
+                                    }
                                   }
-                                }
-                              : null,
-                          // ── Bouton "Annuler" cotisation Premium payée (gestionnaire)
-                          // Affiché uniquement si Premium + payé + gestionnaire + cycle non terminé.
-                          onAnnulerPremium: tontine.isPremium && e.value.paye && estGest && !data.cycleTermine
-                              ? () => _togglePaiement(
-                                    context,
-                                    provider,
-                                    tontine,
-                                    e.value,
-                                  )
-                              : null,
-                          onEnvoyerRecu: () => _envoyerRecu(context, tontine, e.value),
-                          onRelancer: () => _relancer(context, tontine, e.value),
-                          onGenererPdf: estGest && e.value.paye
-                              ? () => _genererRecuPdf(context, tontine, e.value)
-                              : null,
-                        ),
+                                : null,
+                            // ── Bouton "Approuver" (gest, cotisation en_attente)
+                            // Bloqué si le gestionnaire est le déclarant.
+                            onApprouver: tontine.isPremium &&
+                                    m.paiementEnAttente &&
+                                    estGest &&
+                                    !data.cycleTermine &&
+                                    m.paiementDeclareParGest != provider.gestActifNom
+                                ? () => _approuverCotisation(context, provider, tontine, m)
+                                : null,
+                            // ── Bouton "Annuler" (gest, cotisation en_attente ou approuvée)
+                            onAnnulerPremium: tontine.isPremium &&
+                                    m.paye &&
+                                    estGest &&
+                                    !data.cycleTermine
+                                ? () => _annulerCotisation(context, provider, tontine, m)
+                                : null,
+                            onEnvoyerRecu: () => _envoyerRecu(context, tontine, m),
+                            onRelancer: () => _relancer(context, tontine, m),
+                            onGenererPdf: estGest && m.paye
+                                ? () => _genererRecuPdf(context, tontine, m)
+                                : null,
+                          );
+                        },
                       ),
                     SizedBox(height: 16),
                     // Partage récap WhatsApp (accessible à tous)
@@ -495,10 +495,11 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
     }
   }
 
-  // ── Paiement auto-déclaré par un membre (sans PIN gestionnaire) ──────────
+  // ── Paiement auto-déclaré par un membre — statut EN_ATTENTE ────────────────
   /// Accessible à TOUS les membres (Premium), cycle non terminé.
-  /// Flux : PaiementChoixScreen → confirmation dialog → ecrireSansPin().
-  /// L'annulation reste réservée au gestionnaire via _togglePaiement().
+  /// Flux : PaiementChoixScreen → ecrireSansPin() → statut='en_attente'.
+  /// La caisse est créditée UNIQUEMENT quand un gestionnaire approuve.
+  /// L'approbation / annulation est réservée au gestionnaire.
   Future<void> _payerCotisationMembre(
     BuildContext context,
     TontineProvider provider,
@@ -506,16 +507,19 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
     Membre membre,
     Map<String, String> paiementResult,
   ) async {
-    final data   = tontine.data;
-    final methode  = paiementResult['methode'] ?? 'mobile_money';
+    final data      = tontine.data;
+    final methode   = paiementResult['methode']   ?? 'mobile_money';
     final refSaisie = paiementResult['reference'] ?? '';
-    final nowStr = DateTime.now().toIso8601String();
-    final ref    = refSaisie.isNotEmpty ? refSaisie : Formatters.genererReference();
+    final nowStr    = DateTime.now().toIso8601String();
+    final ref       = refSaisie.isNotEmpty ? refSaisie : Formatters.genererReference();
+
+    // ── Détecter si c'est un gestionnaire qui déclare ──────────────────
+    final declareParGest = provider.estDebloque ? provider.gestActifNom : null;
 
     // ── Construire le nouveau JSON ──────────────────────────────────────
     final newData = data.toJson();
 
-    // 1. Marquer le membre payé
+    // 1. Marquer le membre payé dans membres[] (paye=true pour affichage)
     final membres = List<Map<String, dynamic>>.from(
       (newData['membres'] as List<dynamic>).cast<Map<String, dynamic>>(),
     );
@@ -525,10 +529,11 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
       membres[idx]['datePaiement']      = nowStr;
       membres[idx]['methodePaiement']   = methode;
       membres[idx]['referencePaiement'] = ref;
+      if (declareParGest != null) membres[idx]['paiementDeclareParGest'] = declareParGest;
     }
     newData['membres'] = membres;
 
-    // 2. paiements{} — source de vérité
+    // 2. paiements{} — source de vérité — statut 'en_attente' (pas encore approuvé)
     final paiements = Map<String, dynamic>.from(
       (newData['paiements'] as Map<String, dynamic>?) ?? {},
     );
@@ -537,87 +542,340 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
       'methode'   : methode,
       'reference' : ref,
       'montant'   : data.montant,
-      'autoDeclare': true,
+      'statut'    : 'en_attente',           // ← NOUVEAU : en attente d'approbation
+      'autoDeclare': declareParGest == null, // true si déclaré par membre ordinaire
+      if (declareParGest != null) 'declareParGest': declareParGest,
     };
     newData['paiements'] = paiements;
 
-    // 3. Caisse : entrée cotisation
-    final caisseMap = newData['caisse'];
-    final caisse = List<Map<String, dynamic>>.from(
-      caisseMap is Map<String, dynamic>
-          ? ((caisseMap['mouvements'] as List<dynamic>?)
-                  ?.cast<Map<String, dynamic>>() ?? [])
-          : caisseMap is List
-              ? caisseMap.cast<Map<String, dynamic>>()
-              : [],
-    );
-    caisse.add({
-      'id'          : '${ref}C',
-      'type'        : 'cotisation',
-      'montant'     : data.montant,
-      'description' : 'Cotisation ${membre.nom} — Tour ${data.numerTour} (auto-déclarée)',
-      'gestionnaire': membre.nom,
-      'date'        : nowStr,
-      'reference'   : ref,
-    });
-    newData['caisse'] = {'mouvements': caisse};
+    // 3. CAISSE : NON créditée ici — caisse créditée UNIQUEMENT à l'approbation
 
-    // 4. Journal public
+    // 4. Journal public — déclaration en attente
     final journal = List<Map<String, dynamic>>.from(
-      (newData['journal'] as List<dynamic>?)
-              ?.cast<Map<String, dynamic>>() ?? [],
+      (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
     );
     journal.insert(0, {
-      'quoi'       : 'COTISATION_${membre.nom}_TOUR_${data.numerTour} — ${Formatters.methodePaiement(methode)} — Réf: $ref',
-      'gestionnaire': membre.nom,
+      'quoi'       : 'DECLARATION_EN_ATTENTE — ${membre.nom} — Tour ${data.numerTour} — ${Formatters.methodePaiement(methode)} — Réf: $ref',
+      'gestionnaire': declareParGest ?? membre.nom,
       'quand'      : nowStr,
       'reference'  : ref,
     });
     newData['journal'] = journal;
 
-    // ── Écrire en DB sans PIN (membre ordinaire) ────────────────────────
+    // ── Écrire en DB sans PIN ────────────────────────────────────────────
     final ok = await provider.ecrireSansPin(
       newData,
       membreId               : membre.id,
       membreNom              : membre.nom,
       montantXof             : data.montant,
-      typeOperationBlockchain: 'cotisation',
+      typeOperationBlockchain: 'cotisation_en_attente',
       refInterne             : ref,
     );
 
     if (!context.mounted) return;
 
     if (ok) {
-      afficherToast(context, '✅ Cotisation de ${membre.nom} enregistrée !');
+      afficherToast(context, '⏳ Cotisation de ${membre.nom} en attente d\'approbation.');
 
       // Notification push tous membres
       final lang = Provider.of<LocaleService>(context, listen: false).langue.code;
       final t = SupabaseService.notifTexte('cotisation', lang, vars: {'nom': membre.nom});
       SupabaseService.envoyerNotification(
-        code       : provider.courante!.code,
-        type       : 'cotisation',
-        titre      : t['titre']!,
-        message    : t['message']!,
-        donneesExtra: {'membre': membre.nom},
+        code        : provider.courante!.code,
+        type        : 'cotisation',
+        titre       : t['titre']!,
+        message     : '${membre.nom} a déclaré sa cotisation — en attente d\'approbation',
+        donneesExtra: {'membre': membre.nom, 'statut': 'en_attente'},
+      );
+    } else {
+      afficherToast(context,
+        'Erreur lors de l\'enregistrement. Réessayez.',
+        estErreur: true,
+      );
+    }
+  }
+
+  // ── Approuver une cotisation (gestionnaire uniquement) ──────────────────────
+  /// Prérequis : paiements[membreId].statut == 'en_attente'
+  /// Effet : PIN gestionnaire → caisse++ + journal + blockchain + notif
+  /// Restriction : un gestionnaire ne peut PAS approuver sa propre déclaration.
+  Future<void> _approuverCotisation(
+    BuildContext context,
+    TontineProvider provider,
+    dynamic tontine,
+    Membre membre,
+  ) async {
+    if (!provider.estDebloque) return;
+
+    final data   = tontine.data;
+    final nowStr = DateTime.now().toIso8601String();
+    final ref    = membre.referencePaiement ?? Formatters.genererReference();
+    final methode = membre.methodePaiement ?? 'especes';
+
+    // ── Garde : un gestionnaire ne peut pas approuver sa propre déclaration ──
+    if (membre.paiementDeclareParGest != null &&
+        membre.paiementDeclareParGest == provider.gestActifNom) {
+      afficherToast(context,
+        '⚠️ Vous ne pouvez pas approuver votre propre déclaration.',
+        estErreur: true,
+      );
+      return;
+    }
+
+    String refApprobCapture = ref;
+
+    final ok = await afficherModalePin(
+      context,
+      titre: 'Approuver la cotisation',
+      sousTitre: 'PIN gestionnaire requis pour approuver',
+      recap: [
+        (label: 'Membre',   valeur: membre.nom),
+        (label: 'Montant',  valeur: Formatters.montant(data.montant, devise: data.devise)),
+        (label: 'Méthode',  valeur: Formatters.methodePaiement(methode)),
+        (label: 'Réf.',     valeur: ref),
+        (label: 'Tour',     valeur: 'N° ${data.numerTour}'),
+        if (membre.paiementDeclareParGest != null)
+          (label: 'Déclaré par', valeur: membre.paiementDeclareParGest!),
+      ],
+      onValider: (pin) async {
+        final newData = data.toJson();
+
+        // 1. Mettre à jour membres[] — valider le paiement
+        final mbrs = List<Map<String, dynamic>>.from(
+          (newData['membres'] as List<dynamic>).cast<Map<String, dynamic>>(),
+        );
+        final idx = mbrs.indexWhere((m) => m['id'] == membre.id);
+        if (idx >= 0) {
+          mbrs[idx]['validePar']            = provider.gestActifNom;
+          mbrs[idx]['paiementDeclareParGest'] = membre.paiementDeclareParGest;
+        }
+        newData['membres'] = mbrs;
+
+        // 2. paiements{} — passer statut à 'approuve'
+        final paiements = Map<String, dynamic>.from(
+          (newData['paiements'] as Map<String, dynamic>?) ?? {},
+        );
+        final existant = Map<String, dynamic>.from(
+          (paiements[membre.id] as Map<String, dynamic>?) ?? {},
+        );
+        existant['statut']          = 'approuve';
+        existant['approuvePar']     = provider.gestActifNom;
+        existant['dateApprobation'] = nowStr;
+        paiements[membre.id]        = existant;
+        newData['paiements']        = paiements;
+
+        // 3. CAISSE : créditer maintenant (approbation = réception effective)
+        final caisseMap = newData['caisse'];
+        final caisse = List<Map<String, dynamic>>.from(
+          caisseMap is Map<String, dynamic>
+              ? ((caisseMap['mouvements'] as List<dynamic>?)
+                      ?.cast<Map<String, dynamic>>() ?? [])
+              : caisseMap is List
+                  ? caisseMap.cast<Map<String, dynamic>>()
+                  : [],
+        );
+        final refCaisse = 'APPRO_$ref';
+        refApprobCapture = refCaisse;
+        caisse.add({
+          'id'          : '${refCaisse}C',
+          'type'        : 'cotisation',
+          'montant'     : data.montant,
+          'description' : 'Approbation cotisation ${membre.nom} — Tour ${data.numerTour}',
+          'gestionnaire': provider.gestActifNom ?? '',
+          'date'        : nowStr,
+          'reference'   : refCaisse,
+        });
+        newData['caisse'] = {'mouvements': caisse};
+
+        // 4. Journal
+        final journal = List<Map<String, dynamic>>.from(
+          (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
+        );
+        journal.insert(0, {
+          'quoi'       : 'APPROBATION_COTISATION — ${membre.nom} — Tour ${data.numerTour} — Réf: $ref — Approuvé par: ${provider.gestActifNom}',
+          'gestionnaire': provider.gestActifNom ?? '',
+          'quand'      : nowStr,
+          'reference'  : refCaisse,
+        });
+        newData['journal'] = journal;
+
+        return provider.ecrire(newData, pin);
+      },
+    );
+
+    // ── BLOCKCHAIN : approbation cotisation (non-bloquant) ──────────────
+    if (ok == true) {
+      BlockchainService.enregistrerCotisation(
+        tontineCode: provider.courante!.code,
+        membreId   : membre.id,
+        membreNom  : membre.nom,
+        montantXof : data.montant,
+        refInterne : refApprobCapture,
+      ).catchError((e) {
+        if (kDebugMode) debugPrint('[Blockchain] approbation_cotisation erreur: $e');
+        return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+      });
+    }
+
+    if (ok == true && context.mounted) {
+      afficherToast(context, '✅ Cotisation de ${membre.nom} approuvée — caisse créditée !');
+
+      // Notification push
+      SupabaseService.envoyerNotification(
+        code        : provider.courante!.code,
+        type        : 'approbation_cotisation',
+        titre       : '✅ Cotisation approuvée',
+        message     : 'La cotisation de ${membre.nom} a été approuvée par ${provider.gestActifNom}',
+        donneesExtra: {'membre': membre.nom, 'statut': 'approuve'},
       );
 
-      // Proposer reçu WhatsApp / PDF
+      // Proposer reçu après approbation
       final membreActualise = Membre(
         id               : membre.id,
         nom              : membre.nom,
         tel              : membre.tel,
         role             : membre.role,
         paye             : true,
-        datePaiement     : nowStr,
+        datePaiement     : membre.datePaiement,
         methodePaiement  : methode,
         referencePaiement: ref,
         score            : membre.score,
+        validePar        : provider.gestActifNom,
       );
-      await _proposerRecuPostPaiement(context, tontine, membreActualise, ref, methode);
-    } else {
+      if (context.mounted) {
+        await _proposerRecuPostPaiement(context, tontine, membreActualise, ref, methode);
+      }
+    }
+  }
+
+  // ── Annuler une cotisation (gestionnaire uniquement) ────────────────────────
+  /// Fonctionne sur statut 'en_attente' ET 'approuve'.
+  /// Si approuvée : contre-passe la caisse.
+  Future<void> _annulerCotisation(
+    BuildContext context,
+    TontineProvider provider,
+    dynamic tontine,
+    Membre membre,
+  ) async {
+    if (!provider.estDebloque) return;
+
+    final data    = tontine.data;
+    final nowStr  = DateTime.now().toIso8601String();
+    final refOrig = membre.referencePaiement ?? '?';
+    final estApprouve = membre.paiementApprouve;
+
+    String refAnnulCapture = '';
+
+    final ok = await afficherModalePin(
+      context,
+      titre: 'Annuler la cotisation',
+      sousTitre: estApprouve
+          ? '⚠️ La caisse sera débitée. PIN requis.'
+          : 'PIN gestionnaire requis.',
+      recap: [
+        (label: 'Membre',   valeur: membre.nom),
+        (label: 'Montant',  valeur: Formatters.montant(data.montant, devise: data.devise)),
+        (label: 'Statut',   valeur: estApprouve ? 'Approuvée ↩ contre-passée' : 'En attente'),
+        (label: 'Réf.',     valeur: refOrig),
+        (label: 'Tour',     valeur: 'N° ${data.numerTour}'),
+      ],
+      onValider: (pin) async {
+        final newData = data.toJson();
+
+        // 1. Retirer de membres[]
+        final mbrs = List<Map<String, dynamic>>.from(
+          (newData['membres'] as List<dynamic>).cast<Map<String, dynamic>>(),
+        );
+        final idx = mbrs.indexWhere((m) => m['id'] == membre.id);
+        if (idx >= 0) {
+          mbrs[idx]['paye'] = false;
+          mbrs[idx].remove('datePaiement');
+          mbrs[idx].remove('methodePaiement');
+          mbrs[idx].remove('referencePaiement');
+          mbrs[idx].remove('validePar');
+          mbrs[idx].remove('paiementDeclareParGest');
+        }
+        newData['membres'] = mbrs;
+
+        // 2. Retirer de paiements{}
+        final paiements = Map<String, dynamic>.from(
+          (newData['paiements'] as Map<String, dynamic>?) ?? {},
+        );
+        paiements.remove(membre.id);
+        newData['paiements'] = paiements;
+
+        // 3. Caisse : contre-passer SEULEMENT si était approuvée
+        if (estApprouve) {
+          final caisseMap = newData['caisse'];
+          final caisse = List<Map<String, dynamic>>.from(
+            caisseMap is Map<String, dynamic>
+                ? ((caisseMap['mouvements'] as List<dynamic>?)
+                        ?.cast<Map<String, dynamic>>() ?? [])
+                : caisseMap is List
+                    ? caisseMap.cast<Map<String, dynamic>>()
+                    : [],
+          );
+          final refAnnul = 'ANNUL_$refOrig';
+          refAnnulCapture = refAnnul;
+          caisse.add({
+            'id'          : 'ANNUL_${refOrig}_C',
+            'type'        : 'depense',
+            'montant'     : -data.montant,
+            'description' : 'Annulation cotisation approuvée ${membre.nom} — Tour ${data.numerTour}',
+            'gestionnaire': provider.gestActifNom ?? '',
+            'date'        : nowStr,
+            'reference'   : refAnnul,
+          });
+          newData['caisse'] = {'mouvements': caisse};
+        } else {
+          refAnnulCapture = 'ANNUL_$refOrig';
+        }
+
+        // 4. Journal
+        final journal = List<Map<String, dynamic>>.from(
+          (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
+        );
+        journal.insert(0, {
+          'quoi'       : 'ANNULATION_COTISATION — ${membre.nom} — Tour ${data.numerTour} — Réf: $refOrig — Par: ${provider.gestActifNom}${estApprouve ? ' (caisse contre-passée)' : ' (en attente annulée)'}',
+          'gestionnaire': provider.gestActifNom ?? '',
+          'quand'      : nowStr,
+          'reference'  : refAnnulCapture,
+        });
+        newData['journal'] = journal;
+
+        return provider.ecrire(newData, pin);
+      },
+    );
+
+    // ── BLOCKCHAIN : annulation (non-bloquant) ───────────────────────────
+    if (ok == true) {
+      BlockchainService.enregistrerAnnulationCotisation(
+        tontineCode: provider.courante!.code,
+        membreId   : membre.id,
+        membreNom  : membre.nom,
+        montantXof : data.montant,
+        numerTour  : data.numerTour,
+        refInterne : refAnnulCapture,
+      ).catchError((e) {
+        if (kDebugMode) debugPrint('[Blockchain] annulation_cotisation erreur: $e');
+        return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
+      });
+    }
+
+    if (ok == true && context.mounted) {
       afficherToast(context,
-        'Erreur lors de l\'enregistrement. Réessayez.',
-        estErreur: true,
+        estApprouve
+          ? 'Cotisation annulée — caisse débitée.'
+          : 'Déclaration annulée.',
+      );
+
+      // Notification push
+      SupabaseService.envoyerNotification(
+        code        : provider.courante!.code,
+        type        : 'annulation_cotisation',
+        titre       : '❌ Cotisation annulée',
+        message     : 'La cotisation de ${membre.nom} (Tour ${data.numerTour}) a été annulée par ${provider.gestActifNom}',
+        donneesExtra: {'membre': membre.nom},
       );
     }
   }
@@ -1032,6 +1290,7 @@ class _CarteMembre extends StatelessWidget {
   final bool estGest;
   final String? echeance;
   final dynamic tontine;
+  final String? gestActifNom;
   /// Badge BÉNÉFICIAIRE — totalement indépendant du statut paye
   final bool isBeneficiaire;
   final VoidCallback? onToggle;
@@ -1040,6 +1299,8 @@ class _CarteMembre extends StatelessWidget {
   final VoidCallback? onGenererPdf;
   /// Callback "Payer" (Premium non-payé → écran paiement manuel)
   final VoidCallback? onPayer;
+  /// Callback "Approuver" (Premium en_attente, gestionnaire, pas le déclarant)
+  final VoidCallback? onApprouver;
   /// Callback "Annuler cotisation" (Premium payé, gestionnaire uniquement)
   final VoidCallback? onAnnulerPremium;
 
@@ -1050,12 +1311,14 @@ class _CarteMembre extends StatelessWidget {
     required this.estGest,
     this.echeance,
     required this.tontine,
+    this.gestActifNom,
     this.isBeneficiaire = false,
     this.onToggle,
     this.onEnvoyerRecu,
     this.onRelancer,
     this.onGenererPdf,
     this.onPayer,
+    this.onApprouver,
     this.onAnnulerPremium,
   });
 
@@ -1149,12 +1412,21 @@ class _CarteMembre extends StatelessWidget {
                             '${Formatters.methodePaiement(membre.methodePaiement ?? '')} · ${Formatters.dateHeure(DateTime.tryParse(membre.datePaiement!))}',
                             style: const TextStyle(fontSize: 11.5, color: AppColors.texteDoux),
                           ),
-                          if (membre.validePar != null && membre.validePar!.isNotEmpty)
+                          if (membre.paiementDeclareParGest != null && membre.paiementDeclareParGest!.isNotEmpty)
                             Text(
-                              'Par ${membre.validePar}',
+                              'Déclaré par ${membre.paiementDeclareParGest}',
                               style: const TextStyle(
                                 fontSize: 11,
-                                color: AppColors.texteDoux,
+                                color: Color(0xFFE65100),
+                                fontStyle: FontStyle.italic,
+                              ),
+                            )
+                          else if (membre.validePar != null && membre.validePar!.isNotEmpty)
+                            Text(
+                              'Approuvé par ${membre.validePar}',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.succes,
                                 fontStyle: FontStyle.italic,
                               ),
                             ),
@@ -1178,8 +1450,46 @@ class _CarteMembre extends StatelessWidget {
               //   Premium non-payé         → bouton "Payer" (Mobile Money ou Crypto)
               //   Gest Lite non-payé       → bouton "Approuver" (toggle manuel)
               //   Membre Lite non-gest     → badge "En attente" (lecture seule)
-              if (membre.paye)
-                // ── Payé → badge vert
+              if (membre.paye && membre.paiementApprouve)
+                // ── Approuvé → badge vert foncé
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.succesFond,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Text(
+                    '✓ Approuvé',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.succes,
+                    ),
+                  ),
+                )
+              else if (membre.paye && membre.paiementEnAttente)
+                // ── En attente d'approbation → badge orange
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF3E0),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFFF9800).withValues(alpha: 0.5)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.hourglass_top_rounded, size: 11, color: Color(0xFFE65100)),
+                      SizedBox(width: 3),
+                      Text(
+                        'En attente',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFFE65100)),
+                      ),
+                    ],
+                  ),
+                )
+              else if (membre.paye)
+                // ── Payé (tontine gratuite / ancien format sans statut) → badge vert
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
@@ -1196,7 +1506,7 @@ class _CarteMembre extends StatelessWidget {
                   ),
                 )
               else if (onPayer != null)
-                // ── Premium non-payé → écran choix paiement (Mobile Money / Crypto)
+                // ── Premium non-payé → écran choix paiement
                 GestureDetector(
                   onTap: onPayer,
                   child: Container(
@@ -1339,55 +1649,105 @@ class _CarteMembre extends StatelessWidget {
               ),
             ),
           ],
-          // ── Annuler cotisation (Premium payé, gestionnaire uniquement) ──
-          if (onAnnulerPremium != null) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: AppColors.alerteFond,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: AppColors.alerte.withValues(alpha: 0.25),
-                ),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.warning_amber_rounded,
-                      size: 15, color: AppColors.alerte),
-                  const SizedBox(width: 6),
-                  const Expanded(
-                    child: Text(
-                      'Paiement non reçu ? Annulez pour corriger.',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: AppColors.alerte,
-                        height: 1.3,
+          // ── Actions gestionnaire : Approuver (vert) + Annuler (rouge) ──────
+          if (onApprouver != null || onAnnulerPremium != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                // ── Bouton "✓ Approuver" (vert) — cotisation en_attente ──────
+                if (onApprouver != null) ...[
+                  GestureDetector(
+                    onTap: onApprouver,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0D8A4E),
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF0D8A4E).withValues(alpha: 0.25),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.check_circle_outline_rounded, size: 14, color: Colors.white),
+                          SizedBox(width: 5),
+                          Text(
+                            'Approuver',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                   const SizedBox(width: 8),
+                ],
+                // ── Bouton bloqué si gest = déclarant ────────────────────────
+                if (membre.paiementEnAttente &&
+                    estGest &&
+                    membre.paiementDeclareParGest != null &&
+                    membre.paiementDeclareParGest == gestActifNom &&
+                    onApprouver == null) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: AppColors.lignes,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.lock_outline_rounded, size: 13, color: AppColors.texteDoux),
+                        SizedBox(width: 4),
+                        Text(
+                          'Approbation autre gest.',
+                          style: TextStyle(fontSize: 11, color: AppColors.texteDoux),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                // ── Bouton "✗ Annuler" (rouge) ───────────────────────────────
+                if (onAnnulerPremium != null)
                   GestureDetector(
                     onTap: onAnnulerPremium,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                       decoration: BoxDecoration(
-                        color: AppColors.alerte,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Text(
-                        'Annuler',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
+                        color: AppColors.alerteFond,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: AppColors.alerte.withValues(alpha: 0.5),
                         ),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.cancel_outlined, size: 14, color: AppColors.alerte),
+                          SizedBox(width: 5),
+                          Text(
+                            'Annuler',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.alerte,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                ],
-              ),
+              ],
             ),
           ],
         ],
