@@ -307,12 +307,27 @@ class _PaiementChoixScreenState extends State<PaiementChoixScreen> {
             })),
             const SizedBox(height: 16),
 
-            // ── Référence ──────────────────────────────────────────────────
-            const Text('Référence / preuve de paiement (optionnel)',
-                style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: AppColors.texteDoux)),
+            // ── Référence (OBLIGATOIRE) ────────────────────────────────────
+            Row(
+              children: [
+                const Text('Référence / preuve de paiement',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: AppColors.texteDoux)),
+                const SizedBox(width: 4),
+                const Text('*',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                        color: AppColors.alerte)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Entrez le numéro de transaction, la référence ou la preuve de votre paiement.',
+              style: TextStyle(fontSize: 11.5, color: AppColors.texteDoux, height: 1.4),
+            ),
             const SizedBox(height: 6),
             TextField(
               controller: _referenceCtrl,
@@ -322,19 +337,37 @@ class _PaiementChoixScreenState extends State<PaiementChoixScreen> {
                 hintText: 'Ex : REF-123456 ou numéro de transaction',
                 counterText: '',
                 filled: true,
-                fillColor: AppColors.fondSecondaire,
+                fillColor: _referenceCtrl.text.trim().isEmpty && _confirme
+                    ? AppColors.alerteFond
+                    : AppColors.fondSecondaire,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppColors.lignes),
+                  borderSide: BorderSide(
+                    color: _referenceCtrl.text.trim().isEmpty && _confirme
+                        ? AppColors.alerte
+                        : AppColors.lignes,
+                  ),
                 ),
+                errorText: _referenceCtrl.text.trim().isEmpty && _confirme
+                    ? 'La référence est obligatoire'
+                    : null,
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppColors.lignes),
+                  borderSide: BorderSide(
+                    color: _referenceCtrl.text.trim().isEmpty && _confirme
+                        ? AppColors.alerte
+                        : AppColors.lignes,
+                    width: _referenceCtrl.text.trim().isEmpty && _confirme ? 1.5 : 1,
+                  ),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide:
-                      const BorderSide(color: AppColors.or, width: 1.5),
+                  borderSide: BorderSide(
+                    color: _referenceCtrl.text.trim().isEmpty && _confirme
+                        ? AppColors.alerte
+                        : AppColors.or,
+                    width: 1.5,
+                  ),
                 ),
                 suffixIcon: _referenceCtrl.text.isNotEmpty
                     ? IconButton(
@@ -401,10 +434,14 @@ class _PaiementChoixScreenState extends State<PaiementChoixScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: _confirme ? _confirmerPaiement : null,
+                onPressed: _confirme && _referenceCtrl.text.trim().isNotEmpty
+                    ? _confirmerPaiement
+                    : () => setState(() {}),  // force rebuild pour afficher erreur
                 style: ElevatedButton.styleFrom(
                   backgroundColor:
-                      _confirme ? AppColors.or : AppColors.lignes,
+                      _confirme && _referenceCtrl.text.trim().isNotEmpty
+                          ? AppColors.or
+                          : AppColors.lignes,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 15),
                   shape: RoundedRectangleBorder(
