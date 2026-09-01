@@ -1714,7 +1714,7 @@ class _SelecteurTypeTontine extends StatelessWidget {
             Expanded(
               child: _CarteOption(
                 titre: 'Gratuite',
-                sousTitre: '1 tontine\n5 membres max\nPaiements manuels',
+                sousTitre: '1 tontine\n5 membres max\nPaiement sans preuve blockchain',
                 icone: '🆓',
                 selectionne: valeur == 'gratuite',
                 onTap: () => onChanged('gratuite'),
@@ -1724,7 +1724,7 @@ class _SelecteurTypeTontine extends StatelessWidget {
             Expanded(
               child: _CarteOption(
                 titre: 'Premium',
-                sousTitre: 'Tontines illimitées\nMembres illimités\nPaiement automatisé',
+                sousTitre: 'Tontines illimitées\nMembres illimités\nPaiement avec preuve Blockchain',
                 icone: '⭐',
                 selectionne: valeur == 'premium',
                 onTap: () => onChanged('premium'),

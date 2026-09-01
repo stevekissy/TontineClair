@@ -340,13 +340,15 @@ class _DetailScreenState extends State<DetailScreen> {
                     const SizedBox(height: 16),
                     // Roue de rotation
                     RoueRotation(data: data),
-                    // Badge blockchain — après la méthode d'ordre
-                    const SizedBox(height: 16),
-                    _BadgeBlockchain(
-                      key: ValueKey('badge_blockchain_${widget.code}'),
-                      code: widget.code,
-                      nom: data.nom,
-                    ),
+                    // Badge blockchain — réservé Premium uniquement
+                    if (tontine.isPremium) ...[
+                      const SizedBox(height: 16),
+                      _BadgeBlockchain(
+                        key: ValueKey('badge_blockchain_${widget.code}'),
+                        code: widget.code,
+                        nom: data.nom,
+                      ),
+                    ],
                     const SizedBox(height: 20),
                     // Actions rapides
                     _ActionsRapides(
