@@ -219,11 +219,7 @@ class _PretsScreenState extends State<PretsScreen> {
       ),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) {
-          final montantSaisi = int.tryParse(montantCtrl.text.trim()) ?? 0;
-          final frais        = (montantSaisi * 0.025).round();
-          final net          = montantSaisi - frais;
-          // Mettre à jour les champs MM quand l'emprunteur change
-          final emprunteur = membresOrdre.where((m) => m.id == emprunteurId).firstOrNull;
+
           return Padding(
             padding: EdgeInsets.only(
               left: 16, right: 16, top: 16,
@@ -245,29 +241,7 @@ class _PretsScreenState extends State<PretsScreen> {
                     isPremium ? 'Nouveau prêt Pro' : context.tr('nouveau_pret'),
                     style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 20, color: AppColors.encre),
                   ),
-                  if (isPremium) ...[
-                    const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF3E0),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.phone_android_rounded, size: 13, color: Color(0xFFE65100)),
-                          SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              'Mobile Money — frais réseau 2,5% — paiement automatisé',
-                              style: TextStyle(fontSize: 12, color: Color(0xFFE65100)),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+
                   const SizedBox(height: 16),
                   // Emprunteur
                   ChampLabel(label: context.tr('emprunteur')),
@@ -301,30 +275,7 @@ class _PretsScreenState extends State<PretsScreen> {
                     decoration: const InputDecoration(hintText: '50 000'),
                     onChanged: (_) => setS(() {}),
                   ),
-                  // Frais réseau 2,5% (Premium uniquement)
-                  if (isPremium && montantSaisi > 0) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.orFonce.withValues(alpha: 0.07),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.info_outline_rounded, size: 14, color: AppColors.orFonce),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Frais réseau (2,5%) : ${Formatters.montant(frais, devise: data.devise)}\n'
-                              'Montant net versé : ${Formatters.montant(net, devise: data.devise)}',
-                              style: const TextStyle(fontSize: 12, color: AppColors.orFonce, height: 1.5),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+
                   // Taux + durée
                   Row(
                     children: [
@@ -353,82 +304,7 @@ class _PretsScreenState extends State<PretsScreen> {
                       )),
                     ],
                   ),
-                  // Champs Mobile Money (Premium uniquement)
-                  if (isPremium) ...[
-                    const SizedBox(height: 8),
-                    // Badge pré-rempli si le membre a un MM enregistré
-                    if (emprunteur != null && (emprunteur.numeroBenef?.isNotEmpty ?? false)) ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        margin: const EdgeInsets.only(bottom: 8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE8F5E9),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xFF2E7D5B).withValues(alpha: 0.4)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.check_circle_rounded, color: Color(0xFF2E7D5B), size: 16),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'MM pré-enregistré : ${Formatters.methodePaiement(emprunteur.operateur ?? '')}  ·  ${emprunteur.numeroBenef}',
-                                style: const TextStyle(fontSize: 12, color: Color(0xFF1B5E3B), fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                    ChampLabel(label: 'Opérateur Mobile Money'),
-                    DropdownButtonFormField<String>(
-                      initialValue: operateur,
-                      decoration: const InputDecoration(),
-                      items: _operateursPret.map((op) => DropdownMenuItem(
-                        value: op,
-                        child: Text(Formatters.methodePaiement(op)),
-                      )).toList(),
-                      onChanged: (v) => setS(() => operateur = v!),
-                    ),
-                    ChampLabel(label: 'Numéro bénéficiaire (Mobile Money)'),
-                    TextField(
-                      controller: numBenefCtrl,
-                      keyboardType: TextInputType.phone,
-                      decoration: InputDecoration(
-                        hintText: 'Ex : 07 01 02 03',
-                        suffixIcon: (emprunteur?.numeroBenef?.isNotEmpty ?? false)
-                            ? const Icon(Icons.check_circle_outline, color: Color(0xFF2E7D5B), size: 18)
-                            : null,
-                      ),
-                    ),
-                    ChampLabel(label: 'Nom bénéficiaire'),
-                    TextField(
-                      controller: nomBenefCtrl,
-                      textCapitalization: TextCapitalization.words,
-                      decoration: const InputDecoration(hintText: 'Ex : Kouamé Jean'),
-                    ),
-                    // Note PayDunya
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF2FBF6),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.phone_android_rounded, size: 13, color: Color(0xFF1AA259)),
-                          SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              'PayDunya utilisera ce numéro pour envoyer le montant du prêt.',
-                              style: TextStyle(fontSize: 11, color: Color(0xFF1AA259)),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+
                   const SizedBox(height: 16),
                   BtnPrincipal(
                     label: isPremium ? 'Soumettre pour validation' : context.tr('creer_pret'),
@@ -462,11 +338,12 @@ class _PretsScreenState extends State<PretsScreen> {
 
     // ── MODE PREMIUM : confirmation manuelle puis enregistrement en DB ──────
     if (isPremium) {
+      // Pré-remplir depuis le profil du membre si les champs sont vides
       if (numBenefCtrl.text.trim().isEmpty) {
-        afficherToast(context, 'Numéro bénéficiaire requis', estErreur: true); return;
+        numBenefCtrl.text = emprunteur?.numeroBenef ?? '';
       }
       if (nomBenefCtrl.text.trim().isEmpty) {
-        afficherToast(context, 'Nom bénéficiaire requis', estErreur: true); return;
+        nomBenefCtrl.text = emprunteur?.nom ?? '';
       }
 
       if (montant > data.soldeCaisse) {

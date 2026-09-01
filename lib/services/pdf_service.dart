@@ -125,9 +125,9 @@ class PdfService {
     final data = tontine.data;
     final doc = pw.Document();
 
-    // Polices par défaut (système)
-    final regular = await PdfGoogleFonts.notoSansRegular();
-    final bold = await PdfGoogleFonts.notoSansBold();
+    // Polices intégrées (pas de réseau requis — évite le crash sur mobile sans connexion)
+    final regular = pw.Font.helvetica();
+    final bold    = pw.Font.helveticaBold();
 
     final theme = pw.ThemeData.withFont(
       base: regular,
@@ -544,8 +544,8 @@ class PdfService {
     final data = tontine.data;
     final doc = pw.Document();
 
-    final regular = await PdfGoogleFonts.notoSansRegular();
-    final bold = await PdfGoogleFonts.notoSansBold();
+    final regular = pw.Font.helvetica();
+    final bold    = pw.Font.helveticaBold();
     final theme = pw.ThemeData.withFont(base: regular, bold: bold);
 
     // Décompte — Bug #1 fix : utiliser membre_id (clé snake_case de Supabase)
@@ -752,8 +752,8 @@ class PdfService {
     final data = tontine.data;
     final doc = pw.Document();
 
-    final regular = await PdfGoogleFonts.notoSansRegular();
-    final bold = await PdfGoogleFonts.notoSansBold();
+    final regular = pw.Font.helvetica();
+    final bold    = pw.Font.helveticaBold();
     final theme = pw.ThemeData.withFont(base: regular, bold: bold);
 
     final datePaiement = DateTime.tryParse(dateStr);

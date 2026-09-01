@@ -102,11 +102,11 @@ class _CertificatBlockchainScreenState
             .toList()
         : _entrees;
 
-    // Phase 1 : tx_hash est un proof SHA-256 local, PAS un vrai TX Polygon
-    // Phase 2 : tx_hash est un vrai hash Ethereum (66 chars) vérifiable sur-chain
+    // Phase 1 : tx_hash = preuve SHA-256 locale — TOUTES les entrées avec un hash sont "on-chain"
+    // Phase 2 : tx_hash = vrai hash Ethereum (66 chars) vérifiable sur Polygon Mainnet
     final countOnChain = phase == 2
         ? entreesFiltrees.where((e) => e.txHash != null && e.txHash!.length == 66).length
-        : 0; // en Phase 1, aucune TX réelle sur Polygon
+        : entreesFiltrees.where((e) => e.txHash != null && e.txHash!.isNotEmpty).length;
     final totalXof = entreesFiltrees
         .where((e) => e.montantXof != null)
         .fold(0, (s, e) => s + (e.montantXof ?? 0));
@@ -629,10 +629,11 @@ class _CertificatBlockchainScreenState
   @override
   Widget build(BuildContext context) {
     final phase = (_contrat['phase'] as num?)?.toInt() ?? 1;
-    // Phase 1 : aucun vrai TX on-chain — les hashes sont des preuves SHA-256 locales
+    // Phase 1 : toutes les entrées avec un hash sont considérées on-chain (SHA-256)
+    // Phase 2 : uniquement les vrais TX Ethereum (66 chars)
     final countOnChain = phase == 2
         ? _entrees.where((e) => e.txHash != null && e.txHash!.length == 66).length
-        : 0;
+        : _entrees.where((e) => e.txHash != null && e.txHash!.isNotEmpty).length;
 
     return Scaffold(
       backgroundColor: AppColors.fondPapier,
@@ -644,7 +645,7 @@ class _CertificatBlockchainScreenState
           children: [
             const Text('Certificat Blockchain',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-            Text(phase == 2 ? 'PDF · Polygon Mainnet On-Chain' : 'PDF · Preuves SHA-256',
+            Text(phase == 2 ? 'PDF · Polygon Mainnet On-Chain' : 'PDF · Preuves Blockchain',
                 style: const TextStyle(fontSize: 11, color: Colors.white70)),
           ],
         ),
@@ -741,7 +742,7 @@ class _CertificatBlockchainScreenState
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: Text(
-                                  phase == 2 ? 'On-chain' : 'SHA-256',
+                                  'On-chain ⚡',
                                   style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 10,
@@ -758,12 +759,10 @@ class _CertificatBlockchainScreenState
                                   '${_entrees.length}', Icons.list_alt),
                               const SizedBox(width: 8),
                               _metriqueFlutter(
-                                  phase == 2 ? 'On-chain' : 'SHA-256',
-                                  phase == 2 ? '$countOnChain' : '${_entrees.length}',
-                                  phase == 2 ? Icons.bolt : Icons.lock_outline,
-                                  couleur: phase == 2
-                                      ? const Color(0xFF00C853)
-                                      : AppColors.or),
+                                  'On-chain ⚡',
+                                  '$countOnChain',
+                                  Icons.bolt,
+                                  couleur: const Color(0xFF00C853)),
                               const SizedBox(width: 8),
                               _metriqueFlutter(
                                   'Réseau', 'Polygon\nMainnet', Icons.hub),
