@@ -331,7 +331,10 @@ class _StatsCotisations extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final membres = data.membres;
-    final payes = membres.where((m) => m.paye).length;
+    // ── IMPORTANT : compter uniquement les paiements APPROUVÉS ─────────────
+    // Un paiement 'en_attente' n'est PAS encore crédité en caisse.
+    // Seul statut=='approuve' compte dans nbPayés et montantCollecté.
+    final payes = membres.where((m) => m.paiementApprouve).length;
     final total = membres.length;
     final nonPayes = total - payes;
 

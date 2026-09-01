@@ -1414,7 +1414,8 @@ class _InfosTontine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final nbMembresPayes = data.membres.where((m) => m.paye).length;
+    // ── Uniquement les paiements APPROUVÉS sont crédités en caisse ────────────
+    final nbMembresPayes = data.membres.where((m) => m.paiementApprouve).length;
     final totalCollecte = nbMembresPayes * data.montant;
     final totalAttendu = data.membres.length * data.montant;
 

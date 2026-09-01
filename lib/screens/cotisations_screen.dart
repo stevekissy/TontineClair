@@ -129,7 +129,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
                           ? 'Cycle terminé ✔ · ${membres.length} membres servis'
                           : data.cycleEnAttente
                               ? 'En attente de démarrage · ${membres.length} membres'
-                              : 'Tour ${data.numerTour} sur ${data.nbTours} · ${Formatters.montant(data.montant, devise: data.devise)} par membre · ${data.nbPayes}/${membres.length} payés',
+                              : 'Tour ${data.numerTour} sur ${data.nbTours} · ${Formatters.montant(data.montant, devise: data.devise)} par membre · ${data.nbApprouves}/${membres.length} payés',
                       style: const TextStyle(fontSize: 14, color: AppColors.texteDoux),
                     ),
                     // Bandeau échéance : affiché toujours (calcul auto si non définie)
