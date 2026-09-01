@@ -460,7 +460,7 @@ class _PretsScreenState extends State<PretsScreen> {
     final emprunteur    = membresOrdre.where((m) => m.id == emprunteurId).firstOrNull;
     final nomEmprunteur = emprunteur?.nom ?? '—';
 
-    // ── MODE PREMIUM : CoinPayments ──────────────────────────────────────
+    // ── MODE PREMIUM : confirmation manuelle puis enregistrement en DB ──────
     if (isPremium) {
       if (numBenefCtrl.text.trim().isEmpty) {
         afficherToast(context, 'Numéro bénéficiaire requis', estErreur: true); return;
@@ -478,8 +478,8 @@ class _PretsScreenState extends State<PretsScreen> {
 
       if (!context.mounted) return;
 
-      // Paiement CoinPayments
-      await Navigator.push(
+      // Étape 1 : écran de paiement manuel (retourne méthode+référence ou null)
+      final paiementResult = await Navigator.push<Map<String, String>>(
         context,
         MaterialPageRoute(
           builder: (_) => PaiementChoixScreen(
@@ -496,7 +496,10 @@ class _PretsScreenState extends State<PretsScreen> {
           ),
         ),
       );
-      return;
+      // Si l'utilisateur a annulé l'écran de paiement → on s'arrête
+      if (paiementResult == null || !context.mounted) return;
+      // Sinon on continue vers l'enregistrement en DB (même chemin que LITE ci-dessous)
+      // isPremium = false pour tomber dans le bloc LITE
     }
 
     // ── MODE LITE : PIN direct ──────────────────────────────────────────────
@@ -1019,8 +1022,8 @@ class _CartePret extends StatelessWidget {
     }
     if (!context.mounted) return;
 
-    // Paiement CoinPayments
-    await Navigator.push(
+    // Étape 2 : écran de paiement manuel (retourne méthode+référence ou null)
+    final paiementResult = await Navigator.push<Map<String, String>>(
       context,
       MaterialPageRoute(
         builder: (_) => PaiementChoixScreen(
@@ -1034,83 +1037,107 @@ class _CartePret extends StatelessWidget {
         ),
       ),
     );
+    if (paiementResult == null || !context.mounted) return;
+
+    // Étape 3 : enregistrement en DB avec PIN — on réutilise _rembourser en
+    // passant montant et méthode déjà saisis (skip le bottom-sheet de saisie).
+    await _rembourser(
+      context,
+      montantPre: montant,
+      methodePre: paiementResult['methode'] ?? 'especes',
+    );
   }
 
-  Future<void> _rembourser(BuildContext context) async {
-    final montantCtrl = TextEditingController();
-    String methode = 'especes';
+  Future<void> _rembourser(
+    BuildContext context, {
+    int? montantPre,        // si fourni par _rembourserPro → skip saisie
+    String? methodePre,     // méthode déjà choisie dans PaiementChoixScreen
+  }) async {
+    final montantCtrl = TextEditingController(
+      text: montantPre != null ? montantPre.toString() : '',
+    );
+    // Si montantPre fourni (vient de _rembourserPro via PaiementChoixScreen),
+    // on skip le bottom-sheet de saisie et on utilise les valeurs pré-remplies.
+    String methode = methodePre ?? 'especes';
 
-    final result = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.fondPapier,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => Padding(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 16,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Remboursement',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 20,
-                  color: AppColors.encre,
+    bool result;
+    if (montantPre != null) {
+      // Chemin Premium : saisie déjà effectuée dans PaiementChoixScreen
+      result = true;
+    } else {
+      // Chemin Lite : bottom-sheet de saisie normale
+      result = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: AppColors.fondPapier,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setS) => Padding(
+            padding: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              top: 16,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Remboursement',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 20,
+                    color: AppColors.encre,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Reste à rembourser : ${Formatters.montant(pret.resteADu, devise: data.devise)}',
-                style: const TextStyle(color: AppColors.texteDoux),
-              ),
-              ChampLabel(label: 'Montant remboursé (${DeviseService.parCode(data.devise).symbole})'),
-              TextField(
-                controller: montantCtrl,
-                keyboardType: TextInputType.number,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: pret.resteADu.toString(),
+                const SizedBox(height: 4),
+                Text(
+                  'Reste à rembourser : ${Formatters.montant(pret.resteADu, devise: data.devise)}',
+                  style: const TextStyle(color: AppColors.texteDoux),
                 ),
-              ),
-              const ChampLabel(label: 'Méthode'),
-              DropdownButtonFormField<String>(
-                initialValue: methode,
-                decoration: const InputDecoration(),
-                items: ['especes', 'orange', 'mtn', 'moov', 'wave']
-                    .map((m) => DropdownMenuItem(
-                          value: m,
-                          child: Text(Formatters.methodePaiement(m)),
-                        ))
-                    .toList(),
-                onChanged: (v) => setS(() => methode = v!),
-              ),
-              const SizedBox(height: 16),
-              BtnPrincipal(
-                label: 'Enregistrer',
-                onTap: () => Navigator.pop(ctx, true),
-              ),
-              const SizedBox(height: 8),
-              BtnSecondaire(
-                label: 'Annuler',
-                onTap: () => Navigator.pop(ctx, false),
-              ),
-            ],
+                ChampLabel(label: 'Montant remboursé (${DeviseService.parCode(data.devise).symbole})'),
+                TextField(
+                  controller: montantCtrl,
+                  keyboardType: TextInputType.number,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: pret.resteADu.toString(),
+                  ),
+                ),
+                const ChampLabel(label: 'Méthode'),
+                DropdownButtonFormField<String>(
+                  initialValue: methode,
+                  decoration: const InputDecoration(),
+                  items: ['especes', 'orange', 'mtn', 'moov', 'wave']
+                      .map((m) => DropdownMenuItem(
+                            value: m,
+                            child: Text(Formatters.methodePaiement(m)),
+                          ))
+                      .toList(),
+                  onChanged: (v) => setS(() => methode = v!),
+                ),
+                const SizedBox(height: 16),
+                BtnPrincipal(
+                  label: 'Enregistrer',
+                  onTap: () => Navigator.pop(ctx, true),
+                ),
+                const SizedBox(height: 8),
+                BtnSecondaire(
+                  label: 'Annuler',
+                  onTap: () => Navigator.pop(ctx, false),
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-    );
+      ) ?? false;
+    }
 
     if (result != true || !context.mounted) return;
 
-    final montant = int.tryParse(montantCtrl.text.trim());
+    final montant = montantPre ?? int.tryParse(montantCtrl.text.trim());
     if (montant == null || montant <= 0) {
       afficherToast(context, 'Montant invalide', estErreur: true);
       return;

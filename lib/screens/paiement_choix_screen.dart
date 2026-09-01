@@ -131,7 +131,12 @@ class _PaiementChoixScreenState extends State<PaiementChoixScreen> {
     );
 
     if (ok == true && mounted) {
-      Navigator.of(context).pop(true);
+      // Retourner la méthode et la référence pour que le caller puisse
+      // les passer directement à _togglePaiement (évite double-sélection).
+      Navigator.of(context).pop(<String, String>{
+        'methode':   _methodePaiement,
+        'reference': ref,
+      });
     }
   }
 
@@ -151,7 +156,7 @@ class _PaiementChoixScreenState extends State<PaiementChoixScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded,
               size: 18, color: AppColors.encre),
-          onPressed: () => Navigator.of(context).pop(false),
+          onPressed: () => Navigator.of(context).pop(null),
         ),
         title: Text(
           _libelleFlux(),
@@ -415,7 +420,7 @@ class _PaiementChoixScreenState extends State<PaiementChoixScreen> {
             SizedBox(
               width: double.infinity,
               child: TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
+                onPressed: () => Navigator.of(context).pop(null),
                 child: const Text('Annuler',
                     style: TextStyle(color: AppColors.texteDoux)),
               ),

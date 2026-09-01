@@ -175,23 +175,46 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
                           // ── Bouton "Payer" Pro — visible si Pro + non-payé
                           // Accessible à TOUS (gest et membres) en mode Pro
                           // Le gest conserve aussi son toggle manuel (onToggle)
+                          // ── Bouton "Payer" Premium : ouvre l'écran manuel,
+                          // puis si confirmé (result == true) enregistre via
+                          // _togglePaiement exactement comme le toggle Lite.
                           onPayer: tontine.isPremium && !e.value.paye && !data.cycleTermine
-                              ? () => Navigator.push(
+                              ? () async {
+                                  // PaiementChoixScreen retourne Map<String,String>?
+                                  // {'methode': '...', 'reference': '...'} ou null
+                                  final result = await Navigator.push<Map<String,String>>(
                                     context,
                                     MaterialPageRoute(
-                                      // ── Sélecteur de paiement Premium ──
-                                      // CoinPayments (Crypto)
                                       builder: (_) => PaiementChoixScreen(
-                                        code:      tontine.code,
-                                        typeFlux:  'cotisation',
-                                        membre:    e.value,
+                                        code:     tontine.code,
+                                        typeFlux: 'cotisation',
+                                        membre:   e.value,
                                       ),
                                     ),
-                                  ).then((_) {
-                                    // Rechargement après retour de l'écran de paiement
-                                    // pour refléter le nouveau statut paye = true
-                                    if (mounted) _recharger();
-                                  })
+                                  );
+                                  if (result != null && context.mounted) {
+                                    // Passer méthode + référence déjà saisies pour
+                                    // éviter le double-choix dans _togglePaiement.
+                                    await _togglePaiement(
+                                      context,
+                                      provider,
+                                      tontine,
+                                      e.value,
+                                      methodePrechoisie:   result['methode'],
+                                      referencePrechoisie: result['reference'],
+                                    );
+                                  }
+                                }
+                              : null,
+                          // ── Bouton "Annuler" cotisation Premium payée (gestionnaire)
+                          // Affiché uniquement si Premium + payé + gestionnaire + cycle non terminé.
+                          onAnnulerPremium: tontine.isPremium && e.value.paye && estGest && !data.cycleTermine
+                              ? () => _togglePaiement(
+                                    context,
+                                    provider,
+                                    tontine,
+                                    e.value,
+                                  )
                               : null,
                           onEnvoyerRecu: () => _envoyerRecu(context, tontine, e.value),
                           onRelancer: () => _relancer(context, tontine, e.value),
@@ -220,21 +243,27 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
     );
   }
 
+  /// [methodePrechoisie] : si non null (vient de PaiementChoixScreen), on saute
+  /// la bottom-sheet de sélection de méthode pour éviter le double-choix.
   Future<void> _togglePaiement(
     BuildContext context,
     TontineProvider provider,
     dynamic tontine,
-    Membre membre,
-  ) async {
+    Membre membre, {
+    String? methodePrechoisie,
+    String? referencePrechoisie,
+  }) async {
     if (!provider.estDebloque) return;
 
     final data = tontine.data;
     final nowStr = DateTime.now().toIso8601String();
-    final ref = Formatters.genererReference();
+    final ref = referencePrechoisie ?? Formatters.genererReference();
 
     if (!membre.paye) {
-      // Marquer payé — choisir méthode (filtrée selon la devise de la tontine)
-      final methode = await _choisirMethode(context, devise: data.devise);
+      // Marquer payé — si la méthode a déjà été choisie (via PaiementChoixScreen),
+      // on la réutilise directement ; sinon on affiche la bottom-sheet.
+      final methode = methodePrechoisie ??
+          await _choisirMethode(context, devise: data.devise);
       if (methode == null || !context.mounted) return;
 
       final ok = await afficherModalePin(
@@ -888,8 +917,10 @@ class _CarteMembre extends StatelessWidget {
   final VoidCallback? onEnvoyerRecu;
   final VoidCallback? onRelancer;
   final VoidCallback? onGenererPdf;
-  /// Callback "Payer via Mobile Money" (Pro uniquement, non-gestionnaire)
+  /// Callback "Payer" (Premium non-payé → écran paiement manuel)
   final VoidCallback? onPayer;
+  /// Callback "Annuler cotisation" (Premium payé, gestionnaire uniquement)
+  final VoidCallback? onAnnulerPremium;
 
   const _CarteMembre({
     required this.membre,
@@ -904,6 +935,7 @@ class _CarteMembre extends StatelessWidget {
     this.onRelancer,
     this.onGenererPdf,
     this.onPayer,
+    this.onAnnulerPremium,
   });
 
   bool get _enRetard {
@@ -1183,6 +1215,57 @@ class _CarteMembre extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+              ),
+            ),
+          ],
+          // ── Annuler cotisation (Premium payé, gestionnaire uniquement) ──
+          if (onAnnulerPremium != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.alerteFond,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AppColors.alerte.withValues(alpha: 0.25),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded,
+                      size: 15, color: AppColors.alerte),
+                  const SizedBox(width: 6),
+                  const Expanded(
+                    child: Text(
+                      'Paiement non reçu ? Annulez pour corriger.',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: AppColors.alerte,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: onAnnulerPremium,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: AppColors.alerte,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'Annuler',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
