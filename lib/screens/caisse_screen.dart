@@ -740,10 +740,23 @@ class _LigneMouvement extends StatelessWidget {
   ///      → retourne "location"
   /// Ex: "TontineClair - APPORT — location" → retourne "location"
   /// Ex: "location" (texte pur) → retourne "location"
+  /// Ex: "Cotisation Yvan — Tour 2 — par Arnaud" (ancien format)
+  ///      → retourne "Yvan — Tour 2 — par Arnaud" (évite le doublon "Cotisation — Cotisation Yvan")
   String get _motif {
     final d = mouvement.description.trim();
     if (d.isEmpty) return '';
     final lower = d.toLowerCase();
+
+    // ── Rétrocompatibilité : ancien format de cotisation gestionnaire ─────────
+    // Les cotisations enregistrées avant le fix stockaient "Cotisation Nom — Tour N — par Gest".
+    // L'UI affiche déjà "_typeLabel — motif" (ex: "Cotisation — …"),
+    // donc on retire le préfixe "Cotisation " pour éviter "Cotisation — Cotisation Yvan".
+    if (mouvement.type == 'cotisation' &&
+        lower.startsWith('cotisation ') &&
+        lower.contains(' — tour ')) {
+      // Supprimer le préfixe "Cotisation " (11 caractères) pour retourner "Yvan — Tour 2 — …"
+      return d.substring('Cotisation '.length).trim();
+    }
 
     // ── Chaînes techniques : tenter d'extraire le motif après le dernier " — "
     final estTechnique = lower.startsWith('tontineclair') ||

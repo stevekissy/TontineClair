@@ -573,4 +573,48 @@ class NotificationService {
     if (xof >= 1000) return '${(xof / 1000).toStringAsFixed(0)}k';
     return '$xof';
   }
+
+  // ── Notification locale immédiate pour l'émetteur ─────────────────────────
+  /// Affiche une notification locale sur l'appareil courant sans passer par FCM.
+  /// À appeler APRÈS SupabaseService.envoyerNotification() pour garantir que le
+  /// gestionnaire qui effectue l'opération reçoit aussi le feedback visuel,
+  /// même si FCM ne livre pas à l'émetteur en foreground.
+  ///
+  /// Cas d'usage : cotisation approuvée, clôture tour, décaissement, annulation…
+  static Future<void> afficherLocale({
+    required String titre,
+    required String message,
+    String? code,
+    String? type,
+  }) async {
+    try {
+      final id = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      await _local.show(
+        id,
+        titre,
+        message,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            _canal.id,
+            _canal.name,
+            channelDescription: _canal.description,
+            importance: Importance.high,
+            priority: Priority.high,
+            icon: '@mipmap/ic_launcher',
+            styleInformation: BigTextStyleInformation(message),
+          ),
+          iOS: const DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: false,
+            presentSound: true,
+          ),
+        ),
+        payload: code != null
+            ? '{"code":"$code","type":"${type ?? 'info'}"}'
+            : null,
+      );
+    } catch (e) {
+      if (kDebugMode) debugPrint('[NotifLocale] ❌ afficherLocale erreur: $e');
+    }
+  }
 }

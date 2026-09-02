@@ -16,6 +16,7 @@ import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
 import '../services/blockchain_service.dart';
+import '../services/notification_service.dart';
 
 import 'paiement_choix_screen.dart';
 
@@ -576,7 +577,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
         'id'          : '${refCaisse}C',
         'type'        : 'cotisation',
         'montant'     : data.montant,
-        'description' : 'Cotisation ${membre.nom} — Tour ${data.numerTour} — par $declareParGest',
+        'description' : '${membre.nom} — Tour ${data.numerTour} — par $declareParGest',
         'gestionnaire': declareParGest,
         'date'        : nowStr,
         'reference'   : refCaisse,
@@ -628,13 +629,23 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
           return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
         });
 
-        // Notification push
+        // Notification push (broadcast FCM + locale pour le gestionnaire émetteur)
+        final codeNotif = provider.courante!.code;
+        const titreNotif = '✅ Cotisation enregistrée';
+        final msgNotif = '${membre.nom} — cotisation enregistrée par $declareParGest';
         SupabaseService.envoyerNotification(
-          code        : provider.courante!.code,
+          code        : codeNotif,
           type        : 'cotisation',
-          titre       : '✅ Cotisation enregistrée',
-          message     : '${membre.nom} — cotisation enregistrée par $declareParGest',
+          titre       : titreNotif,
+          message     : msgNotif,
           donneesExtra: {'membre': membre.nom, 'statut': 'approuve'},
+        );
+        // Notification locale immédiate — le gestionnaire reçoit aussi le feedback
+        NotificationService.afficherLocale(
+          titre  : titreNotif,
+          message: msgNotif,
+          code   : codeNotif,
+          type   : 'cotisation',
         );
 
         // Proposer reçu
@@ -800,13 +811,23 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
     if (ok == true && context.mounted) {
       afficherToast(context, '✅ Cotisation de ${membre.nom} approuvée — caisse créditée !');
 
-      // Notification push
+      // Notification push (broadcast FCM + locale pour le gestionnaire émetteur)
+      final codeApprob = provider.courante!.code;
+      const titreApprob = '✅ Cotisation approuvée';
+      final msgApprob = 'La cotisation de ${membre.nom} a été approuvée par ${provider.gestActifNom}';
       SupabaseService.envoyerNotification(
-        code        : provider.courante!.code,
+        code        : codeApprob,
         type        : 'approbation_cotisation',
-        titre       : '✅ Cotisation approuvée',
-        message     : 'La cotisation de ${membre.nom} a été approuvée par ${provider.gestActifNom}',
+        titre       : titreApprob,
+        message     : msgApprob,
         donneesExtra: {'membre': membre.nom, 'statut': 'approuve'},
+      );
+      // Notification locale immédiate — le gestionnaire reçoit aussi le feedback
+      NotificationService.afficherLocale(
+        titre  : titreApprob,
+        message: msgApprob,
+        code   : codeApprob,
+        type   : 'approbation_cotisation',
       );
 
       // Proposer reçu après approbation

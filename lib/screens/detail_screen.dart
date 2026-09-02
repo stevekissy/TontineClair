@@ -23,6 +23,7 @@ import 'nouveau_cycle_screen.dart';
 import 'supprimer_tontine_screen.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
+import '../services/notification_service.dart';
 import 'securite_screen.dart';
 import 'verification_publique_screen.dart';
 
@@ -2002,12 +2003,22 @@ class _BarreDetail extends StatelessWidget {
       final typeNotif = data.cycleTermine ? 'decaissement_cycle_fin' : 'decaissement';
       final t         = SupabaseService.notifTexte(typeNotif, lang,
           vars: {'nom': benefNom, 'tour': numerTourAffiche.toString()});
+      final codeDecaiss  = provider.courante!.code;
+      final titreDecaiss = t['titre']!;
+      final msgDecaiss   = t['message']!;
       SupabaseService.envoyerNotification(
-        code:         provider.courante!.code,
+        code:         codeDecaiss,
         type:         'decaissement',
-        titre:        t['titre']!,
-        message:      t['message']!,
+        titre:        titreDecaiss,
+        message:      msgDecaiss,
         donneesExtra: {'beneficiaire': benefNom},
+      );
+      // Notification locale immédiate — le gestionnaire reçoit aussi le feedback
+      NotificationService.afficherLocale(
+        titre  : titreDecaiss,
+        message: msgDecaiss,
+        code   : codeDecaiss,
+        type   : 'decaissement',
       );
     }
   }
