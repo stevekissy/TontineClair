@@ -992,6 +992,40 @@ class _CarteMembreState extends State<_CarteMembre> {
                         ),
                       ),
                       const SizedBox(width: 8),
+                      // Badge photo preuve (visible même en mode replié)
+                      if (m.photoPreuveBase64 != null &&
+                          m.photoPreuveBase64!.isNotEmpty) ...
+                        [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: AppColors.encreDoux.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                  color: AppColors.encreDoux
+                                      .withValues(alpha: 0.35)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.photo_camera_rounded,
+                                    size: 12,
+                                    color: AppColors.encreDoux),
+                                const SizedBox(width: 3),
+                                Text(
+                                  'Preuve',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.encreDoux,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                        ],
                       Icon(
                         _etendu
                             ? Icons.keyboard_arrow_up
@@ -1092,19 +1126,22 @@ class _CarteMembreState extends State<_CarteMembre> {
             ),
           ),
 
+          // ── Photo preuve de paiement (TOUJOURS visible si disponible) ──
+          if (widget.membre.photoPreuveBase64 != null &&
+              widget.membre.photoPreuveBase64!.isNotEmpty) ...
+            [
+              const Divider(height: 1, color: AppColors.lignes),
+              _PhotoPreuve(
+                base64Data: widget.membre.photoPreuveBase64!,
+                nomMembre:  widget.membre.nom,
+              ),
+            ],
+
           // ── Section étendue ──
           if (_etendu)
             Column(
               children: [
                 const Divider(height: 1, color: AppColors.lignes),
-
-                // ── Photo de preuve de paiement (si disponible) ──
-                if (widget.membre.photoPreuveBase64 != null &&
-                    widget.membre.photoPreuveBase64!.isNotEmpty)
-                  _PhotoPreuve(
-                    base64Data: widget.membre.photoPreuveBase64!,
-                    nomMembre:  widget.membre.nom,
-                  ),
 
                 // Historique des votes
                 if (widget.voixMembre.isNotEmpty)
