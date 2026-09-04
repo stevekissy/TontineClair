@@ -5,11 +5,17 @@
 //
 // Bug #4 fix : Printing.sharePdf() ne déclenche pas de téléchargement sur Flutter
 // Web. Utilisation de Printing.layoutPdf() → Uint8List → download via <a href>
+//
+// Bug #PDF-FONT fix : Helvetica ne supporte pas les caractères UTF-8 non-ASCII
+// (accents français, tirets em, etc.) → crash silencieux. Solution : charger
+// NotoSans via PdfGoogleFonts (supporte Latin étendu, accentués, tirets em).
+// Fallback sur Helvetica si réseau indisponible.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Import conditionnel : web_download_web.dart sur Flutter Web, stub sur mobile
 // Ceci évite l'erreur "dart:html not available" lors de la compilation Android
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
+import 'package:flutter/material.dart' show debugPrint;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -23,6 +29,60 @@ class PdfService {
   static const _or = PdfColor.fromInt(0xFFD99A2B);
   static const _encre = PdfColor.fromInt(0xFF1C2447);
   static const _fondGris = PdfColor.fromInt(0xFFEEEEEE);
+
+  // ── Bug #PDF-FONT : nettoyeur de texte pour Helvetica (fallback) ──────────
+  // Remplace les caractères non-ASCII par des équivalents ASCII sûrs.
+  // Utilisé UNIQUEMENT si NotoSans est indisponible (fallback Helvetica).
+  static String _sanitize(String s) {
+    return s
+        .replaceAll('—', '-')
+        .replaceAll('–', '-')
+        .replaceAll('\u2019', "'")   // apostrophe typographique '
+        .replaceAll('\u2018', "'")   // guillemet '
+        .replaceAll('\u201C', '"')   // guillemet "
+        .replaceAll('\u201D', '"')   // guillemet "
+        .replaceAll('«', '"')
+        .replaceAll('»', '"')
+        .replaceAll('à', 'a').replaceAll('â', 'a').replaceAll('ä', 'a')
+        .replaceAll('é', 'e').replaceAll('è', 'e').replaceAll('ê', 'e').replaceAll('ë', 'e')
+        .replaceAll('î', 'i').replaceAll('ï', 'i')
+        .replaceAll('ô', 'o').replaceAll('ö', 'o')
+        .replaceAll('ù', 'u').replaceAll('û', 'u').replaceAll('ü', 'u')
+        .replaceAll('ç', 'c')
+        .replaceAll('À', 'A').replaceAll('Â', 'A').replaceAll('Ä', 'A')
+        .replaceAll('É', 'E').replaceAll('È', 'E').replaceAll('Ê', 'E').replaceAll('Ë', 'E')
+        .replaceAll('Î', 'I').replaceAll('Ï', 'I')
+        .replaceAll('Ô', 'O').replaceAll('Ö', 'O')
+        .replaceAll('Ù', 'U').replaceAll('Û', 'U').replaceAll('Ü', 'U')
+        .replaceAll('Ç', 'C')
+        .replaceAll('ñ', 'n').replaceAll('Ñ', 'N')
+        .replaceAll('ã', 'a').replaceAll('Ã', 'A')
+        .replaceAll('õ', 'o').replaceAll('Õ', 'O')
+        // Supprimer les emojis et caractères hors Latin-1 restants
+        .replaceAll(RegExp(r'[^\x00-\xFF]'), '?');
+  }
+
+  // ── Chargement des polices avec fallback ──────────────────────────────────
+  // Tente de charger NotoSans (UTF-8 complet). Si échec (réseau, timeout),
+  // retombe sur Helvetica avec _sanitize() appliqué à toutes les chaînes.
+  static Future<({pw.Font regular, pw.Font bold, bool usesSanitizer})>
+      _chargerPolices() async {
+    try {
+      final regular = await PdfGoogleFonts.notoSansRegular();
+      final bold    = await PdfGoogleFonts.notoSansBold();
+      return (regular: regular, bold: bold, usesSanitizer: false);
+    } catch (e) {
+      if (kDebugMode) debugPrint('[PdfService] NotoSans indisponible, fallback Helvetica: $e');
+      return (
+        regular: pw.Font.helvetica(),
+        bold: pw.Font.helveticaBold(),
+        usesSanitizer: true,
+      );
+    }
+  }
+
+  // ── Applique _sanitize si usesSanitizer=true, sinon retourne tel quel ─────
+  static String _tx(String s, bool sanitize) => sanitize ? _sanitize(s) : s;
 
   // ── Traductions PDF (labels statiques dans les documents) ────────────────
   // Seuls les labels fixes du document sont traduits ici.
@@ -125,9 +185,11 @@ class PdfService {
     final data = tontine.data;
     final doc = pw.Document();
 
-    // Polices intégrées (pas de réseau requis — évite le crash sur mobile sans connexion)
-    final regular = pw.Font.helvetica();
-    final bold    = pw.Font.helveticaBold();
+    // Bug #PDF-FONT : charger NotoSans (UTF-8) avec fallback Helvetica + sanitizer
+    final polices = await _chargerPolices();
+    final regular = polices.regular;
+    final bold    = polices.bold;
+    final san     = polices.usesSanitizer; // flag sanitizer
 
     final theme = pw.ThemeData.withFont(
       base: regular,
@@ -139,23 +201,25 @@ class PdfService {
         theme: theme,
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
-        header: (ctx) => _buildHeader(data, tontine.code, bold, regular, langueCode),
+        header: (ctx) => _buildHeader(data, tontine.code, bold, regular, langueCode, san),
         footer: (ctx) => _buildFooter(ctx, regular, langueCode),
         build: (ctx) => [
-          _sectionCaisse(data, bold, regular, langueCode),
+          _sectionCaisse(data, bold, regular, langueCode, san),
           pw.SizedBox(height: 20),
-          _sectionTours(data, bold, regular, langueCode),
+          _sectionTours(data, bold, regular, langueCode, san),
           pw.SizedBox(height: 20),
-          _sectionPrets(data, bold, regular, langueCode),
+          _sectionPrets(data, bold, regular, langueCode, san),
           pw.SizedBox(height: 20),
-          _sectionJournal(data, bold, regular, langueCode),
+          _sectionJournal(data, bold, regular, langueCode, san),
         ],
       ),
     );
 
+    // Nom de fichier : remplacer les caractères spéciaux
+    final nomFichier = _sanitize(data.nom).replaceAll(' ', '_');
     await _telechargerPdf(
       doc,
-      'TontineClair_${data.nom.replaceAll(' ', '_')}_${tontine.code}.pdf',
+      'TontineClair_${nomFichier}_${tontine.code}.pdf',
     );
   }
 
@@ -166,6 +230,7 @@ class PdfService {
     pw.Font bold,
     pw.Font regular,
     String langueCode,
+    bool san,
   ) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -178,19 +243,19 @@ class PdfService {
               style: pw.TextStyle(font: bold, fontSize: 18, color: _encre),
             ),
             pw.Text(
-              'Relevé généré le ${Formatters.dateHeure(DateTime.now())}',
+              '${_tx(_t('releve_genere', langueCode), san)} ${Formatters.dateHeure(DateTime.now())}',
               style: pw.TextStyle(font: regular, fontSize: 9, color: _texteDoux),
             ),
           ],
         ),
         pw.SizedBox(height: 4),
         pw.Text(
-          'Relevé de la tontine « ${data.nom} »',
+          _tx('${_t("releve_titre", langueCode)} « ${data.nom} »', san),
           style: pw.TextStyle(font: bold, fontSize: 14, color: _encre),
         ),
         pw.SizedBox(height: 3),
         pw.Text(
-          'Code : $code  ·  ${data.membres.length} membres  ·  ${Formatters.montant(data.montant, devise: data.devise)}/pers.  ·  ${Formatters.periodicite(data.periode)}',
+          '${_t("code", langueCode)} : $code  ·  ${data.membres.length} ${_t("membres", langueCode)}  ·  ${Formatters.montant(data.montant, devise: data.devise)}${_t("par_pers", langueCode)}  ·  ${_tx(Formatters.periodicite(data.periode), san)}',
           style: pw.TextStyle(font: regular, fontSize: 10, color: _texteDoux),
         ),
         pw.Divider(color: _or, thickness: 1.5),
@@ -222,6 +287,7 @@ class PdfService {
     pw.Font bold,
     pw.Font regular,
     String langueCode,
+    bool san,
   ) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -272,8 +338,8 @@ class PdfService {
               final montantPositif = m.montant >= 0;
               return [
                 Formatters.dateHeure(DateTime.tryParse(m.date)),
-                m.description.isNotEmpty ? m.description : m.type,
-                m.gestionnaire,
+                _tx(m.description.isNotEmpty ? m.description : m.type, san),
+                _tx(m.gestionnaire, san),
                 (montantPositif ? '+' : '') + Formatters.montant(m.montant, devise: data.devise),
               ];
             }).toList(),
@@ -291,6 +357,7 @@ class PdfService {
     pw.Font bold,
     pw.Font regular,
     String langueCode,
+    bool san,
   ) {
     final historique = data.historique;
     final nbTours = data.nbTours;
@@ -322,7 +389,7 @@ class PdfService {
                   ),
                   pw.SizedBox(height: 2),
                   pw.Text(
-                    "${_t('beneficiaire', langueCode)} : ${data.beneficiaireNomOuFallback}",
+                    "${_t('beneficiaire', langueCode)} : ${_tx(data.beneficiaireNomOuFallback, san)}",
                     style: pw.TextStyle(font: regular, fontSize: 9, color: _or),
                   ),
                 ],
@@ -384,11 +451,12 @@ class PdfService {
                 benef = data.membres
                     .where((m) => m.id == benefId)
                     .map((m) => m.nom)
-                    .firstOrNull ?? 'Bénéficiaire non encore désigné';
+                    .firstOrNull ?? _t('benef_non_designe', langueCode);
               } else {
                 benef = _t('benef_non_designe', langueCode);
               }
             }
+            benef = _tx(benef, san);
             final recu = (h['totalRecu'] as num?)?.toInt()
                 ?? (h['total'] as num?)?.toInt()
                 ?? 0;
@@ -426,6 +494,7 @@ class PdfService {
     pw.Font bold,
     pw.Font regular,
     String langueCode,
+    bool san,
   ) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -440,12 +509,13 @@ class PdfService {
         else
           ...data.prets.map((p) {
             // Résoudre le nom de l'emprunteur
-            final membreNom = p.emprunteurNom.isNotEmpty
+            final membreNomRaw = p.emprunteurNom.isNotEmpty
                 ? p.emprunteurNom
                 : data.membres
                     .where((m) => m.id == p.emprunteurId)
                     .map((m) => m.nom)
                     .firstOrNull ?? p.emprunteurId;
+            final membreNom = _tx(membreNomRaw, san);
 
             return pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -457,7 +527,7 @@ class PdfService {
                     mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
                       pw.Text(
-                        '$membreNom — ${Formatters.montant(p.montant, devise: data.devise)} à ${p.taux}% sur ${p.dureesMois} mois',
+                        '$membreNom - ${Formatters.montant(p.montant, devise: data.devise)} a ${p.taux}% sur ${p.dureesMois} mois',
                         style: pw.TextStyle(font: bold, fontSize: 9),
                       ),
                       pw.Text(
@@ -477,8 +547,8 @@ class PdfService {
                     cellPadding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 3),
                     data: p.remboursements.map((r) => [
                       Formatters.dateFormatee(DateTime.tryParse(r.date)),
-                      r.methode,
-                      r.reference,
+                      _tx(r.methode, san),
+                      _tx(r.reference, san),
                       Formatters.montant(r.montant, devise: data.devise),
                     ]).toList(),
                   ),
@@ -497,8 +567,10 @@ class PdfService {
     pw.Font bold,
     pw.Font regular,
     String langueCode,
+    bool san,
   ) {
-    final entries = data.journal.take(200).toList();
+    // Limité à 100 entrées : évite les PDF trop lourds sur tontines très actives
+    final entries = data.journal.take(100).toList();
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -524,8 +596,8 @@ class PdfService {
             },
             data: entries.map((j) => [
               Formatters.dateHeure(DateTime.tryParse(j.quand)),
-              j.quoi,
-              j.gestionnaire,
+              _tx(j.quoi, san),
+              _tx(j.gestionnaire, san),
             ]).toList(),
           ),
       ],
