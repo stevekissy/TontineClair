@@ -223,24 +223,23 @@ class _CaisseScreenState extends State<CaisseScreen> {
                       ),
                     )
                   else ...() {
-                    // Calculer le solde cumulatif après chaque mouvement
-                    // data.caisse est chronologique (ancien â nouveau)
-                    // On affiche en .reversed (nouveau en haut)
-                    // soldeSuivant[i] = solde après application du mouvement i
+                    // Calcul du solde AVANT chaque mouvement (style releve bancaire)
+                    // data.caisse est chronologique (ancien -> nouveau)
+                    // soldesAvant[i] = solde de la caisse juste AVANT le mouvement i
                     final mouvements = data.caisse.toList();
-                    final soldesApres = <int>[];
+                    final soldesAvant = <int>[];
                     int cumul = 0;
                     for (final m in mouvements) {
-                      cumul += m.montant; // montant négatif pour dépenses/prêts
-                      soldesApres.add(cumul);
+                      soldesAvant.add(cumul); // solde AVANT ce mouvement
+                      cumul += m.montant;     // on applique ensuite
                     }
-                    // Affichage du plus récent au plus ancien
+                    // Affichage du plus recent au plus ancien
                     return List.generate(mouvements.length, (i) {
-                      final idx = mouvements.length - 1 - i; // index chronologique
+                      final idx = mouvements.length - 1 - i;
                       return _LigneMouvement(
                         mouvement: mouvements[idx],
                         devise: data.devise,
-                        soldeSuivant: soldesApres[idx],
+                        soldeAvant: soldesAvant[idx],
                       );
                     });
                   }(),
@@ -732,12 +731,13 @@ class _LigneMouvement extends StatelessWidget {
   final String devise;
   /// Solde de la caisse après application de ce mouvement.
   /// Affiché en petit sous le montant pour tracer l'évolution du solde.
-  final int? soldeSuivant;
+  /// Solde AVANT ce mouvement — affiché sous le montant
+  final int? soldeAvant;
 
   const _LigneMouvement({
     required this.mouvement,
     this.devise = 'XOF',
-    this.soldeSuivant,
+    this.soldeAvant,
   });
 
   bool get _isEntree =>
@@ -902,11 +902,11 @@ class _LigneMouvement extends StatelessWidget {
                   color: _isEntree ? AppColors.succes : AppColors.alerte,
                 ),
               ),
-              if (soldeSuivant != null) ...
+              if (soldeAvant != null) ...
                 [
                   const SizedBox(height: 2),
                   Text(
-                    'Solde : ${Formatters.montant(soldeSuivant!, devise: devise)}',
+                    'Solde avant : ${Formatters.montant(soldeAvant!, devise: devise)}',
                     style: const TextStyle(
                       fontSize: 10.5,
                       color: AppColors.texteDoux,
