@@ -942,7 +942,7 @@ class _CarteMembreState extends State<_CarteMembre> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Rang + nom + badge score + badge preuves + chevron
+                  // ── Ligne 1 : rang + nom + chevron ──────────────────────
                   Row(
                     children: [
                       // Rang
@@ -965,7 +965,7 @@ class _CarteMembreState extends State<_CarteMembre> {
                         ),
                       ),
                       const SizedBox(width: 10),
-                      // Nom
+                      // Nom — a tout l'espace disponible
                       Expanded(
                         child: Text(
                           m.nom,
@@ -977,6 +977,22 @@ class _CarteMembreState extends State<_CarteMembre> {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      // Chevron principal (déplie la fiche complète)
+                      Icon(
+                        _etendu
+                            ? Icons.keyboard_arrow_up
+                            : Icons.keyboard_arrow_down,
+                        size: 20,
+                        color: AppColors.texteDoux,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+
+                  // ── Ligne 2 : badge score + badge preuves ────────────────
+                  Row(
+                    children: [
+                      const SizedBox(width: 40), // aligne sous le nom (rang=30 + gap=10)
                       // Badge score
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -994,67 +1010,57 @@ class _CarteMembreState extends State<_CarteMembre> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      // ── Badge "Preuves" — InkWell propre, stoppe la propagation
-                      if (_SectionPreuvesCategories.aDesPreuves(m, widget.data)) ...
-                        [
-                          InkWell(
-                            onTap: () => setState(
-                                () => _preuvesOuvertes = !_preuvesOuvertes),
-                            borderRadius: BorderRadius.circular(8),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 5),
-                              decoration: BoxDecoration(
-                                color: _preuvesOuvertes
-                                    ? AppColors.encreDoux.withValues(alpha: 0.20)
-                                    : AppColors.encreDoux.withValues(alpha: 0.10),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                    color: _preuvesOuvertes
-                                        ? AppColors.encreDoux.withValues(alpha: 0.60)
-                                        : AppColors.encreDoux.withValues(alpha: 0.30)),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.receipt_long_rounded,
-                                      size: 12,
-                                      color: AppColors.encreDoux),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Preuves',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.encreDoux,
-                                    ),
+                      // Badge "Preuves" — InkWell indépendant du GestureDetector parent
+                      if (_SectionPreuvesCategories.aDesPreuves(m, widget.data)) ...[
+                        const SizedBox(width: 8),
+                        InkWell(
+                          onTap: () => setState(
+                              () => _preuvesOuvertes = !_preuvesOuvertes),
+                          borderRadius: BorderRadius.circular(8),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: _preuvesOuvertes
+                                  ? AppColors.encreDoux.withValues(alpha: 0.20)
+                                  : AppColors.encreDoux.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                  color: _preuvesOuvertes
+                                      ? AppColors.encreDoux.withValues(alpha: 0.60)
+                                      : AppColors.encreDoux.withValues(alpha: 0.30)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.receipt_long_rounded,
+                                    size: 12,
+                                    color: AppColors.encreDoux),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Preuves',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.encreDoux,
                                   ),
-                                  const SizedBox(width: 3),
-                                  AnimatedRotation(
-                                    turns: _preuvesOuvertes ? 0.5 : 0.0,
-                                    duration: const Duration(milliseconds: 200),
-                                    child: Icon(
-                                      Icons.keyboard_arrow_down,
-                                      size: 13,
-                                      color: AppColors.encreDoux,
-                                    ),
+                                ),
+                                const SizedBox(width: 3),
+                                AnimatedRotation(
+                                  turns: _preuvesOuvertes ? 0.5 : 0.0,
+                                  duration: const Duration(milliseconds: 200),
+                                  child: Icon(
+                                    Icons.keyboard_arrow_down,
+                                    size: 13,
+                                    color: AppColors.encreDoux,
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(width: 6),
-                        ],
-                      // Chevron principal (déplie la fiche complète)
-                      Icon(
-                        _etendu
-                            ? Icons.keyboard_arrow_up
-                            : Icons.keyboard_arrow_down,
-                        size: 20,
-                        color: AppColors.texteDoux,
-                      ),
+                        ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 10),
