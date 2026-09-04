@@ -222,9 +222,28 @@ class _CaisseScreenState extends State<CaisseScreen> {
                         ),
                       ),
                     )
-                  else ...data.caisse.reversed.map(
-                    (m) => _LigneMouvement(mouvement: m, devise: data.devise),
-                  ),
+                  else ...() {
+                    // Calculer le solde cumulatif après chaque mouvement
+                    // data.caisse est chronologique (ancien â nouveau)
+                    // On affiche en .reversed (nouveau en haut)
+                    // soldeSuivant[i] = solde après application du mouvement i
+                    final mouvements = data.caisse.toList();
+                    final soldesApres = <int>[];
+                    int cumul = 0;
+                    for (final m in mouvements) {
+                      cumul += m.montant; // montant négatif pour dépenses/prêts
+                      soldesApres.add(cumul);
+                    }
+                    // Affichage du plus récent au plus ancien
+                    return List.generate(mouvements.length, (i) {
+                      final idx = mouvements.length - 1 - i; // index chronologique
+                      return _LigneMouvement(
+                        mouvement: mouvements[idx],
+                        devise: data.devise,
+                        soldeSuivant: soldesApres[idx],
+                      );
+                    });
+                  }(),
 
                 ],
               ),
@@ -711,8 +730,15 @@ class _BtnAction extends StatelessWidget {
 class _LigneMouvement extends StatelessWidget {
   final MouvementCaisse mouvement;
   final String devise;
+  /// Solde de la caisse après application de ce mouvement.
+  /// Affiché en petit sous le montant pour tracer l'évolution du solde.
+  final int? soldeSuivant;
 
-  const _LigneMouvement({required this.mouvement, this.devise = 'XOF'});
+  const _LigneMouvement({
+    required this.mouvement,
+    this.devise = 'XOF',
+    this.soldeSuivant,
+  });
 
   bool get _isEntree =>
       mouvement.type == 'apport' ||
@@ -865,13 +891,30 @@ class _LigneMouvement extends StatelessWidget {
               ],
             ),
           ),
-          Text(
-            '${_isEntree ? '+' : '-'}${Formatters.montant(mouvement.montant, devise: devise)}',
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 15,
-              color: _isEntree ? AppColors.succes : AppColors.alerte,
-            ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '${_isEntree ? '+' : '-'}${Formatters.montant(mouvement.montant.abs(), devise: devise)}',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                  color: _isEntree ? AppColors.succes : AppColors.alerte,
+                ),
+              ),
+              if (soldeSuivant != null) ...
+                [
+                  const SizedBox(height: 2),
+                  Text(
+                    'Solde : ${Formatters.montant(soldeSuivant!, devise: devise)}',
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      color: AppColors.texteDoux,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+            ],
           ),
         ],
       ),
