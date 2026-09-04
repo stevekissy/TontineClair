@@ -992,9 +992,8 @@ class _CarteMembreState extends State<_CarteMembre> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      // Badge photo preuve (visible même en mode replié)
-                      if (m.photoPreuveBase64 != null &&
-                          m.photoPreuveBase64!.isNotEmpty) ...
+                      // Badge preuves (photo OU prêts/remboursements)
+                      if (_SectionPreuvesCategories.aDesPreuves(m, widget.data)) ...
                         [
                           Container(
                             padding: const EdgeInsets.symmetric(
@@ -1009,12 +1008,12 @@ class _CarteMembreState extends State<_CarteMembre> {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.photo_camera_rounded,
+                                Icon(Icons.receipt_long_rounded,
                                     size: 12,
                                     color: AppColors.encreDoux),
                                 const SizedBox(width: 3),
                                 Text(
-                                  'Preuve',
+                                  'Preuves',
                                   style: GoogleFonts.inter(
                                     fontSize: 10.5,
                                     fontWeight: FontWeight.w700,
@@ -1126,14 +1125,13 @@ class _CarteMembreState extends State<_CarteMembre> {
             ),
           ),
 
-          // ── Photo preuve de paiement (TOUJOURS visible si disponible) ──
-          if (widget.membre.photoPreuveBase64 != null &&
-              widget.membre.photoPreuveBase64!.isNotEmpty) ...
+          // ── Section preuves catégorisées (cotisation / remboursements / prêts) ──
+          if (_SectionPreuvesCategories.aDesPreuves(widget.membre, widget.data)) ...
             [
               const Divider(height: 1, color: AppColors.lignes),
-              _PhotoPreuve(
-                base64Data: widget.membre.photoPreuveBase64!,
-                nomMembre:  widget.membre.nom,
+              _SectionPreuvesCategories(
+                membre: widget.membre,
+                data:   widget.data,
               ),
             ],
 
@@ -1316,14 +1314,316 @@ class _CarteMembreState extends State<_CarteMembre> {
   }
 }
 
-// ─── Photo preuve de paiement ─────────────────────────────────────────────────
-class _PhotoPreuve extends StatelessWidget {
-  final String base64Data;
-  final String nomMembre;
+// ─── Section preuves catégorisées par type ───────────────────────────────────
+// Affiche 3 catégories : Cotisation (photo tour courant), Remboursements, Prêts.
+// S'affiche uniquement si au moins une catégorie a des données.
+class _SectionPreuvesCategories extends StatelessWidget {
+  final Membre     membre;
+  final TontineData data;
 
-  const _PhotoPreuve({required this.base64Data, required this.nomMembre});
+  const _SectionPreuvesCategories({
+    required this.membre,
+    required this.data,
+  });
+
+  /// Prêts dont ce membre est l'emprunteur
+  List<Pret> get _pretsduMembre =>
+      data.prets.where((p) => p.emprunteurId == membre.id).toList();
+
+  /// Tous les remboursements du membre (toutes les tranches)
+  List<({Pret pret, Remboursement remb})> get _remboursementsDuMembre {
+    final result = <({Pret pret, Remboursement remb})>[];
+    for (final p in _pretsduMembre) {
+      for (final r in p.remboursements) {
+        result.add((pret: p, remb: r));
+      }
+    }
+    // Tri anti-chronologique
+    result.sort((a, b) {
+      final da = DateTime.tryParse(a.remb.date) ?? DateTime(0);
+      final db = DateTime.tryParse(b.remb.date) ?? DateTime(0);
+      return db.compareTo(da);
+    });
+    return result;
+  }
+
+  /// true si au moins une catégorie a des données à afficher
+  static bool aDesPreuves(Membre m, TontineData data) {
+    final aPhoto    = m.photoPreuveBase64 != null && m.photoPreuveBase64!.isNotEmpty;
+    final aPrets    = data.prets.any((p) => p.emprunteurId == m.id);
+    final aRembours = data.prets.any(
+        (p) => p.emprunteurId == m.id && p.remboursements.isNotEmpty);
+    return aPhoto || aPrets || aRembours;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final devise        = data.devise;
+    final aPhoto        = membre.photoPreuveBase64 != null &&
+                          membre.photoPreuveBase64!.isNotEmpty;
+    final prets         = _pretsduMembre;
+    final remboursements = _remboursementsDuMembre;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── En-tête section ──
+          Row(
+            children: [
+              const Icon(Icons.receipt_long_rounded,
+                  size: 15, color: AppColors.encreDoux),
+              const SizedBox(width: 6),
+              Text(
+                'Preuves de paiement',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  color: AppColors.encre,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // ── Catégorie 1 : Cotisation ──────────────────────────────────────
+          if (aPhoto) ...[
+            _EnteteCategoriePreuve(
+              couleur: const Color(0xFF2E7D5B),
+              icone: Icons.savings_rounded,
+              label: 'Preuve de cotisation',
+              badgeStatut: membre.paiementStatut,
+            ),
+            const SizedBox(height: 8),
+            // Infos paiement (méthode / réf / gestionnaire / date)
+            _MetasPaiement(
+              methode:      membre.methodePaiement,
+              reference:    membre.referencePaiement,
+              validePar:    membre.validePar ?? membre.paiementDeclareParGest,
+              date:         membre.datePaiement,
+              montant:      data.montant,
+              devise:       devise,
+            ),
+            const SizedBox(height: 8),
+            // Thumbnail photo
+            _MiniaturePhotoPreuve(
+              base64Data: membre.photoPreuveBase64!,
+              titre:      'Cotisation — ${membre.nom}',
+            ),
+          ],
+
+          // ── Catégorie 2 : Remboursements ──────────────────────────────────
+          if (remboursements.isNotEmpty) ...[
+            if (aPhoto) const SizedBox(height: 14),
+            _EnteteCategoriePreuve(
+              couleur: const Color(0xFF1565C0),
+              icone: Icons.currency_exchange_rounded,
+              label: 'Preuves de remboursement',
+              badgeStatut: null,
+            ),
+            const SizedBox(height: 8),
+            ...remboursements.take(5).map((entry) =>
+              _LigneRemboursement(
+                pret:    entry.pret,
+                remb:    entry.remb,
+                devise:  devise,
+              ),
+            ),
+            if (remboursements.length > 5) ...[
+              const SizedBox(height: 4),
+              Text(
+                '+ ${remboursements.length - 5} autre(s) remboursement(s)',
+                style: GoogleFonts.inter(
+                  fontSize: 11.5,
+                  color: AppColors.texteDoux,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ],
+
+          // ── Catégorie 3 : Prêts ───────────────────────────────────────────
+          if (prets.isNotEmpty) ...[
+            if (aPhoto || remboursements.isNotEmpty) const SizedBox(height: 14),
+            _EnteteCategoriePreuve(
+              couleur: const Color(0xFFE07A2F),
+              icone: Icons.account_balance_rounded,
+              label: 'Prêts en cours',
+              badgeStatut: null,
+            ),
+            const SizedBox(height: 8),
+            ...prets.map((p) => _LignePret(pret: p, devise: devise)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ─── En-tête de catégorie avec pill colorée ───────────────────────────────────
+class _EnteteCategoriePreuve extends StatelessWidget {
+  final Color   couleur;
+  final IconData icone;
+  final String  label;
+  final String? badgeStatut; // null | 'en_attente' | 'approuve'
+
+  const _EnteteCategoriePreuve({
+    required this.couleur,
+    required this.icone,
+    required this.label,
+    this.badgeStatut,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(5),
+          decoration: BoxDecoration(
+            color: couleur.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(7),
+          ),
+          child: Icon(icone, size: 13, color: couleur),
+        ),
+        const SizedBox(width: 7),
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            fontWeight: FontWeight.w600,
+            fontSize: 12,
+            color: couleur,
+          ),
+        ),
+        const Spacer(),
+        if (badgeStatut != null) _BadgeStatutPaiement(statut: badgeStatut!),
+      ],
+    );
+  }
+}
+
+// ─── Badge statut paiement ────────────────────────────────────────────────────
+class _BadgeStatutPaiement extends StatelessWidget {
+  final String statut;
+  const _BadgeStatutPaiement({required this.statut});
+
+  @override
+  Widget build(BuildContext context) {
+    final bool estApprouve = statut == 'approuve';
+    final Color c = estApprouve ? const Color(0xFF2E7D5B) : const Color(0xFFD99A2B);
+    final String label = estApprouve ? '✓ Approuvé' : '⏳ En attente';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: c.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.inter(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+          color: c,
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Métas d'un paiement (méthode / réf / gest / date / montant) ─────────────
+class _MetasPaiement extends StatelessWidget {
+  final String? methode;
+  final String? reference;
+  final String? validePar;
+  final String? date;
+  final int?    montant;
+  final String  devise;
+
+  const _MetasPaiement({
+    this.methode,
+    this.reference,
+    this.validePar,
+    this.date,
+    this.montant,
+    required this.devise,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final dateStr = _parseDate(date);
+    final lignes  = <(IconData, String)>[
+      if (montant != null && montant! > 0)
+        (Icons.payments_rounded, Formatters.montant(montant!, devise: devise)),
+      if (methode != null && methode!.isNotEmpty)
+        (Icons.credit_card_rounded, methode!),
+      if (reference != null && reference!.isNotEmpty)
+        (Icons.tag_rounded, 'Réf : $reference'),
+      if (validePar != null && validePar!.isNotEmpty)
+        (Icons.person_outline_rounded, validePar!),
+      if (dateStr.isNotEmpty)
+        (Icons.access_time_rounded, dateStr),
+    ];
+
+    if (lignes.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.fondSecondaire,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: lignes.map((l) => Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(l.$1, size: 12, color: AppColors.texteDoux),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  l.$2,
+                  style: GoogleFonts.inter(
+                    fontSize: 11.5,
+                    color: AppColors.texte,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        )).toList(),
+      ),
+    );
+  }
+
+  static String _parseDate(String? raw) {
+    if (raw == null || raw.isEmpty) return '';
+    final dt = DateTime.tryParse(raw);
+    if (dt != null) return Formatters.dateHeure(dt);
+    final ms = int.tryParse(raw);
+    if (ms != null && ms > 0) {
+      return Formatters.dateHeure(DateTime.fromMillisecondsSinceEpoch(ms));
+    }
+    return raw;
+  }
+}
+
+// ─── Miniature photo avec tap → plein écran ───────────────────────────────────
+class _MiniaturePhotoPreuve extends StatelessWidget {
+  final String base64Data;
+  final String titre;
+
+  const _MiniaturePhotoPreuve({
+    required this.base64Data,
+    required this.titre,
+  });
 
   void _voirEnPleinEcran(BuildContext context) {
+    final bytes = base64Decode(base64Data);
     showDialog(
       context: context,
       builder: (_) => Dialog(
@@ -1333,12 +1633,10 @@ class _PhotoPreuve extends StatelessWidget {
           children: [
             InteractiveViewer(
               child: Center(
-                child: Image.memory(
-                  base64Decode(base64Data),
-                  fit: BoxFit.contain,
-                ),
+                child: Image.memory(bytes, fit: BoxFit.contain),
               ),
             ),
+            // Bouton fermer
             Positioned(
               top: 16, right: 16,
               child: GestureDetector(
@@ -1346,11 +1644,37 @@ class _PhotoPreuve extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.6),
+                    color: Colors.black.withValues(alpha: 0.65),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(Icons.close_rounded,
                       color: Colors.white, size: 22),
+                ),
+              ),
+            ),
+            // Titre
+            Positioned(
+              bottom: 0, left: 0, right: 0,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.75),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+                child: Text(
+                  titre,
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
@@ -1362,71 +1686,282 @@ class _PhotoPreuve extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    late final imageBytes = base64Decode(base64Data);
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Preuve de paiement',
-            style: GoogleFonts.inter(
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: AppColors.encre,
-            ),
-          ),
-          const SizedBox(height: 8),
-          GestureDetector(
-            onTap: () => _voirEnPleinEcran(context),
-            child: Stack(
-              children: [
-                ClipRRect(
+    final bytes = base64Decode(base64Data);
+    return GestureDetector(
+      onTap: () => _voirEnPleinEcran(context),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Stack(
+          children: [
+            Image.memory(
+              bytes,
+              height: 160,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                height: 80,
+                decoration: BoxDecoration(
+                  color: AppColors.fondSecondaire,
                   borderRadius: BorderRadius.circular(10),
-                  child: Image.memory(
-                    imageBytes,
-                    height: 160,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      height: 80,
-                      decoration: BoxDecoration(
-                        color: AppColors.fondSecondaire,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Center(
-                        child: Text('Image non disponible',
-                            style: TextStyle(color: AppColors.texteDoux)),
-                      ),
-                    ),
+                ),
+                child: const Center(
+                  child: Text('Image non disponible',
+                      style: TextStyle(color: AppColors.texteDoux)),
+                ),
+              ),
+            ),
+            Positioned(
+              bottom: 8, right: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.zoom_in_rounded, size: 13, color: Colors.white),
+                    SizedBox(width: 4),
+                    Text('Agrandir',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Ligne d'un remboursement de prêt ────────────────────────────────────────
+class _LigneRemboursement extends StatelessWidget {
+  final Pret          pret;
+  final Remboursement remb;
+  final String        devise;
+
+  const _LigneRemboursement({
+    required this.pret,
+    required this.remb,
+    required this.devise,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final dateStr  = _parseDate(remb.date);
+    final montantFmt = Formatters.montant(remb.montant, devise: devise);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1565C0).withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: const Color(0xFF1565C0).withValues(alpha: 0.15),
+        ),
+      ),
+      child: Row(
+        children: [
+          // Icône montant
+          Container(
+            width: 34, height: 34,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1565C0).withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.currency_exchange_rounded,
+                size: 16, color: Color(0xFF1565C0)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Prêt initial : ${Formatters.montant(pret.montant, devise: devise)}',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    color: AppColors.texteDoux,
                   ),
                 ),
-                Positioned(
-                  bottom: 8, right: 8,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.55),
-                      borderRadius: BorderRadius.circular(8),
+                if (remb.methode.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    remb.methode,
+                    style: GoogleFonts.inter(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.encre,
                     ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.zoom_in_rounded,
-                            size: 13, color: Colors.white),
-                        SizedBox(width: 4),
-                        Text('Agrandir',
-                            style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600)),
-                      ],
-                    ),
+                  ),
+                ],
+                if (remb.reference.isNotEmpty) ...[
+                  const SizedBox(height: 1),
+                  Row(
+                    children: [
+                      const Icon(Icons.tag_rounded,
+                          size: 10, color: AppColors.texteDoux),
+                      const SizedBox(width: 3),
+                      Text(
+                        remb.reference,
+                        style: GoogleFonts.inter(
+                          fontSize: 10.5, color: AppColors.texteDoux),
+                      ),
+                    ],
+                  ),
+                ],
+                if (dateStr.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      const Icon(Icons.access_time_rounded,
+                          size: 10, color: AppColors.texteDoux),
+                      const SizedBox(width: 3),
+                      Text(
+                        dateStr,
+                        style: GoogleFonts.inter(
+                          fontSize: 10.5, color: AppColors.texteDoux),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+          // Montant remboursé
+          Text(
+            montantFmt,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF1565C0),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _parseDate(String raw) {
+    if (raw.isEmpty) return '';
+    final dt = DateTime.tryParse(raw);
+    if (dt != null) return Formatters.dateHeure(dt);
+    final ms = int.tryParse(raw);
+    if (ms != null && ms > 0) {
+      return Formatters.dateHeure(DateTime.fromMillisecondsSinceEpoch(ms));
+    }
+    return raw;
+  }
+}
+
+// ─── Ligne d'un prêt ──────────────────────────────────────────────────────────
+class _LignePret extends StatelessWidget {
+  final Pret   pret;
+  final String devise;
+
+  const _LignePret({required this.pret, required this.devise});
+
+  @override
+  Widget build(BuildContext context) {
+    final statutCalc = pret.statutCalcule;
+    final Color couleurStatut;
+    final String labelStatut;
+    switch (statutCalc) {
+      case 'solde':
+        couleurStatut = const Color(0xFF2E7D5B);
+        labelStatut   = 'Soldé';
+      case 'retard':
+        couleurStatut = const Color(0xFFCC3333);
+        labelStatut   = 'En retard';
+      case 'partiel':
+        couleurStatut = const Color(0xFFD99A2B);
+        labelStatut   = 'Partiel';
+      default:
+        couleurStatut = const Color(0xFFE07A2F);
+        labelStatut   = 'En cours';
+    }
+
+    final resteADu = pret.resteADu;
+    final totalDu  = pret.totalDu;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE07A2F).withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: const Color(0xFFE07A2F).withValues(alpha: 0.18),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 34, height: 34,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE07A2F).withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.account_balance_rounded,
+                size: 16, color: Color(0xFFE07A2F)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Prêt de ${Formatters.montant(pret.montant, devise: devise)}',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.encre,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Reste dû : ${Formatters.montant(resteADu, devise: devise)} / ${Formatters.montant(totalDu, devise: devise)}',
+                  style: GoogleFonts.inter(
+                    fontSize: 11, color: AppColors.texteDoux),
+                ),
+                const SizedBox(height: 4),
+                // Barre de progression remboursement
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: totalDu > 0
+                        ? (pret.totalRembourse / totalDu).clamp(0.0, 1.0)
+                        : 0.0,
+                    minHeight: 4,
+                    backgroundColor: AppColors.lignes,
+                    valueColor: AlwaysStoppedAnimation<Color>(couleurStatut),
                   ),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Badge statut
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            decoration: BoxDecoration(
+              color: couleurStatut.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: couleurStatut.withValues(alpha: 0.30)),
+            ),
+            child: Text(
+              labelStatut,
+              style: GoogleFonts.inter(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                color: couleurStatut,
+              ),
             ),
           ),
         ],
