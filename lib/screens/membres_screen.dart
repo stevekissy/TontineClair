@@ -893,7 +893,8 @@ class _CarteMembre extends StatefulWidget {
 }
 
 class _CarteMembreState extends State<_CarteMembre> {
-  bool _etendu = false;
+  bool _etendu        = false;
+  bool _preuvesOuvertes = false; // contrôle le pli/dépli du bloc "Preuves"
 
   @override
   Widget build(BuildContext context) {
@@ -992,35 +993,53 @@ class _CarteMembreState extends State<_CarteMembre> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      // Badge preuves (photo OU prêts/remboursements)
+                      // Badge preuves cliquable — plie/déplie la section preuves
                       if (_SectionPreuvesCategories.aDesPreuves(m, widget.data)) ...
                         [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: AppColors.encreDoux.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                  color: AppColors.encreDoux
-                                      .withValues(alpha: 0.35)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.receipt_long_rounded,
-                                    size: 12,
-                                    color: AppColors.encreDoux),
-                                const SizedBox(width: 3),
-                                Text(
-                                  'Preuves',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.encreDoux,
+                          GestureDetector(
+                            onTap: () => setState(
+                                () => _preuvesOuvertes = !_preuvesOuvertes),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: _preuvesOuvertes
+                                    ? AppColors.encreDoux.withValues(alpha: 0.18)
+                                    : AppColors.encreDoux.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                    color: _preuvesOuvertes
+                                        ? AppColors.encreDoux.withValues(alpha: 0.55)
+                                        : AppColors.encreDoux.withValues(alpha: 0.30)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.receipt_long_rounded,
+                                      size: 12,
+                                      color: AppColors.encreDoux),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Preuves',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.encreDoux,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                  const SizedBox(width: 3),
+                                  AnimatedRotation(
+                                    turns: _preuvesOuvertes ? 0.5 : 0.0,
+                                    duration: const Duration(milliseconds: 200),
+                                    child: Icon(
+                                      Icons.keyboard_arrow_down,
+                                      size: 13,
+                                      color: AppColors.encreDoux,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                           const SizedBox(width: 6),
@@ -1125,15 +1144,24 @@ class _CarteMembreState extends State<_CarteMembre> {
             ),
           ),
 
-          // ── Section preuves catégorisées (cotisation / remboursements / prêts) ──
-          if (_SectionPreuvesCategories.aDesPreuves(widget.membre, widget.data)) ...
-            [
-              const Divider(height: 1, color: AppColors.lignes),
-              _SectionPreuvesCategories(
-                membre: widget.membre,
-                data:   widget.data,
+          // ── Section preuves catégorisées — pliable via badge "Preuves" ──────
+          if (_SectionPreuvesCategories.aDesPreuves(widget.membre, widget.data))
+            AnimatedCrossFade(
+              duration: const Duration(milliseconds: 250),
+              crossFadeState: _preuvesOuvertes
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
+              firstChild: const SizedBox.shrink(),
+              secondChild: Column(
+                children: [
+                  const Divider(height: 1, color: AppColors.lignes),
+                  _SectionPreuvesCategories(
+                    membre: widget.membre,
+                    data:   widget.data,
+                  ),
+                ],
               ),
-            ],
+            ),
 
           // ── Section étendue ──
           if (_etendu)
