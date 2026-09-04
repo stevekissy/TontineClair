@@ -932,15 +932,17 @@ class _CarteMembreState extends State<_CarteMembre> {
       child: Column(
         children: [
           // ── Ligne principale (toujours visible) ──
-          InkWell(
+          // NB: on utilise GestureDetector au lieu d'InkWell pour que le
+          // InkWell enfant du badge "Preuves" puisse intercepter ses propres taps.
+          GestureDetector(
             onTap: () => setState(() => _etendu = !_etendu),
-            borderRadius: BorderRadius.circular(16),
+            behavior: HitTestBehavior.opaque,
             child: Padding(
               padding: const EdgeInsets.all(14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Rang + nom + badge score
+                  // Rang + nom + badge score + badge preuves + chevron
                   Row(
                     children: [
                       // Rang
@@ -993,24 +995,25 @@ class _CarteMembreState extends State<_CarteMembre> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      // Badge preuves cliquable — plie/déplie la section preuves
+                      // ── Badge "Preuves" — InkWell propre, stoppe la propagation
                       if (_SectionPreuvesCategories.aDesPreuves(m, widget.data)) ...
                         [
-                          GestureDetector(
+                          InkWell(
                             onTap: () => setState(
                                 () => _preuvesOuvertes = !_preuvesOuvertes),
+                            borderRadius: BorderRadius.circular(8),
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 200),
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
+                                  horizontal: 8, vertical: 5),
                               decoration: BoxDecoration(
                                 color: _preuvesOuvertes
-                                    ? AppColors.encreDoux.withValues(alpha: 0.18)
+                                    ? AppColors.encreDoux.withValues(alpha: 0.20)
                                     : AppColors.encreDoux.withValues(alpha: 0.10),
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
                                     color: _preuvesOuvertes
-                                        ? AppColors.encreDoux.withValues(alpha: 0.55)
+                                        ? AppColors.encreDoux.withValues(alpha: 0.60)
                                         : AppColors.encreDoux.withValues(alpha: 0.30)),
                               ),
                               child: Row(
@@ -1044,6 +1047,7 @@ class _CarteMembreState extends State<_CarteMembre> {
                           ),
                           const SizedBox(width: 6),
                         ],
+                      // Chevron principal (déplie la fiche complète)
                       Icon(
                         _etendu
                             ? Icons.keyboard_arrow_up
