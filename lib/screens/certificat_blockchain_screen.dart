@@ -13,6 +13,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:io';
 import '../services/blockchain_service.dart';
 import '../utils/app_colors.dart';
@@ -84,8 +85,41 @@ class _CertificatBlockchainScreenState
     }
   }
 
+  // ── Chargement polices PDF (NotoSans → Helvetica en fallback) ────────────
+  static Future<({pw.Font regular, pw.Font bold})> _chargerPolices() async {
+    try {
+      final regular = await PdfGoogleFonts.notoSansRegular();
+      final bold    = await PdfGoogleFonts.notoSansBold();
+      return (regular: regular, bold: bold);
+    } catch (_) {
+      return (regular: pw.Font.helvetica(), bold: pw.Font.helveticaBold());
+    }
+  }
+
+  // ── Calcul countOnChain unifié ─────────────────────────────────────────────
+  /// Logique Phase-aware partagée entre le build Flutter et le PDF.
+  /// Phase 1 : preuve SHA-256 locale  → hash non-vide
+  /// Phase 2 : TX Ethereum on-chain   → hash de 66 caractères (0x…)
+  static int _computeCountOnChain(List<BlockchainEntry> entrees, int phase) {
+    if (phase == 2) {
+      return entrees
+          .where((e) => e.txHash != null && e.txHash!.length == 66)
+          .length;
+    } else {
+      return entrees
+          .where((e) => e.txHash != null && e.txHash!.isNotEmpty)
+          .length;
+    }
+  }
+
   // ── Génération PDF ─────────────────────────────────────────────────────────
   Future<Uint8List> _genererPdf() async {
+    // Charger les polices AVANT de construire le document
+    // (Helvetica intégrée ne supporte pas les accents UTF-8 → crash)
+    final polices  = await _chargerPolices();
+    final fontReg  = polices.regular;
+    final fontBold = polices.bold;
+
     final doc = pw.Document();
     final now = DateTime.now();
     final phase = (_contrat['phase'] as num?)?.toInt() ?? 1;
@@ -102,11 +136,8 @@ class _CertificatBlockchainScreenState
             .toList()
         : _entrees;
 
-    // Phase 1 : tx_hash = preuve SHA-256 locale — TOUTES les entrées avec un hash sont "on-chain"
-    // Phase 2 : tx_hash = vrai hash Ethereum (66 chars) vérifiable sur Polygon Mainnet
-    final countOnChain = phase == 2
-        ? entreesFiltrees.where((e) => e.txHash != null && e.txHash!.length == 66).length
-        : entreesFiltrees.where((e) => e.txHash != null && e.txHash!.isNotEmpty).length;
+    // Comptage unifié Phase-aware (même logique que le build Flutter)
+    final countOnChain = _computeCountOnChain(entreesFiltrees, phase);
     final totalXof = entreesFiltrees
         .where((e) => e.montantXof != null)
         .fold(0, (s, e) => s + (e.montantXof ?? 0));
@@ -118,27 +149,27 @@ class _CertificatBlockchainScreenState
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
-        header: (ctx) => _buildHeader(ctx, now, numCert, phase),
-        footer: (ctx) => _buildFooter(ctx, numCert, contratAddr),
+        header: (ctx) => _buildHeader(ctx, now, numCert, phase, fontReg, fontBold),
+        footer: (ctx) => _buildFooter(ctx, numCert, contratAddr, fontReg),
         build: (ctx) => [
           // Titre certificat
-          _buildTitre(phase, contratAddr),
+          _buildTitre(phase, contratAddr, fontReg, fontBold),
           pw.SizedBox(height: 16),
 
           // Infos tontine
-          _buildInfosTontine(now, phase, countOnChain, entreesFiltrees.length, totalXof),
+          _buildInfosTontine(now, phase, countOnChain, entreesFiltrees.length, totalXof, fontReg, fontBold),
           pw.SizedBox(height: 16),
 
           // Stats blockchain
-          _buildStatsBlockchain(entreesFiltrees, countOnChain, phase),
+          _buildStatsBlockchain(entreesFiltrees, countOnChain, phase, fontReg, fontBold),
           pw.SizedBox(height: 20),
 
           // Tableau des opérations
-          _buildTableauOperations(entreesFiltrees, phase),
+          _buildTableauOperations(entreesFiltrees, phase, fontReg, fontBold),
           pw.SizedBox(height: 20),
 
           // Section vérification
-          _buildSectionVerification(numCert, contratAddr, phase),
+          _buildSectionVerification(numCert, contratAddr, phase, fontReg, fontBold),
         ],
       ),
     );
@@ -148,7 +179,7 @@ class _CertificatBlockchainScreenState
 
   // ── Widgets PDF ────────────────────────────────────────────────────────────
 
-  pw.Widget _buildHeader(pw.Context ctx, DateTime now, String numCert, int phase) {
+  pw.Widget _buildHeader(pw.Context ctx, DateTime now, String numCert, int phase, pw.Font fontReg, pw.Font fontBold) {
     return pw.Container(
       decoration: const pw.BoxDecoration(
         border: pw.Border(bottom: pw.BorderSide(color: _pdfOr, width: 2)),
@@ -162,21 +193,22 @@ class _CertificatBlockchainScreenState
             children: [
               pw.Text('TontineClair',
                   style: pw.TextStyle(
+                      font: fontBold,
                       fontSize: 18,
                       fontWeight: pw.FontWeight.bold,
                       color: _pdfEncre)),
               pw.Text('Certificat Blockchain',
-                  style: pw.TextStyle(fontSize: 10, color: _pdfDoux)),
+                  style: pw.TextStyle(font: fontReg, fontSize: 10, color: _pdfDoux)),
             ],
           ),
           pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.end,
             children: [
               pw.Text('N° $numCert',
-                  style: pw.TextStyle(fontSize: 8, color: _pdfDoux)),
+                  style: pw.TextStyle(font: fontReg, fontSize: 8, color: _pdfDoux)),
               pw.Text(
-                'Émis le ${_fmtDate(now)} à ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}',
-                style: pw.TextStyle(fontSize: 8, color: _pdfDoux),
+                'Emis le ${_fmtDate(now)} a ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}',
+                style: pw.TextStyle(font: fontReg, fontSize: 8, color: _pdfDoux),
               ),
               pw.Container(
                 margin: const pw.EdgeInsets.only(top: 4),
@@ -188,6 +220,7 @@ class _CertificatBlockchainScreenState
                 child: pw.Text(
                   phase == 2 ? 'ON-CHAIN POLYGON MAINNET' : 'JOURNAL INTERNE',
                   style: pw.TextStyle(
+                      font: fontBold,
                       fontSize: 7,
                       color: PdfColors.white,
                       fontWeight: pw.FontWeight.bold),
@@ -200,7 +233,7 @@ class _CertificatBlockchainScreenState
     );
   }
 
-  pw.Widget _buildFooter(pw.Context ctx, String numCert, String? contratAddr) {
+  pw.Widget _buildFooter(pw.Context ctx, String numCert, String? contratAddr, pw.Font fontReg) {
     return pw.Container(
       decoration: const pw.BoxDecoration(
         border: pw.Border(top: pw.BorderSide(color: _pdfLignes, width: 1)),
@@ -211,18 +244,18 @@ class _CertificatBlockchainScreenState
         children: [
           pw.Text(
             'TontineClair - Certificat confidentiel - $numCert',
-            style: pw.TextStyle(fontSize: 7, color: _pdfDoux),
+            style: pw.TextStyle(font: fontReg, fontSize: 7, color: _pdfDoux),
           ),
           pw.Text(
             'Page ${ctx.pageNumber}/${ctx.pagesCount}',
-            style: pw.TextStyle(fontSize: 7, color: _pdfDoux),
+            style: pw.TextStyle(font: fontReg, fontSize: 7, color: _pdfDoux),
           ),
         ],
       ),
     );
   }
 
-  pw.Widget _buildTitre(int phase, String? contratAddr) {
+  pw.Widget _buildTitre(int phase, String? contratAddr, pw.Font fontReg, pw.Font fontBold) {
     return pw.Container(
       padding: const pw.EdgeInsets.all(20),
       decoration: pw.BoxDecoration(
@@ -239,6 +272,7 @@ class _CertificatBlockchainScreenState
                 ? 'CERTIFICAT DE PARTICIPATION'
                 : 'CERTIFICAT DE TRANSPARENCE BLOCKCHAIN',
             style: pw.TextStyle(
+              font: fontBold,
               fontSize: 16,
               fontWeight: pw.FontWeight.bold,
               color: PdfColors.white,
@@ -247,22 +281,23 @@ class _CertificatBlockchainScreenState
           pw.SizedBox(height: 4),
           pw.Text(
             widget.membreNom != null
-                ? 'Membre : ${widget.membreNom} · Tontine : ${widget.nomTontine} (${widget.codeTontine})'
-                : 'Tontine : ${widget.nomTontine} · Code : ${widget.codeTontine}',
-            style: pw.TextStyle(fontSize: 10, color: PdfColors.white),
+                ? 'Membre : ${_pdfSafe(widget.membreNom!)} - Tontine : ${_pdfSafe(widget.nomTontine)} (${widget.codeTontine})'
+                : 'Tontine : ${_pdfSafe(widget.nomTontine)} - Code : ${widget.codeTontine}',
+            style: pw.TextStyle(font: fontReg, fontSize: 10, color: PdfColors.white),
           ),
           if (contratAddr != null) ...[
             pw.SizedBox(height: 8),
             pw.Text(
               'Smart Contract : $contratAddr',
               style: pw.TextStyle(
+                  font: fontReg,
                   fontSize: 8,
                   color: PdfColors.white,
                   fontStyle: pw.FontStyle.italic),
             ),
             pw.Text(
-              'Réseau : Polygon Mainnet (chainId 137) · TontineVault.sol v2.0.0',
-              style: pw.TextStyle(fontSize: 8, color: PdfColors.white),
+              'Reseau : Polygon Mainnet (chainId 137) - TontineVault.sol v2.0.0',
+              style: pw.TextStyle(font: fontReg, fontSize: 8, color: PdfColors.white),
             ),
           ],
         ],
@@ -270,25 +305,26 @@ class _CertificatBlockchainScreenState
     );
   }
 
-  pw.Widget _buildInfosTontine(DateTime now, int phase, int onChain, int total, int xof) {
+  pw.Widget _buildInfosTontine(DateTime now, int phase, int onChain, int total, int xof, pw.Font fontReg, pw.Font fontBold) {
     return pw.Row(
       children: [
-        _metriqueBox('Code tontine', widget.codeTontine),
+        _metriqueBox('Code tontine', widget.codeTontine, fontReg, fontBold),
         pw.SizedBox(width: 8),
-        _metriqueBox('Total opérations', '$total'),
+        _metriqueBox('Total operations', '$total', fontReg, fontBold),
         pw.SizedBox(width: 8),
         _metriqueBox(
           phase == 2 ? 'On-chain' : 'Proof SHA-256',
           phase == 2 ? '$onChain' : '$total',
+          fontReg, fontBold,
           couleur: phase == 2 ? _pdfChain : _pdfOr,
         ),
         pw.SizedBox(width: 8),
-        _metriqueBox('Volume XOF', _formatXof(xof)),
+        _metriqueBox('Volume XOF', _formatXof(xof), fontReg, fontBold),
       ],
     );
   }
 
-  pw.Widget _metriqueBox(String label, String valeur, {PdfColor? couleur}) {
+  pw.Widget _metriqueBox(String label, String valeur, pw.Font fontReg, pw.Font fontBold, {PdfColor? couleur}) {
     return pw.Expanded(
       child: pw.Container(
         padding: const pw.EdgeInsets.all(10),
@@ -301,10 +337,11 @@ class _CertificatBlockchainScreenState
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
             pw.Text(label,
-                style: pw.TextStyle(fontSize: 8, color: _pdfDoux)),
+                style: pw.TextStyle(font: fontReg, fontSize: 8, color: _pdfDoux)),
             pw.SizedBox(height: 4),
             pw.Text(valeur,
                 style: pw.TextStyle(
+                    font: fontBold,
                     fontSize: 14,
                     fontWeight: pw.FontWeight.bold,
                     color: couleur ?? _pdfEncre)),
@@ -315,7 +352,7 @@ class _CertificatBlockchainScreenState
   }
 
   pw.Widget _buildStatsBlockchain(
-      List<BlockchainEntry> entrees, int onChain, int phase) {
+      List<BlockchainEntry> entrees, int onChain, int phase, pw.Font fontReg, pw.Font fontBold) {
     final byType = <String, int>{};
     for (final e in entrees) {
       byType[e.typeLabel] = (byType[e.typeLabel] ?? 0) + 1;
@@ -336,9 +373,10 @@ class _CertificatBlockchainScreenState
         children: [
           pw.Text(
             phase == 2
-                ? 'Opérations ancrées on-chain · vérifiables sur Polygon Mainnet'
-                : 'Opérations sécurisées par preuve cryptographique SHA-256 (journal interne TontineClair)',
+                ? 'Operations ancrees on-chain - verifiables sur Polygon Mainnet'
+                : 'Operations securisees par preuve cryptographique SHA-256 (journal interne TontineClair)',
             style: pw.TextStyle(
+                font: fontBold,
                 fontSize: 10,
                 fontWeight: pw.FontWeight.bold,
                 color: phase == 2 ? _pdfChain : _pdfEncre),
@@ -358,7 +396,7 @@ class _CertificatBlockchainScreenState
                 ),
                 child: pw.Text(
                   '${_pdfSafe(e.key)} : ${e.value}',
-                  style: pw.TextStyle(fontSize: 8, color: _pdfTexte),
+                  style: pw.TextStyle(font: fontReg, fontSize: 8, color: _pdfTexte),
                 ),
               );
             }).toList(),
@@ -368,18 +406,19 @@ class _CertificatBlockchainScreenState
     );
   }
 
-  pw.Widget _buildTableauOperations(List<BlockchainEntry> entrees, int phase) {
+  pw.Widget _buildTableauOperations(List<BlockchainEntry> entrees, int phase, pw.Font fontReg, pw.Font fontBold) {
     if (entrees.isEmpty) {
-      return pw.Text('Aucune opération trouvée.',
-          style: pw.TextStyle(fontSize: 10, color: _pdfDoux));
+      return pw.Text('Aucune operation trouvee.',
+          style: pw.TextStyle(font: fontReg, fontSize: 10, color: _pdfDoux));
     }
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
         pw.Text(
-          'Journal des opérations blockchain',
+          'Journal des operations blockchain',
           style: pw.TextStyle(
+              font: fontBold,
               fontSize: 12,
               fontWeight: pw.FontWeight.bold,
               color: _pdfEncre),
@@ -399,11 +438,11 @@ class _CertificatBlockchainScreenState
             pw.TableRow(
               decoration: const pw.BoxDecoration(color: _pdfEncre),
               children: [
-                _cellHeader('Date'),
-                _cellHeader('Type'),
-                _cellHeader('Description'),
-                _cellHeader('Montant XOF'),
-                _cellHeader('TX Hash / Proof'),
+                _cellHeader('Date', fontBold),
+                _cellHeader('Type', fontBold),
+                _cellHeader('Description', fontBold),
+                _cellHeader('Montant XOF', fontBold),
+                _cellHeader('TX Hash / Proof', fontBold),
               ],
             ),
             // Lignes
@@ -416,20 +455,21 @@ class _CertificatBlockchainScreenState
               return pw.TableRow(
                 decoration: pw.BoxDecoration(color: bg),
                 children: [
-                  _cell(_fmtDate(e.createdAt)),
-                  _cell(_pdfSafe(e.typeLabel),
+                  _cell(_fmtDate(e.createdAt), fontReg, fontBold),
+                  _cell(_pdfSafe(e.typeLabel), fontReg, fontBold,
                       gras: true,
                       couleur: estOnChain ? _pdfChain : _pdfEncre),
-                  _cell(_pdfSafe(e.descriptionMetier)),
+                  _cell(_pdfSafe(e.descriptionMetier), fontReg, fontBold),
                   _cell(e.montantXof != null
                       ? '${_formatXof(e.montantXof!)} F'
-                      : '-'),
+                      : '-', fontReg, fontBold),
                   _cell(
                     e.txHash != null
                         ? _pdfSafe(estOnChain
                             ? e.txHashCourt
                             : 'SHA-256:${e.txHashCourt}')
                         : '-',
+                    fontReg, fontBold,
                     mono: true,
                     couleur: estOnChain ? _pdfChain : _pdfDoux,
                     suffix: '',
@@ -443,16 +483,17 @@ class _CertificatBlockchainScreenState
     );
   }
 
-  pw.Widget _cellHeader(String text) => pw.Padding(
+  pw.Widget _cellHeader(String text, pw.Font fontBold) => pw.Padding(
         padding: const pw.EdgeInsets.all(6),
         child: pw.Text(text,
             style: pw.TextStyle(
+                font: fontBold,
                 fontSize: 8,
                 fontWeight: pw.FontWeight.bold,
                 color: PdfColors.white)),
       );
 
-  pw.Widget _cell(String text,
+  pw.Widget _cell(String text, pw.Font fontReg, pw.Font fontBold,
       {bool gras = false,
       PdfColor? couleur,
       bool mono = false,
@@ -462,6 +503,7 @@ class _CertificatBlockchainScreenState
         child: pw.Text(
           text + suffix,
           style: pw.TextStyle(
+            font: gras ? fontBold : fontReg,
             fontSize: 7,
             fontWeight: gras ? pw.FontWeight.bold : pw.FontWeight.normal,
             color: couleur ?? _pdfTexte,
@@ -470,7 +512,7 @@ class _CertificatBlockchainScreenState
       );
 
   pw.Widget _buildSectionVerification(
-      String numCert, String? contratAddr, int phase) {
+      String numCert, String? contratAddr, int phase, pw.Font fontReg, pw.Font fontBold) {
     return pw.Container(
       padding: const pw.EdgeInsets.all(14),
       decoration: pw.BoxDecoration(
@@ -482,8 +524,9 @@ class _CertificatBlockchainScreenState
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
           pw.Text(
-            'Comment vérifier ce certificat',
+            'Comment verifier ce certificat',
             style: pw.TextStyle(
+                font: fontBold,
                 fontSize: 10,
                 fontWeight: pw.FontWeight.bold,
                 color: _pdfEncre),
@@ -500,13 +543,12 @@ class _CertificatBlockchainScreenState
                   '3. Les preuves SHA-256 sont des empreintes cryptographiques internes.\n'
                   '   Elles garantissent l\'integrite des donnees mais ne sont pas des transactions Polygon.\n'
                   '4. La verification on-chain est disponible via Polygon Mainnet.',
-            style: pw.TextStyle(fontSize: 8, color: _pdfTexte, lineSpacing: 3),
+            style: pw.TextStyle(font: fontReg, fontSize: 8, color: _pdfTexte, lineSpacing: 3),
           ),
           pw.SizedBox(height: 8),
           pw.Text(
             'Certificat N. $numCert - Document genere automatiquement par TontineClair - Non modifiable',
-            style:
-                pw.TextStyle(fontSize: 7, color: _pdfDoux, fontStyle: pw.FontStyle.italic),
+            style: pw.TextStyle(font: fontReg, fontSize: 7, color: _pdfDoux, fontStyle: pw.FontStyle.italic),
           ),
         ],
       ),
@@ -629,11 +671,8 @@ class _CertificatBlockchainScreenState
   @override
   Widget build(BuildContext context) {
     final phase = (_contrat['phase'] as num?)?.toInt() ?? 1;
-    // Phase 1 : toutes les entrées avec un hash sont considérées on-chain (SHA-256)
-    // Phase 2 : uniquement les vrais TX Ethereum (66 chars)
-    final countOnChain = phase == 2
-        ? _entrees.where((e) => e.txHash != null && e.txHash!.length == 66).length
-        : _entrees.where((e) => e.txHash != null && e.txHash!.isNotEmpty).length;
+    // Comptage unifi\u00e9 via _computeCountOnChain (m\u00eame logique que le PDF)
+    final countOnChain = _computeCountOnChain(_entrees, phase);
 
     return Scaffold(
       backgroundColor: AppColors.fondPapier,
@@ -828,6 +867,36 @@ class _CertificatBlockchainScreenState
 
                     const SizedBox(height: 24),
 
+                    // ── Journal des opérations avec boutons PolygonScan ──────
+                    if (_entrees.isNotEmpty) ...[
+                      Row(
+                        children: [
+                          const Icon(Icons.format_list_bulleted,
+                              size: 16, color: AppColors.encre),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Journal des opérations (${_entrees.length})',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.encre,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      ...(_entrees.map((e) {
+                        final estTxOnChain = e.txHash != null && e.txHash!.length == 66;
+                        final contratAddr  = _contrat['contract'] as String?;
+                        return _CarteOperationJournal(
+                          entree: e,
+                          estTxOnChain: estTxOnChain,
+                          contratAddr: contratAddr,
+                        );
+                      }).toList()),
+                      const SizedBox(height: 24),
+                    ],
+
                     // Boutons
                     SizedBox(
                       width: double.infinity,
@@ -930,5 +999,257 @@ class _InfoLigne extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+// ── Carte opération journal avec bouton PolygonScan ────────────────────────────
+class _CarteOperationJournal extends StatelessWidget {
+  final BlockchainEntry entree;
+  final bool estTxOnChain;
+  final String? contratAddr;
+
+  const _CarteOperationJournal({
+    required this.entree,
+    required this.estTxOnChain,
+    this.contratAddr,
+  });
+
+  Future<void> _ouvrirPolygonScan() async {
+    final String urlStr;
+    if (estTxOnChain) {
+      urlStr = 'https://polygonscan.com/tx/${entree.txHash}';
+    } else if (contratAddr != null) {
+      urlStr = 'https://polygonscan.com/address/$contratAddr';
+    } else {
+      return; // Rien à ouvrir
+    }
+    final url = Uri.parse(urlStr);
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Future<void> _copierHash(BuildContext ctx) async {
+    if (entree.txHash == null) return;
+    await Clipboard.setData(ClipboardData(text: entree.txHash!));
+    if (ctx.mounted) {
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        const SnackBar(
+          content: Text('Hash copié dans le presse-papier'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool aHash       = entree.txHash != null && entree.txHash!.isNotEmpty;
+    final bool aLienExtern = estTxOnChain || contratAddr != null;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: AppColors.carte,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: estTxOnChain
+              ? const Color(0xFF00C853).withValues(alpha: 0.35)
+              : AppColors.lignes,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── En-tête opération ──────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+            child: Row(
+              children: [
+                // Icône type
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: estTxOnChain
+                        ? const Color(0xFF00C853).withValues(alpha: 0.12)
+                        : AppColors.fondCode,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Center(
+                    child: Text(
+                      entree.iconeMetier,
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                // Type + description
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        entree.typeLabel,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: estTxOnChain
+                              ? const Color(0xFF00C853)
+                              : AppColors.encre,
+                        ),
+                      ),
+                      Text(
+                        entree.descriptionMetier,
+                        style: const TextStyle(
+                            fontSize: 11, color: AppColors.texteDoux),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                // Montant
+                if (entree.montantXof != null)
+                  Text(
+                    '${_formatMontant(entree.montantXof!)} F',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.encre,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
+          // ── Ligne TX hash + bouton PolygonScan ─────────────────────────────
+          if (aHash) ...[
+            const Divider(height: 1, thickness: 0.6, color: AppColors.lignes),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: [
+                  // Hash cliquable (copie si pas de lien)
+                  GestureDetector(
+                    onTap: () => aLienExtern
+                        ? _ouvrirPolygonScan()
+                        : _copierHash(context),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          estTxOnChain
+                              ? Icons.open_in_new
+                              : (contratAddr != null ? Icons.link : Icons.fingerprint),
+                          size: 13,
+                          color: estTxOnChain
+                              ? const Color(0xFF00C853)
+                              : (contratAddr != null
+                                  ? AppColors.encreDoux
+                                  : AppColors.texteDoux),
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          estTxOnChain
+                              ? 'TX: ${entree.txHashCourt}'
+                              : 'Proof: ${entree.txHashCourt}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontFamily: 'monospace',
+                            color: estTxOnChain
+                                ? const Color(0xFF00C853)
+                                : (contratAddr != null
+                                    ? AppColors.encreDoux
+                                    : AppColors.texteDoux),
+                            fontWeight: FontWeight.w600,
+                            decoration: aLienExtern
+                                ? TextDecoration.underline
+                                : TextDecoration.none,
+                            decorationColor: estTxOnChain
+                                ? const Color(0xFF00C853)
+                                : AppColors.encreDoux,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          aLienExtern ? Icons.open_in_new : Icons.copy,
+                          size: 11,
+                          color: estTxOnChain
+                              ? const Color(0xFF00C853)
+                              : AppColors.texteDoux,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Spacer(),
+                  // ── Bouton PolygonScan ──────────────────────────────────────
+                  if (aLienExtern)
+                    GestureDetector(
+                      onTap: _ouvrirPolygonScan,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 9, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: estTxOnChain
+                              ? const Color(0xFF00C853).withValues(alpha: 0.12)
+                              : AppColors.encreDoux.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: estTxOnChain
+                                ? const Color(0xFF00C853).withValues(alpha: 0.35)
+                                : AppColors.encreDoux.withValues(alpha: 0.25),
+                            width: 0.8,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.open_in_new,
+                              size: 10,
+                              color: estTxOnChain
+                                  ? const Color(0xFF00C853)
+                                  : AppColors.encreDoux,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              estTxOnChain ? 'PolygonScan' : 'Contrat',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: estTxOnChain
+                                    ? const Color(0xFF00C853)
+                                    : AppColors.encreDoux,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  static String _formatMontant(int xof) {
+    if (xof >= 1000000) return '${(xof / 1000000).toStringAsFixed(1)}M';
+    if (xof >= 1000) {
+      final k = xof / 1000;
+      return k == k.roundToDouble() ? '${k.round()}k' : '${k.toStringAsFixed(1)}k';
+    }
+    // Formattage avec espace mille
+    final s = xof.toString();
+    if (s.length <= 3) return s;
+    final buf = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buf.write(' ');
+      buf.write(s[i]);
+    }
+    return buf.toString();
   }
 }

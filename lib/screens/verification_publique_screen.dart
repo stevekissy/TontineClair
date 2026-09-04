@@ -127,8 +127,20 @@ class _VerificationPubliqueScreenState
     return map;
   }
 
-  int get _countOnChain =>
-      _entrees.where((e) => e.statut == 'confirmed').length;
+  /// Comptage Phase-aware unifi\u00e9 :
+  /// Phase 1 (SHA-256 local)  \u2192 toutes les entr\u00e9es avec un hash non-vide
+  /// Phase 2 (TX Ethereum)    \u2192 uniquement les hash de 66 caract\u00e8res (0x\u2026)
+  int get _countOnChain {
+    if (_phase == 2) {
+      return _entrees
+          .where((e) => e.txHash != null && e.txHash!.length == 66)
+          .length;
+    } else {
+      return _entrees
+          .where((e) => e.txHash != null && e.txHash!.isNotEmpty)
+          .length;
+    }
+  }
 
   int get _totalXof => _entrees
       .where((e) => e.montantXof != null)
