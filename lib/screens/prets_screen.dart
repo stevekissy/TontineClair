@@ -209,6 +209,8 @@ class _PretsScreenState extends State<PretsScreen> {
     final dureesCtrl    = TextEditingController(text: '3');
     final numBenefCtrl  = TextEditingController(text: numPreRempli);
     final nomBenefCtrl  = TextEditingController(text: emprunteurCourant()?.nom ?? '');
+    // Date de la première échéance (pré-remplie à J+30)
+    DateTime datePremiereEcheance = DateTime.now().add(const Duration(days: 30));
 
     final result = await showModalBottomSheet<bool>(
       context: context,
@@ -287,6 +289,7 @@ class _PretsScreenState extends State<PretsScreen> {
                             controller: tauxCtrl,
                             keyboardType: const TextInputType.numberWithOptions(decimal: true),
                             decoration: const InputDecoration(hintText: '5', suffixText: '%'),
+                            onChanged: (_) => setS(() {}),
                           ),
                         ],
                       )),
@@ -299,10 +302,107 @@ class _PretsScreenState extends State<PretsScreen> {
                             controller: dureesCtrl,
                             keyboardType: TextInputType.number,
                             decoration: const InputDecoration(hintText: '3', suffixText: 'mois'),
+                            onChanged: (_) => setS(() {}),
                           ),
                         ],
                       )),
                     ],
+                  ),
+
+                  // ── Résumé mensualité (calcul automatique) ──
+                  Builder(builder: (ctx2) {
+                    final m     = int.tryParse(montantCtrl.text.trim()) ?? 0;
+                    final taux2 = double.tryParse(tauxCtrl.text.trim()) ?? 5;
+                    final dur   = int.tryParse(dureesCtrl.text.trim()) ?? 3;
+                    if (m <= 0 || dur <= 0) return const SizedBox.shrink();
+                    final totalDu2   = (m * (1 + taux2 / 100)).round();
+                    final mensualite = (totalDu2 / dur).round();
+                    return Container(
+                      margin: const EdgeInsets.only(top: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppColors.fondSecondaire,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppColors.lignes),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Mensualité',
+                                  style: TextStyle(fontSize: 11, color: AppColors.texteDoux)),
+                              Text(
+                                Formatters.montant(mensualite, devise: data.devise),
+                                style: const TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.encre),
+                              ),
+                            ],
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              const Text('Total dû',
+                                  style: TextStyle(fontSize: 11, color: AppColors.texteDoux)),
+                              Text(
+                                Formatters.montant(totalDu2, devise: data.devise),
+                                style: const TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.encreDoux),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+
+                  // ── Date de la première échéance ──
+                  const SizedBox(height: 12),
+                  const ChampLabel(label: 'Date de la 1ère échéance'),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: ctx,
+                        initialDate: datePremiereEcheance,
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
+                        locale: const Locale('fr'),
+                        helpText: 'Choisir la date de la 1ère échéance',
+                        confirmText: 'Confirmer',
+                        cancelText: 'Annuler',
+                      );
+                      if (picked != null) {
+                        setS(() => datePremiereEcheance = picked);
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppColors.lignes, width: 1.5),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.event_rounded, size: 18, color: AppColors.encreDoux),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              Formatters.dateFormatee(datePremiereEcheance),
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.encre,
+                              ),
+                            ),
+                          ),
+                          const Icon(Icons.keyboard_arrow_down_rounded,
+                              size: 18, color: AppColors.texteDoux),
+                        ],
+                      ),
+                    ),
                   ),
 
                   const SizedBox(height: 16),
@@ -407,8 +507,11 @@ class _PretsScreenState extends State<PretsScreen> {
         final totalDu   = montant + interet;
         final mensualite= (totalDu / durees).round();
 
+        // Écheancier basé sur la date de 1ère échéance choisie par le gestionnaire
+        final baseEch = DateTime(datePremiereEcheance.year,
+            datePremiereEcheance.month, datePremiereEcheance.day);
         final echeancier = List.generate(durees, (i) {
-          final dateEch = DateTime.now().add(Duration(days: 30 * (i + 1)));
+          final dateEch = DateTime(baseEch.year, baseEch.month + i, baseEch.day);
           return {
             'mois': i + 1, 'date': dateEch.toIso8601String(),
             'montant': i == durees - 1 ? totalDu - mensualite * (durees - 1) : mensualite,
@@ -625,7 +728,7 @@ class _CartePret extends StatelessWidget {
                     onPressed: () => _rembourserPro(context),
                     icon: const Icon(Icons.account_balance_wallet_rounded, size: 18),
                     label: const Text(
-                      'Rembourser (paiement automatisé)',
+                      'Enregistrer un remboursement',
                       style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                     style: FilledButton.styleFrom(
@@ -805,7 +908,30 @@ class _CartePret extends StatelessWidget {
     }
   }
 
-  // ── Remboursement Pro : CoinPayments ─────────────────────────────────────────
+  // ── Prochaine échéance non réglée ────────────────────────────────────────────
+  // Retourne la première tranche de l'écheancier dont la date n'est pas encore
+  // passée (ou la dernière si toutes sont passées). null si aucun écheancier.
+  static Map<String, dynamic>? _prochaineEcheance(Pret p) {
+    if (p.echeancier.isEmpty) return null;
+    final now = DateTime.now();
+    // Trier par date croissante
+    final sorted = [...p.echeancier]..sort((a, b) {
+        final da = DateTime.tryParse(a['date'] as String? ?? '') ?? DateTime(0);
+        final db = DateTime.tryParse(b['date'] as String? ?? '') ?? DateTime(0);
+        return da.compareTo(db);
+      });
+    // Première tranche future
+    final future = sorted.firstWhere(
+      (e) {
+        final d = DateTime.tryParse(e['date'] as String? ?? '');
+        return d != null && d.isAfter(now);
+      },
+      orElse: () => sorted.last,
+    );
+    return future;
+  }
+
+  // ── Remboursement Pro : modal de saisie ──────────────────────────────────────
   Future<void> _rembourserPro(BuildContext context) async {
     final montantCtrl = TextEditingController(text: pret.resteADu.toString());
 
@@ -834,38 +960,59 @@ class _CartePret extends StatelessWidget {
               )),
               const SizedBox(height: 16),
               const Text(
-                'Remboursement automatisé',
+                'Remboursement',
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20, color: AppColors.encre),
               ),
-              const SizedBox(height: 4),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEAF4EE), borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.rocket_launch_rounded, size: 13, color: Color(0xFF1A6B3C)),
-                    SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        'Le paiement sera collecté automatiquement via Mobile Money',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF1A6B3C)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
               const SizedBox(height: 12),
+              // ── Infos emprunteur ──
               Text(
                 'Emprunteur : ${pret.emprunteurNom}',
                 style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.encre),
               ),
+              const SizedBox(height: 2),
               Text(
                 'Reste à rembourser : ${Formatters.montant(pret.resteADu, devise: data.devise)}',
                 style: const TextStyle(color: AppColors.texteDoux, fontSize: 13),
               ),
+              // ── Prochaine échéance (si écheancier disponible) ──
+              Builder(builder: (context) {
+                final prochaineEch = _prochaineEcheance(pret);
+                if (prochaineEch == null) return const SizedBox.shrink();
+                final rawDate = prochaineEch['date'] as String? ?? '';
+                final dtEch   = DateTime.tryParse(rawDate);
+                final dateStr = dtEch != null ? Formatters.dateFormatee(dtEch) : rawDate;
+                final montantEch = prochaineEch['montant'] as int? ?? 0;
+                return Container(
+                  margin: const EdgeInsets.only(top: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF3E0),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFE07A2F).withValues(alpha: 0.35)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.event_rounded, size: 14, color: Color(0xFFE07A2F)),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Prochaine échéance',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFFE07A2F)),
+                            ),
+                            Text(
+                              '${Formatters.montant(montantEch, devise: data.devise)} · Date limite : $dateStr',
+                              style: const TextStyle(fontSize: 12, color: AppColors.encre, fontWeight: FontWeight.w500),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
               const SizedBox(height: 12),
               ChampLabel(label: 'Montant à rembourser (${DeviseService.parCode(data.devise).symbole})'),
               TextField(
@@ -876,7 +1023,7 @@ class _CartePret extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               BtnPrincipal(
-                label: 'Continuer vers le paiement',
+                label: 'Continuer',
                 onTap: () => Navigator.pop(ctx, true),
               ),
               const SizedBox(height: 8),
