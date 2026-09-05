@@ -467,10 +467,9 @@ class NotificationService {
     try {
       // Résoudre le type (y compris sélecteurs hex 0x…)
       final typeResolu  = BlockchainEntry.resoudreType(typeOperation);
-      final typeLabel   = _typeLabel(typeResolu);
+      final typeLabel   = _typeLabelAvecEmoji(typeResolu);
       final montantStr  = montantXof != null ? ' · ${_formatXof(montantXof)} XOF' : '';
-      final phaseLabel  = phase == 2 ? '⚡ On-chain' : '🔒 Signé';
-      final titre       = '$phaseLabel — $typeLabel$montantStr';
+      final titre       = '$typeLabel$montantStr';
       final corps       = _buildCorpsNotif(
         tontineCode  : tontineCode,
         nomTontine   : nomTontine,
@@ -546,7 +545,7 @@ class NotificationService {
 
     if (phase == 2 && txHash != null && txHash.length == 66) {
       final court = '${txHash.substring(0, 8)}…${txHash.substring(txHash.length - 6)}';
-      sb.write('TX Ethereum : $court\n');
+      sb.write('TX Polygon : $court\n');
       sb.write('✅ Vérifiable sur PolygonScan');
     } else {
       sb.write('🔒 Preuve cryptographique enregistrée');
@@ -554,19 +553,63 @@ class NotificationService {
     return sb.toString();
   }
 
-  static String _typeLabel(String type) {
+  /// Retourne emoji + libellé lisible selon le type d'opération blockchain.
+  /// Plus de "On chain" — chaque opération a son propre emoji expressif.
+  static String _typeLabelAvecEmoji(String type) {
     const map = {
-      'cotisation'   : 'Cotisation enregistrée',
-      'distribution' : 'Distribution enregistrée',
-      'pret'         : 'Prêt enregistré',
-      'remboursement': 'Remboursement enregistré',
-      'vote'         : 'Vote enregistré',
-      'creation'     : 'Création de tontine',
-      'apport'       : 'Apport enregistré',
-      'penalite'     : 'Pénalité enregistrée',
+      // ── Cotisations ────────────────────────────────────────────────────────
+      'cotisation'             : '💰 Cotisation enregistrée',
+      'annulation_cotisation'  : '↩️ Cotisation annulée',
+      'approbation_cotisation' : '✅ Cotisation approuvée',
+
+      // ── Distributions / Décaissements ──────────────────────────────────────
+      'distribution'           : '💸 Distribution enregistrée',
+      'decaissement'           : '💸 Décaissement enregistré',
+
+      // ── Prêts ──────────────────────────────────────────────────────────────
+      'pret'                   : '🤝 Prêt enregistré',
+      'remboursement'          : '💳 Remboursement enregistré',
+      'pret_solde'             : '✅ Prêt entièrement soldé',
+      'annulation_remboursement': '↩️ Remboursement annulé',
+
+      // ── Votes ──────────────────────────────────────────────────────────────
+      'vote'                   : '🗳️ Vote enregistré',
+      'vote_ouvert'            : '🗳️ Vote ouvert',
+      'vote_clos'              : '✅ Vote clôturé',
+      'vote_enregistre'        : '🗳️ Vote comptabilisé',
+
+      // ── Membres ────────────────────────────────────────────────────────────
+      'nouveau_membre'         : '🎉 Nouveau membre admis',
+      'ajout_membre'           : '🎉 Membre ajouté',
+      'retrait_membre'         : '🚪 Membre retiré',
+      'suppression_membre'     : '🚪 Membre exclu',
+
+      // ── Caisse / Apports ───────────────────────────────────────────────────
+      'apport'                 : '🏦 Apport en caisse',
+      'caisse'                 : '🏦 Mouvement de caisse',
+
+      // ── Pénalités ──────────────────────────────────────────────────────────
+      'penalite'               : '⚠️ Pénalité appliquée',
+
+      // ── Cycle / Tirage ─────────────────────────────────────────────────────
+      'creation'               : '🆕 Tontine créée',
+      'nouveau_cycle'          : '🔄 Nouveau cycle démarré',
+      'tirage_verrouille'      : '🔒 Tirage verrouillé',
+      'decaissement_cycle_fin' : '🎊 Cycle terminé',
+
+      // ── Score ──────────────────────────────────────────────────────────────
+      'score_modifie'          : '📊 Score modifié',
+
+      // ── Prêt / Abonnement ─────────────────────────────────────────────────
+      'passage_pro'            : '🚀 Passage en Pro',
+      'cotisation_pro_confirmee': '✅ Paiement mobile confirmé',
+      'decaissement_demande'   : '📤 Décaissement demandé',
+      'retrait_propose'        : '🗳️ Vote de retrait ouvert',
     };
-    return map[type] ?? type.toUpperCase();
+    return map[type] ?? '🔔 ${type.replaceAll('_', ' ')}';
   }
+
+
 
   static String _formatXof(int xof) {
     if (xof >= 1000000) return '${(xof / 1000000).toStringAsFixed(1)}M';
