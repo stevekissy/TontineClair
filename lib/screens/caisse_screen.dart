@@ -233,13 +233,25 @@ class _CaisseScreenState extends State<CaisseScreen> {
                     // à l'instant précédant l'opération.
                     final mouvements = data.caisse.toList();
                     final soldesAvant = <int>[];
-                    final totalMouvements = mouvements.fold<int>(
-                      0, (s, m) => s + m.montant,
+
+                    // Montant signé : les sorties soustraient, les entrées ajoutent.
+                    // m.montant est TOUJOURS stocké en valeur absolue positive ;
+                    // c'est le type qui détermine le signe réel dans la caisse.
+                    const sorties = {
+                      'depense', 'decaissement', 'pret', 'retrait',
+                    };
+                    // Retourne le montant avec le bon signe selon le type
+                    int signe(m) => sorties.contains(m.type)
+                        ? -m.montant.abs()
+                        :  m.montant.abs();
+
+                    final totalSigne = mouvements.fold<int>(
+                      0, (s, m) => s + signe(m),
                     );
-                    int cumul = data.soldeCaisse - totalMouvements;
+                    int cumul = data.soldeCaisse - totalSigne;
                     for (final m in mouvements) {
                       soldesAvant.add(cumul); // solde AVANT ce mouvement
-                      cumul += m.montant;     // on applique ensuite
+                      cumul += signe(m);      // applique le bon signe
                     }
                     // Affichage du plus recent au plus ancien
                     return List.generate(mouvements.length, (i) {
