@@ -807,7 +807,7 @@ class PdfService {
     await _telechargerPdf(
       doc,
       'TontineClair_PV_Vote_${data.nom.replaceAll(' ', '_')}'
-          '_${vote.id.substring(0, 6).toUpperCase()}.pdf',
+          '_${vote.id.length > 6 ? vote.id.substring(0, 6).toUpperCase() : vote.id.toUpperCase()}.pdf',
     );
   }
 
@@ -965,7 +965,7 @@ class PdfService {
         ),
         pw.SizedBox(height: 3),
         pw.Text(
-          'Code tontine : $code  ·  Vote ref. : ${vote.id.substring(0, 8).toUpperCase()}',
+          'Code tontine : $code  ·  Vote ref. : ${vote.id.length > 8 ? vote.id.substring(0, 8).toUpperCase() : vote.id.toUpperCase()}',
           style: pw.TextStyle(font: regular, fontSize: 10, color: _texteDoux),
         ),
         pw.SizedBox(height: 4),
@@ -1016,5 +1016,238 @@ class PdfService {
         pw.SizedBox(height: 4),
       ],
     );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PdfServiceTestHelper — expose les méthodes privées de PdfService pour tests.
+// Cette classe N'EST PAS utilisée en production.
+// Elle évite de rendre publiques des méthodes internes de PdfService.
+// ─────────────────────────────────────────────────────────────────────────────
+// ignore: avoid_classes_with_only_static_members
+class PdfServiceTestHelper {
+  PdfServiceTestHelper._();
+
+  /// Expose PdfService._sanitize pour les tests unitaires.
+  static String sanitize(String s) => PdfService._sanitize(s);
+
+  /// Expose PdfService._t pour les tests unitaires.
+  static String t(String key, String lang) => PdfService._t(key, lang);
+
+  /// Expose PdfService._tx pour les tests unitaires.
+  static String tx(String s, bool san) => PdfService._tx(s, san);
+
+  /// Génère le document PDF du relevé et retourne les bytes.
+  /// Utilisé dans les tests pour éviter d'appeler _telechargerPdf().
+  static Future<List<int>> genererReleve({
+    required Tontine tontine,
+    required String nomGestionnaire,
+    String langueCode = 'fr',
+  }) async {
+    final data = tontine.data;
+    final doc = pw.Document();
+
+    // Utiliser Helvetica (pas de réseau dans les tests)
+    final regular = pw.Font.helvetica();
+    final bold    = pw.Font.helveticaBold();
+    final theme   = pw.ThemeData.withFont(base: regular, bold: bold);
+    const san = true; // sanitizer actif avec Helvetica
+
+    doc.addPage(
+      pw.MultiPage(
+        theme: theme,
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        header: (ctx) => PdfService._buildHeader(
+            data, tontine.code, bold, regular, langueCode, san),
+        footer: (ctx) => PdfService._buildFooter(ctx, regular, langueCode),
+        build: (ctx) => [
+          PdfService._sectionCaisse(data, bold, regular, langueCode, san),
+          pw.SizedBox(height: 20),
+          PdfService._sectionTours(data, bold, regular, langueCode, san),
+          pw.SizedBox(height: 20),
+          PdfService._sectionPrets(data, bold, regular, langueCode, san),
+          pw.SizedBox(height: 20),
+          PdfService._sectionJournal(data, bold, regular, langueCode, san),
+        ],
+      ),
+    );
+    return doc.save();
+  }
+
+  /// Génère le PV de vote et retourne les bytes.
+  static Future<List<int>> genererPvVote({
+    required Tontine tontine,
+    required Vote vote,
+    required List<Map<String, dynamic>> voixDetaillees,
+    required String nomGestionnaire,
+    String langueCode = 'fr',
+  }) async {
+    final data = tontine.data;
+    final doc = pw.Document();
+    final regular = pw.Font.helvetica();
+    final bold    = pw.Font.helveticaBold();
+    final theme   = pw.ThemeData.withFont(base: regular, bold: bold);
+
+    final ayantVoteIds = voixDetaillees
+        .map((v) =>
+            v['membre_id'] as String? ?? v['membreId'] as String? ?? '')
+        .toSet();
+    final nonVotants =
+        data.membres.where((m) => !ayantVoteIds.contains(m.id)).toList();
+
+    doc.addPage(
+      pw.MultiPage(
+        theme: theme,
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        header: (ctx) => PdfService._buildPvHeader(
+          data,
+          tontine.code,
+          vote,
+          bold,
+          regular,
+          langueCode,
+        ),
+        build: (ctx) => [
+          pw.SizedBox(height: 12),
+          pw.Text(
+            PdfService._t('depouillement', langueCode),
+            style: pw.TextStyle(font: bold, fontSize: 12),
+          ),
+          pw.SizedBox(height: 8),
+          if (voixDetaillees.isEmpty)
+            pw.Text(PdfService._t('aucune_voix', langueCode),
+                style: pw.TextStyle(font: regular, fontSize: 10))
+          else
+            pw.TableHelper.fromTextArray(
+              headers: [
+                PdfService._t('col_membre', langueCode),
+                PdfService._t('col_vote', langueCode),
+                PdfService._t('col_horodatage', langueCode),
+              ],
+              headerStyle: pw.TextStyle(
+                  font: bold, fontSize: 9, color: PdfColors.white),
+              headerDecoration:
+                  const pw.BoxDecoration(color: PdfColor.fromInt(0xFF1C2447)),
+              cellStyle: pw.TextStyle(font: regular, fontSize: 9),
+              cellPadding:
+                  const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              data: voixDetaillees.map((v) {
+                final choix = (v['choix'] as String? ?? '').toLowerCase();
+                final label = choix == 'oui'
+                    ? 'OUI'
+                    : choix == 'non'
+                        ? 'NON'
+                        : 'ABST.';
+                return [
+                  PdfService._sanitize(v['nom'] as String? ?? ''),
+                  label,
+                  PdfService._sanitize(v['horodatage'] as String? ?? ''),
+                ];
+              }).toList(),
+            ),
+          if (nonVotants.isNotEmpty) ...[
+            pw.SizedBox(height: 12),
+            pw.Text(PdfService._t('non_votants', langueCode),
+                style: pw.TextStyle(font: bold, fontSize: 10)),
+            pw.SizedBox(height: 4),
+            pw.Text(
+              nonVotants.map((m) => PdfService._sanitize(m.nom)).join(', '),
+              style: pw.TextStyle(font: regular, fontSize: 9),
+            ),
+          ],
+        ],
+      ),
+    );
+    return doc.save();
+  }
+
+  /// Génère le reçu de cotisation et retourne les bytes.
+  static Future<List<int>> genererRecuCotisation({
+    required Tontine tontine,
+    required Membre membre,
+    required String ref,
+    required String methode,
+    required String dateStr,
+    String langueCode = 'fr',
+  }) async {
+    final data = tontine.data;
+    final doc = pw.Document();
+    final regular = pw.Font.helvetica();
+    final bold    = pw.Font.helveticaBold();
+    final theme   = pw.ThemeData.withFont(base: regular, bold: bold);
+    final datePaiement = DateTime.tryParse(dateStr);
+
+    doc.addPage(
+      pw.Page(
+        theme: theme,
+        pageFormat: PdfPageFormat.a5,
+        margin: const pw.EdgeInsets.all(24),
+        build: (ctx) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text('TontineClair',
+                    style: pw.TextStyle(
+                        font: bold,
+                        fontSize: 20,
+                        color: const PdfColor.fromInt(0xFF1C2447))),
+                pw.Text(
+                  datePaiement != null ? datePaiement.toIso8601String() : '-',
+                  style: pw.TextStyle(font: regular, fontSize: 8),
+                ),
+              ],
+            ),
+            pw.Divider(
+                color: const PdfColor.fromInt(0xFFD99A2B), thickness: 1.5),
+            pw.SizedBox(height: 12),
+            pw.Text(
+              PdfService._t('recu_titre', langueCode),
+              style: pw.TextStyle(
+                  font: bold,
+                  fontSize: 16,
+                  color: const PdfColor.fromInt(0xFF1C2447)),
+            ),
+            pw.SizedBox(height: 16),
+            PdfService._ligneRecu(
+              PdfService._t('tontine', langueCode),
+              PdfService._sanitize(data.nom),
+              regular,
+              bold,
+            ),
+            PdfService._ligneRecu(
+              PdfService._t('membre', langueCode),
+              PdfService._sanitize(membre.nom),
+              regular,
+              bold,
+            ),
+            PdfService._ligneRecu(
+              PdfService._t('methode', langueCode),
+              PdfService._sanitize(methode),
+              regular,
+              bold,
+            ),
+            PdfService._ligneRecu(
+              PdfService._t('reference', langueCode),
+              ref,
+              regular,
+              bold,
+            ),
+            pw.SizedBox(height: 20),
+            pw.Text(
+              PdfService._t('paiement_valide', langueCode),
+              style: pw.TextStyle(
+                  font: regular,
+                  fontSize: 8,
+                  color: const PdfColor.fromInt(0xFF6E6C60)),
+            ),
+          ],
+        ),
+      ),
+    );
+    return doc.save();
   }
 }
