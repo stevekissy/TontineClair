@@ -34,11 +34,10 @@ const RPC_FALLBACK   = "https://polygon.drpc.org";
 const ANKR_RPC = "https://rpc.ankr.com/polygon/dbb05ffa48bde7edd4cc4c9f95bd487f861f4206fa425f8e392647eed461c1f9";
 
 const RPC_BROADCAST_FALLBACKS = [
-  ANKR_RPC,
-  "https://polygon-rpc.com",
-  "https://rpc-mainnet.matic.network",
-  "https://matic-mainnet.chainstacklabs.com",
-  "https://polygon.drpc.org",
+  ANKR_RPC,                                          // ✅ testé OK
+  "https://polygon-bor-rpc.publicnode.com",          // ✅ testé OK
+  "https://1rpc.io/matic",                           // ✅ testé OK
+  "https://polygon.drpc.org",                        // ✅ testé OK
 ];
 
 // ── Helpers crypto ─────────────────────────────────────────────────────────────
