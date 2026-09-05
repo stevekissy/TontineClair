@@ -226,9 +226,17 @@ class _CaisseScreenState extends State<CaisseScreen> {
                     // Calcul du solde AVANT chaque mouvement (style releve bancaire)
                     // data.caisse est chronologique (ancien -> nouveau)
                     // soldesAvant[i] = solde de la caisse juste AVANT le mouvement i
+                    //
+                    // Le solde d'ouverture (avant le 1er mouvement) = soldeCaisse actuel
+                    // moins la somme de tous les mouvements déjà enregistrés.
+                    // Ainsi chaque "Solde avant" reflète le vrai solde absolu
+                    // à l'instant précédant l'opération.
                     final mouvements = data.caisse.toList();
                     final soldesAvant = <int>[];
-                    int cumul = 0;
+                    final totalMouvements = mouvements.fold<int>(
+                      0, (s, m) => s + m.montant,
+                    );
+                    int cumul = data.soldeCaisse - totalMouvements;
                     for (final m in mouvements) {
                       soldesAvant.add(cumul); // solde AVANT ce mouvement
                       cumul += m.montant;     // on applique ensuite
