@@ -212,8 +212,12 @@ class _PretsScreenState extends State<PretsScreen> {
     final dureesCtrl    = TextEditingController(text: '3');
     final numBenefCtrl  = TextEditingController(text: numPreRempli);
     final nomBenefCtrl  = TextEditingController(text: emprunteurCourant()?.nom ?? '');
+    final referenceCtrl = TextEditingController();
     // Date de la première échéance (pré-remplie à J+30)
     DateTime datePremiereEcheance = DateTime.now().add(const Duration(days: 30));
+    // Photo de preuve du prêt
+    XFile?  photoFichierPret;
+    String? photoBase64Pret;
 
     final result = await showModalBottomSheet<bool>(
       context: context,
@@ -224,6 +228,84 @@ class _PretsScreenState extends State<PretsScreen> {
       ),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) {
+
+          // ── Picker photo prêt ────────────────────────────────────────────
+          Future<void> prendrePhotoPret(ImageSource source) async {
+            try {
+              final picker = ImagePicker();
+              final fichier = await picker.pickImage(
+                source: source,
+                maxWidth: 1200,
+                maxHeight: 1200,
+                imageQuality: 70,
+              );
+              if (fichier == null) return;
+              final bytes = await fichier.readAsBytes();
+              setS(() {
+                photoFichierPret = fichier;
+                photoBase64Pret  = base64Encode(bytes);
+              });
+            } catch (e) {
+              if (!ctx.mounted) return;
+              ScaffoldMessenger.of(ctx).showSnackBar(
+                SnackBar(
+                  content: Text('Erreur photo : $e'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          }
+
+          void afficherChoixPhotoPret() {
+            showModalBottomSheet(
+              context: ctx,
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+              builder: (_) => SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.camera_alt_rounded,
+                            color: AppColors.or),
+                        title: const Text('Prendre une photo'),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          prendrePhotoPret(ImageSource.camera);
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.photo_library_rounded,
+                            color: AppColors.or),
+                        title: const Text('Choisir dans la galerie'),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          prendrePhotoPret(ImageSource.gallery);
+                        },
+                      ),
+                      if (photoBase64Pret != null)
+                        ListTile(
+                          leading: const Icon(Icons.delete_outline_rounded,
+                              color: AppColors.alerte),
+                          title: const Text('Supprimer la photo',
+                              style: TextStyle(color: AppColors.alerte)),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            setS(() {
+                              photoFichierPret = null;
+                              photoBase64Pret  = null;
+                            });
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }
 
           return Padding(
             padding: EdgeInsets.only(
@@ -572,6 +654,112 @@ class _PretsScreenState extends State<PretsScreen> {
                     );
                   }),
 
+                  // ── Référence de paiement ────────────────────────────────
+                  const SizedBox(height: 16),
+                  const ChampLabel(label: 'Référence de paiement'),
+                  TextField(
+                    controller: referenceCtrl,
+                    keyboardType: TextInputType.text,
+                    decoration: const InputDecoration(
+                      hintText: 'N° transaction, reçu…',
+                      prefixIcon: Icon(Icons.receipt_long_outlined,
+                          size: 18, color: AppColors.texteDoux),
+                    ),
+                  ),
+
+                  // ── Photo de preuve ──────────────────────────────────────
+                  const SizedBox(height: 12),
+                  const ChampLabel(label: 'Photo de preuve'),
+                  GestureDetector(
+                    onTap: afficherChoixPhotoPret,
+                    child: Container(
+                      width: double.infinity,
+                      constraints: const BoxConstraints(minHeight: 64),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: photoBase64Pret != null
+                              ? AppColors.or
+                              : AppColors.lignes,
+                          width: photoBase64Pret != null ? 1.5 : 1,
+                        ),
+                      ),
+                      child: photoBase64Pret != null && photoFichierPret != null
+                          // ── Aperçu photo ─────────────────────────────────
+                          ? Stack(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(9),
+                                  child: kIsWeb
+                                      ? Image.memory(
+                                          base64Decode(photoBase64Pret!),
+                                          width: double.infinity,
+                                          height: 160,
+                                          fit: BoxFit.cover,
+                                        )
+                                      : Image.file(
+                                          File(photoFichierPret!.path),
+                                          width: double.infinity,
+                                          height: 160,
+                                          fit: BoxFit.cover,
+                                        ),
+                                ),
+                                Positioned(
+                                  top: 6, right: 6,
+                                  child: GestureDetector(
+                                    onTap: () => setS(() {
+                                      photoFichierPret = null;
+                                      photoBase64Pret  = null;
+                                    }),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: const BoxDecoration(
+                                        color: Colors.black54,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(Icons.close,
+                                          size: 14, color: Colors.white),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            )
+                          // ── Placeholder ──────────────────────────────────
+                          : Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 14),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.add_a_photo_outlined,
+                                      size: 22, color: AppColors.texteDoux),
+                                  const SizedBox(width: 12),
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: const [
+                                      Text(
+                                        'Joindre une photo de preuve',
+                                        style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                            color: AppColors.encre),
+                                      ),
+                                      SizedBox(height: 2),
+                                      Text(
+                                        'Optionnel — reçu, capture d\'écran…',
+                                        style: TextStyle(
+                                            fontSize: 11,
+                                            color: AppColors.texteDoux),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                    ),
+                  ),
+
                   const SizedBox(height: 16),
                   BtnPrincipal(
                     label: isPremium ? 'Soumettre pour validation' : context.tr('creer_pret'),
@@ -591,9 +779,12 @@ class _PretsScreenState extends State<PretsScreen> {
 
     if (result != true || !context.mounted) return;
 
-    final montant = int.tryParse(montantCtrl.text.trim());
-    final taux    = double.tryParse(tauxCtrl.text.trim()) ?? 5;
-    final durees  = int.tryParse(dureesCtrl.text.trim()) ?? 3;
+    final montant  = int.tryParse(montantCtrl.text.trim());
+    final taux     = double.tryParse(tauxCtrl.text.trim()) ?? 5;
+    final durees   = int.tryParse(dureesCtrl.text.trim()) ?? 3;
+    final refPret  = referenceCtrl.text.trim();
+    // Photo saisie dans le formulaire (utilisée en Lite et transmise si Pro ne jointe rien)
+    final photoPret = photoBase64Pret;
 
     if (montant == null || montant <= 0 || emprunteurId == null) {
       afficherToast(context, 'Données invalides', estErreur: true);
@@ -642,6 +833,10 @@ class _PretsScreenState extends State<PretsScreen> {
       );
       // Si l'utilisateur a annulé l'écran de paiement → on s'arrête
       if (paiementResult == null || !context.mounted) return;
+      // Récupérer la photo depuis PaiementChoixScreen si non jointe dans le formulaire
+      if (photoPret == null && paiementResult['photoPreuveBase64'] != null) {
+        photoBase64Pret = paiementResult['photoPreuveBase64'];
+      }
       // Sinon on continue vers l'enregistrement en DB (même chemin que LITE ci-dessous)
       // isPremium = false pour tomber dans le bloc LITE
     }
@@ -709,6 +904,9 @@ class _PretsScreenState extends State<PretsScreen> {
           'montant': montant, 'taux': taux, 'dureesMois': durees,
           'dateDebut': dateDebut, 'statut': 'en_cours', 'remboursements': [],
           'echeancier': echeancier, 'gestionnaire': provider.gestActifNom ?? '', 'reference': ref,
+          if (refPret.isNotEmpty)  'reference_paiement': refPret,
+          if (photoBase64Pret != null && photoBase64Pret!.isNotEmpty)
+            'photo_preuve': photoBase64Pret,
         });
         newData['prets'] = prets;
 
