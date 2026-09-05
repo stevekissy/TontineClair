@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
@@ -101,6 +102,16 @@ class TontineClaireApp extends StatelessWidget {
               home: const AppShell(),
               // CRITIQUE : pas de locale: ici — évite la réinitialisation des tontines
               // Le RTL est géré par Directionality ci-dessus
+              // Localizations pour showDatePicker en français
+              localizationsDelegates: const [
+                GlobalMaterialLocalizations.delegate,
+                GlobalWidgetsLocalizations.delegate,
+                GlobalCupertinoLocalizations.delegate,
+              ],
+              supportedLocales: const [
+                Locale('fr'),
+                Locale('en'),
+              ],
             ),
           ),
         ),
