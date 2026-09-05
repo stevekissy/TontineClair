@@ -1014,14 +1014,20 @@ class _CarteOperationJournal extends StatelessWidget {
     this.contratAddr,
   });
 
-  Future<void> _ouvrirPolygonScan() async {
+  Future<void> _ouvrirPolygonScan(BuildContext ctx) async {
     final String urlStr;
-    if (estTxOnChain) {
+    if (estTxOnChain && entree.txHash != null) {
+      // Phase 2 : TX Ethereum directe → ouvrir la transaction
       urlStr = 'https://polygonscan.com/tx/${entree.txHash}';
     } else if (contratAddr != null) {
+      // Phase 1 avec contrat connu → ouvrir l'adresse du contrat
       urlStr = 'https://polygonscan.com/address/$contratAddr';
+    } else if (entree.txHash != null && entree.txHash!.isNotEmpty) {
+      // Phase 1 sans contrat : hash SHA-256 local → copier dans le presse-papier
+      await _copierHash(ctx);
+      return;
     } else {
-      return; // Rien à ouvrir
+      return;
     }
     final url = Uri.parse(urlStr);
     if (await canLaunchUrl(url)) {
@@ -1045,7 +1051,8 @@ class _CarteOperationJournal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool aHash       = entree.txHash != null && entree.txHash!.isNotEmpty;
-    final bool aLienExtern = estTxOnChain || contratAddr != null;
+    // aLienExtern = true si on peut ouvrir une URL externe OU copier un hash
+    final bool aLienExtern = estTxOnChain || contratAddr != null || aHash;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1133,7 +1140,7 @@ class _CarteOperationJournal extends StatelessWidget {
                   // Hash cliquable (copie si pas de lien)
                   GestureDetector(
                     onTap: () => aLienExtern
-                        ? _ouvrirPolygonScan()
+                        ? _ouvrirPolygonScan(context)
                         : _copierHash(context),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -1186,7 +1193,7 @@ class _CarteOperationJournal extends StatelessWidget {
                   // ── Bouton PolygonScan ──────────────────────────────────────
                   if (aLienExtern)
                     GestureDetector(
-                      onTap: _ouvrirPolygonScan,
+                      onTap: () => _ouvrirPolygonScan(context),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 9, vertical: 4),
@@ -1206,7 +1213,11 @@ class _CarteOperationJournal extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              Icons.open_in_new,
+                              estTxOnChain
+                                  ? Icons.open_in_new
+                                  : (contratAddr != null
+                                      ? Icons.open_in_new
+                                      : Icons.copy_rounded),
                               size: 10,
                               color: estTxOnChain
                                   ? const Color(0xFF00C853)
@@ -1214,7 +1225,9 @@ class _CarteOperationJournal extends StatelessWidget {
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              estTxOnChain ? 'PolygonScan' : 'Contrat',
+                              estTxOnChain
+                                  ? 'PolygonScan'
+                                  : (contratAddr != null ? 'Contrat' : 'Copier'),
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
