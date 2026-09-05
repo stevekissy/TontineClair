@@ -1,5 +1,8 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/tontine.dart';
@@ -1228,11 +1231,12 @@ class _CartePret extends StatelessWidget {
     if (paiementResult == null || !context.mounted) return;
 
     // Étape 3 : enregistrement en DB avec PIN — on réutilise _rembourser en
-    // passant montant et méthode déjà saisis (skip le bottom-sheet de saisie).
+    // passant montant, méthode et photo déjà saisis (skip le bottom-sheet de saisie).
     await _rembourser(
       context,
       montantPre: montant,
       methodePre: paiementResult['methode'] ?? 'especes',
+      photoPre:   paiementResult['photoPreuveBase64'],
     );
   }
 
@@ -1240,6 +1244,7 @@ class _CartePret extends StatelessWidget {
     BuildContext context, {
     int? montantPre,        // si fourni par _rembourserPro → skip saisie
     String? methodePre,     // méthode déjà choisie dans PaiementChoixScreen
+    String? photoPre,       // photo preuve déjà choisie dans PaiementChoixScreen
   }) async {
     final montantCtrl = TextEditingController(
       text: montantPre != null ? montantPre.toString() : '',
@@ -1247,13 +1252,16 @@ class _CartePret extends StatelessWidget {
     // Si montantPre fourni (vient de _rembourserPro via PaiementChoixScreen),
     // on skip le bottom-sheet de saisie et on utilise les valeurs pré-remplies.
     String methode = methodePre ?? 'especes';
+    // Photo de preuve : initialisée depuis photoPre (chemin Pro) ou vide (Lite)
+    XFile?  photoFichier;
+    String? photoBase64 = photoPre;
 
     bool result;
     if (montantPre != null) {
       // Chemin Premium : saisie déjà effectuée dans PaiementChoixScreen
       result = true;
     } else {
-      // Chemin Lite : bottom-sheet de saisie normale
+      // Chemin Lite : bottom-sheet de saisie avec champ photo
       result = await showModalBottomSheet<bool>(
         context: context,
         isScrollControlled: true,
@@ -1262,13 +1270,93 @@ class _CartePret extends StatelessWidget {
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         builder: (ctx) => StatefulBuilder(
-          builder: (ctx, setS) => Padding(
+          builder: (ctx, setS) {
+            // ── Picker photo (local à ce builder) ──────────────────────────
+            Future<void> prendrePhoto(ImageSource source) async {
+              try {
+                final picker = ImagePicker();
+                final fichier = await picker.pickImage(
+                  source: source,
+                  maxWidth: 1200,
+                  maxHeight: 1200,
+                  imageQuality: 70,
+                );
+                if (fichier == null) return;
+                final bytes = await fichier.readAsBytes();
+                setS(() {
+                  photoFichier = fichier;
+                  photoBase64  = base64Encode(bytes);
+                });
+              } catch (e) {
+                if (!ctx.mounted) return;
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  SnackBar(
+                    content: Text('Erreur photo : $e'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            }
+
+            void afficherChoixPhoto() {
+              showModalBottomSheet(
+                context: ctx,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                ),
+                builder: (_) => SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.camera_alt_rounded,
+                              color: AppColors.or),
+                          title: const Text('Prendre une photo'),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            prendrePhoto(ImageSource.camera);
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.photo_library_rounded,
+                              color: AppColors.or),
+                          title: const Text('Choisir dans la galerie'),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            prendrePhoto(ImageSource.gallery);
+                          },
+                        ),
+                        if (photoBase64 != null)
+                          ListTile(
+                            leading: const Icon(Icons.delete_outline_rounded,
+                                color: AppColors.alerte),
+                            title: const Text('Supprimer la photo',
+                                style: TextStyle(color: AppColors.alerte)),
+                            onTap: () {
+                              Navigator.pop(ctx);
+                              setS(() {
+                                photoFichier = null;
+                                photoBase64  = null;
+                              });
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            return Padding(
             padding: EdgeInsets.only(
               left: 16,
               right: 16,
               top: 16,
               bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
             ),
+            child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1306,6 +1394,101 @@ class _CartePret extends StatelessWidget {
                       .toList(),
                   onChanged: (v) => setS(() => methode = v!),
                 ),
+                // ── Photo de preuve ──────────────────────────────────────────
+                const SizedBox(height: 12),
+                GestureDetector(
+                  onTap: afficherChoixPhoto,
+                  child: Container(
+                    width: double.infinity,
+                    constraints: const BoxConstraints(minHeight: 64),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: photoBase64 != null
+                            ? AppColors.or
+                            : AppColors.lignes,
+                        width: photoBase64 != null ? 1.5 : 1,
+                      ),
+                    ),
+                    child: photoBase64 != null && photoFichier != null
+                        // ── Aperçu photo ──────────────────────────────────
+                        ? Stack(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(9),
+                                child: kIsWeb
+                                    ? Image.memory(
+                                        base64Decode(photoBase64!),
+                                        width: double.infinity,
+                                        height: 160,
+                                        fit: BoxFit.cover,
+                                      )
+                                    : Image.file(
+                                        File(photoFichier!.path),
+                                        width: double.infinity,
+                                        height: 160,
+                                        fit: BoxFit.cover,
+                                      ),
+                              ),
+                              Positioned(
+                                top: 6, right: 6,
+                                child: GestureDetector(
+                                  onTap: () => setS(() {
+                                    photoFichier = null;
+                                    photoBase64  = null;
+                                  }),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: const BoxDecoration(
+                                      color: Colors.black54,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(Icons.close,
+                                        size: 14, color: Colors.white),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        // ── Placeholder ───────────────────────────────────
+                        : Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 14),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.add_a_photo_outlined,
+                                  size: 22,
+                                  color: photoBase64 != null
+                                      ? AppColors.or
+                                      : AppColors.texteDoux,
+                                ),
+                                const SizedBox(width: 12),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: const [
+                                    Text(
+                                      'Joindre une photo de preuve',
+                                      style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                          color: AppColors.encre),
+                                    ),
+                                    SizedBox(height: 2),
+                                    Text(
+                                      'Optionnel — reçu, capture d\'écran…',
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          color: AppColors.texteDoux),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                  ),
+                ),
                 const SizedBox(height: 16),
                 BtnPrincipal(
                   label: 'Enregistrer',
@@ -1318,7 +1501,9 @@ class _CartePret extends StatelessWidget {
                 ),
               ],
             ),
-          ),
+            ),
+          );
+          },
         ),
       ) ?? false;
     }
@@ -1396,6 +1581,8 @@ class _CartePret extends StatelessWidget {
             'date': now,
             'methode': methode,
             'reference': ref,
+            if (photoBase64 != null && photoBase64!.isNotEmpty)
+              'photo_preuve': photoBase64,
           });
           prets[idx]['remboursements'] = rembs;
 
