@@ -405,6 +405,170 @@ class _PretsScreenState extends State<PretsScreen> {
                     ),
                   ),
 
+                  // ── Tableau des échéances (calculé automatiquement) ──────────
+                  Builder(builder: (ctx3) {
+                    final montantV = int.tryParse(montantCtrl.text.trim()) ?? 0;
+                    final tauxV    = double.tryParse(tauxCtrl.text.trim()) ?? 5;
+                    final durV     = int.tryParse(dureesCtrl.text.trim()) ?? 3;
+                    if (montantV <= 0 || durV <= 0) return const SizedBox.shrink();
+
+                    final totalDuV   = (montantV * (1 + tauxV / 100)).round();
+                    // Répartition : les (totalDuV % durV) premières échéances
+                    // reçoivent 1 FCFA de plus pour absorber l'arrondi entier.
+                    final baseV      = totalDuV ~/ durV;
+                    final resteV     = totalDuV % durV;
+
+                    return Container(
+                      margin: const EdgeInsets.only(top: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.lignes),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // En-tête
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 9),
+                            decoration: BoxDecoration(
+                              color: AppColors.fondSecondaire,
+                              borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(12)),
+                              border: Border(
+                                  bottom: BorderSide(color: AppColors.lignes)),
+                            ),
+                            child: Row(
+                              children: const [
+                                SizedBox(width: 28),
+                                Expanded(
+                                  child: Text('Date',
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.texteDoux)),
+                                ),
+                                SizedBox(
+                                  width: 90,
+                                  child: Text('Montant',
+                                      textAlign: TextAlign.right,
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.texteDoux)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Lignes
+                          ...List.generate(durV, (i) {
+                            final dateEch = DateTime(
+                              datePremiereEcheance.year,
+                              datePremiereEcheance.month + i,
+                              datePremiereEcheance.day,
+                            );
+                            final montantEch = baseV + (i < resteV ? 1 : 0);
+                            final estDerniere = i == durV - 1;
+                            return Container(
+                              decoration: BoxDecoration(
+                                border: estDerniere
+                                    ? null
+                                    : Border(
+                                        bottom: BorderSide(
+                                            color: AppColors.lignes
+                                                .withValues(alpha: 0.5))),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 10),
+                              child: Row(
+                                children: [
+                                  // Numéro bulle
+                                  Container(
+                                    width: 22,
+                                    height: 22,
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.or
+                                          .withValues(alpha: 0.15),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Text(
+                                      '${i + 1}',
+                                      style: const TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.or),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  // Date
+                                  Expanded(
+                                    child: Text(
+                                      Formatters.dateFormatee(dateEch),
+                                      style: const TextStyle(
+                                          fontSize: 13,
+                                          color: AppColors.encre),
+                                    ),
+                                  ),
+                                  // Montant
+                                  SizedBox(
+                                    width: 90,
+                                    child: Text(
+                                      Formatters.montant(montantEch,
+                                          devise: data.devise),
+                                      textAlign: TextAlign.right,
+                                      style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.encre),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                          // Pied : total
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 9),
+                            decoration: BoxDecoration(
+                              color: AppColors.fondSecondaire,
+                              borderRadius: const BorderRadius.vertical(
+                                  bottom: Radius.circular(12)),
+                              border: Border(
+                                  top: BorderSide(color: AppColors.lignes)),
+                            ),
+                            child: Row(
+                              children: [
+                                const SizedBox(width: 32),
+                                const Expanded(
+                                  child: Text('Total dû',
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.encre)),
+                                ),
+                                SizedBox(
+                                  width: 90,
+                                  child: Text(
+                                    Formatters.montant(totalDuV,
+                                        devise: data.devise),
+                                    textAlign: TextAlign.right,
+                                    style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.or),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+
                   const SizedBox(height: 16),
                   BtnPrincipal(
                     label: isPremium ? 'Soumettre pour validation' : context.tr('creer_pret'),
