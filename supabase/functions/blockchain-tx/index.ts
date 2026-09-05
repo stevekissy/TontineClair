@@ -777,7 +777,42 @@ async function actionEnregistrerOperation(
 
       // ── Routing v3 : une fonction métier par type → noms lisibles sur PolygonScan ──
       const memNom = String(body.membre_nom || membre_nom || "");
-      const ref    = String(ref_interne || "");
+      const refBrut = String(ref_interne || "");
+
+      // ── Libellés lisibles en français — encodés dans le champ refInterne ──────────
+      // Visibles directement sur PolygonScan dans les paramètres de la TX,
+      // même sans vérification du contrat (onglet "Input Data" → décodage UTF-8).
+      // Format : "[NOM_OPERATION] | membre | ref_optionnelle"
+      const LIBELLES: Record<string, string> = {
+        "cotisation"      : "Cotisation",
+        "distribution"    : "Distribution du tour",
+        "decaissement"    : "Décaissement",
+        "depot"           : "Dépôt",
+        "pret"            : "Prêt accordé",
+        "remboursement"   : "Remboursement de prêt",
+        "remboursement_pret": "Remboursement de prêt",
+        "penalite"        : "Pénalité",
+        "retrait"         : "Retrait",
+        "apport"          : "Apport en caisse",
+        "sync_balance"    : "Synchronisation solde",
+        "synchronisation" : "Synchronisation solde",
+        "vote"            : "Vote",
+        "vote_cree"       : "Vote ouvert",
+        "vote_clos"       : "Vote clôturé",
+        "retrait_propose" : "Retrait proposé",
+        "creation"        : "Création tontine",
+        "upgrade_pro"     : "Passage Pro",
+        "nouveau_cycle"   : "Nouveau cycle",
+        "score_modifie"   : "Score modifié",
+      };
+
+      // Construire le refInterne lisible : "[Libellé] | [membreNom] | [ref brute si dispo]"
+      const libelle = LIBELLES[typeOp] || typeOp.replace(/_/g, " ");
+      const refParts: string[] = [libelle];
+      if (memNom) refParts.push(memNom);
+      if (refBrut && refBrut !== memNom) refParts.push(refBrut);
+      const ref = refParts.join(" | ");
+
       switch (typeOp) {
         // ── Votes ────────────────────────────────────────────────────────────
         case "vote_cree":
@@ -792,7 +827,7 @@ async function actionEnregistrerOperation(
         case "creation":
           calldata = buildCreationCalldata_v3(tontine_code, membre_id, memNom, String(body.nom_tontine || tontine_code), payloadBytes); break;
         case "upgrade_pro":
-          calldata = buildSysCalldata_v3(tontine_code, membre_id, memNom, "", "enregistrerUpgradePro", payloadBytes); break;
+          calldata = buildSysCalldata_v3(tontine_code, membre_id, memNom, ref, "enregistrerUpgradePro", payloadBytes); break;
         case "nouveau_cycle":
           calldata = buildSysCalldata_v3(tontine_code, membre_id, memNom, ref, "enregistrerNouveauCycle", payloadBytes); break;
         case "score_modifie":
