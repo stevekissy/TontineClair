@@ -111,7 +111,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   bool _loading = true;
   String? _erreur;
   String _filtreTontine = 'toutes';
-  int _onglet = 0; // 0=KPI, 1=Tontines, 2=Abonnements, 3=Graphiques, 4=Alertes
+  int _onglet = 0; // 0=Vue d'ensemble, 1=Abonnements, 2=Graphiques, 3=Alertes
   final _searchCtrl = TextEditingController();
   Timer? _debounce;
 
@@ -391,10 +391,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
   Widget _buildBarreOnglets() {
     final onglets = [
-      (Icons.dashboard_outlined,  'Vue d\'ensemble'),
-      (Icons.account_balance_wallet_outlined, 'Tontines'),
-      (Icons.receipt_long_outlined, 'Abonnements'),
-      (Icons.bar_chart_outlined,  'Graphiques'),
+      (Icons.dashboard_outlined,     'Vue d\'ensemble'),
+      (Icons.receipt_long_outlined,  'Abonnements'),
+      (Icons.bar_chart_outlined,     'Graphiques'),
       (Icons.notifications_outlined, 'Alertes ${_alertes.isNotEmpty ? "(${_alertes.length})" : ""}'),
     ];
     return Container(
@@ -455,10 +454,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   Widget _buildContenuOnglet() {
     switch (_onglet) {
       case 0: return _buildVueEnsemble();
-      case 1: return _buildOngletTontines();
-      case 2: return _buildOngletAbonnements();
-      case 3: return _buildOngletGraphiques();
-      case 4: return _buildOngletAlertes();
+      case 1: return _buildOngletAbonnements();
+      case 2: return _buildOngletGraphiques();
+      case 3: return _buildOngletAlertes();
       default: return _buildVueEnsemble();
     }
   }

@@ -6,13 +6,13 @@ import '../widgets/app_widgets.dart';
 import 'admin_dashboard_screen.dart';
 // Supprimé : equipe_screen, messagerie_screen, support_admin_screen, coinpayments_admin_screen
 import 'blockchain_admin_screen.dart';
-import 'admin_soldes_screen.dart';
+// Supprimé : admin_soldes_screen.dart
 import '../utils/app_localizations.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Écran principal Espace Admin — Redesign v2
-// Onglets : Dashboard | Tontines | Stats | Blockchain | Soldes
-// Supprimé : Équipe, Messages, Support, Crypto, KYC, prêts, décaissements, dépenses
+// Onglets : Vue d'ensemble | Tontines | Stats | Blockchain
+// Supprimé : Soldes, Équipe, Messages, Support, Crypto, KYC, prêts, décaissements, dépenses
 // ─────────────────────────────────────────────────────────────────────────────
 
 class AdminScreen extends StatefulWidget {
@@ -36,7 +36,7 @@ class _AdminScreenState extends State<AdminScreen> {
   List<Map<String, dynamic>> _demandes  = [];
   Map<String, dynamic>       _counts    = {};
 
-  // Onglet actif : 0=Dashboard, 1=Tontines, 2=Stats, 3=Blockchain, 4=Soldes
+  // Onglet actif : 0=Vue d'ensemble, 1=Tontines, 2=Stats, 3=Blockchain
   int _onglet = 0;
 
   // Filtre tontines
@@ -750,11 +750,10 @@ class _AdminScreenState extends State<AdminScreen> {
 
     // Onglets
     final onglets = [
-      _OngletDef(icone: Icons.dashboard_rounded,           label: 'Activité',   badge: nbDemandesPending,  index: 0),
-      _OngletDef(icone: Icons.groups_2_outlined,           label: 'Tontines',   badge: nbTontinesBloquees, index: 1),
-      _OngletDef(icone: Icons.bar_chart_rounded,           label: 'Stats',      badge: 0,                  index: 2),
-      _OngletDef(icone: Icons.hexagon_outlined,            label: 'Blockchain', badge: 0,                  index: 3),
-      _OngletDef(icone: Icons.account_balance_wallet_rounded, label: 'Soldes',  badge: 0,                  index: 4),
+      _OngletDef(icone: Icons.dashboard_rounded,           label: 'Vue d\'ensemble', badge: nbDemandesPending,  index: 0),
+      _OngletDef(icone: Icons.groups_2_outlined,           label: 'Tontines',        badge: nbTontinesBloquees, index: 1),
+      _OngletDef(icone: Icons.bar_chart_rounded,           label: 'Stats',           badge: 0,                  index: 2),
+      _OngletDef(icone: Icons.hexagon_outlined,            label: 'Blockchain',      badge: 0,                  index: 3),
     ];
 
     return Column(
@@ -786,7 +785,6 @@ class _AdminScreenState extends State<AdminScreen> {
             1 => _VueTontines(),
             2 => AdminDashboardScreen(cle: _cleEffective),
             3 => BlockchainAdminScreen(cleAdmin: _cleEffective),
-            4 => AdminSoldesScreen(cleAdmin: _cleEffective),
             _ => BlockchainAdminScreen(cleAdmin: _cleEffective),
           },
         ),
@@ -795,7 +793,7 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   // ════════════════════════════════════════════════════════════════════════════
-  // ONGLET 0 — DASHBOARD / ACTIVITÉ
+  // ONGLET 0 — VUE D'ENSEMBLE
   // ════════════════════════════════════════════════════════════════════════════
   Widget _VueDashboard({
     required int nbDemandesPending,
