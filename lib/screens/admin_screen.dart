@@ -4,19 +4,15 @@ import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import 'admin_dashboard_screen.dart';
-import 'equipe_screen.dart';
-import 'messagerie_screen.dart';
-import 'support_admin_screen.dart';
-import 'coinpayments_admin_screen.dart';
+// Supprimé : equipe_screen, messagerie_screen, support_admin_screen, coinpayments_admin_screen
 import 'blockchain_admin_screen.dart';
 import 'admin_soldes_screen.dart';
 import '../utils/app_localizations.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Écran principal Espace Admin — Redesign v2
-// Onglets : Dashboard (activité) | Tontines (gestion) | Équipe & Support
-// Supprimé : validation manuelle prêts, décaissements, KYC, dépenses
-// (paiements Premium via CoinPayments)
+// Onglets : Dashboard | Tontines | Stats | Blockchain | Soldes
+// Supprimé : Équipe, Messages, Support, Crypto, KYC, prêts, décaissements, dépenses
 // ─────────────────────────────────────────────────────────────────────────────
 
 class AdminScreen extends StatefulWidget {
@@ -40,7 +36,7 @@ class _AdminScreenState extends State<AdminScreen> {
   List<Map<String, dynamic>> _demandes  = [];
   Map<String, dynamic>       _counts    = {};
 
-  // Onglet actif : 0=Dashboard, 1=Tontines, 2=Équipe, 3=Messagerie, 4=Support
+  // Onglet actif : 0=Dashboard, 1=Tontines, 2=Stats, 3=Blockchain, 4=Soldes
   int _onglet = 0;
 
   // Filtre tontines
@@ -754,15 +750,11 @@ class _AdminScreenState extends State<AdminScreen> {
 
     // Onglets
     final onglets = [
-      _OngletDef(icone: Icons.dashboard_rounded,      label: 'Activité',  badge: nbDemandesPending, index: 0),
-      _OngletDef(icone: Icons.groups_2_outlined,       label: 'Tontines',  badge: nbTontinesBloquees, index: 1),
-      _OngletDef(icone: Icons.bar_chart_rounded,       label: 'Stats',     badge: 0,                  index: 2),
-      _OngletDef(icone: Icons.groups_outlined,         label: 'Équipe',    badge: 0,                  index: 3),
-      _OngletDef(icone: Icons.forum_outlined,          label: 'Messages',  badge: 0,                  index: 4),
-      _OngletDef(icone: Icons.support_agent_outlined,  label: 'Support',   badge: 0,                  index: 5),
-      _OngletDef(icone: Icons.currency_bitcoin,          label: 'Crypto',    badge: 0,                  index: 6),
-      _OngletDef(icone: Icons.hexagon_outlined,           label: 'Blockchain', badge: 0,                 index: 7),
-      _OngletDef(icone: Icons.account_balance_wallet_rounded, label: 'Soldes',    badge: 0,                 index: 8),
+      _OngletDef(icone: Icons.dashboard_rounded,           label: 'Activité',   badge: nbDemandesPending,  index: 0),
+      _OngletDef(icone: Icons.groups_2_outlined,           label: 'Tontines',   badge: nbTontinesBloquees, index: 1),
+      _OngletDef(icone: Icons.bar_chart_rounded,           label: 'Stats',      badge: 0,                  index: 2),
+      _OngletDef(icone: Icons.hexagon_outlined,            label: 'Blockchain', badge: 0,                  index: 3),
+      _OngletDef(icone: Icons.account_balance_wallet_rounded, label: 'Soldes',  badge: 0,                  index: 4),
     ];
 
     return Column(
@@ -793,19 +785,8 @@ class _AdminScreenState extends State<AdminScreen> {
               ),
             1 => _VueTontines(),
             2 => AdminDashboardScreen(cle: _cleEffective),
-            3 => EquipeScreen(
-                cle:        _cleEffective,
-                roleActuel: _roleMembre ?? 'super_admin',
-              ),
-            4 => AdminMessagerieScreen(
-                pseudo:   _pseudoMembre   ?? '',
-                clePerso: _clePersoMembre ?? _cleEffective,
-                nom:      _nomMembre      ?? (_pseudoMembre ?? 'Admin'),
-              ),
-            5 => SupportAdminScreen(cle: _cleEffective),
-            6 => CoinPaymentsAdminScreen(cleAdmin: _cleEffective),
-            7 => BlockchainAdminScreen(cleAdmin: _cleEffective),
-            8 => AdminSoldesScreen(cleAdmin: _cleEffective),
+            3 => BlockchainAdminScreen(cleAdmin: _cleEffective),
+            4 => AdminSoldesScreen(cleAdmin: _cleEffective),
             _ => BlockchainAdminScreen(cleAdmin: _cleEffective),
           },
         ),
