@@ -32,9 +32,10 @@ class QrTontineScreen extends StatefulWidget {
 
 class _QrTontineScreenState extends State<QrTontineScreen> {
   final GlobalKey _qrKey = GlobalKey();
-  int _totalOps = 0;
-  int _onChain  = 0;
-  int _phase    = 1;
+  int _totalOps        = 0;
+  int _onChain         = 0;
+  int _phase           = 1;
+  String? _contractAddress; // lue depuis contractInfo() — jamais codée en dur
   bool _loading = true;
   bool _sharing = false;
 
@@ -42,10 +43,8 @@ class _QrTontineScreenState extends State<QrTontineScreen> {
   // - Phase 2 on-chain : lien PolygonScan vers le smart contract (page réelle)
   // - Phase 1 SHA-256  : lien Google Play / texte de vérification manuelle
   String get _urlVerification {
-    if (_phase == 2) {
-      // TontineVault.sol sur Polygon Mainnet — page réelle et vérifiable
-      const contrat = '0xbADbBb485159775c5733c5E0F506b7942ee77872';
-      return 'https://polygonscan.com/address/$contrat';
+    if (_phase == 2 && _contractAddress != null) {
+      return 'https://polygonscan.com/address/$_contractAddress';
     }
     // Phase 1 : URL PlayStore avec param utm pour identifier la source
     return 'https://play.google.com/store/apps/details?id=com.tontineclair.app&utm_source=qr&utm_content=${widget.codeTontine}';
@@ -53,18 +52,20 @@ class _QrTontineScreenState extends State<QrTontineScreen> {
 
   // Texte WhatsApp — dynamique selon la phase réelle
   String get _messageWhatsapp {
-    final securite = _phase == 2
-        ? 'Ancre on-chain Polygon Mainnet — $_onChain TX verifiables sur PolygonScan'
-        : 'Securise par TontineClair (journal SHA-256 interne)';
-    final lien = _phase == 2
-        ? 'Voir le contrat : $_urlVerification'
-        : 'Ouvrez TontineClair > Verifier blockchain > Code : ${widget.codeTontine}';
-    return '*Verifiez la tontine "${widget.nomTontine}" sur la blockchain*\n\n'
+    if (_phase == 2 && _contractAddress != null) {
+      return '*Verifiez la tontine "${widget.nomTontine}" sur la blockchain*\n\n'
+          'Code : *${widget.codeTontine}*\n'
+          '$_totalOps operation${_totalOps > 1 ? "s" : ""} enregistree${_totalOps > 1 ? "s" : ""} dans le journal\n'
+          'Ancre on-chain Polygon Mainnet — $_onChain TX verifiables sur PolygonScan\n\n'
+          'Scannez le QR code ci-joint ou :\n'
+          'Voir le contrat : https://polygonscan.com/address/$_contractAddress';
+    }
+    // Phase 1 — preuve SHA-256 locale
+    return '*Verifiez la tontine "${widget.nomTontine}" sur TontineClair*\n\n'
         'Code : *${widget.codeTontine}*\n'
         '$_totalOps operation${_totalOps > 1 ? "s" : ""} enregistree${_totalOps > 1 ? "s" : ""} dans le journal\n'
-        '$securite\n\n'
-        'Scannez le QR code ci-joint ou :\n'
-        '$lien';
+        'Securise par TontineClair (journal SHA-256 interne)\n\n'
+        'Ouvrez TontineClair > Verifier blockchain > Code : ${widget.codeTontine}';
   }
 
   @override
@@ -88,11 +89,15 @@ class _QrTontineScreenState extends State<QrTontineScreen> {
           .where((e) => e.tontineCode.trim().toUpperCase() == codeCible)
           .toList();
       final phaseRecu = (contrat['phase'] as num?)?.toInt() ?? 1;
+      // Adresse du contrat retournée par l'Edge Function (source de vérité)
+      final adresse = contrat['contract_address'] as String?
+          ?? contrat['address'] as String?;
       setState(() {
-        _phase    = phaseRecu;
-        _totalOps = entrees.length;
+        _phase           = phaseRecu;
+        _contractAddress = adresse;
+        _totalOps        = entrees.length;
         // Phase 1 : tx_hash = proof SHA-256 local, PAS un vrai TX Polygon
-        // Phase 2 : vrais TX Ethereum v\u00e9rifiables sur Polygon
+        // Phase 2 : vrais TX Ethereum vérifiables sur Polygon
         _onChain  = phaseRecu == 2
             ? entrees.where((e) => e.txHash != null && e.txHash!.length == 66).length
             : 0;

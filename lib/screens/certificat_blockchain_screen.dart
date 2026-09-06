@@ -6,6 +6,7 @@
 // Partageable via share_plus.
 // ═══════════════════════════════════════════════════════════════════════════════
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
@@ -14,7 +15,7 @@ import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'dart:io';
+import 'dart:io' if (dart.library.html) 'dart:io';
 import '../services/blockchain_service.dart';
 import '../utils/app_colors.dart';
 
@@ -123,7 +124,8 @@ class _CertificatBlockchainScreenState
     final doc = pw.Document();
     final now = DateTime.now();
     final phase = (_contrat['phase'] as num?)?.toInt() ?? 1;
-    final contratAddr = _contrat['contract'] as String?;
+    final contratAddr = _contrat['contract_address'] as String?
+        ?? _contrat['address'] as String?;
 
     // Filtrer par membre si demandé
     final entreesFiltrees = widget.membreNom != null
@@ -560,20 +562,29 @@ class _CertificatBlockchainScreenState
     setState(() => _generating = true);
     try {
       final bytes = await _genererPdf();
-      final dir  = await getTemporaryDirectory();
-      final file = File('${dir.path}/certificat_blockchain_${widget.codeTontine}.pdf');
-      await file.writeAsBytes(bytes);
 
-      await Share.shareXFiles(
-        [XFile(file.path)],
-        subject:
-            'Certificat Blockchain — ${widget.nomTontine} (${widget.codeTontine})',
-        text:
-            'Certificat de transparence blockchain TontineClair\n'
-            'Tontine : ${widget.nomTontine}\n'
-            'Code : ${widget.codeTontine}\n'
-            'Verifiable sur Polygon Mainnet',
-      );
+      if (kIsWeb) {
+        // Web : téléchargement direct via Printing
+        await Printing.sharePdf(
+          bytes: bytes,
+          filename: 'certificat_blockchain_${widget.codeTontine}.pdf',
+        );
+      } else {
+        // Mobile : partage via share_plus
+        final dir  = await getTemporaryDirectory();
+        final file = File('${dir.path}/certificat_blockchain_${widget.codeTontine}.pdf');
+        await file.writeAsBytes(bytes);
+        await Share.shareXFiles(
+          [XFile(file.path)],
+          subject:
+              'Certificat Blockchain — ${widget.nomTontine} (${widget.codeTontine})',
+          text:
+              'Certificat de transparence blockchain TontineClair\n'
+              'Tontine : ${widget.nomTontine}\n'
+              'Code : ${widget.codeTontine}\n'
+              'Verifiable sur Polygon Mainnet',
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -602,11 +613,22 @@ class _CertificatBlockchainScreenState
                 IconButton(
                   icon: const Icon(Icons.share),
                   onPressed: () async {
-                    final dir  = await getTemporaryDirectory();
-                    final file = File(
-                        '${dir.path}/certificat_blockchain_${widget.codeTontine}.pdf');
-                    await file.writeAsBytes(bytes);
-                    await Share.shareXFiles([XFile(file.path)]);
+                    try {
+                      if (kIsWeb) {
+                        await Printing.sharePdf(
+                          bytes: bytes,
+                          filename: 'certificat_blockchain_${widget.codeTontine}.pdf',
+                        );
+                      } else {
+                        final dir  = await getTemporaryDirectory();
+                        final file = File(
+                            '${dir.path}/certificat_blockchain_${widget.codeTontine}.pdf');
+                        await file.writeAsBytes(bytes);
+                        await Share.shareXFiles([XFile(file.path)]);
+                      }
+                    } catch (e) {
+                      // Erreur silencieuse — l'utilisateur peut réessayer
+                    }
                   },
                 ),
               ],
@@ -887,7 +909,8 @@ class _CertificatBlockchainScreenState
                       const SizedBox(height: 10),
                       ...(_entrees.map((e) {
                         final estTxOnChain = e.txHash != null && e.txHash!.length == 66;
-                        final contratAddr  = _contrat['contract'] as String?;
+                        final contratAddr  = _contrat['contract_address'] as String?
+                            ?? _contrat['address'] as String?;
                         return _CarteOperationJournal(
                           entree: e,
                           estTxOnChain: estTxOnChain,
