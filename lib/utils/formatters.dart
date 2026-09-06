@@ -101,8 +101,8 @@ class Formatters {
     return s[0].toUpperCase() + s.substring(1);
   }
 
-  // ── Labels Mobile Money PayDunya (codes operateur → libellé) ────────────
-  static const _labelsPaydunya = <String, String>{
+  // ── Labels Mobile Money (codes opérateur → libellé) ─────────────────────
+  static const _labelsMobileMoney = <String, String>{
     'orange-money-ci': 'Orange Money',
     'orange-money-sn': 'Orange Money',
     'orange-money-ml': 'Orange Money',
@@ -125,30 +125,14 @@ class Formatters {
     'flooz':           'Flooz',
   };
 
-  // ── Labels crypto CoinPayments (currency2 → libellé court) ───────────────
-  static const _labelsCrypto = <String, String>{
-    'USDT.TRC20': 'USDT (TRC20)',
-    'USDT.ERC20': 'USDT (ERC20)',
-    'USDT':       'USDT',
-    'BTC':        'Bitcoin (BTC)',
-    'ETH':        'Ethereum (ETH)',
-    'LTC':        'Litecoin (LTC)',
-    'BNB':        'BNB',
-    'XRP':        'Ripple (XRP)',
-    'DOGE':       'Dogecoin (DOGE)',
-    'TRX':        'TRON (TRX)',
-    'SOL':        'Solana (SOL)',
-  };
-
   /// Extrait, à partir des champs bruts d'un mouvement, un libellé de paiement
   /// lisible et professionnel.
   ///
-  /// [par]         : champ `par` du JSON (ex: 'CoinPayments', 'orange-money-ci', 'Arnaud')
-  /// [description] : champ `motif`/`description` (peut contenir '(COINPAYMENTS)', 'USDT')
-  /// [reference]   : champ `recu` (ex: 'CPKH4WBV2NQ…' pour CoinPayments)
+  /// [par]         : champ `par` du JSON (ex: 'orange-money-ci', 'Arnaud')
+  /// [description] : champ `motif`/`description`
+  /// [reference]   : champ `recu`
   ///
   /// Retourne :
-  ///   - Crypto  : 'Crypto · USDT (TRC20)'  ou  'Crypto · CoinPayments'
   ///   - MM      : 'Mobile Money · Orange Money'
   ///   - Vrai gestionnaire (nom propre) : retourné tel quel
   ///   - Inconnu : 'Système'
@@ -157,51 +141,17 @@ class Formatters {
     String description = '',
     String reference  = '',
   }) {
-    final parLower  = par.trim().toLowerCase();
-    final descLower = description.toLowerCase();
-    final refLower  = reference.toLowerCase();
+    final parLower = par.trim().toLowerCase();
 
-    // ── 1. Détecter CoinPayments / Crypto ────────────────────────────────────
-    // Indices : reference commençant par 'cpkh' ou 'cp_', description contenant
-    // par == 'coinpayments'
-    final isCrypto = parLower == 'coinpayments'
-        || descLower.contains('coinpayments')
-        || descLower.contains('coinpay')
-        || refLower.startsWith('cpkh')
-        || refLower.startsWith('cp_');
-
-    if (isCrypto) {
-      // Chercher la crypto exacte dans la description
-      // Ex: '... (COINPAYMENTS) — 700 XOF ...' ne contient pas forcément la devise crypto
-      // Ex: description peut contenir 'USDT.TRC20', 'BTC', 'ETH'…
-      for (final entry in _labelsCrypto.entries) {
-        if (description.contains(entry.key) || reference.toUpperCase().contains(entry.key)) {
-          return 'Crypto · ${entry.value}';
-        }
-      }
-      return 'Crypto · CoinPayments';
+    // ── 1. Mobile Money — détecter via code opérateur ────────────────────────
+    if (_labelsMobileMoney.containsKey(parLower)) {
+      return 'Mobile Money · ${_labelsMobileMoney[parLower]}';
+    }
+    if (_labelsMobileMoney.containsKey(par.trim())) {
+      return 'Mobile Money · ${_labelsMobileMoney[par.trim()]}';
     }
 
-    // ── 2. Détecter PayDunya / Mobile Money ──────────────────────────────────
-    // Indices : par contient un code opérateur PayDunya, ou description contient 'paydunya'
-    final isPaydunya = descLower.contains('paydunya')
-        || _labelsPaydunya.containsKey(parLower)
-        || _labelsPaydunya.containsKey(par.trim());
-
-    if (isPaydunya) {
-      final label = _labelsPaydunya[parLower]
-          ?? _labelsPaydunya[par.trim()]
-          ?? 'Mobile Money';
-      return 'Mobile Money · $label';
-    }
-
-    // Cas : par contient un code opérateur sans paydunya dans la description
-    // (certaines versions écrivent juste 'orange', 'wave', 'mtn'…)
-    if (_labelsPaydunya.containsKey(parLower)) {
-      return 'Mobile Money · ${_labelsPaydunya[parLower]}';
-    }
-
-    // ── 3. Vrai nom de gestionnaire — retourner tel quel ─────────────────────
+    // ── 2. Vrai nom de gestionnaire — retourner tel quel ─────────────────────
     final trimmed = par.trim();
     return trimmed.isEmpty ? 'Système' : trimmed;
   }

@@ -182,7 +182,6 @@ class _PretsScreenState extends State<PretsScreen> {
   }
 
   // ── Nouveau prêt : formulaire complet ────────────────────────────────────
-  // • Mode Premium : Crypto CoinPayments
   // • Mode Lite    : PIN direct comme avant
   Future<void> _nouveauPret(
     BuildContext context,

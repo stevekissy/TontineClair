@@ -2,8 +2,7 @@
 // BlockchainService  —  TontineClair Web2+Web3 Phase 1
 //
 // Couche Flutter d'accès au journal blockchain.
-// Appelle l'Edge Function "blockchain-tx" via HTTP (même pattern que
-// CoinPaymentsService et SupabaseService).
+// Appelle l'Edge Function "blockchain-tx" via HTTP.
 //
 // PRINCIPE CLÉ :
 //   • Toutes les opérations blockchain sont NON-BLOQUANTES.
@@ -38,7 +37,6 @@ class BlockchainEntry {
   final String  statut;
   final String? signature;
   final String? payloadHash;
-  final String? refCoinpayments;
   final String? refInterne;
   final Map<String, dynamic> metadata;
   final DateTime  createdAt;
@@ -60,7 +58,6 @@ class BlockchainEntry {
     this.statut       = 'pending',
     this.signature,
     this.payloadHash,
-    this.refCoinpayments,
     this.refInterne,
     this.metadata     = const {},
     required this.createdAt,
@@ -84,7 +81,6 @@ class BlockchainEntry {
       statut         : j['statut']          as String? ?? 'pending',
       signature      : j['signature']       as String?,
       payloadHash    : j['payload_hash']    as String?,
-      refCoinpayments: j['ref_coinpayments'] as String?,
       refInterne     : j['ref_interne']     as String?,
       metadata       : (j['metadata']       as Map<String, dynamic>?) ?? {},
       createdAt      : DateTime.tryParse(j['created_at'] as String? ?? '')
@@ -411,7 +407,7 @@ class BlockchainService {
   // ═══════════════════════════════════════════════════════════════════════════
 
   /// Enregistre UNE COTISATION dans le journal blockchain.
-  /// Appelé après validation du paiement (IPN CoinPayments ou Mobile Money).
+  /// Appelé après validation du paiement.
   /// NON-BLOQUANT : si Polygon échoue, TontineClair continue normalement.
   static Future<BlockchainResultat> enregistrerCotisation({
     required String tontineCode,
@@ -419,20 +415,18 @@ class BlockchainService {
     required String membreNom,
     required int    montantXof,
     String? devise,
-    String? refCoinpayments,
     String? refInterne,
     String? walletTontine,
   }) async {
     return _enregistrer(
-      tontineCode    : tontineCode,
-      typeOperation  : 'cotisation',
-      membreId       : membreId,
-      membreNom      : membreNom,
-      montantXof     : montantXof,
-      devise         : devise,
-      refCoinpayments: refCoinpayments,
-      refInterne     : refInterne,
-      walletTontine  : walletTontine,
+      tontineCode   : tontineCode,
+      typeOperation : 'cotisation',
+      membreId      : membreId,
+      membreNom     : membreNom,
+      montantXof    : montantXof,
+      devise        : devise,
+      refInterne    : refInterne,
+      walletTontine : walletTontine,
     );
   }
 
@@ -784,18 +778,16 @@ class BlockchainService {
     required String membreNom,
     required int    montantXof,
     String? devise,
-    String? refCoinpayments,
     String? refInterne,
   }) async {
     return _enregistrer(
-      tontineCode    : tontineCode,
-      typeOperation  : 'apport',
-      membreId       : membreId,
-      membreNom      : membreNom,
-      montantXof     : montantXof,
-      devise         : devise,
-      refCoinpayments: refCoinpayments,
-      refInterne     : refInterne,
+      tontineCode   : tontineCode,
+      typeOperation : 'apport',
+      membreId      : membreId,
+      membreNom     : membreNom,
+      montantXof    : montantXof,
+      devise        : devise,
+      refInterne    : refInterne,
     );
   }
 
@@ -894,7 +886,6 @@ class BlockchainService {
     String?  membreNom,
     int?     montantXof,
     String?  devise,            // devise ISO de la tontine (EUR, USD, XOF…)
-    String?  refCoinpayments,
     String?  refInterne,
     String?  walletTontine,
     String?  walletMembre,
@@ -918,7 +909,6 @@ class BlockchainService {
         // pour l'encoder dans refInterne → visible dans Polygonscan Input Data
         if (devise != null && devise.isNotEmpty) 'devise' : devise,
         if (metadataEnrichie.isNotEmpty) 'metadata'    : metadataEnrichie,
-        if (refCoinpayments != null) 'ref_coinpayments': refCoinpayments,
         if (refInterne      != null) 'ref_interne'     : refInterne,
         if (walletTontine   != null) 'wallet_tontine'  : walletTontine,
         if (walletMembre    != null) 'wallet_membre'   : walletMembre,

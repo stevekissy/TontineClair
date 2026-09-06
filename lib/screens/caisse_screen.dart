@@ -892,7 +892,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
           return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
         });
       } else if (type == 'apport') {
-        // Apport caisse manuel (espèces / Mobile Money hors CoinPayments)
+        // Apport caisse manuel (espèces / Mobile Money)
         BlockchainService.enregistrerApport(
           tontineCode: widget.code,
           membreId   : provider.gestActifNom ?? 'gest',
@@ -1026,7 +1026,7 @@ class _LigneMouvement extends StatelessWidget {
   }
 
   /// Motif saisi par l'utilisateur — extrait le motif des chaînes techniques
-  /// Ex: "Apport Caisse via CoinPayments — 700 XOF — location"
+  /// Ex: "Apport Caisse — 700 XOF — location"
   ///      → retourne "location"
   /// Ex: "TontineClair - APPORT — location" → retourne "location"
   /// Ex: "location" (texte pur) → retourne "location"
@@ -1050,7 +1050,6 @@ class _LigneMouvement extends StatelessWidget {
 
     // ── Chaînes techniques : tenter d'extraire le motif après le dernier " — "
     final estTechnique = lower.startsWith('tontineclair') ||
-        lower.contains('coinpayments') ||
         lower.contains('apport en caisse') ||
         lower.contains('apport caisse') ||
         lower.contains('dépense caisse') ||
@@ -1070,7 +1069,6 @@ class _LigneMouvement extends StatelessWidget {
             candidatLower == 'xof' ||
             candidatLower == 'eur' ||
             candidatLower == 'usd' ||
-            candidatLower.contains('coinpayments') ||
             candidatLower.contains('tontineclair') ||
             candidat.isEmpty;
         if (!estDonnee) return candidat;
@@ -1083,7 +1081,6 @@ class _LigneMouvement extends StatelessWidget {
         if (last.isNotEmpty &&
             !RegExp(r'^\d').hasMatch(last) &&
             !lastL.contains('xof') &&
-            !lastL.contains('coinpayments') &&
             !lastL.contains('apport') &&
             !lastL.contains('caisse')) {
           return last;

@@ -28,7 +28,6 @@ class AbonnementScreen extends StatefulWidget {
   /// Montant de la cagnotte
   final int montantCagnotte;
   /// Statut KYC (conservé pour compatibilité — non utilisé comme condition d'accès)
-  final String? kycStatut;
   /// Nom du gestionnaire
   final String gestNom;
   /// true = tontine créée en mode Gratuit → ne peut PAS passer Premium.
@@ -40,7 +39,6 @@ class AbonnementScreen extends StatefulWidget {
     required this.code,
     this.platformeForce,
     this.montantCagnotte = 0,
-    this.kycStatut,
     this.gestNom = '',
     this.estTontineGratuite = false,
   });

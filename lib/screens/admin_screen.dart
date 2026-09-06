@@ -5,8 +5,6 @@ import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import 'admin_dashboard_screen.dart';
 import '../utils/app_localizations.dart';
-import 'kyc_admin_screen.dart';
-import 'coinpayments_admin_screen.dart';
 import 'blockchain_admin_screen.dart';
 import 'admin_soldes_screen.dart';
 
@@ -27,7 +25,6 @@ class _AdminScreenState extends State<AdminScreen> {
   List<Map<String, dynamic>> _depenses = [];
   List<Map<String, dynamic>> _prets          = [];
   List<Map<String, dynamic>> _decaissements  = [];
-  List<Map<String, dynamic>> _kycs            = [];
   // Compteurs unifiés calculés depuis adminTontineCounts
   Map<String, dynamic> _counts = {};
   int _onglet = 0;
@@ -39,8 +36,6 @@ class _AdminScreenState extends State<AdminScreen> {
   String _filtrePret         = 'pending';
   // Filtre décaissements : 'pending' | 'validee' | 'rejetee' | 'tous'
   String _filtreDecaissement = 'pending';
-  // Filtre KYC : 'pending' | 'valide' | 'rejete' | 'tous'
-  String _filtreKyc          = 'pending';
   // E-mails
   List<Map<String, dynamic>> _emails        = [];
   String _filtreEmailStatut  = 'tous';
@@ -80,7 +75,6 @@ class _AdminScreenState extends State<AdminScreen> {
           SupabaseService.adminListerDepensesPending(cle),
           SupabaseService.adminListerPretsPending(cle, statut: 'tous'),
           SupabaseService.adminListerDecaissements(cle, statut: 'tous'),
-          SupabaseService.adminListerKyc(cle, statut: 'tous'),
         ],
       );
       final counts  = await SupabaseService.adminTontineCounts(cle);
@@ -94,7 +88,6 @@ class _AdminScreenState extends State<AdminScreen> {
         _depenses        = results[2];
         _prets           = results[3];
         _decaissements   = results[4];
-        _kycs            = results[5];
         _counts          = counts;
         _emails          = emails;
         _emailsOffset    = emails.length;
@@ -411,7 +404,6 @@ class _AdminScreenState extends State<AdminScreen> {
         SupabaseService.adminListerDepensesPending(cle),
         SupabaseService.adminListerPretsPending(cle, statut: 'tous'),
         SupabaseService.adminListerDecaissements(cle, statut: 'tous'),
-        SupabaseService.adminListerKyc(cle, statut: 'tous'),
       ],
     );
     final counts  = await SupabaseService.adminTontineCounts(cle);
@@ -422,7 +414,6 @@ class _AdminScreenState extends State<AdminScreen> {
       _depenses       = results[2];
       _prets          = results[3];
       _decaissements  = results[4];
-      _kycs           = results[5];
       _counts         = counts;
       _ticketsSupport = tickets;
     });
@@ -749,15 +740,14 @@ class _AdminScreenState extends State<AdminScreen> {
     final nbDepensesPending      = _depenses.where((d) => (d['statut'] as String? ?? '') == 'pending').length;
     final nbPretsPending         = _prets.where((p) => (p['statut'] as String? ?? '') == 'pending').length;
     final nbDecaissementsPending = _decaissements.where((d) => (d['statut'] as String? ?? '') == 'pending').length;
-    final nbKycPending           = _kycs.where((k) => (k['statut'] as String? ?? '') == 'pending').length;
     final nbDemandesPending      = _demandes.where((d) {
       final s = (d['statut'] as String? ?? '').toLowerCase().replaceAll(' ', '_');
       return s == 'en_attente' || s == 'pending';
     }).length;
     final totalAlertes = nbDemandesPending + nbDepensesPending + nbPretsPending +
-        nbDecaissementsPending + nbKycPending;
+        nbDecaissementsPending;
 
-    // index : 0=Accueil 1=Demandes 2=Tontines 3=Stats 4=Dépenses 5=Prêts 6=Décaiss. 7=KYC 8=KYC ID 9=E-mails 10=Support
+    // index : 0=Accueil 1=Demandes 2=Tontines 3=Stats 4=Dépenses 5=Prêts 6=Décaiss. 7=E-mails 8=Support
     final nbTicketsPending = _ticketsSupport.where((t) =>
         !['resolu','ferme'].contains((t['statut'] as String? ?? ''))).length;
     final onglets = [
@@ -768,11 +758,8 @@ class _AdminScreenState extends State<AdminScreen> {
       _OngletDef(icone: Icons.receipt_long_outlined,          label: 'Dépenses',  badge: nbDepensesPending),
       _OngletDef(icone: Icons.account_balance_outlined,       label: 'Prêts',     badge: nbPretsPending),
       _OngletDef(icone: Icons.account_balance_wallet_rounded, label: 'Décaiss.',  badge: nbDecaissementsPending),
-      _OngletDef(icone: Icons.badge_outlined,                 label: 'KYC',       badge: nbKycPending),
-      _OngletDef(icone: Icons.verified_user_outlined,         label: 'KYC ID',    badge: 0),
       _OngletDef(icone: Icons.email_outlined,                 label: 'E-mails',   badge: 0),
       _OngletDef(icone: Icons.support_agent_rounded,          label: 'Support',   badge: nbTicketsPending),
-      _OngletDef(icone: Icons.currency_bitcoin,               label: 'Crypto',    badge: 0),
       _OngletDef(icone: Icons.hexagon_outlined,                label: 'Blockchain', badge: 0),
       _OngletDef(icone: Icons.account_balance_wallet_rounded,  label: 'Soldes',     badge: 0),
     ];
@@ -800,7 +787,6 @@ class _AdminScreenState extends State<AdminScreen> {
               nbDepensesPending:     nbDepensesPending,
               nbPretsPending:        nbPretsPending,
               nbDecaissementsPending: nbDecaissementsPending,
-              nbKycPending:          nbKycPending,
               onNaviguer: (i) => setState(() => _onglet = i),
             )
             : _onglet == 1 ? _ListeDemandes()
@@ -809,260 +795,15 @@ class _AdminScreenState extends State<AdminScreen> {
             : _onglet == 4 ? _ListeDepenses()
             : _onglet == 5 ? _ListePrets()
             : _onglet == 6 ? _ListeDecaissements()
-            : _onglet == 7 ? _ListeKyc()
-            : _onglet == 8 ? KycAdminScreen(cleAdmin: _cle, modeOnglet: true)
-            : _onglet == 9 ? _ListeEmails()
-            : _onglet == 10 ? _ListeSupport()
-            : _onglet == 11 ? CoinPaymentsAdminScreen()
-            : _onglet == 12 ? BlockchainAdminScreen(cleAdmin: _cle)
+            : _onglet == 7 ? _ListeEmails()
+            : _onglet == 8 ? _ListeSupport()
+            : _onglet == 9 ? BlockchainAdminScreen(cleAdmin: _cle)
             : AdminSoldesScreen(cleAdmin: _cle),
         ),
       ],
     );
   }
 
-  Widget _ListeKyc() {
-    final filtered = _filtreKyc == 'tous'
-        ? _kycs
-        : _kycs.where((k) => (k['statut'] as String? ?? '') == _filtreKyc).toList();
-
-    final nbPending = _kycs.where((k) => k['statut'] == 'pending').length;
-    final nbValide  = _kycs.where((k) => k['statut'] == 'valide').length;
-    final nbRejete  = _kycs.where((k) => k['statut'] == 'rejete').length;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _EnteteListe(
-          titre: 'Dossiers KYC',
-          sousTitre: 'Vérification identité — tontines Premium ≥ 200 000 XOF',
-          icone: Icons.badge_outlined,
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _FiltreChip(
-                  label: 'En attente ($nbPending)',
-                  selected: _filtreKyc == 'pending',
-                  onTap: () => setState(() => _filtreKyc = 'pending'),
-                  couleur: AppColors.orFonce,
-                ),
-                const SizedBox(width: 8),
-                _FiltreChip(
-                  label: 'Validés ($nbValide)',
-                  selected: _filtreKyc == 'valide',
-                  onTap: () => setState(() => _filtreKyc = 'valide'),
-                  couleur: AppColors.succes,
-                ),
-                const SizedBox(width: 8),
-                _FiltreChip(
-                  label: 'Rejetés ($nbRejete)',
-                  selected: _filtreKyc == 'rejete',
-                  onTap: () => setState(() => _filtreKyc = 'rejete'),
-                  couleur: AppColors.alerte,
-                ),
-                const SizedBox(width: 8),
-                _FiltreChip(
-                  label: 'Tous (${_kycs.length})',
-                  selected: _filtreKyc == 'tous',
-                  onTap: () => setState(() => _filtreKyc = 'tous'),
-                  couleur: AppColors.encreDoux,
-                ),
-              ],
-            ),
-          ),
-        ),
-        if (filtered.isEmpty)
-          Expanded(
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.badge_outlined, size: 48,
-                      color: AppColors.texteDoux.withValues(alpha: 0.4)),
-                  const SizedBox(height: 12),
-                  Text(
-                    _filtreKyc == 'pending'
-                        ? 'Aucun dossier KYC en attente'
-                        : 'Aucun dossier KYC dans cette catégorie',
-                    style: const TextStyle(color: AppColors.texteDoux, fontSize: 15),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Les tontines Premium avec cagnotte ≥ 200 000 XOF\nsoumettent leurs dossiers ici.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.texteDoux, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-          )
-        else
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-              itemCount: filtered.length,
-              itemBuilder: (_, i) => _CarteKyc(filtered[i]),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _CarteKyc(Map<String, dynamic> k) {
-    final id          = k['id'] as int? ?? 0;
-    final code        = k['code'] as String? ?? '—';
-    final gestionnaire = k['gestionnaire'] as String? ?? '—';
-    final nom         = k['nom'] as String? ?? '—';
-    final pieceType   = k['piece_type'] as String? ?? '—';
-    final pieceNumero = k['piece_numero'] as String? ?? '—';
-    final statut      = k['statut'] as String? ?? 'pending';
-    final motifRejet  = k['motif_rejet'] as String?;
-    final soumisLe    = DateTime.tryParse(k['soumis_le'] as String? ?? '');
-    final validatedAt = k['validated_at'] != null
-        ? DateTime.tryParse(k['validated_at'] as String)
-        : null;
-    final validePar   = k['valide_par'] as String?;
-
-    // Label de la pièce d'identité
-    final pieceLabel = switch (pieceType) {
-      'cni'       => 'CNI',
-      'passeport' => 'Passeport',
-      'sejour'    => 'Titre de séjour',
-      _           => pieceType,
-    };
-
-    final Color statutCouleur;
-    final Color statutFond;
-    final String statutLabel;
-    switch (statut) {
-      case 'valide':
-        statutCouleur = AppColors.succes; statutFond = AppColors.succesFond; statutLabel = '✓ Validé'; break;
-      case 'rejete':
-        statutCouleur = AppColors.alerte; statutFond = AppColors.alerteFond; statutLabel = '✗ Rejeté'; break;
-      default:
-        statutCouleur = AppColors.orFonce; statutFond = AppColors.fondConsultation; statutLabel = '⏳ En attente';
-    }
-
-    return CarteTC(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // En-tête : nom + badge statut
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      nom,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w800, fontSize: 15, color: AppColors.encre),
-                    ),
-                    Text(
-                      'Gestionnaire : $gestionnaire · Tontine $code',
-                      style: const TextStyle(
-                          fontSize: 12, color: AppColors.encreDoux, fontWeight: FontWeight.w600),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                decoration: BoxDecoration(
-                    color: statutFond, borderRadius: BorderRadius.circular(20)),
-                child: Text(statutLabel,
-                    style: TextStyle(
-                        fontSize: 11, fontWeight: FontWeight.w700, color: statutCouleur)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          // Bloc pièce d'identité
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-                color: AppColors.fondCode,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.lignes)),
-            child: Column(
-              children: [
-                _InfoLigneAdmin(
-                  icone: Icons.badge_outlined,
-                  label: 'Type de pièce',
-                  valeur: pieceLabel,
-                ),
-                _InfoLigneAdmin(
-                  icone: Icons.numbers_rounded,
-                  label: 'Numéro',
-                  valeur: pieceNumero,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 6),
-          _InfoLigneAdmin(
-            icone: Icons.calendar_today_outlined,
-            label: 'Soumis le',
-            valeur: Formatters.dateFormatee(soumisLe),
-          ),
-          if (validatedAt != null)
-            _InfoLigneAdmin(
-              icone: Icons.check_circle_outline,
-              label: statut == 'valide' ? 'Validé le' : 'Rejeté le',
-              valeur: Formatters.dateFormatee(validatedAt),
-            ),
-          if (validePar != null && validePar.isNotEmpty)
-            _InfoLigneAdmin(
-              icone: Icons.manage_accounts_outlined,
-              label: 'Par',
-              valeur: validePar,
-            ),
-          if (motifRejet != null && motifRejet.isNotEmpty)
-            _InfoLigneAdmin(
-              icone: Icons.cancel_outlined,
-              label: 'Motif rejet',
-              valeur: motifRejet,
-            ),
-          // Boutons action si pending
-          if (statut == 'pending') ...[
-            const SizedBox(height: 12),
-            const Divider(color: AppColors.lignes, height: 1),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: BtnPrincipal(
-                    label: 'Valider le KYC',
-                    icone: Icons.verified_user_rounded,
-                    couleur: AppColors.succes,
-                    onTap: () => _validerKyc(id, code, gestionnaire),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  flex: 2,
-                  child: BtnSecondaire(
-                    label: 'Rejeter',
-                    onTap: () => _rejeterKyc(id, code, gestionnaire),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  // ── Onglet 💰 Décaissements pending ─────────────────────────────────────────
   Future<void> _validerDecaissement(
       int id, String code, String? beneficiaireId, String benefNom, int montantNet, String devise) async {
     final confirmer = await showDialog<bool>(
@@ -1189,14 +930,13 @@ class _AdminScreenState extends State<AdminScreen> {
     required int nbDepensesPending,
     required int nbPretsPending,
     required int nbDecaissementsPending,
-    required int nbKycPending,
     required void Function(int) onNaviguer,
   }) {
     final now = DateTime.now();
     final nbActives = _tontines.where((t) => (t['status'] as String? ?? 'active') == 'active').length;
     final nbPremium = _tontines.where((t) => (t['plan'] as String? ?? '') == 'premium').length;
     final totalAlertes = nbDemandesPending + nbDepensesPending + nbPretsPending +
-        nbDecaissementsPending + nbKycPending;
+        nbDecaissementsPending;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
@@ -1208,7 +948,6 @@ class _AdminScreenState extends State<AdminScreen> {
             nbDepensesPending:      nbDepensesPending,
             nbPretsPending:         nbPretsPending,
             nbDecaissementsPending: nbDecaissementsPending,
-            nbKycPending:           nbKycPending,
             onNaviguer:             onNaviguer,
           )
         else
@@ -1254,13 +993,10 @@ class _AdminScreenState extends State<AdminScreen> {
         const SizedBox(height: 6),
         _RaccourciAdmin(icone: Icons.account_balance_wallet_rounded, label: 'Décaissements en attente',    sousTitre: '$nbDecaissementsPending en attente · ${_decaissements.length} total', badge: nbDecaissementsPending, onTap: () => onNaviguer(6)),
         const SizedBox(height: 6),
-        _RaccourciAdmin(icone: Icons.badge_outlined,                 label: 'Dossiers KYC',                sousTitre: '$nbKycPending en attente · ${_kycs.length} total',               badge: nbKycPending,          onTap: () => onNaviguer(7)),
-        const SizedBox(height: 6),
         _RaccourciAdmin(icone: Icons.bar_chart_rounded,              label: 'Tableau de bord analytics',  sousTitre: 'Statistiques et métriques globales',                              badge: 0,                     onTap: () => onNaviguer(3)),
         const SizedBox(height: 6),
         _RaccourciAdmin(icone: Icons.support_agent_rounded,          label: 'Support & Messagerie',        sousTitre: '${_ticketsSupport.length} ticket${_ticketsSupport.length > 1 ? "s" : ""} total', badge: _ticketsSupport.where((t) => !['resolu','ferme'].contains(t['statut'] as String? ?? '')).length, onTap: () => onNaviguer(10)),
         const SizedBox(height: 6),
-        _RaccourciAdmin(icone: Icons.currency_bitcoin,                label: 'CoinPayments Crypto',         sousTitre: 'Transactions, IPN, rapprochement', badge: 0, onTap: () => onNaviguer(11)),
         _RaccourciAdmin(icone: Icons.hexagon_outlined,                  label: 'Journal Blockchain',           sousTitre: 'Polygon Amoy · hash · signature', badge: 0, onTap: () => onNaviguer(12)),
         const SizedBox(height: 24),
 
@@ -1275,123 +1011,7 @@ class _AdminScreenState extends State<AdminScreen> {
     );
   }
 
-  // ── Onglet 🪪 KYC ──────────────────────────────────────────────────────────
-  Future<void> _validerKyc(int id, String code, String gestNom) async {
-    final confirmer = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.fondPapier,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          'Valider le KYC',
-          style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.succes),
-        ),
-        content: Text(
-          'Confirmer la validation du dossier KYC de $gestNom (tontine $code) ?\n\n'
-          'Le statut KYC sera mis à «\u202fvalide\u202f» et la tontine pourra opérer normalement.',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.succes),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Valider KYC', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
-    );
-    if (confirmer != true || !mounted) return;
-
-    final result = await SupabaseService.adminValiderKyc(cle: _cle, id: id);
-    if (!mounted) return;
-    if (result['ok'] == true) {
-      afficherToast(context, '✅ KYC validé pour $gestNom !');
-      SupabaseService.envoyerNotification(
-        code:    code,
-        type:    'kyc',
-        titre:   '🪪 KYC approuvé',
-        message: 'Votre dossier KYC a été validé. Votre tontine peut opérer normalement.',
-      );
-      await _recharger();
-    } else {
-      afficherToast(context, result['erreur'] as String? ?? 'Erreur validation KYC.', estErreur: true);
-    }
-  }
-
-  Future<void> _rejeterKyc(int id, String code, String gestNom) async {
-    final motifCtrl = TextEditingController();
-    String? motifErreur;
-
-    final motif = await showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (sCtx, setSt) => AlertDialog(
-          backgroundColor: AppColors.fondPapier,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text(
-            'Rejeter le dossier KYC',
-            style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.alerte),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Gestionnaire : $gestNom (tontine $code)'),
-              const SizedBox(height: 10),
-              const Text('Motif du rejet :'),
-              const SizedBox(height: 8),
-              TextField(
-                controller: motifCtrl,
-                maxLines: 2,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: InputDecoration(
-                  hintText: 'Ex : Document illisible, pièce expirée...',
-                  filled: true,
-                  fillColor: Colors.white,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  errorText: motifErreur,
-                ),
-                onChanged: (_) {
-                  if (motifErreur != null) setSt(() => motifErreur = null);
-                },
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, null), child: const Text('Annuler')),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.alerte),
-              onPressed: () {
-                final t = motifCtrl.text.trim();
-                if (t.length < 3) { setSt(() => motifErreur = 'Motif requis.'); return; }
-                Navigator.pop(ctx, t);
-              },
-              child: const Text('Rejeter', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (motif == null || !mounted) return;
-
-    final result = await SupabaseService.adminRejeterKyc(cle: _cle, id: id, motif: motif);
-    if (!mounted) return;
-    if (result['ok'] == true) {
-      afficherToast(context, 'Dossier KYC rejeté.');
-      SupabaseService.envoyerNotification(
-        code:    code,
-        type:    'kyc',
-        titre:   '❌ KYC refusé',
-        message: 'Votre dossier KYC a été refusé. Motif : $motif. Veuillez soumettre un nouveau dossier.',
-      );
-      await _recharger();
-    } else {
-      afficherToast(context, result['erreur'] as String? ?? 'Erreur rejet KYC.', estErreur: true);
-    }
-  }
-
-  // ─── Onglet 9 : Historique e-mails ──────────────────────────────────────────
+  // ── Onglet 📧 E-mails ─────────────────────────────────────────────────────
   Widget _ListeEmails() {
     // Filtre local sur les données déjà chargées
     var filtered = _emails.where((e) {
@@ -1431,8 +1051,6 @@ class _AdminScreenState extends State<AdminScreen> {
       'demande_premium'      => 'Demande Premium',
       'premium_active'       => 'Premium activé',
       'premium_expire'       => 'Premium expiré',
-      'kyc_valide'           => 'KYC validé',
-      'kyc_rejete'           => 'KYC rejeté',
       'nouveau_vote'         => 'Nouveau vote',
       'resultat_vote'        => 'Résultat vote',
       'alerte_securite'      => 'Alerte sécu.',
@@ -1532,7 +1150,7 @@ class _AdminScreenState extends State<AdminScreen> {
               }),
               const SizedBox(width: 8),
               // Filtre type rapide
-              ...['', 'pin_reset', 'alerte_securite', 'kyc_valide', 'kyc_rejete', 'premium_active'].map((t) {
+              ...['', 'pin_reset', 'alerte_securite', 'premium_active'].map((t) {
                 final actif = _filtreEmailType == t;
                 return Padding(
                   padding: const EdgeInsets.only(right: 6),
@@ -4691,14 +4309,13 @@ class _BarreNavAdmin extends StatelessWidget {
 
 // ─── Bloc alertes résumé ───────────────────────────────────────────────────────
 class _BlocAlertes extends StatelessWidget {
-  final int nbDemandesPending, nbDepensesPending, nbPretsPending, nbDecaissementsPending, nbKycPending;
+  final int nbDemandesPending, nbDepensesPending, nbPretsPending, nbDecaissementsPending;
   final void Function(int) onNaviguer;
   const _BlocAlertes({
     required this.nbDemandesPending,
     required this.nbDepensesPending,
     required this.nbPretsPending,
     required this.nbDecaissementsPending,
-    required this.nbKycPending,
     required this.onNaviguer,
   });
 
@@ -4709,7 +4326,6 @@ class _BlocAlertes extends StatelessWidget {
       if (nbDepensesPending > 0)      _AlerteItem(label: '$nbDepensesPending dépense${nbDepensesPending>1?"s":""} en attente',         icone: Icons.receipt_long_outlined,          couleur: AppColors.alerte,  onglet: 4),
       if (nbPretsPending > 0)         _AlerteItem(label: '$nbPretsPending prêt${nbPretsPending>1?"s":""} en attente',                  icone: Icons.account_balance_outlined,       couleur: AppColors.alerte,  onglet: 5),
       if (nbDecaissementsPending > 0) _AlerteItem(label: '$nbDecaissementsPending décaissement${nbDecaissementsPending>1?"s":""} en attente', icone: Icons.account_balance_wallet_rounded, couleur: AppColors.alerte, onglet: 6),
-      if (nbKycPending > 0)           _AlerteItem(label: '$nbKycPending dossier${nbKycPending>1?"s":""} KYC en attente',              icone: Icons.badge_outlined,                 couleur: AppColors.alerte,  onglet: 7),
     ];
     final total = items.length;
     return Container(

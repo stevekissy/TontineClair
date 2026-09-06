@@ -356,12 +356,6 @@ class _CreationScreenState extends State<CreationScreen> {
     }
   }
 
-  /// Bannière KYC — visible uniquement si type = Premium.
-  /// Masquée si abonnement actif (KYC déjà fait lors du premier abonnement).
-
-  /// Lance la vérification Smile ID directement depuis la bannière,
-  /// sans nécessiter la soumission du formulaire de création.
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -410,7 +404,6 @@ class _CreationScreenState extends State<CreationScreen> {
                     style: TextStyle(fontSize: 15, color: AppColors.texteDoux),
                   ),
                   SizedBox(height: 16),
-                  // ── Bannière KYC — visible si Premium ─────────────
                   _SelecteurTypeTontine(
                     valeur: _typeTontine,
                     onChanged: (v) => setState(() {

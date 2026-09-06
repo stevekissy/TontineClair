@@ -37,7 +37,7 @@ CREATE POLICY "no_direct_access_pin_reset" ON public.pin_reset_codes
 CREATE TABLE IF NOT EXISTS public.email_logs (
   id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   destinataire  TEXT        NOT NULL,           -- adresse e-mail du destinataire
-  type_email    TEXT        NOT NULL,           -- 'pin_reset', 'pin_change', 'kyc_verified', etc.
+  type_email    TEXT        NOT NULL,           -- 'pin_reset', 'pin_change', 'alerte_securite', etc.
   sujet         TEXT        NOT NULL,
   tontine_code  TEXT,                           -- tontine concernée (nullable pour emails globaux)
   gest_nom      TEXT,                           -- gestionnaire concerné

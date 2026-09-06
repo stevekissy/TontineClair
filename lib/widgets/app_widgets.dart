@@ -1489,13 +1489,8 @@ class _ModaleKycState extends State<ModaleKyc> {
     }
 
     setState(() { _loading = true; _erreur = null; });
-    final ok = await SupabaseService.soumettreKyc(
-      code:         widget.code,
-      gestionnaire: widget.gestNom,
-      nom:          nom,
-      pieceType:    _pieceType,
-      pieceNumero:  numero,
-    );
+    // KYC service supprimé
+    const ok = false;
     if (!mounted) return;
     setState(() => _loading = false);
     if (ok) {

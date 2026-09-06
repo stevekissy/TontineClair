@@ -15,14 +15,14 @@
 -- Ordre d'exécution OBLIGATOIRE (dépendances inter-migrations) :
 --   001 → Tables core (tontines, config, app_config, admin_config, audit)
 --   002 → Tables scores & audit (scores_historique, propositions_retrait, journal_audit)
---   003 → Tables financier (subscriptions, abonnements, sycapay_transactions, prets_pending, …)
+--   003 → Tables financier (subscriptions, abonnements, prets_pending, …)
 --   004 → Tables KYC & notifs (kyc_submissions, fcm_tokens, rappels_envoyes)
 --   005 → Tables admin team & support (admin_membres, admin_messages, support_tickets, …)
 --   006 → RPCs tontines core (lire_tontine, ecrire_tontine, voter, cloturer_tour, …)
 --   007 → RPCs scores & audit (enregistrer_score, modifier_score_membre v14-FINAL, …)
 --   008 → RPCs admin dashboard (admin_lister_tontines v17, admin_alertes v1.2, …)
 --   009 → RPCs financier & support (abonnements, prêts, décaissements, KYC, team, …)
---   010 → RPCs notifications & SycaPay (sauvegarder_token, crediter_* sycapay, …)
+--   010 → (fichier supprimé)
 --   011 → RPCs fondamentaux v1 reconstruits (creer_tontine, ecrire_tontine, lire_plan, …)
 -- =============================================================================
 
@@ -44,7 +44,7 @@
 \i migrations/002_tables_scores_audit.sql
 
 \echo ''
-\echo '--- [003/011] Tables financier (sycapay, prêts, abonnements) ---'
+\echo '--- [003/011] Tables financier (prêts, abonnements) ---'
 \i migrations/003_tables_financier.sql
 
 \echo ''
@@ -77,7 +77,7 @@
 
 \echo ''
 \echo '--- [010/011] RPCs notifications & SycaPay (sauvegarder_token, crediter_*, …) ---'
-\i migrations/010_rpcs_notifs_sycapay.sql
+-- \i migrations/010_rpcs_notifs_sycapay.sql  [supprimé]
 
 \echo ''
 \echo '--- [011/011] RPCs fondamentaux v1 reconstruits (creer_tontine, lire_plan, …) ---'

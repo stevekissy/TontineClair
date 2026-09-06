@@ -1,8 +1,7 @@
 -- =============================================================================
 -- TontineClair — Migration 003 : Tables financières
 -- Ordre d'exécution : 3/10
--- Remplace : supabase-subscriptions.sql, supabase-sycapay-transactions.sql,
---            supabase-sycapay-v2.sql, supabase-prets-pending.sql,
+-- Remplace : supabase-subscriptions.sql, supabase-prets-pending.sql,
 --            supabase-decaissements-pending.sql, supabase-depenses-pending.sql
 -- =============================================================================
 

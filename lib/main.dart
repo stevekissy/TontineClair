@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:firebase_core/firebase_core.dart';
-// SmileID initialisé en lazy dans KycScreen uniquement (pas au démarrage).
 import 'firebase_options.dart';
 import 'services/storage_service.dart';
 import 'services/tontine_provider.dart';

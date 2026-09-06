@@ -34,7 +34,6 @@ CREATE TABLE IF NOT EXISTS blockchain_journal (
   payload_hash     TEXT,                  -- SHA-256 du payload original
 
   -- Référence opération source
-  ref_coinpayments TEXT,                  -- txid CoinPayments si paiement crypto
   ref_interne      TEXT,                  -- numcommande ou ID interne TC
   metadata         JSONB DEFAULT '{}',    -- données complémentaires libres
 
@@ -60,7 +59,7 @@ CREATE TABLE IF NOT EXISTS blockchain_taux (
   id               BIGSERIAL PRIMARY KEY,
   paire            TEXT        NOT NULL DEFAULT 'XOF/USDT',
   taux             NUMERIC(18,6) NOT NULL,
-  source           TEXT        NOT NULL DEFAULT 'coinpayments',
+  source           TEXT        NOT NULL DEFAULT 'direct',
   created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -70,7 +69,6 @@ CREATE INDEX IF NOT EXISTS idx_bj_statut      ON blockchain_journal (statut);
 CREATE INDEX IF NOT EXISTS idx_bj_type        ON blockchain_journal (type_operation);
 CREATE INDEX IF NOT EXISTS idx_bj_created     ON blockchain_journal (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_bj_tx_hash     ON blockchain_journal (tx_hash) WHERE tx_hash IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_bj_ref_cp      ON blockchain_journal (ref_coinpayments) WHERE ref_coinpayments IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_bj_membre      ON blockchain_journal (membre_id) WHERE membre_id IS NOT NULL;
 
 -- ── 5. Trigger updated_at ─────────────────────────────────────────────────────

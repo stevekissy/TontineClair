@@ -217,15 +217,7 @@ class _LigneJournal extends StatelessWidget {
   /// Transforme le champ `quoi` brut en texte lisible pour un novice.
   /// Gère les anciens formats concaténés (ex: VOTE_CLOS_ADOPTE_TC123:oui=3:non=1:…)
   /// ET les nouveaux formats structurés.
-  // ── Libellés crypto pour le journal ────────────────────────────────────────
-  static const _cryptoLabels = <String, String>{
-    'USDT.TRC20': 'USDT (TRC20)', 'USDT.ERC20': 'USDT (ERC20)',
-    'USDT': 'USDT', 'BTC': 'Bitcoin', 'ETH': 'Ethereum',
-    'LTC': 'Litecoin', 'BNB': 'BNB', 'XRP': 'Ripple',
-    'DOGE': 'Dogecoin', 'TRX': 'TRON', 'SOL': 'Solana',
-  };
-
-  // ── Libellés Mobile Money PayDunya pour le journal ─────────────────────────
+  // ── Libellés Mobile Money pour le journal ─────────────────────────────────
   static const _mmLabels = <String, String>{
     'orange-money-ci': 'Orange Money', 'orange-money-sn': 'Orange Money',
     'orange-money-ml': 'Orange Money', 'orange-money-bf': 'Orange Money',
@@ -239,7 +231,7 @@ class _LigneJournal extends StatelessWidget {
 
   /// Extrait le motif utilisateur depuis une chaîne technique de journal.
   /// Le motif se trouve après le dernier " — " séparateur, s'il existe.
-  /// Ex: "Apport Caisse via CoinPayments — 700 XOF — location"
+  /// Ex: "Apport Caisse — 700 XOF — location"
   ///      → "location"
   /// Ex: "TontineClair - APPORT" → "" (pas de motif)
   String _extraireMotif(String quoi) {
@@ -252,8 +244,7 @@ class _LigneJournal extends StatelessWidget {
     if (RegExp(r'^\d').hasMatch(candidat)) return ''; // commence par chiffre = montant
     if (cLower == 'xof' || cLower == 'eur' || cLower == 'usd' ||
         cLower == 'fcfa' || cLower == 'cfa') { return ''; }
-    if (cLower.contains('coinpayments') ||
-        cLower.contains('tontineclair') || cLower.contains('apport') ||
+    if (cLower.contains('tontineclair') || cLower.contains('apport') ||
         cLower.contains('caisse') || cLower.contains('cotisation') ||
         cLower.contains('pénalité') || cLower.contains('penalite') ||
         cLower.contains('dépense') || cLower.contains('depense')) { return ''; }
@@ -261,45 +252,13 @@ class _LigneJournal extends StatelessWidget {
   }
 
   String _formaterQuoi(String quoi) {
-    final lower = quoi.toLowerCase();
 
-    // ── Cas : Paiement CoinPayments (Crypto) ──────────────────────────────────
-    // Patterns DB : "Apport Caisse via CoinPayments — 700 XOF — location"
-    //               "TontineClair - APPORT — location"
-    if (lower.contains('coinpayments')) {
-      // Détecter le type d'opération
-      String typeOp;
-      if (lower.contains('apport caisse') || lower.contains('apport en caisse') ||
-          lower.contains('tontineclair') && lower.contains('apport')) {
-        typeOp = 'Apport caisse';
-      } else if (lower.contains('cotisation')) {
-        typeOp = 'Cotisation';
-      } else if (lower.contains('pénalité') || lower.contains('penalite')) {
-        typeOp = 'Pénalité';
-      } else if (lower.contains('dépense') || lower.contains('depense')) {
-        typeOp = 'Dépense caisse';
-      } else if (lower.contains('remboursement')) {
-        typeOp = 'Remboursement prêt';
-      } else {
-        typeOp = 'Paiement';
-      }
-      // Détecter la crypto éventuelle dans la chaîne brute
-      String crypto = '';
-      for (final entry in _cryptoLabels.entries) {
-        if (quoi.contains(entry.key)) { crypto = entry.value; break; }
-      }
-      // Extraire le motif utilisateur (après le dernier " — ")
-      final motif = _extraireMotif(quoi);
-      final cryptoPart = crypto.isNotEmpty ? ' · $crypto' : '';
-      final motifPart  = motif.isNotEmpty  ? ' · $motif'  : '';
-      return '$typeOp — Crypto$cryptoPart$motifPart';
-    }
-
-    // ── Cas : Paiement PayDunya (Mobile Money) ────────────────────────────────
-    // Pattern DB : "Cotisation Manuella — Tour 1 (PayDunya MTN)"
-    //              "Apport caisse — location (PayDunya Orange)"
+    // ── Cas : Paiement Mobile Money (anciens enregistrements)
+    // ── Cas : Paiement Mobile Money ─────────────────────────────────────────────
+    // Pattern DB : "Cotisation Manuella — Tour 1 (MTN)"
+    //              "Apport caisse — location (Orange)"
     final mmMatch = RegExp(
-      r'\(PayDunya\s+(\w+[-]?\w*)\)',
+      r'\((\w+[-]?\w*)\)',
       caseSensitive: false,
     ).firstMatch(quoi);
     if (mmMatch != null) {
@@ -307,7 +266,7 @@ class _LigneJournal extends StatelessWidget {
       final opLabel = _mmLabels[opCode] ?? _mmLabels.entries
           .firstWhere((e) => opCode.contains(e.key), orElse: () => const MapEntry('', 'Mobile Money'))
           .value;
-      // Extraire le vrai libellé sans la partie "(PayDunya …)"
+      // Extraire le vrai libellé sans la partie entre parenthèses
       final titre = quoi
           .replaceAll(mmMatch.group(0)!, '')
           .replaceAll(RegExp(r'\s{2,}'), ' ')

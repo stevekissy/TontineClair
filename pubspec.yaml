@@ -65,11 +65,6 @@ dependencies:
   cupertino_icons: ^1.0.8
   image_picker: ^1.1.2
 
-  # KYC — Smile ID native SDK (vérification d'identité officielle)
-  # 11.2.12 → iOS SDK 11.2.1 : supprime la double déclaration FingerprintJS/Sentry
-  # qui causait "Class X implemented in both SmileIDSDK.framework and FingerprintJS.framework"
-  # et le crash écran blanc sur iPhone réel. (cf. smileidentity/ios PR #514)
-  smile_id: 11.2.12
 
 dev_dependencies:
   flutter_test:

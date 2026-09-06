@@ -975,7 +975,6 @@ class _ActionsRapides extends StatelessWidget {
                           builder: (_) => AbonnementScreen(
                             code: code,
                             montantCagnotte: data.montantCagnotte,
-                            kycStatut: data.kycStatut,
                             gestNom: gestNom,
                             estTontineGratuite: !isPremium,
                           ),
@@ -999,7 +998,6 @@ class _ActionsRapides extends StatelessWidget {
                           builder: (_) => AbonnementScreen(
                             code: code,
                             montantCagnotte: data.montantCagnotte,
-                            kycStatut: data.kycStatut,
                             gestNom: gestNom,
                             estTontineGratuite: !isPremium,
                           ),
@@ -1023,7 +1021,6 @@ class _ActionsRapides extends StatelessWidget {
                           builder: (_) => AbonnementScreen(
                             code: code,
                             montantCagnotte: data.montantCagnotte,
-                            kycStatut: data.kycStatut,
                             gestNom: gestNom,
                             estTontineGratuite: !isPremium,
                           ),
@@ -1717,7 +1714,7 @@ class _BarreDetail extends StatelessWidget {
   /// ── Clôture UNIFIÉE (Lite ET Premium) : décaissement 100% manuel ─────────
   /// Flux : saisie référence → PIN gestionnaire → caisse débitée
   ///        → journal + blockchain + notif.
-  /// Aucun frais. Aucun paiement automatisé. Aucune dépendance PayDunya/Crypto.
+  /// Aucun frais. Aucun paiement automatisé.
   Future<void> _cloturerTourManuel({
     required BuildContext    context,
     required TontineProvider provider,
@@ -2083,7 +2080,6 @@ class _BarreDetail extends StatelessWidget {
                   ],
                   const SizedBox(height: 12),
 
-                  // Note informationnelle (pas de PayDunya, pas de frais)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
