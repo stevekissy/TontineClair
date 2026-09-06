@@ -2859,6 +2859,57 @@ class SupabaseService {
     }
   }
 
+  /// Récupère la liste {nom, email} de tous les membres d'une tontine Premium
+  /// qui ont renseigné leur e-mail lors de la création.
+  ///
+  /// Lit directement la colonne `data`→`membres[]` (champ 'email') via REST.
+  /// Retourne [] si la tontine est introuvable, Gratuite, ou si aucun membre
+  /// n'a d'e-mail.
+  static Future<List<Map<String, String>>> lireEmailsMembres(String code) async {
+    try {
+      final uri = Uri.parse(
+        '$_url/rest/v1/tontines?select=data&code=eq.${code.toUpperCase()}',
+      );
+      final res = await http.get(
+        uri,
+        headers: {
+          'apikey':        _key,
+          'Authorization': 'Bearer $_key',
+          'Accept':        'application/json',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (res.statusCode != 200 && res.statusCode != 206) return [];
+
+      final body = jsonDecode(res.body);
+      if (body is! List || body.isEmpty) return [];
+
+      final data = body[0]['data'];
+      if (data is! Map) return [];
+
+      final membres = data['membres'];
+      if (membres is! List) return [];
+
+      final result = <Map<String, String>>[];
+      for (final m in membres) {
+        if (m is Map) {
+          final nom   = (m['nom']   as String? ?? '').trim();
+          final email = (m['email'] as String? ?? '').trim();
+          if (nom.isNotEmpty && email.isNotEmpty) {
+            result.add({'nom': nom, 'email': email});
+          }
+        }
+      }
+      if (kDebugMode) {
+        debugPrint('[lireEmailsMembres] ${result.length} membre(s) avec email pour $code');
+      }
+      return result;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[lireEmailsMembres] Erreur: $e');
+      return [];
+    }
+  }
+
   /// Lit l'e-mail enregistré d'un gestionnaire dans la colonne `gestionnaires`.
   /// Retourne {ok: true, email, gest_nom} ou {ok: false, erreur}.
   static Future<Map<String, dynamic>> adminGetGestionnaireEmail({

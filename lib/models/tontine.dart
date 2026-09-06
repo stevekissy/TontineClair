@@ -73,6 +73,11 @@ class Membre {
   // Renseignées par le gestionnaire dans la fiche membre.
   // Version 2 : moyenPaiementCode + coordonneesPaiement (tous moyens de paiement)
   // Version 1 (rétro-compat) : operateur + numeroBenef (Mobile Money Afrique Ouest)
+  // ── Email du membre (Premium) ─────────────────────────────────────────────
+  // Renseigné lors de la création (formule Premium uniquement).
+  // Permet l'envoi automatique d'e-mails de notification à chaque mouvement.
+  String? email;               // adresse e-mail du membre (optionnel, Premium)
+
   String? moyenPaiementCode;   // ex: 'orange_money', 'wave', 'virement_iban', 'paypal'...
   String? coordonneesPaiement; // numéro, IBAN, email, tag... selon moyenPaiementCode
   // Champs v1 conservés pour rétro-compat (anciens membres avant migration)
@@ -97,6 +102,7 @@ class Membre {
     required this.nom,
     this.tel,
     this.role,
+    this.email,
     this.paye = false,
     this.datePaiement,
     this.methodePaiement,
@@ -159,6 +165,7 @@ class Membre {
       nom: json['nom'] as String? ?? '',
       tel: json['tel'] as String?,
       role: json['role'] as String?,
+      email: json['email'] as String?,
       // 'paye' n'est pas dans les membres[] de Supabase — calculé depuis paiements{}
       paye: json['paye'] as bool? ?? false,
       datePaiement: json['datePaiement'] as String?,
@@ -189,6 +196,7 @@ class Membre {
         'nom': nom,
         if (tel != null) 'tel': tel,
         if (role != null) 'role': role,
+        if (email != null && email!.isNotEmpty) 'email': email,
         'paye': paye,
         if (datePaiement != null) 'datePaiement': datePaiement,
         if (methodePaiement != null) 'methodePaiement': methodePaiement,

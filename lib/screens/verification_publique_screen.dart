@@ -148,7 +148,8 @@ class _VerificationPubliqueScreenState
 
   // ── Phase du contrat ───────────────────────────────────────────────────────
   int get _phase => (_contrat['phase'] as num?)?.toInt() ?? 1;
-  String? get _contratAddress => _contrat['contract'] as String?;
+  String? get _contratAddress =>
+      _contrat['contract_address'] as String? ?? _contrat['address'] as String?;
 
   @override
   Widget build(BuildContext context) {

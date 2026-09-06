@@ -32,6 +32,12 @@ class _CreationScreenState extends State<CreationScreen> {
     TextEditingController(),
   ];
 
+  // ── E-mails membres (Premium uniquement) — un contrôleur par membre ────────────
+  final List<TextEditingController> _membresEmailCtrl = [
+    TextEditingController(),
+    TextEditingController(),
+  ];
+
   final List<TextEditingController> _gestNomCtrl      = [TextEditingController()];
   final List<TextEditingController> _gestPinCtrl      = [TextEditingController()];
   final List<TextEditingController> _gestEmailCtrl    = [TextEditingController()];
@@ -58,6 +64,9 @@ class _CreationScreenState extends State<CreationScreen> {
     for (final c in _membresCtrl) {
       c.dispose();
     }
+    for (final c in _membresEmailCtrl) {
+      c.dispose();
+    }
     for (final c in _gestNomCtrl)    { c.dispose(); }
     for (final c in _gestPinCtrl)    { c.dispose(); }
     for (final c in _gestEmailCtrl)  { c.dispose(); }
@@ -76,6 +85,20 @@ class _CreationScreenState extends State<CreationScreen> {
         .map((c) => c.text.trim())
         .where((s) => s.isNotEmpty)
         .toList();
+
+    // E-mails membres (extraits en parallèle aux noms — garde le même index)
+    final membresEmails = _membresCtrl
+        .asMap()
+        .entries
+        .where((e) => e.value.text.trim().isNotEmpty) // uniquement les membres valides
+        .map((e) {
+          final idx = e.key;
+          return idx < _membresEmailCtrl.length
+              ? _membresEmailCtrl[idx].text.trim().toLowerCase()
+              : '';
+        })
+        .toList();
+
     final gestNoms      = _gestNomCtrl.map((c) => c.text.trim()).toList();
     final gestPins      = _gestPinCtrl.map((c) => c.text.trim()).toList();
     final gestEmails    = _gestEmailCtrl.map((c) => c.text.trim().toLowerCase()).toList();
@@ -88,6 +111,27 @@ class _CreationScreenState extends State<CreationScreen> {
     if (nom.isEmpty) {
       setState(() => _erreur = 'Donnez un nom à la tontine.');
       return;
+    }
+
+    // ── Premium : valider le format des e-mails membres renseignés ──────────────
+    // L'e-mail est optionnel pour chaque membre, mais s'il est renseigné
+    // il doit avoir un format valide.
+    if (_typeTontine == 'premium') {
+      final emailReg = RegExp(r'^[\w.+\-]+@[\w\-]+\.[\w.]+$');
+      // Recalculer les noms valides (même filtre que 'membres' ci-dessus)
+      final nomsValides = _membresCtrl
+          .map((c) => c.text.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+      for (int i = 0; i < nomsValides.length; i++) {
+        final emailSaisi = i < membresEmails.length ? membresEmails[i] : '';
+        if (emailSaisi.isNotEmpty && !emailReg.hasMatch(emailSaisi)) {
+          setState(() => _erreur =
+              'E-mail de ${nomsValides[i]} invalide.\n'
+              'Format attendu : nom@gmail.com');
+          return;
+        }
+      }
     }
 
     if (montantStr.isEmpty || int.tryParse(montantStr) == null) {
@@ -248,6 +292,7 @@ class _CreationScreenState extends State<CreationScreen> {
       methodeOrdre: _methode,
       devise: _devise,
       membres: membres,
+      membresEmails: membresEmails, // ← e-mails Premium (vide pour Gratuite)
       gestionnaires: gestionnaires,
       tier: _typeTontine,
     );
@@ -287,12 +332,17 @@ class _CreationScreenState extends State<CreationScreen> {
     setState(() {
       _erreur = null;
       _membresCtrl.add(TextEditingController());
+      _membresEmailCtrl.add(TextEditingController());
     });
   }
 
   void _retirerMembre(int i) {
     _membresCtrl[i].dispose();
-    setState(() => _membresCtrl.removeAt(i));
+    if (i < _membresEmailCtrl.length) _membresEmailCtrl[i].dispose();
+    setState(() {
+      _membresCtrl.removeAt(i);
+      if (i < _membresEmailCtrl.length) _membresEmailCtrl.removeAt(i);
+    });
   }
 
   void _ajouterGest() {
@@ -546,7 +596,11 @@ class _CreationScreenState extends State<CreationScreen> {
                           _membresCtrl.length,
                           (i) => _LigneMembre(
                             ctrl: _membresCtrl[i],
+                            emailCtrl: i < _membresEmailCtrl.length
+                                ? _membresEmailCtrl[i]
+                                : null,
                             placeholder: 'Membre ${i + 1} — ex : Awa K.',
+                            isPremium: _typeTontine == 'premium',
                             onRetirer: _membresCtrl.length > 2
                                 ? () => _retirerMembre(i)
                                 : null,
@@ -717,51 +771,113 @@ class _CreationScreenState extends State<CreationScreen> {
 
 class _LigneMembre extends StatelessWidget {
   final TextEditingController ctrl;
+  final TextEditingController? emailCtrl;
   final String placeholder;
+  final bool isPremium;
   final VoidCallback? onRetirer;
 
   const _LigneMembre({
     required this.ctrl,
     required this.placeholder,
+    this.emailCtrl,
+    this.isPremium = false,
     this.onRetirer,
   });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: TextField(
-              controller: ctrl,
-              maxLength: 30,
-              decoration: InputDecoration(
-                hintText: placeholder,
-                counterText: '',
-              ),
-            ),
-          ),
-          if (onRetirer != null) ...[
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: onRetirer,
-              child: Container(
-                width: 44,
-                height: 48,
-                decoration: BoxDecoration(
-                  border: Border.all(color: AppColors.lignes, width: 1.5),
-                  borderRadius: BorderRadius.circular(12),
-                  color: Colors.white,
+          // ── Ligne nom + bouton supprimer ──────────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: ctrl,
+                  maxLength: 30,
+                  decoration: InputDecoration(
+                    hintText: placeholder,
+                    counterText: '',
+                  ),
                 ),
-                child: const Center(
-                  child: Text(
-                    '✕',
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: AppColors.alerte,
+              ),
+              if (onRetirer != null) ...[
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: onRetirer,
+                  child: Container(
+                    width: 44,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: AppColors.lignes, width: 1.5),
+                      borderRadius: BorderRadius.circular(12),
+                      color: Colors.white,
+                    ),
+                    child: const Center(
+                      child: Text(
+                        '✕',
+                        style: TextStyle(
+                          fontSize: 18,
+                          color: AppColors.alerte,
+                        ),
+                      ),
                     ),
                   ),
+                ),
+              ],
+            ],
+          ),
+          // ── Champ e-mail (Premium uniquement) ────────────────────────────
+          if (isPremium && emailCtrl != null) ...[
+            const SizedBox(height: 6),
+            TextField(
+              controller: emailCtrl!,
+              keyboardType: TextInputType.emailAddress,
+              maxLength: 80,
+              decoration: InputDecoration(
+                hintText: 'E-mail du membre (ex: awa@gmail.com)',
+                counterText: '',
+                prefixIcon: const Icon(
+                  Icons.email_outlined,
+                  size: 18,
+                  color: AppColors.texteDoux,
+                ),
+                hintStyle: const TextStyle(
+                  fontSize: 13.5,
+                  color: AppColors.texteDoux,
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 13),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(
+                    color: AppColors.lignes,
+                    width: 1.5,
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(
+                    color: Color(0xFFD99A2B), // or TontineClair
+                    width: 1.5,
+                  ),
+                ),
+                filled: true,
+                fillColor: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 2),
+            const Padding(
+              padding: EdgeInsets.only(left: 4),
+              child: Text(
+                '📧 Cet e-mail recevra les notifications de mouvement en temps réel.',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: AppColors.texteDoux,
+                  fontStyle: FontStyle.italic,
                 ),
               ),
             ),

@@ -369,11 +369,11 @@ class _CaisseScreenState extends State<CaisseScreen> {
       debugPrint('[CaisseEmail] ► Envoi à ${destinataires.length} gestionnaire(s)…');
     }
 
-    // ── Envoi en parallèle ────────────────────────────────────────────────
+    // ── Envoi en parallèle aux gestionnaires ──────────────────────────────
     for (final gest in destinataires) {
       final adresse = gest['email']!;
       final nomGest = gest['nom']!;
-      if (kDebugMode) debugPrint('[CaisseEmail]   → Envoi à $nomGest <$adresse>');
+      if (kDebugMode) debugPrint('[CaisseEmail]   → Gestionnaire: $nomGest <$adresse>');
       email_svc.EmailService.envoyer(
         type:         email_svc.TypeEmail.alerteSecurite,
         destinataire: adresse,
@@ -388,14 +388,60 @@ class _CaisseScreenState extends State<CaisseScreen> {
       ).then((result) {
         if (kDebugMode) {
           if (result.ok) {
-            debugPrint('[CaisseEmail]   ✓ Email envoyé à $adresse (id=${result.emailId})');
+            debugPrint('[CaisseEmail]   ✓ Gestionnaire $adresse (id=${result.emailId})');
           } else {
-            debugPrint('[CaisseEmail]   ✗ Échec envoi à $adresse : ${result.erreur}');
+            debugPrint('[CaisseEmail]   ✗ Gestionnaire $adresse : ${result.erreur}');
           }
         }
       }).catchError((Object e) {
-        if (kDebugMode) debugPrint('[CaisseEmail]   ✗ Exception envoi à $adresse : $e');
+        if (kDebugMode) debugPrint('[CaisseEmail]   ✗ Exception gestionnaire $adresse : $e');
       });
+    }
+
+    // ── Envoi aux membres Premium (e-mails renseignés à la création) ──────
+    // Récupère les membres avec email depuis Supabase (data.membres[].email)
+    // Non-bloquant : fire-and-forget, jamais en Premium Gratuite
+    if (data.tier == 'premium' || data.tier == 'pro') {
+      final emailsMembres =
+          await SupabaseService.lireEmailsMembres(codeTontine);
+
+      if (kDebugMode) {
+        debugPrint('[CaisseEmail] Membres Premium : ${emailsMembres.length} email(s) trouvé(s)');
+      }
+
+      for (final m in emailsMembres) {
+        final adresse  = m['email']!;
+        final nomMembre = m['nom']!;
+
+        // Éviter les doublons si un membre a le même email qu'un gestionnaire
+        final dejaEnvoye = destinataires.any((d) => d['email'] == adresse);
+        if (dejaEnvoye) continue;
+
+        if (kDebugMode) debugPrint('[CaisseEmail]   → Membre: $nomMembre <$adresse>');
+
+        email_svc.EmailService.envoyer(
+          type:         email_svc.TypeEmail.alerteSecurite,
+          destinataire: adresse,
+          variables: {
+            'nom':        nomMembre,
+            'action':     '$icone $typeLibelle — $tontineNom',
+            'message':    detailAction,
+            'tontine':    tontineNom,
+            'date':       DateTime.now().toLocal().toString().substring(0, 16),
+            'gest_actif': gestActif,
+          },
+        ).then((result) {
+          if (kDebugMode) {
+            if (result.ok) {
+              debugPrint('[CaisseEmail]   ✓ Membre $adresse (id=${result.emailId})');
+            } else {
+              debugPrint('[CaisseEmail]   ✗ Membre $adresse : ${result.erreur}');
+            }
+          }
+        }).catchError((Object e) {
+          if (kDebugMode) debugPrint('[CaisseEmail]   ✗ Exception membre $adresse : $e');
+        });
+      }
     }
   }
   Future<void> _mouvement(

@@ -238,6 +238,7 @@ class TontineProvider extends ChangeNotifier {
     required String methodeOrdre,
     String devise = 'XOF',
     required List<String> membres,
+    List<String?> membresEmails = const [],  // e-mails membres (Premium uniquement)
     required List<Gestionnaire> gestionnaires,
     String tier = 'gratuite',
   }) async {
@@ -260,10 +261,16 @@ class TontineProvider extends ChangeNotifier {
         membres: membres
             .asMap()
             .entries
-            .map((e) => Membre(
-                  id: 'm${e.key + 1}',
-                  nom: e.value,
-                ))
+            .map((e) {
+              final email = e.key < membresEmails.length
+                  ? membresEmails[e.key]
+                  : null;
+              return Membre(
+                id: 'm${e.key + 1}',
+                nom: e.value,
+                email: (email != null && email.isNotEmpty) ? email : null,
+              );
+            })
             .toList(),
         // Journal initial : enregistrer la création immédiatement
         journal: [
