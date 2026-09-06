@@ -134,19 +134,21 @@ class BlockchainEntry {
       _metier[typeOperation]?['label'] ?? typeOperation.replaceAll('_', ' ').toUpperCase();
 
   /// Description lisible enrichie avec le contexte (membre, tontine, montant)
+  /// Utilise la devise réelle (metadata['devise']) si disponible — sinon XOF.
   String get descriptionMetier {
     final base = _metier[typeOperation]?['desc'] ?? typeLabel;
     final parties = <String>[];
     if (membreNom != null && membreNom!.isNotEmpty) parties.add(membreNom!);
     if (tontineCode.isNotEmpty) parties.add('– Groupe $tontineCode');
     if (montantXof != null && montantXof! > 0) {
+      final d = devise.isNotEmpty ? devise : 'XOF';
       final s = montantXof.toString();
       final buf = StringBuffer();
       for (int i = 0; i < s.length; i++) {
         if (i > 0 && (s.length - i) % 3 == 0) buf.write('\u202F');
         buf.write(s[i]);
       }
-      parties.add('(${buf.toString()} XOF)');
+      parties.add('(${buf.toString()} $d)');
     }
     return parties.isEmpty ? base : '$base · ${parties.join(' ')}';
   }

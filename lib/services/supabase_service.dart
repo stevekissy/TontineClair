@@ -643,12 +643,40 @@ class SupabaseService {
   ///   id, code, statut, gestionnaire, nom, contact, formule, montant,
   ///   plateforme, motif_refus, traite_par, traite_le, quand,
   ///   nom_tontine, nb_membres
+  ///
+  /// FIX v1.1 : wrap try/catch — admin_lister_demandes a un bug SQL connu
+  /// ("column pr.tontine_code does not exist") qui fait crasher la RPC.
+  /// Fallback : lecture REST directe sur premium_requests.
   static Future<List<Map<String, dynamic>>> adminListerDemandesPremium(String cle) async {
-    final result = await rpc('admin_lister_demandes', {'p_cle': cle});
-    if (result == null) return [];
-    // admin_lister_demandes retourne jsonb (= objet/liste directement)
-    if (result is List) return result.cast<Map<String, dynamic>>();
-    return [];
+    try {
+      final result = await rpc('admin_lister_demandes', {'p_cle': cle});
+      if (result == null) return [];
+      if (result is List) return result.cast<Map<String, dynamic>>();
+      return [];
+    } catch (e) {
+      debugPrint('[adminListerDemandesPremium] RPC bug SQL connu, fallback REST: $e');
+      // Fallback : lecture directe sur premium_requests (table publique accessible en anon)
+      try {
+        final url = Uri.parse(
+          '$_url/rest/v1/premium_requests'
+          '?select=id,code,statut,gestionnaire,nom,contact,formule,montant,plateforme,motif_refus,traite_par,traite_le,created_at'
+          '&order=created_at.desc'
+          '&limit=200',
+        );
+        final resp = await http.get(url, headers: {
+          'apikey':        _key,
+          'Authorization': 'Bearer $_key',
+        }).timeout(const Duration(seconds: 15));
+        if (resp.statusCode == 200) {
+          final list = jsonDecode(resp.body) as List<dynamic>;
+          return list.cast<Map<String, dynamic>>();
+        }
+        return [];
+      } catch (e2) {
+        debugPrint('[adminListerDemandesPremium] fallback REST aussi échoué: $e2');
+        return [];
+      }
+    }
   }
 
   /// Refuser une demande Premium avec motif obligatoire (v12).

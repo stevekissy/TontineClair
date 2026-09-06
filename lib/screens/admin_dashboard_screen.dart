@@ -1,7 +1,9 @@
 // ignore_for_file: avoid_print
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 import '../services/supabase_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
@@ -133,9 +135,150 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   }
 
   // ─── Chargement ────────────────────────────────────────────────────────────
-  // FIX v1.2 : chargements indépendants avec catchError
-  // → si un seul RPC échoue, le dashboard reste fonctionnel
+  // FIX v1.3 : chargements indépendants avec fallback REST direct
+  // → si un RPC échoue, on tente une requête REST directe sur la table `tontines`
   // → les données disponibles s'affichent, les autres restent vides
+
+  // ─── Fallback REST direct sur la table `tontines` ──────────────────────────
+  // Utilisé quand admin_stats_globales retourne {} (RPC non déployée ou clé invalide)
+  Future<Map<String, dynamic>> _statsFallbackRest() async {
+    try {
+      final url = Uri.parse(
+        '${SupabaseService.supabaseUrl}/rest/v1/tontines'
+        '?select=code,plan,status,plan_expire,data,created_at,membres_pins'
+        '&status=eq.active'
+        '&limit=500',
+      );
+      final resp = await http.get(url, headers: {
+        'apikey': SupabaseService.supabaseAnonKey,
+        'Authorization': 'Bearer ${SupabaseService.supabaseAnonKey}',
+      }).timeout(const Duration(seconds: 15));
+
+      if (resp.statusCode != 200) return {};
+      final rows = jsonDecode(resp.body) as List<dynamic>;
+
+      int totalTontines    = 0;
+      int premiumActives   = 0;
+      int gratuites        = 0;
+      int premiumExpires   = 0;
+      int totalMembres     = 0;
+      int abonnementsActifs = 0;
+      final now = DateTime.now();
+
+      for (final row in rows) {
+        final m = row as Map<String, dynamic>;
+        totalTontines++;
+
+        // Membres : membres_pins est un jsonb object { membreId: pin }
+        final membresMap = m['membres_pins'];
+        if (membresMap is Map) totalMembres += membresMap.length;
+
+        // Plan & expiration
+        final plan      = m['plan'] as String? ?? 'free';
+        final expireStr = m['plan_expire'] as String?;
+        final expire    = expireStr != null ? DateTime.tryParse(expireStr) : null;
+
+        if (plan == 'premium') {
+          if (expire == null || expire.isAfter(now)) {
+            premiumActives++;
+            abonnementsActifs++;
+          } else {
+            premiumExpires++;
+          }
+        } else {
+          gratuites++;
+        }
+      }
+
+      debugPrint('ADMIN_DEBUG — fallback REST: $totalTontines tontines, '
+          '$totalMembres membres, $premiumActives premium actives');
+
+      return {
+        'total_tontines'       : totalTontines,
+        'premium_actives'      : premiumActives,
+        'premium_expires'      : premiumExpires,
+        'gratuites'            : gratuites,
+        'total_membres'        : totalMembres,
+        'abonnements_actifs'   : abonnementsActifs,
+        'montant_mensuel_fcfa' : premiumActives * 2500,
+        'montant_annuel_fcfa'  : premiumActives * 25000,
+        'encaisse_ce_mois'     : 0,
+        'encaisse_annee'       : 0,
+        'revenu_mensuel_estime': premiumActives * 2500,
+        'revenu_annuel_estime' : premiumActives * 25000,
+        'alertes'              : premiumExpires,
+      };
+    } catch (e) {
+      debugPrint('ADMIN_DEBUG — fallback REST ERREUR: $e');
+      return {};
+    }
+  }
+
+  // ─── Fallback REST direct pour la liste des tontines ──────────────────────
+  Future<List<Map<String, dynamic>>> _tontinesFallbackRest() async {
+    try {
+      final url = Uri.parse(
+        '${SupabaseService.supabaseUrl}/rest/v1/tontines'
+        '?select=code,plan,status,plan_expire,data,created_at,membres_pins'
+        '&status=eq.active'
+        '&order=created_at.desc'
+        '&limit=200',
+      );
+      final resp = await http.get(url, headers: {
+        'apikey': SupabaseService.supabaseAnonKey,
+        'Authorization': 'Bearer ${SupabaseService.supabaseAnonKey}',
+      }).timeout(const Duration(seconds: 15));
+
+      if (resp.statusCode != 200) return [];
+      final rows = jsonDecode(resp.body) as List<dynamic>;
+      final result = <Map<String, dynamic>>[];
+      final now = DateTime.now();
+
+      for (final row in rows) {
+        final m = Map<String, dynamic>.from(row as Map<String, dynamic>);
+
+        // Extraire les données du JSONB `data`
+        final data = m['data'];
+        final dataMap = data is Map<String, dynamic> ? data
+            : (data is String ? (jsonDecode(data) as Map<String, dynamic>? ?? {}) : <String, dynamic>{});
+
+        final nom       = dataMap['nom']         as String? ?? m['code'] as String? ?? '—';
+        final devise    = dataMap['devise']       as String? ?? 'XOF';
+        final membresMap = m['membres_pins'];
+        final nbMembres = membresMap is Map ? membresMap.length : 0;
+
+        final plan      = m['plan']       as String? ?? 'free';
+        final expireStr = m['plan_expire'] as String?;
+        final expire    = expireStr != null ? DateTime.tryParse(expireStr) : null;
+        final estActif  = expire == null || expire.isAfter(now);
+        final expireBientot = expire != null && expire.isAfter(now) &&
+            expire.isBefore(now.add(const Duration(days: 7)));
+
+        result.add({
+          'code'          : m['code'],
+          'nom'           : nom,
+          'plan'          : plan,
+          'plan_expire'   : expireStr,
+          'nb_membres'    : nbMembres,
+          'devise'        : devise,
+          'cree'          : m['created_at'],
+          'premier_gest'  : (dataMap['gestionnaires'] is List &&
+              (dataMap['gestionnaires'] as List).isNotEmpty)
+              ? ((dataMap['gestionnaires'] as List).first['nom'] ?? '—')
+              : '—',
+          'est_actif'     : estActif,
+          'expire_bientot': expireBientot,
+          'status'        : m['status'] ?? 'active',
+        });
+      }
+
+      debugPrint('ADMIN_DEBUG — fallback tontines REST: ${result.length} tontines');
+      return result;
+    } catch (e) {
+      debugPrint('ADMIN_DEBUG — fallback tontines REST ERREUR: $e');
+      return [];
+    }
+  }
 
   Future<void> _charger() async {
     setState(() {
@@ -153,7 +296,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     // Erreurs collectées par RPC (affichage en console, pas écran blanc)
     final erreurs = <String>[];
 
-    // ── RPC 1 : stats globales (KPI) ─────────────────────────────────────
+    // ── RPC 1 : stats globales (KPI) — avec fallback REST direct ─────────
     Map<String, dynamic> statsJson = {};
     try {
       statsJson = await SupabaseService.adminStatsGlobales(widget.cle);
@@ -162,8 +305,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       logErr('admin_stats_globales', e);
       erreurs.add('stats_globales: $e');
     }
+    // ── Fallback REST si RPC retourne vide ────────────────────────────────
+    if (statsJson.isEmpty) {
+      debugPrint('ADMIN_DEBUG — admin_stats_globales vide → fallback REST');
+      statsJson = await _statsFallbackRest();
+      if (statsJson.isNotEmpty) {
+        logOk('admin_stats_globales [REST fallback]', statsJson);
+      }
+    }
 
-    // ── RPC 2 : liste tontines ────────────────────────────────────────────
+    // ── RPC 2 : liste tontines — avec fallback REST direct ───────────────
     List<Map<String, dynamic>> tontines = [];
     try {
       tontines = await SupabaseService.adminDashboardTontines(
@@ -173,6 +324,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     } catch (e) {
       logErr('admin_dashboard_tontines', e);
       erreurs.add('dashboard_tontines: $e');
+    }
+    // Fallback REST si RPC retourne vide
+    if (tontines.isEmpty) {
+      debugPrint('ADMIN_DEBUG — admin_dashboard_tontines vide → fallback REST');
+      tontines = await _tontinesFallbackRest();
+      if (tontines.isNotEmpty) logOk('admin_dashboard_tontines [REST fallback]', tontines);
     }
 
     // ── RPC 3 : abonnements ───────────────────────────────────────────────

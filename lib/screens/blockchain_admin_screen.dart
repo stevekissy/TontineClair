@@ -4,9 +4,12 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import '../services/blockchain_service.dart';
+import '../services/supabase_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 
@@ -47,6 +50,10 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
   Map<String, dynamic> _contrat = {};
   bool _contratLoading = true;
 
+  // ── Map devise par tontineCode — fallback quand entry.devise est vide ───
+  // Chargé depuis Supabase REST : tontines.data->>'devise'
+  Map<String, String> _deviseParCode = {};
+
   @override
   void initState() {
     super.initState();
@@ -55,6 +62,56 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
     _chargerJournal();
     _chargerTaux();
     _chargerContrat();
+    _chargerDevisesMap();
+  }
+
+  // ── Charger la map code → devise depuis Supabase REST ────────────────────
+  Future<void> _chargerDevisesMap() async {
+    try {
+      final url = Uri.parse(
+        '${SupabaseService.supabaseUrl}/rest/v1/tontines'
+        '?select=code,data'
+        '&status=eq.active'
+        '&limit=500',
+      );
+      final resp = await http.get(url, headers: {
+        'apikey':        SupabaseService.supabaseAnonKey,
+        'Authorization': 'Bearer ${SupabaseService.supabaseAnonKey}',
+      }).timeout(const Duration(seconds: 15));
+
+      if (resp.statusCode == 200) {
+        final rows = jsonDecode(resp.body) as List<dynamic>;
+        final map  = <String, String>{};
+        for (final row in rows) {
+          final m    = row as Map<String, dynamic>;
+          final code = m['code'] as String? ?? '';
+          if (code.isEmpty) continue;
+
+          // data peut être Map ou String JSON
+          final data    = m['data'];
+          final dataMap = data is Map<String, dynamic> ? data
+              : (data is String
+                  ? (jsonDecode(data) as Map<String, dynamic>? ?? {})
+                  : <String, dynamic>{});
+
+          final devise = dataMap['devise'] as String? ?? '';
+          if (devise.isNotEmpty) map[code] = devise;
+        }
+        if (!mounted) return;
+        setState(() => _deviseParCode = map);
+        debugPrint('[Blockchain] map devise: ${map.length} tontines chargées — $map');
+      }
+    } catch (e) {
+      debugPrint('[Blockchain] _chargerDevisesMap ERREUR: $e');
+    }
+  }
+
+  /// Résolution de devise : metadata['devise'] en priorité, puis map REST, puis 'XOF'
+  String _deviseEntry(BlockchainEntry e) {
+    if (e.devise.isNotEmpty) return e.devise;
+    final fromMap = _deviseParCode[e.tontineCode];
+    if (fromMap != null && fromMap.isNotEmpty) return fromMap;
+    return 'XOF';
   }
 
   @override
@@ -178,7 +235,7 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
                 const Spacer(),
                 IconButton(
                   icon: const Icon(Icons.refresh_rounded, size: 20),
-                  onPressed: () { _chargerStats(); _chargerJournal(); _chargerTaux(); _chargerContrat(); },
+                  onPressed: () { _chargerStats(); _chargerJournal(); _chargerTaux(); _chargerContrat(); _chargerDevisesMap(); },
                   tooltip: 'Actualiser',
                 ),
               ]),
@@ -457,7 +514,7 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
           ])),
           const SizedBox(width: 8),
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text(e.montantXof != null ? Formatters.montant(e.montantXof!, devise: e.devise.isNotEmpty ? e.devise : null) : '—',
+            Text(e.montantXof != null ? Formatters.montant(e.montantXof!, devise: _deviseEntry(e)) : '—',
                 style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: AppColors.encre)),
             const SizedBox(height: 3),
             _badgeStatut(e.statut),
@@ -553,7 +610,7 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
         const SizedBox(height: 8),
         // ── Infos essentielles ───────────────────────────────────────────────
         if (e.montantXof != null)
-          _ligneInfo('Montant', Formatters.montant(e.montantXof!, devise: e.devise.isNotEmpty ? e.devise : null)
+          _ligneInfo('Montant', Formatters.montant(e.montantXof!, devise: _deviseEntry(e))
               + (e.montantUsdt != null ? '  ≈  ${e.montantUsdt!.toStringAsFixed(4)} USDT' : '')),
 
         Row(children: [
@@ -659,7 +716,7 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
                     _detailLigne('Tontine', e.tontineCode),
                     if (e.membreNom != null) _detailLigne('Membre', e.membreNom!),
                     if (e.montantXof != null)
-                      _detailLigne('Montant', Formatters.montant(e.montantXof!, devise: e.devise.isNotEmpty ? e.devise : null)
+                      _detailLigne('Montant', Formatters.montant(e.montantXof!, devise: _deviseEntry(e))
                           + (e.montantUsdt != null ? ' ≈ ${e.montantUsdt!.toStringAsFixed(4)} USDT' : '')),
 
                     _detailLigne('Statut', e.statutLabel),
@@ -918,7 +975,15 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
                       fontWeight: FontWeight.w700, color: AppColors.encre)),
             ]),
           ),
-        if (r['montant_xof'] != null) _ligneInfo('Montant', '${r['montant_xof']} XOF'),  // vérification TX — devise inconnue ici (raw hash lookup)
+        if (r['montant_xof'] != null) _ligneInfo(
+          'Montant',
+          Formatters.montant(
+            (r['montant_xof'] as num).toInt(),
+            devise: r['tontine_code'] != null
+                ? (_deviseParCode[r['tontine_code'] as String] ?? 'XOF')
+                : 'XOF',
+          ),
+        ),
         _ligneInfo('Statut', statut),
         if (r['block_number'] != null) _ligneInfo('Bloc', '#${r['block_number']}'),
         if (r['confirmed_at'] != null) _ligneInfo('Confirmé le', r['confirmed_at'] as String),
