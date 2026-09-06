@@ -813,7 +813,7 @@ async function actionEnregistrerOperation(
       };
 
       // Construire le refInterne lisible — visible dans "Input Data" sur PolygonScan
-      // Format : "CODE_TONTINE | Libellé opération | Membre | ref_optionnelle"
+      // Format : "CODE_TONTINE | Libellé opération | Membre | ref_optionnelle | montant DEVISE"
       // Le code tontine EN PREMIER garantit qu'on sait immédiatement de quelle tontine
       // il s'agit en lisant les paramètres de la TX sur PolygonScan, même sans contrat vérifié.
       const libelle = LIBELLES[typeOp] || typeOp.replace(/_/g, " ");
@@ -821,9 +821,20 @@ async function actionEnregistrerOperation(
       const refParts: string[] = [codeStr, libelle];  // ← code tontine en tête
       if (memNom) refParts.push(memNom);
       if (refBrut && refBrut !== memNom) refParts.push(refBrut);
-      // ── Devise visible sur Polygonscan ── toujours en dernier dans refInterne
-      // Ex: "JX9FKY | Cotisation | Jean Dupont | EUR" au lieu de "JX9FKY | Cotisation"
-      if (devise) refParts.push(devise);
+      // ── Montant + Devise visible sur PolygonScan (param3 s'appelle montantXof dans le contrat
+      //    vérifié et ne peut pas être renommé dynamiquement — on enrichit donc refInterne)
+      // Ex: "JX9FKY | Cotisation | Jean Dupont | 9900 EUR"
+      //     "JX9FKY | Cotisation | Jean Dupont | 5000 XOF"
+      //     "JX9FKY | Cotisation | Jean Dupont | 100 NGN"
+      if (montantXof > 0 && devise) {
+        refParts.push(`${montantXof} ${devise}`);
+      } else if (montantXof > 0) {
+        // Pas de devise connue — on affiche le montant brut pour ne rien perdre
+        refParts.push(`${montantXof}`);
+      } else if (devise) {
+        // Montant nul (sync, vote…) — on affiche quand même la devise de la tontine
+        refParts.push(devise);
+      }
       const ref = refParts.join(" | ");
 
       switch (typeOp) {
