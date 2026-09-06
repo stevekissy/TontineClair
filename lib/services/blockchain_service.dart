@@ -100,6 +100,10 @@ class BlockchainEntry {
   bool get estPending  => statut == 'pending' || statut == 'submitted';
   bool get estEchec    => statut == 'failed';
 
+  /// Devise réelle de la tontine — lue dans metadata['devise'].
+  /// Jamais de fallback XOF : si absent → chaîne vide (affichage numérique seul).
+  String get devise => (metadata['devise'] as String?)?.trim() ?? '';
+
   String get explorerUrl =>
       txHash != null ? 'https://polygonscan.com/tx/$txHash' : '';
 

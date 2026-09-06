@@ -1910,7 +1910,7 @@ class _CartePretPending extends StatelessWidget {
     final durees     = (p['durees_mois'] as num?)?.toInt() ?? 0;
     final ref        = p['reference'] as String? ?? '—';
     final statut     = p['statut'] as String? ?? 'pending';
-    final devise     = p['devise'] as String? ?? 'XOF';
+    final devise     = p['devise'] as String? ?? '';
     final createdAt  = DateTime.tryParse(p['created_at'] as String? ?? '');
 
     final Color couleurStatut;

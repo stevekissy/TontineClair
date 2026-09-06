@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/blockchain_service.dart';
 import '../utils/app_colors.dart';
+import '../utils/formatters.dart';
 
 class BlockchainAdminScreen extends StatefulWidget {
   final String cleAdmin;
@@ -450,7 +451,7 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
               style: const TextStyle(fontSize: 10, color: AppColors.texteDoux)),
         ])),
         Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Text(e.montantXof != null ? '${_formatNumber(e.montantXof!)} XOF' : '—',
+          Text(e.montantXof != null ? Formatters.montant(e.montantXof!, devise: e.devise) : '—',
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: AppColors.encre)),
           _badgeStatut(e.statut),
         ]),
@@ -535,7 +536,8 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
         // Infos
         _ligneInfo('Tontine', e.tontineCode),
         if (e.membreNom != null) _ligneInfo('Membre', e.membreNom!),
-        if (e.montantXof != null) _ligneInfo('Montant', '${_formatNumber(e.montantXof!)} XOF'
+        if (e.montantXof != null) _ligneInfo('Montant',
+            '${Formatters.montant(e.montantXof!, devise: e.devise)}'
             '${e.montantUsdt != null ? "  ≈  ${e.montantUsdt!.toStringAsFixed(4)} USDT" : ""}'),
         _ligneInfo('Bloc', e.blockNumber != null ? '#${_formatNumber(e.blockNumber!)}' : '—'),
         // TX Hash avec copie
@@ -681,7 +683,7 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
         const SizedBox(height: 10),
         if (r['tontine_code'] != null) _ligneInfo('Tontine', r['tontine_code']),
         if (r['type_operation'] != null) _ligneInfo('Type', r['type_operation']),
-        if (r['montant_xof'] != null) _ligneInfo('Montant', '${r['montant_xof']} XOF'),
+        if (r['montant_xof'] != null) _ligneInfo('Montant', '${r['montant_xof']}'),
         _ligneInfo('Statut', statut),
         if (r['block_number'] != null) _ligneInfo('Bloc', '#${r['block_number']}'),
         if (r['confirmed_at'] != null) _ligneInfo('Confirmé le', r['confirmed_at']),

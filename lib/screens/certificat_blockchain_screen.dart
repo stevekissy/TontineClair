@@ -18,6 +18,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'dart:io' if (dart.library.html) 'dart:io';
 import '../services/blockchain_service.dart';
 import '../utils/app_colors.dart';
+import '../utils/formatters.dart';
 
 class CertificatBlockchainScreen extends StatefulWidget {
   final String codeTontine;
@@ -143,6 +144,10 @@ class _CertificatBlockchainScreenState
     final totalXof = entreesFiltrees
         .where((e) => e.montantXof != null)
         .fold(0, (s, e) => s + (e.montantXof ?? 0));
+    // Devise dominante des entrées (la première non-vide trouvée)
+    final deviseDetectee = entreesFiltrees
+        .map((e) => e.devise)
+        .firstWhere((d) => d.isNotEmpty, orElse: () => '');
 
     // Numéro de certificat basé sur timestamp
     final numCert = 'TC-${widget.codeTontine}-${now.millisecondsSinceEpoch ~/ 1000}';
@@ -159,7 +164,7 @@ class _CertificatBlockchainScreenState
           pw.SizedBox(height: 16),
 
           // Infos tontine
-          _buildInfosTontine(now, phase, countOnChain, entreesFiltrees.length, totalXof, fontReg, fontBold),
+          _buildInfosTontine(now, phase, countOnChain, entreesFiltrees.length, totalXof, deviseDetectee, fontReg, fontBold),
           pw.SizedBox(height: 16),
 
           // Stats blockchain
@@ -307,7 +312,12 @@ class _CertificatBlockchainScreenState
     );
   }
 
-  pw.Widget _buildInfosTontine(DateTime now, int phase, int onChain, int total, int xof, pw.Font fontReg, pw.Font fontBold) {
+  pw.Widget _buildInfosTontine(DateTime now, int phase, int onChain, int total, int xof, String devise, pw.Font fontReg, pw.Font fontBold) {
+    // Label volume : utilise la vraie devise, jamais XOF par défaut
+    final labelVolume = devise.isNotEmpty ? 'Volume $devise' : 'Volume';
+    final valeurVolume = devise.isNotEmpty
+        ? Formatters.montant(xof, devise: devise)
+        : _formatXof(xof);
     return pw.Row(
       children: [
         _metriqueBox('Code tontine', widget.codeTontine, fontReg, fontBold),
@@ -321,7 +331,7 @@ class _CertificatBlockchainScreenState
           couleur: phase == 2 ? _pdfChain : _pdfOr,
         ),
         pw.SizedBox(width: 8),
-        _metriqueBox('Volume XOF', _formatXof(xof), fontReg, fontBold),
+        _metriqueBox(labelVolume, valeurVolume, fontReg, fontBold),
       ],
     );
   }
@@ -463,7 +473,7 @@ class _CertificatBlockchainScreenState
                       couleur: estOnChain ? _pdfChain : _pdfEncre),
                   _cell(_pdfSafe(e.descriptionMetier), fontReg, fontBold),
                   _cell(e.montantXof != null
-                      ? '${_formatXof(e.montantXof!)} F'
+                      ? Formatters.montant(e.montantXof!, devise: e.devise)
                       : '-', fontReg, fontBold),
                   _cell(
                     e.txHash != null
@@ -1142,7 +1152,7 @@ class _CarteOperationJournal extends StatelessWidget {
                 // Montant
                 if (entree.montantXof != null)
                   Text(
-                    '${_formatMontant(entree.montantXof!)} F',
+                    Formatters.montant(entree.montantXof!, devise: entree.devise),
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,

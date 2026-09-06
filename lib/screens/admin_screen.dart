@@ -2238,7 +2238,7 @@ class _AdminScreenState extends State<AdminScreen> {
     final operateur    = d['operateur'] as String? ?? '—';
     final numBenef     = d['numero_beneficiaire'] as String? ?? '—';
     final gestionnaire = d['gestionnaire'] as String? ?? '—';
-    final devise       = d['devise'] as String? ?? 'XOF';
+    final devise       = d['devise'] as String? ?? '';
     final statut       = d['statut'] as String? ?? 'pending';
     final motifRejet   = d['motif_rejet'] as String?;
     final createdAt    = DateTime.tryParse(d['created_at'] as String? ?? '');
@@ -2445,7 +2445,7 @@ class _AdminScreenState extends State<AdminScreen> {
     final numBenef        = p['numero_beneficiaire'] as String? ?? '—';
     final nomBenef        = p['nom_beneficiaire'] as String? ?? '—';
     final gestionnaire    = p['gestionnaire'] as String? ?? '—';
-    final devise          = p['devise'] as String? ?? 'XOF';
+    final devise          = p['devise'] as String? ?? '';
     final statut          = p['statut'] as String? ?? 'pending';
     final motifRejet      = p['motif_rejet'] as String?;
     final createdAt       = DateTime.tryParse(p['created_at'] as String? ?? '');
@@ -2805,7 +2805,7 @@ class _AdminScreenState extends State<AdminScreen> {
     final numBenef        = d['numero_beneficiaire'] as String? ?? '—';
     final nomBenef        = d['nom_beneficiaire'] as String? ?? '—';
     final gestionnaire    = d['gestionnaire'] as String? ?? '—';
-    final devise          = d['devise'] as String? ?? 'XOF';
+    final devise          = d['devise'] as String? ?? '';
     final statut          = d['statut'] as String? ?? 'pending';
     final motifRejet      = d['motif_rejet'] as String?;
     final createdAt       = DateTime.tryParse(d['created_at'] as String? ?? '');
