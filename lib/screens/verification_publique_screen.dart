@@ -631,6 +631,7 @@ class _VueResultats extends StatelessWidget {
             entree         : e,
             onCopier       : onCopier,
             contratAddress : contratAddress,
+            devise         : devise,
           )),
 
           // Petit hint pull-to-refresh en bas de liste
@@ -936,11 +937,14 @@ class _CarteEntree extends StatelessWidget {
   /// Phase 1 : ouvre PolygonScan sur l'adresse du contrat (les TX y sont listées).
   /// Phase 2 : ouvre directement la TX individuelle.
   final String? contratAddress;
+  /// Devise réelle de la tontine — priorité sur entree.devise (qui peut être vide pour anciennes entrées).
+  final String devise;
 
   const _CarteEntree({
     required this.entree,
     required this.onCopier,
     this.contratAddress,
+    this.devise = '',
   });
 
   /// true = vraie TX confirmée sur Polygon (phase 2)
@@ -1094,8 +1098,8 @@ class _CarteEntree extends StatelessWidget {
                   children: [
                     if (entree.montantXof != null)
                       Text(
-                        // Utilise la devise de l'entrée (metadata['devise']) — jamais XOF par défaut
-                        Formatters.montant(entree.montantXof!, devise: entree.devise),
+                        // Priorité : devise de la tontine → devise de l'entrée metadata → XOF fallback
+                        Formatters.montant(entree.montantXof!, devise: devise.isNotEmpty ? devise : entree.devise.isNotEmpty ? entree.devise : 'XOF'),
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 14,
@@ -1269,10 +1273,9 @@ class _CarteEntree extends StatelessWidget {
     }
   }
 
-  // Formate un montant — la devise est portée par la carte parente (non dispo ici)
-  // → utilise Formatters.montant sans devise (numérique neutre)
+  // Formate un montant avec la vraie devise de la tontine
   String _formatXof(int xof) {
-    return Formatters.montant(xof);
+    return Formatters.montant(xof, devise: devise.isNotEmpty ? devise : entree.devise.isNotEmpty ? entree.devise : 'XOF');
   }
 
   String _formatDate(DateTime dt) {
