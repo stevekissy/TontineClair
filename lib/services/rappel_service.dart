@@ -20,6 +20,7 @@ import '../models/tontine.dart';
 import '../services/echeance_service.dart';
 import '../services/storage_service.dart';
 import '../services/supabase_service.dart';
+import '../utils/formatters.dart';
 
 class RappelService {
   RappelService._();
@@ -361,22 +362,10 @@ class RappelService {
     return data.membres.where((m) => !m.paye).length;
   }
 
-  /// Formate un montant avec la devise.
+  /// Formate un montant avec la vraie devise de la tontine.
   static String _formaterMontant(int montant, String devise) {
-    final symboles = {
-      'XOF': 'FCFA', 'XAF': 'FCFA', 'EUR': '€',
-      'USD': '\$', 'GHS': 'GH₵', 'NGN': '₦',
-      'MAD': 'MAD', 'TND': 'TND',
-    };
-    final symbole = symboles[devise] ?? devise;
-    // Formatage avec séparateur de milliers
-    final str = montant.toString();
-    final buffer = StringBuffer();
-    for (int i = 0; i < str.length; i++) {
-      if (i > 0 && (str.length - i) % 3 == 0) buffer.write(' ');
-      buffer.write(str[i]);
-    }
-    return '${buffer.toString()} $symbole';
+    // Délègue à Formatters.montant qui gère toutes les devises
+    return Formatters.montant(montant, devise: devise);
   }
 
   /// Vérifie si on a déjà envoyé une notification aujourd'hui pour ce code.

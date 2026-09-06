@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/tontine.dart';
+import '../services/paiement_methodes_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 
@@ -18,6 +19,7 @@ class PaiementChoixScreen extends StatefulWidget {
   final Membre? membre;
   final String  typeFlux;
   final int?    montant;
+  final String? devise;     // ← devise de la tontine (EUR, USD, XOF, etc.)
   final String? description;
   final String? membreId;
   final String? membreNom;
@@ -34,6 +36,7 @@ class PaiementChoixScreen extends StatefulWidget {
     required this.typeFlux,
     this.membre,
     this.montant,
+    this.devise,             // ← nouveau
     this.description,
     this.membreId,
     this.membreNom,
@@ -51,19 +54,29 @@ class PaiementChoixScreen extends StatefulWidget {
 
 class _PaiementChoixScreenState extends State<PaiementChoixScreen> {
   final _referenceCtrl = TextEditingController();
-  String _methodePaiement = 'mobile_money';
+  String? _methodePaiement;   // null = rien sélectionné au départ
   bool _confirme = false;
 
   // Photo de preuve
   XFile?  _photoFichier;
   String? _photoBase64;
 
-  static const _methodes = [
-    ('mobile_money', '📱 Mobile Money', 'Orange Money, Wave, MTN, Moov…'),
-    ('virement',     '🏦 Virement bancaire', 'Virement ou dépôt bancaire'),
-    ('especes',      '💵 Espèces',      'Paiement en main propre'),
-    ('autre',        '🔗 Autre méthode', 'Chèque, Western Union, etc.'),
-  ];
+  /// Construit la liste des méthodes à partir de la devise de la tontine.
+  /// Pour retro-compat : si devise nulle → 4 méthodes génériques.
+  List<(String, String, String)> _buildMethodes() {
+    final d = widget.devise;
+    if (d == null || d.isEmpty) {
+      // Fallback générique (pas de devise connue)
+      return [
+        ('virement', '🏦 Virement bancaire', 'Virement ou dépôt bancaire'),
+        ('especes',  '💵 Espèces',           'Paiement en main propre'),
+        ('autre',    '🔗 Autre méthode',     'Chèque, Western Union, etc.'),
+      ];
+    }
+    // Méthodes dynamiques selon la devise
+    final pm = PaiementMethodesService.methodesParDevise(d);
+    return pm.map((m) => (m.code, '${m.icone} ${m.label}', m.hintTexte)).toList();
+  }
 
   @override
   void dispose() {
@@ -214,7 +227,7 @@ class _PaiementChoixScreenState extends State<PaiementChoixScreen> {
     if (ok == true && mounted) {
       // Retourner la méthode, la référence et éventuellement la photo.
       Navigator.of(context).pop(<String, String>{
-        'methode':          _methodePaiement,
+        'methode':          _methodePaiement ?? 'autre',
         'reference':        ref,
         if (_photoBase64 != null) 'photoPreuveBase64': _photoBase64!,
       });
@@ -222,12 +235,22 @@ class _PaiementChoixScreenState extends State<PaiementChoixScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    // Sélection automatique de la 1ère méthode adaptée à la devise
+    final m = _buildMethodes();
+    if (m.isNotEmpty) _methodePaiement = m.first.$1;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // Montant affiché avec la VRAIE devise de la tontine
     final montantAffiche = widget.montant != null
-        ? Formatters.montant(widget.montant!, devise: 'XOF')
+        ? Formatters.montant(widget.montant!, devise: widget.devise ?? 'XOF')
         : '—';
     final benef = widget.membreNom ?? widget.membre?.nom;
     final tel   = widget.telephone ?? widget.membre?.numeroBenef;
+    final methodes = _buildMethodes();
 
     return Scaffold(
       backgroundColor: AppColors.fondPapier,
@@ -331,7 +354,7 @@ class _PaiementChoixScreenState extends State<PaiementChoixScreen> {
                     fontSize: 13,
                     color: AppColors.texteDoux)),
             const SizedBox(height: 8),
-            ...(_methodes.map((m) {
+            ...(methodes.map((m) {
               final (val, titre, sous) = m;
               final selectionne = _methodePaiement == val;
               return GestureDetector(

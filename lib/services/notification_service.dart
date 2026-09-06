@@ -462,13 +462,18 @@ class NotificationService {
     required int    phase,
     String?  txHash,
     int?     montantXof,
+    String?  devise,         // devise de la tontine (EUR, USD, XOF…)
     String?  membreNom,
   }) async {
     try {
       // Résoudre le type (y compris sélecteurs hex 0x…)
       final typeResolu  = BlockchainEntry.resoudreType(typeOperation);
       final typeLabel   = _typeLabelAvecEmoji(typeResolu);
-      final montantStr  = montantXof != null ? ' · ${_formatXof(montantXof)} XOF' : '';
+      // Afficher le montant avec la VRAIE devise (pas "XOF" en dur)
+      final deviseAffichee = devise ?? 'XOF';
+      final montantStr  = montantXof != null
+          ? ' · ${_formatMontant(montantXof)} $deviseAffichee'
+          : '';
       final titre       = '$typeLabel$montantStr';
       final corps       = _buildCorpsNotif(
         tontineCode  : tontineCode,
@@ -611,10 +616,11 @@ class NotificationService {
 
 
 
-  static String _formatXof(int xof) {
-    if (xof >= 1000000) return '${(xof / 1000000).toStringAsFixed(1)}M';
-    if (xof >= 1000) return '${(xof / 1000).toStringAsFixed(0)}k';
-    return '$xof';
+  /// Formate un montant entier de manière compacte (inchangé : pas de XOF hardcodé).
+  static String _formatMontant(int montant) {
+    if (montant >= 1000000) return '${(montant / 1000000).toStringAsFixed(1)}M';
+    if (montant >= 1000) return '${(montant / 1000).toStringAsFixed(0)}k';
+    return '$montant';
   }
 
   // ── Notification locale immédiate pour l'émetteur ─────────────────────────

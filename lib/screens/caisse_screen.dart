@@ -680,6 +680,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
           membreId   : membrePenaliteId!,
           membreNom  : nomMembre,
           montantXof : montant,
+          devise     : data.devise,
           refInterne : ref,
         ).catchError((e) {
           if (kDebugMode) debugPrint('[Blockchain] penalite erreur: $e');
@@ -689,6 +690,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
         BlockchainService.enregistrerDepenseCaisse(
           tontineCode : widget.code,
           montantXof  : montant,
+          devise      : data.devise,
           description : descFinale.isNotEmpty ? descFinale : 'Dépense caisse',
           gestionnaire: provider.gestActifNom,
           refInterne  : ref,
@@ -703,6 +705,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
           membreId   : provider.gestActifNom ?? 'gest',
           membreNom  : provider.gestActifNom ?? '',
           montantXof : montant,
+          devise     : data.devise,
           refInterne : ref,
         ).catchError((e) {
           if (kDebugMode) debugPrint('[Blockchain] apport_caisse erreur: $e');

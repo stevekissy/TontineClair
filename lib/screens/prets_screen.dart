@@ -738,6 +738,7 @@ class _PretsScreenState extends State<PretsScreen> {
         membreId   : emprunteur.id,
         membreNom  : nomEmprunteur,
         montantXof : montant,
+        devise     : data.devise,
         metadata   : {'taux': taux, 'durees_mois': durees},
       ).catchError((e) {
         if (kDebugMode) debugPrint('[Blockchain] pret erreur: $e');
@@ -1068,6 +1069,7 @@ class _CartePret extends StatelessWidget {
         membreId   : pret.emprunteurId,
         membreNom  : pret.emprunteurNom,
         montantXof : remb.montant,
+        devise     : data.devise,
         refInterne : remb.reference,
       ).catchError((e) {
         if (kDebugMode) debugPrint('[Blockchain] annulation_remboursement erreur: $e');
@@ -1255,6 +1257,7 @@ class _CartePret extends StatelessWidget {
           code:        tontineCode,
           typeFlux:    'remboursement_pret',
           montant:     montant,
+          devise:      data.devise,
           description: 'Remboursement prêt ${pret.emprunteurNom}',
           membreId:    pret.emprunteurId,
           membreNom:   pret.emprunteurNom,
@@ -1676,6 +1679,7 @@ class _CartePret extends StatelessWidget {
         membreId   : pret.emprunteurId,
         membreNom  : pret.emprunteurNom,
         montantXof : montant,
+        devise     : data.devise,
         refInterne : refRembCapture,
       ).catchError((e) {
         if (kDebugMode) debugPrint('[Blockchain] remboursement erreur: $e');

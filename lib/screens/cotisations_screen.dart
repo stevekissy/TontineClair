@@ -185,6 +185,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
                                           typeFlux: 'cotisation',
                                           membre:   m,
                                           montant:  data.montant,
+                                          devise:   data.devise,
                                         ),
                                       ),
                                     );
@@ -346,6 +347,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
           membreId   : membre.id,
           membreNom  : membre.nom,
           montantXof : data.montant,
+          devise     : data.devise,
           refInterne : ref,
         ).catchError((e) {
           if (kDebugMode) debugPrint('[Blockchain] cotisation_manuelle erreur: $e');
@@ -476,6 +478,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
           membreNom  : membre.nom,
           montantXof : data.montant,
           numerTour  : data.numerTour,
+          devise     : data.devise,
           refInterne : 'ANNUL_$refAnnuleCapture',
         ).catchError((e) {
           if (kDebugMode) debugPrint('[Blockchain] annulation_cotisation erreur: $e');
@@ -644,6 +647,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
           membreId   : membre.id,
           membreNom  : membre.nom,
           montantXof : data.montant,
+          devise     : data.devise,
           refInterne : ref,
         ).catchError((e) {
           if (kDebugMode) debugPrint('[Blockchain] cotisation_gest erreur: $e');
@@ -844,6 +848,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
         membreId   : membre.id,
         membreNom  : membre.nom,
         montantXof : data.montant,
+        devise     : data.devise,
         refInterne : refApprobCapture,
       ).catchError((e) {
         if (kDebugMode) debugPrint('[Blockchain] approbation_cotisation erreur: $e');
@@ -1012,6 +1017,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
         membreNom  : membre.nom,
         montantXof : data.montant,
         numerTour  : data.numerTour,
+        devise     : data.devise,
         refInterne : refAnnulCapture,
       ).catchError((e) {
         if (kDebugMode) debugPrint('[Blockchain] annulation_cotisation erreur: $e');
