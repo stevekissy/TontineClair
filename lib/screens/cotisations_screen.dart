@@ -1,9 +1,7 @@
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/tontine.dart';
@@ -11,7 +9,6 @@ import '../services/tontine_provider.dart';
 import '../services/echeance_service.dart';
 import '../services/pdf_service.dart';
 import '../services/paiement_service.dart';
-import '../services/preuve_paiement_service.dart';
 import '../services/supabase_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
@@ -220,12 +217,6 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
                             onGenererPdf: estGest && m.paye
                                 ? () => _genererRecuPdf(context, tontine, m)
                                 : null,
-                            // Icône discrète preuve : gestionnaire uniquement,
-                            // cycle non terminé (ou payé même si terminé pour archivage)
-                            onAjouterPreuve: estGest
-                                ? () => _uploaderPreuvePourMembre(
-                                    context, m, data.numerTour)
-                                : null,
                           );
                         },
                       ),
@@ -247,109 +238,6 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
         ),
       ),
     );
-  }
-
-  // ── Preuves de paiement : upload depuis la carte membre ─────────────────
-  /// Upload discret d'une preuve de paiement directement depuis la liste des cotisations.
-  /// [membre]   : le membre concerné (sa preuve sera rangée dans son dossier)
-  /// [numTour]  : numéro du tour courant pour la description contextuelle
-  Future<void> _uploaderPreuvePourMembre(
-    BuildContext ctx,
-    Membre membre,
-    int numTour,
-  ) async {
-    final picker = ImagePicker();
-    if (!ctx.mounted) return;
-
-    final source = await showModalBottomSheet<ImageSource>(
-      context: ctx,
-      backgroundColor: AppColors.fondPapier,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (c) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 36, height: 3,
-              margin: const EdgeInsets.only(top: 10, bottom: 14),
-              decoration: BoxDecoration(
-                color: AppColors.lignes,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-              child: Text(
-                'Preuve de paiement — ${membre.nom}',
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
-                    color: AppColors.encre),
-                textAlign: TextAlign.center,
-              ),
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-              child: Text(
-                'Archivée en sécurité · disponible en cas de contestation.',
-                style: TextStyle(fontSize: 11, color: AppColors.texteDoux),
-                textAlign: TextAlign.center,
-              ),
-            ),
-            const SizedBox(height: 8),
-            ListTile(
-              leading: const Icon(Icons.photo_library_rounded,
-                  color: AppColors.encreDoux),
-              title: const Text('Galerie photos'),
-              onTap: () => Navigator.pop(c, ImageSource.gallery),
-            ),
-            ListTile(
-              leading: const Icon(Icons.camera_alt_rounded,
-                  color: AppColors.encreDoux),
-              title: const Text('Appareil photo'),
-              onTap: () => Navigator.pop(c, ImageSource.camera),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-
-    if (source == null || !ctx.mounted) return;
-
-    final XFile? image = await picker.pickImage(
-      source: source,
-      maxWidth: 1920,
-      maxHeight: 1920,
-      imageQuality: 75,
-    );
-    if (image == null || !ctx.mounted) return;
-
-    try {
-      final Uint8List bytes = await image.readAsBytes();
-      // Description contextuelle : Tour3_cotisation
-      final desc = 'Tour${numTour}_cotisation';
-
-      final url = await PreuvePaiementService.uploaderPreuve(
-        tontineCode: widget.code,
-        membreId: membre.id,
-        imageBytes: bytes,
-        description: desc,
-      );
-
-      if (!ctx.mounted) return;
-      if (url != null) {
-        afficherToast(ctx, '✅ Preuve archivée pour ${membre.nom}');
-      } else {
-        afficherToast(ctx,
-          '⚠️ Impossible d\'archiver la preuve. Vérifiez votre connexion.',
-          estErreur: true);
-      }
-    } catch (e) {
-      if (ctx.mounted) {
-        afficherToast(ctx, 'Erreur : $e', estErreur: true);
-      }
-    }
   }
 
   /// [methodePrechoisie] : si non null (vient de PaiementChoixScreen), on saute
@@ -1678,8 +1566,6 @@ class _CarteMembre extends StatelessWidget {
   final VoidCallback? onApprouver;
   /// Callback "Annuler cotisation" (Premium payé, gestionnaire uniquement)
   final VoidCallback? onAnnulerPremium;
-  /// Callback discret "Ajouter preuve" — gestionnaire uniquement sur cet écran
-  final VoidCallback? onAjouterPreuve;
 
   const _CarteMembre({
     required this.membre,
@@ -1697,7 +1583,6 @@ class _CarteMembre extends StatelessWidget {
     this.onPayer,
     this.onApprouver,
     this.onAnnulerPremium,
-    this.onAjouterPreuve,
   });
 
   bool get _enRetard {
@@ -2003,38 +1888,6 @@ class _CarteMembre extends StatelessWidget {
                   ),
                 ],
               ],
-            ),
-          ],
-          // ── Icône discrète preuve de paiement (gestionnaire) ──────────
-          if (onAjouterPreuve != null) ...[
-            const SizedBox(height: 6),
-            Align(
-              alignment: Alignment.centerRight,
-              child: GestureDetector(
-                onTap: onAjouterPreuve,
-                child: Tooltip(
-                  message: 'Archiver une preuve de paiement',
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: AppColors.fondCode,
-                      borderRadius: BorderRadius.circular(5),
-                      border: Border.all(color: AppColors.lignes),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.attach_file_rounded,
-                            size: 11, color: AppColors.texteDoux),
-                        SizedBox(width: 3),
-                        Text('Preuve',
-                            style: TextStyle(fontSize: 10,
-                                color: AppColors.texteDoux)),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
             ),
           ],
           // ── Relancer (non-payés, gestionnaire) ──
