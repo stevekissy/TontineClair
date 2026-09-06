@@ -2326,7 +2326,9 @@ class _BarreDetail extends StatelessWidget {
     final descMvt = cycleTermineNow
         ? 'Décaissement cagnotte — Tour $numerTourAffiche (dernier) — $benefNom'
         : 'Décaissement Tour $numerTourAffiche — $benefNom';
-    caisseMvts.insert(0, {
+    // .add() pour rester cohérent avec la convention de caisse_screen.dart :
+    // la liste est stockée ancien→nouveau, l'affichage inverse (length-1-i) met le plus récent en haut.
+    caisseMvts.add({
       'id':           '${ref}D',
       'type':         typeMvt,
       'montant':      total,
