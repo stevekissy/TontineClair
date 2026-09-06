@@ -398,7 +398,21 @@ class SupabaseService {
       'p_nom': nom,
       'p_pin': pin,
     });
-    return result == true;
+    // Supabase peut retourner : true (bool), "true" (String), 1 (int), ou null.
+    // L'ancien `result == true` échoue pour String/int → PIN toujours "incorrect".
+    // On normalise comme ecrireTontine() :
+    if (result == null) return false;          // null = non trouvé / erreur
+    if (result is bool) return result;          // true/false direct
+    if (result is int) return result != 0;      // 1 = ok, 0 = ko
+    if (result is String) return result.toLowerCase() == 'true'; // "true"/"false"
+    if (result is Map<String, dynamic>) {
+      // {ok: true} ou {verified: true} selon version RPC
+      final v = result['ok'] ?? result['verified'] ?? result['result'];
+      if (v is bool) return v;
+      if (v is int) return v != 0;
+      if (v is String) return v.toLowerCase() == 'true';
+    }
+    return false; // type inattendu → refus par sécurité
   }
 
   static Future<bool> ecrireTontine({
