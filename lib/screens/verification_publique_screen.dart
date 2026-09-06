@@ -70,7 +70,7 @@ class _VerificationPubliqueScreenState
     final code = _ctrl.text.trim().toUpperCase();
     if (code.isEmpty) return;
 
-    // Devise déjà connue (passée par le parent) — évite un chargement inutile
+    // Devise connue en paramètre — on l'applique immédiatement pour le premier rendu
     final deviseInitiale = widget.devise?.trim() ?? '';
 
     setState(() {
@@ -80,19 +80,20 @@ class _VerificationPubliqueScreenState
       _codeActif = code;
       _entrees   = [];
       _contrat   = {};
+      // Appliquer la devise dès maintenant si connue — évite le flash FCFA
       if (deviseInitiale.isNotEmpty) _devise = deviseInitiale;
     });
 
     try {
-      // Charger journal + contrat en parallèle
-      // + devise si non déjà fournie (lireTontine est léger)
+      // Charger journal + contrat + devise TOUJOURS depuis Supabase en parallèle
+      // → garantit que _devise est correct même pour les entrées sans metadata.devise
       final List<Future<dynamic>> futures = [
         BlockchainService.lireJournal(tontineCode: code, limit: 100),
         BlockchainService.contractInfo(),
-        if (deviseInitiale.isEmpty)
-          SupabaseService.lireTontine(code)
-              .then((t) => t.data.devise)
-              .catchError((_) => ''),
+        // Toujours charger la devise depuis Supabase (source de vérité)
+        SupabaseService.lireTontine(code)
+            .then((t) => t.data.devise)
+            .catchError((_) => deviseInitiale), // fallback sur le paramètre si erreur
       ];
       final results = await Future.wait(futures);
 
@@ -103,10 +104,11 @@ class _VerificationPubliqueScreenState
           .where((e) => e.tontineCode.trim().toUpperCase() == code)
           .toList();
 
-      // Devise : priorité au paramètre widget, sinon valeur chargée
-      final deviseChargee = deviseInitiale.isNotEmpty
-          ? deviseInitiale
-          : (results.length > 2 ? (results[2] as String?) ?? '' : '');
+      // Devise : priorité Supabase (source de vérité), fallback paramètre widget
+      final deviseSupabase = (results[2] as String?)?.trim() ?? '';
+      final deviseChargee = deviseSupabase.isNotEmpty
+          ? deviseSupabase       // ← toujours la vraie devise de la tontine
+          : deviseInitiale;      // ← fallback si Supabase ne répond pas
 
       setState(() {
         _entrees = entreesFiltrees;
@@ -1099,8 +1101,8 @@ class _CarteEntree extends StatelessWidget {
                   children: [
                     if (entree.montantXof != null)
                       Text(
-                        // Priorité : devise de la tontine → devise de l'entrée metadata → XOF fallback
-                        Formatters.montant(entree.montantXof!, devise: devise.isNotEmpty ? devise : entree.devise.isNotEmpty ? entree.devise : 'XOF'),
+                        // Priorité : devise tontine (Supabase) → devise entrée metadata → sans fallback XOF
+                        Formatters.montant(entree.montantXof!, devise: devise.isNotEmpty ? devise : entree.devise.isNotEmpty ? entree.devise : null),
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 14,
@@ -1274,10 +1276,6 @@ class _CarteEntree extends StatelessWidget {
     }
   }
 
-  // Formate un montant avec la vraie devise de la tontine
-  String _formatXof(int xof) {
-    return Formatters.montant(xof, devise: devise.isNotEmpty ? devise : entree.devise.isNotEmpty ? entree.devise : 'XOF');
-  }
 
   String _formatDate(DateTime dt) {
     final now = DateTime.now();

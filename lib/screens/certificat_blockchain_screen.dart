@@ -17,6 +17,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:io' if (dart.library.html) 'dart:io';
 import '../services/blockchain_service.dart';
+import '../services/supabase_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 
@@ -148,9 +149,9 @@ Future<Uint8List> _genererCertificatBytes(_CertificatParams p) async {
             )),
       );
 
-  String montantFmt(int? xof, String devise) {
+  String montantFmt(int? xof, String? devise) {
     if (xof == null) return '-';
-    return Formatters.montant(xof, devise: devise.isNotEmpty ? devise : null);
+    return Formatters.montant(xof, devise: (devise ?? '').isNotEmpty ? devise : null);
   }
 
   doc.addPage(
@@ -377,7 +378,8 @@ Future<Uint8List> _genererCertificatBytes(_CertificatParams p) async {
                       cell(pdfSafe(e.descriptionMetier)),
                       cell(montantFmt(e.montantXof,
                           deviseDetectee.isNotEmpty ? deviseDetectee
-                              : e.devise.isNotEmpty ? e.devise : 'XOF')),
+                              : e.devise.isNotEmpty ? e.devise
+                              : null)),  // null = fallback XOF uniquement si vraie tontine XOF
                       cell(txLabel, couleur: estOnChain ? pdfChain : pdfDoux),
                     ],
                   ),
@@ -472,12 +474,18 @@ class _CertificatBlockchainScreenState
   Future<void> _charger() async {
     setState(() { _loading = true; _erreur = null; });
     try {
+      final deviseInitiale = (widget.devise ?? '').trim();
       final results = await Future.wait([
         BlockchainService.lireJournal(
           tontineCode: widget.codeTontine,
-          limit: _kMaxEntrees,   // on ne charge que ce qu'on affichera
+          limit: _kMaxEntrees,
         ),
         BlockchainService.contractInfo(),
+        // Toujours charger la devise depuis Supabase (source de vérité)
+        // → fix: les entrées blockchain V3 n'ont pas metadata.devise
+        SupabaseService.lireTontine(widget.codeTontine)
+            .then((t) => t.data.devise)
+            .catchError((_) => deviseInitiale),
       ]);
       if (!mounted) return;
       // Garde client : seules les entrées de cette tontine sont conservées
@@ -490,16 +498,14 @@ class _CertificatBlockchainScreenState
       final entreesTronquees = filtrees.length > _kMaxEntrees
           ? filtrees.sublist(filtrees.length - _kMaxEntrees)
           : filtrees;
-      // Résoudre la devise : paramètre widget > première entrée blockchain
-      final deviseWidget = (widget.devise ?? '').trim();
-      final deviseEntrees = entreesTronquees
-          .map((e) => e.devise)
-          .firstWhere((d) => d.isNotEmpty, orElse: () => '');
+      // Résoudre la devise : Supabase (source de vérité) > paramètre widget
+      final deviseSupabase = (results[2] as String?)?.trim() ?? '';
       setState(() {
         _entrees = entreesTronquees;
         _contrat = results[1] as Map<String, dynamic>;
         _loading = false;
-        _devise = deviseWidget.isNotEmpty ? deviseWidget : deviseEntrees;
+        // Priorité : Supabase > widget > metadata entrée
+        _devise = deviseSupabase.isNotEmpty ? deviseSupabase : deviseInitiale;
       });
     } catch (e) {
       if (!mounted) return;
