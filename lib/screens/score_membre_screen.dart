@@ -5,6 +5,7 @@
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../models/tontine.dart';
 import '../models/score_modeles.dart';
@@ -12,6 +13,7 @@ import '../services/score_service.dart';
 import '../services/supabase_service.dart';
 import '../services/tontine_provider.dart';
 import '../services/blockchain_service.dart';
+import '../services/preuve_paiement_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
@@ -86,6 +88,11 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
   ScoreDetail? _scoreDetail;
   List<RecommandationIA> _recommandations = [];
   List<PropositionRetrait> _propositions = [];
+
+  // ── Preuves de paiement ───────────────────────────────────────────────────
+  List<PreuvePaiement> _preuves = [];
+  bool _preuvesChargees = false;
+  bool _uploadEnCours = false;
 
   @override
   void initState() {
@@ -1338,6 +1345,17 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
             const SizedBox(height: 16),
           ],
 
+          // ── Preuves de paiement (discrètes) ─────────────────────────────
+          const Divider(color: AppColors.lignes),
+          const SizedBox(height: 12),
+          _sectionPreuves(
+            context,
+            // Un membre peut uploader ses propres preuves (non-gestionnaire)
+            // Un gestionnaire peut aussi uploader au nom du membre
+            true,
+          ),
+          const SizedBox(height: 12),
+
           // Bouton retrait (gestionnaire uniquement, membre non retiré)
           if (widget.estGestionnaire && !estRetire) ...[
             const Divider(color: AppColors.lignes),
@@ -1374,6 +1392,322 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
         (v.question.contains(widget.membre.nom) ||
             (v.description?.contains(widget.membre.id) ?? false)));
     return votesRetrait.isNotEmpty;
+  }
+
+  // ── Preuves de paiement : chargement ────────────────────────────────────
+  Future<void> _chargerPreuves() async {
+    if (_uploadEnCours) return;
+    setState(() => _preuvesChargees = false);
+    try {
+      final preuves = await PreuvePaiementService.listerPreuves(
+        tontineCode: widget.code,
+        membreId: widget.membre.id,
+      );
+      if (mounted) setState(() { _preuves = preuves; _preuvesChargees = true; });
+    } catch (_) {
+      if (mounted) setState(() => _preuvesChargees = true);
+    }
+  }
+
+  // ── Preuves de paiement : upload ─────────────────────────────────────────
+  Future<void> _uploaderPreuve(BuildContext ctx) async {
+    final picker = ImagePicker();
+    final source = await showModalBottomSheet<ImageSource>(
+      context: ctx,
+      backgroundColor: AppColors.fondPapier,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (c) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36, height: 3,
+              margin: const EdgeInsets.only(top: 10, bottom: 14),
+              decoration: BoxDecoration(
+                color: AppColors.lignes,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+              child: Text(
+                'Ajouter une preuve de paiement',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700,
+                    color: AppColors.encre),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+              child: Text(
+                'Stockée en sécurité pour vérification en cas de contestation.',
+                style: TextStyle(fontSize: 11, color: AppColors.texteDoux),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: const Icon(Icons.photo_library_rounded, color: AppColors.encreDoux),
+              title: const Text('Galerie photos'),
+              onTap: () => Navigator.pop(c, ImageSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_rounded, color: AppColors.encreDoux),
+              title: const Text('Appareil photo'),
+              onTap: () => Navigator.pop(c, ImageSource.camera),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+
+    if (source == null || !mounted) return;
+
+    final XFile? image = await picker.pickImage(
+      source: source,
+      maxWidth: 1920,
+      maxHeight: 1920,
+      imageQuality: 75,
+    );
+    if (image == null || !mounted) return;
+
+    setState(() => _uploadEnCours = true);
+
+    try {
+      final Uint8List bytes = await image.readAsBytes();
+      final now = DateTime.now();
+      final desc = 'Preuve_${now.day}-${now.month}-${now.year}';
+
+      final url = await PreuvePaiementService.uploaderPreuve(
+        tontineCode: widget.code,
+        membreId: widget.membre.id,
+        imageBytes: bytes,
+        description: desc,
+      );
+
+      if (!mounted) return;
+      if (url != null) {
+        afficherToast(ctx, '✅ Preuve stockée avec succès');
+        await _chargerPreuves();
+      } else {
+        afficherToast(ctx,
+          '⚠️ Impossible d\'enregistrer la preuve. Vérifiez votre connexion.',
+          estErreur: true);
+      }
+    } catch (e) {
+      if (mounted) {
+        afficherToast(ctx, 'Erreur : $e', estErreur: true);
+      }
+    } finally {
+      if (mounted) setState(() => _uploadEnCours = false);
+    }
+  }
+
+  // ── Section preuves de paiement (discrète) ────────────────────────────────
+  Widget _sectionPreuves(BuildContext ctx, bool peutUploader) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Titre discret
+        Row(
+          children: [
+            const Icon(Icons.receipt_long_rounded, size: 14,
+                color: AppColors.texteDoux),
+            const SizedBox(width: 6),
+            const Expanded(
+              child: Text(
+                'Preuves de paiement',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                    color: AppColors.texteDoux),
+              ),
+            ),
+            if (peutUploader)
+              GestureDetector(
+                onTap: _uploadEnCours ? null : () => _uploaderPreuve(ctx),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: AppColors.encreDoux.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: _uploadEnCours
+                      ? const SizedBox(
+                          width: 14, height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 1.5))
+                      : const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.add_photo_alternate_rounded,
+                                size: 13, color: AppColors.encreDoux),
+                            SizedBox(width: 4),
+                            Text('Ajouter',
+                                style: TextStyle(fontSize: 11,
+                                    color: AppColors.encreDoux,
+                                    fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        // Contenu
+        if (!_preuvesChargees)
+          Center(
+            child: TextButton.icon(
+              onPressed: _chargerPreuves,
+              icon: const Icon(Icons.cloud_download_rounded, size: 14),
+              label: const Text('Voir mes preuves', style: TextStyle(fontSize: 11)),
+              style: TextButton.styleFrom(foregroundColor: AppColors.encreDoux),
+            ),
+          )
+        else if (_preuves.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.fondCode,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline_rounded, size: 14,
+                    color: AppColors.texteDoux),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    peutUploader
+                        ? 'Aucune preuve stockée. Ajoutez vos captures de virement ou reçus.'
+                        : 'Aucune preuve enregistrée pour ce membre.',
+                    style: const TextStyle(fontSize: 11, color: AppColors.texteDoux),
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          SizedBox(
+            height: 110,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _preuves.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (_, i) => _cartePreuve(ctx, _preuves[i]),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _cartePreuve(BuildContext ctx, PreuvePaiement preuve) {
+    return GestureDetector(
+      onTap: () => _voirPreuve(ctx, preuve),
+      child: Container(
+        width: 90,
+        decoration: BoxDecoration(
+          color: AppColors.fondCode,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.lignes),
+        ),
+        child: Column(
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(7)),
+                child: Image.network(
+                  preuve.url,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  errorBuilder: (_, __, ___) => const Center(
+                    child: Icon(Icons.broken_image_rounded, size: 28,
+                        color: AppColors.texteDoux),
+                  ),
+                  loadingBuilder: (_, child, progress) =>
+                      progress == null ? child :
+                      const Center(child: SizedBox(
+                        width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 1.5),
+                      )),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+              child: Text(
+                Formatters.dateFormatee(preuve.uploadedAt),
+                style: const TextStyle(fontSize: 9, color: AppColors.texteDoux),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _voirPreuve(BuildContext ctx, PreuvePaiement preuve) {
+    showDialog(
+      context: ctx,
+      builder: (dc) => Dialog(
+        backgroundColor: Colors.black,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppBar(
+              backgroundColor: Colors.black,
+              leading: IconButton(
+                icon: const Icon(Icons.close_rounded, color: Colors.white),
+                onPressed: () => Navigator.pop(dc),
+              ),
+              title: Text(
+                preuve.description,
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+              ),
+              actions: [
+                if (widget.estGestionnaire)
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline_rounded,
+                        color: Colors.red),
+                    tooltip: 'Supprimer cette preuve',
+                    onPressed: () async {
+                      final ok = await PreuvePaiementService.supprimerPreuve(
+                          preuve.cheminStorage);
+                      if (!mounted) return;
+                      Navigator.pop(dc);
+                      if (ok) {
+                        afficherToast(ctx, 'Preuve supprimée');
+                        _chargerPreuves();
+                      } else {
+                        afficherToast(ctx, 'Erreur suppression', estErreur: true);
+                      }
+                    },
+                  ),
+              ],
+            ),
+            InteractiveViewer(
+              child: Image.network(
+                preuve.url,
+                errorBuilder: (_, __, ___) => const Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Icon(Icons.broken_image_rounded, color: Colors.white, size: 48),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                'Uploadé le ${Formatters.dateFormatee(preuve.uploadedAt)}',
+                style: const TextStyle(color: Colors.white60, fontSize: 11),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ── Onglet 2 : Historique ─────────────────────────────────────────────────

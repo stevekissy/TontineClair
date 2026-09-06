@@ -641,18 +641,9 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
         afficherToast(context,
           '✅ Cotisation de ${membre.nom} enregistrée et approuvée.');
 
-        // Blockchain direct (non-bloquant)
-        BlockchainService.enregistrerCotisation(
-          tontineCode: provider.courante!.code,
-          membreId   : membre.id,
-          membreNom  : membre.nom,
-          montantXof : data.montant,
-          devise     : data.devise,
-          refInterne : ref,
-        ).catchError((e) {
-          if (kDebugMode) debugPrint('[Blockchain] cotisation_gest erreur: $e');
-          return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
-        });
+        // ⚠️ PAS d'appel BlockchainService ici : ecrireSansPin() ci-dessus
+        // a déjà déclenché l'ancrage blockchain via typeOperationBlockchain:'cotisation'
+        // → double-appel supprimé pour éviter les doublons dans blockchain_journal.
 
         // Notification push (broadcast FCM + locale pour le gestionnaire émetteur)
         final codeNotif = provider.courante!.code;

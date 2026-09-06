@@ -14,13 +14,13 @@ class Formatters {
   }
 
   /// Formate un montant avec la devise de la tontine.
-  /// Utilise toujours la VRAIE devise — jamais de fallback FCFA hardcodé.
-  /// Si devise est null/vide → format numérique sans symbole (ex: "15 000").
+  /// Si devise est null/vide → fallback XOF (tontines créées avant le champ devise).
+  /// Utilise toujours la VRAIE devise quand elle est renseignée.
   static String montant(num montant, {String? devise}) {
-    if (devise == null || devise.isEmpty) {
-      return fcfa.format(montant); // numérique seul, pas de "FCFA" par défaut
-    }
-    return DeviseService.formaterMontant(montant, devise);
+    // Fallback XOF pour les tontines anciennes sans devise renseignée en DB.
+    // Garantit que les PDF et récapitulatifs affichent toujours une unité monétaire.
+    final d = (devise == null || devise.isEmpty) ? 'XOF' : devise;
+    return DeviseService.formaterMontant(montant, d);
   }
 
   static String dateFormatee(DateTime? date) {
