@@ -1,5 +1,8 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
@@ -77,9 +80,6 @@ class _SoldeAnimeState extends State<_SoldeAnime>
     );
   }
 }
-
-// ─── Opérateurs Mobile Money disponibles ──────────────────────────────────────
-const _operateursMobileMoney = ['orange', 'moov', 'mtn', 'wave'];
 
 class CaisseScreen extends StatefulWidget {
   final String code;
@@ -451,15 +451,40 @@ class _CaisseScreenState extends State<CaisseScreen> {
     String type,
   ) async {
     final montantCtrl = TextEditingController();
-    final descCtrl = TextEditingController();
-    String methode = 'especes';
+    final descCtrl    = TextEditingController();
+    final refCtrl     = TextEditingController();
 
-    // Pour les pénalités : menu de sélection du membre pénalisé
-    // SOURCE UNIQUE DE MEMBRES : membresActifs avec double fallback
-    final membresOrdre = data.membresActifs;
+    // ── Moyens de paiement dynamiques selon la devise ─────────────────────
+    final moyens = DeviseService.moyensPaiementParDevise(data.devise);
+    String methode = moyens.first['id']!; // défaut = premier de la liste
+
+    // ── Photo de preuve ───────────────────────────────────────────────────
+    XFile?  photoFichier;
+    String? photoBase64;
+
+    // ── Membre pénalisé ───────────────────────────────────────────────────
+    final membresOrdre   = data.membresActifs;
     String? membrePenaliteId =
         (type == 'penalite' && membresOrdre.isNotEmpty) ? membresOrdre.first.id : null;
 
+    // ── Besoin de photo/référence ? Oui pour apport + dépense, non pour pénalité ──
+    final avecPreuve = (type != 'penalite');
+
+    Future<void> prendrePhoto(ImageSource src, StateSetter setS) async {
+      try {
+        final img = await ImagePicker().pickImage(
+          source: src, imageQuality: 72, maxWidth: 1200,
+        );
+        if (img == null) return;
+        final bytes = await img.readAsBytes();
+        setS(() {
+          photoFichier = img;
+          photoBase64  = base64Encode(bytes);
+        });
+      } catch (_) {}
+    }
+
+    // ── Résultat du bottom-sheet : null = annulé, true = validé ──────────
     final result = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -468,104 +493,265 @@ class _CaisseScreenState extends State<CaisseScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => Padding(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 16,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.lignes,
-                      borderRadius: BorderRadius.circular(2),
+        builder: (ctx, setS) {
+          // ── Conditions de validation du formulaire ──────────────────────
+          final montantOk = int.tryParse(montantCtrl.text.trim()) != null &&
+              int.parse(montantCtrl.text.trim()) > 0;
+          final refOk     = !avecPreuve || refCtrl.text.trim().isNotEmpty;
+          final photoOk   = !avecPreuve || photoBase64 != null;
+          final peutContinuer = montantOk && refOk && photoOk;
+
+          String btnLabel;
+          if (!montantOk)  btnLabel = 'Saisissez le montant';
+          else if (!refOk) btnLabel = 'Saisissez la référence';
+          else if (!photoOk) btnLabel = 'Ajoutez une photo de preuve';
+          else btnLabel = context.tr('enregistrer');
+
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 16, right: 16, top: 16,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Poignée ─────────────────────────────────────────────
+                  Center(
+                    child: Container(
+                      width: 40, height: 4,
+                      decoration: BoxDecoration(
+                        color: AppColors.lignes,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
                   ),
-                ),
-                SizedBox(height: 16),
-                Text(
-                  type == 'apport'
-                      ? context.tr('apport_caisse')
-                      : type == 'depense'
-                          ? 'Dépense de caisse'
-                          : 'Appliquer une pénalité',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 20,
-                    color: AppColors.encre,
+                  const SizedBox(height: 16),
+
+                  // ── Titre ───────────────────────────────────────────────
+                  Text(
+                    type == 'apport'  ? 'Apport en caisse'
+                    : type == 'depense' ? 'Dépense de caisse'
+                    : 'Appliquer une pénalité',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 20,
+                      color: AppColors.encre,
+                    ),
                   ),
-                ),
-                // Membre pénalisé (pénalité uniquement)
-                if (type == 'penalite' && membresOrdre.isNotEmpty) ...[
-                  ChampLabel(label: context.tr('membre_penalise')),
-                  DropdownButtonFormField<String>(
-                    initialValue: membrePenaliteId,
-                    isExpanded: true,
-                    decoration: const InputDecoration(),
-                    items: membresOrdre
-                        .map((m) => DropdownMenuItem(
-                              value: m.id,
-                              child: Text(m.nom, overflow: TextOverflow.ellipsis),
-                            ))
-                        .toList(),
-                    onChanged: (v) => setS(() => membrePenaliteId = v),
+                  const SizedBox(height: 16),
+
+                  // ── Membre pénalisé ──────────────────────────────────────
+                  if (type == 'penalite' && membresOrdre.isNotEmpty) ...[
+                    ChampLabel(label: context.tr('membre_penalise')),
+                    DropdownButtonFormField<String>(
+                      initialValue: membrePenaliteId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(),
+                      items: membresOrdre
+                          .map((m) => DropdownMenuItem(
+                                value: m.id,
+                                child: Text(m.nom, overflow: TextOverflow.ellipsis),
+                              ))
+                          .toList(),
+                      onChanged: (v) => setS(() => membrePenaliteId = v),
+                    ),
+                  ],
+
+                  // ── Montant ──────────────────────────────────────────────
+                  ChampLabel(label: 'Montant (${DeviseService.parCode(data.devise).symbole})'),
+                  TextField(
+                    controller: montantCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(hintText: '5 000'),
+                    autofocus: true,
+                    onChanged: (_) => setS(() {}),
                   ),
+
+                  // ── Description / Motif ──────────────────────────────────
+                  ChampLabel(label: context.tr('description_motif')),
+                  TextField(
+                    controller: descCtrl,
+                    maxLength: 100,
+                    decoration: InputDecoration(
+                      hintText: type == 'penalite'
+                          ? 'Ex : Retard de cotisation'
+                          : 'Ex : Frais de local',
+                      counterText: '',
+                    ),
+                  ),
+
+                  // ── Mode de paiement (dynamique selon devise) ─────────────
+                  if (avecPreuve) ...[
+                    ChampLabel(label: 'Mode de paiement'),
+                    DropdownButtonFormField<String>(
+                      initialValue: methode,
+                      isExpanded: true,
+                      decoration: const InputDecoration(),
+                      items: moyens
+                          .map((m) => DropdownMenuItem(
+                                value: m['id'],
+                                child: Text(m['label']!),
+                              ))
+                          .toList(),
+                      onChanged: (v) => setS(() => methode = v!),
+                    ),
+                    const SizedBox(height: 4),
+
+                    // ── Référence de transaction (obligatoire) ───────────────
+                    Row(
+                      children: [
+                        const Text('Référence de transaction',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: AppColors.encre,
+                            )),
+                        const SizedBox(width: 4),
+                        Text('*', style: TextStyle(color: AppColors.alerte, fontSize: 14, fontWeight: FontWeight.w700)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: refCtrl,
+                      onChanged: (_) => setS(() {}),
+                      decoration: InputDecoration(
+                        hintText: methode == 'especes'
+                            ? 'Ex : Reçu n°1234'
+                            : methode == 'virement'
+                                ? 'Ex : VIR-2024-001'
+                                : 'Ex : TXN-XXXXXX',
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(
+                            color: refCtrl.text.trim().isEmpty
+                                ? AppColors.alerte
+                                : AppColors.succes,
+                            width: 1.5,
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(
+                            color: refCtrl.text.trim().isEmpty
+                                ? AppColors.alerte
+                                : AppColors.succes,
+                            width: 2,
+                          ),
+                        ),
+                        errorText: refCtrl.text.trim().isEmpty
+                            ? 'Obligatoire — saisissez la référence'
+                            : null,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ── Photo de preuve (obligatoire) ────────────────────────
+                    Row(
+                      children: [
+                        const Text('Photo de preuve',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: AppColors.encre,
+                            )),
+                        const SizedBox(width: 4),
+                        Text('*', style: TextStyle(color: AppColors.alerte, fontSize: 14, fontWeight: FontWeight.w700)),
+                        const Spacer(),
+                        if (photoBase64 != null)
+                          const Icon(Icons.check_circle, color: AppColors.succes, size: 18),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    // ── Preview photo si prise ───────────────────────────────
+                    if (photoBase64 != null) ...[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: kIsWeb || photoFichier == null
+                            ? Image.memory(
+                                base64Decode(photoBase64!),
+                                height: 140, width: double.infinity,
+                                fit: BoxFit.cover,
+                              )
+                            : Image.file(
+                                File(photoFichier!.path),
+                                height: 140, width: double.infinity,
+                                fit: BoxFit.cover,
+                              ),
+                      ),
+                      const SizedBox(height: 8),
+                      GestureDetector(
+                        onTap: () => setS(() { photoFichier = null; photoBase64 = null; }),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.delete_outline, size: 16, color: AppColors.alerte),
+                            const SizedBox(width: 4),
+                            Text('Supprimer la photo',
+                                style: TextStyle(fontSize: 12, color: AppColors.alerte)),
+                          ],
+                        ),
+                      ),
+                    ] else ...[
+                      // ── Boutons de prise de photo ──────────────────────────
+                      Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: AppColors.alerte, width: 1.5),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Column(
+                          children: [
+                            ListTile(
+                              leading: const Icon(Icons.camera_alt_outlined,
+                                  color: AppColors.alerte),
+                              title: const Text('Prendre une photo',
+                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                              onTap: () => prendrePhoto(ImageSource.camera, setS),
+                            ),
+                            const Divider(height: 1),
+                            ListTile(
+                              leading: const Icon(Icons.photo_library_outlined,
+                                  color: AppColors.alerte),
+                              title: const Text('Choisir depuis la galerie',
+                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                              onTap: () => prendrePhoto(ImageSource.gallery, setS),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Obligatoire — joignez un justificatif de paiement',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: AppColors.alerte,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ], // fin avecPreuve
+
+                  const SizedBox(height: 20),
+
+                  // ── Bouton Enregistrer (bloqué si incomplet) ─────────────
+                  BtnPrincipal(
+                    label: btnLabel,
+                    couleur: peutContinuer ? AppColors.encre : AppColors.texteDoux,
+                    onTap: peutContinuer ? () => Navigator.pop(ctx, true) : null,
+                  ),
+                  const SizedBox(height: 8),
+                  BtnSecondaire(
+                    label: 'Annuler',
+                    onTap: () => Navigator.pop(ctx, false),
+                  ),
+                  const SizedBox(height: 8),
                 ],
-                ChampLabel(label: 'Montant (${DeviseService.parCode(data.devise).symbole})'),
-                TextField(
-                  controller: montantCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(hintText: '5 000'),
-                  autofocus: true,
-                ),
-                ChampLabel(label: context.tr('description_motif')),
-                TextField(
-                  controller: descCtrl,
-                  maxLength: 100,
-                  decoration: InputDecoration(
-                    hintText: type == 'penalite'
-                        ? 'Ex : Retard de cotisation'
-                        : 'Ex : Frais de local',
-                    counterText: '',
-                  ),
-                ),
-                if (type != 'penalite') ...[
-                  ChampLabel(label: context.tr('mode_paiement_label')),
-                  DropdownButtonFormField<String>(
-                    initialValue: methode,
-                    decoration: InputDecoration(),
-                    items: ['especes', 'orange', 'mtn', 'moov', 'wave']
-                        .map((m) => DropdownMenuItem(
-                              value: m,
-                              child: Text(Formatters.methodePaiement(m)),
-                            ))
-                        .toList(),
-                    onChanged: (v) => setS(() => methode = v!),
-                  ),
-                ],
-                SizedBox(height: 16),
-                BtnPrincipal(
-                  label: context.tr('enregistrer'),
-                  onTap: () => Navigator.pop(ctx, true),
-                ),
-                const SizedBox(height: 8),
-                BtnSecondaire(
-                  label: 'Annuler',
-                  onTap: () => Navigator.pop(ctx, false),
-                ),
-                const SizedBox(height: 8),
-              ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
 
@@ -590,6 +776,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
     final descFinale = descCtrl.text.trim().isNotEmpty
         ? descCtrl.text.trim()
         : (type == 'penalite' && nomMembre.isNotEmpty ? 'Pénalité — $nomMembre' : '');
+    final refFinale  = refCtrl.text.trim();
 
     final libelleType = type == 'apport'
         ? 'Apport'
@@ -598,15 +785,17 @@ class _CaisseScreenState extends State<CaisseScreen> {
             : 'Pénalité';
 
     // ref généré ici pour être accessible à la fois dans onValider ET dans le bloc blockchain
-    final ref = Formatters.genererReference();
+    final ref = refFinale.isNotEmpty ? refFinale : Formatters.genererReference();
 
     final ok = await afficherModalePin(
       context,
       titre: 'Confirmer le mouvement',
       sousTitre: 'Vérifie les détails avant de confirmer avec ton PIN.',
       recap: [
-        (label: 'Type', valeur: libelleType),
+        (label: 'Type',    valeur: libelleType),
         (label: 'Montant', valeur: Formatters.montant(montant, devise: data.devise)),
+        if (avecPreuve) (label: 'Mode',    valeur: moyens.firstWhere((m) => m['id'] == methode, orElse: () => moyens.first)['label']!),
+        if (avecPreuve) (label: 'Référence', valeur: ref),
         if (descFinale.isNotEmpty) (label: 'Description', valeur: descFinale),
         (label: 'Solde actuel', valeur: Formatters.montant(data.soldeCaisse, devise: data.devise)),
       ],
@@ -625,17 +814,20 @@ class _CaisseScreenState extends State<CaisseScreen> {
                   ? caisseMap.cast<Map<String, dynamic>>()
                   : [],
         );
-        final entree = {
-          'id': ref,
-          'type': type,
-          'montant': montant,
-          'description': descFinale,
+        final entree = <String, dynamic>{
+          'id':           ref,
+          'type':         type,
+          'montant':      montant,
+          'description':  descFinale,
           'gestionnaire': provider.gestActifNom ?? '',
-          'date': now,
-          'reference': ref,
+          'date':         now,
+          'reference':    ref,
+          'devise':       data.devise,
+          if (avecPreuve) 'methode_paiement': methode,
+          if (photoBase64 != null) 'photo_preuve': photoBase64,
         };
         if (type == 'penalite' && membrePenaliteId != null) {
-          entree['membreId'] = membrePenaliteId!;
+          entree['membreId']  = membrePenaliteId!;
           entree['membreNom'] = nomMembre;
         }
         caisse.add(entree);
@@ -663,8 +855,9 @@ class _CaisseScreenState extends State<CaisseScreen> {
               ? 'PÉNALITÉ \u2014 $nomMembre \u2014 ${Formatters.montant(montant, devise: data.devise)}'
               : '${type == 'apport' ? 'APPORT' : 'DÉPENSE'} CAISSE \u2014 ${Formatters.montant(montant, devise: data.devise)}${descFinale.isNotEmpty ? ' \u2014 $descFinale' : ''}',
           'gestionnaire': provider.gestActifNom ?? '',
-          'quand': now,
-          'reference': ref,
+          'quand':        now,
+          'reference':    ref,
+          if (avecPreuve) 'methode_paiement': methode,
         });
         newData['journal'] = journal;
 

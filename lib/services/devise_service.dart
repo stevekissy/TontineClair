@@ -171,6 +171,115 @@ class DeviseService {
     return '$negatif${buffer.toString()} ${devise.symbole}';
   }
 
+  // ── Moyens de paiement disponibles selon la devise ─────────────────────────
+  //
+  // Logique :
+  //   • XOF / XAF / GNF / CDF / MRU / SLL / GMD / CVE / LRD
+  //       → Mobile Money africain (Orange, Wave, MTN, Moov) + Espèces
+  //   • KES / TZS / UGX / RWF / ETB / GHS / NGN / ZAR / ZMW / MWK / BWP / MGA
+  //       → Mobile Money local (M-Pesa, MTN, etc.) + Espèces
+  //   • EUR / GBP / CHF / NOK / SEK / DKK / PLN / CZK / HUF / RON / RUB / TRY
+  //       → Virement bancaire, Carte bancaire, PayPal, Espèces
+  //   • USD / CAD / AUD / NZD / MXN / HTG / JMD / TTD / BRL / ARS / CLP / etc.
+  //       → Virement bancaire, Carte bancaire, PayPal/Zelle/Venmo, Espèces
+  //   • MAD / DZD / TND / EGP / LYD / SAR / AED / QAR / KWD etc.
+  //       → Virement, Carte, Espèces
+  //   • Devises asiatiques, Océanie
+  //       → Virement, Carte, Espèces
+  //
+  // Retourne une liste de codes {id, label} utilisables dans un DropdownButton.
+  static List<Map<String, String>> moyensPaiementParDevise(String devise) {
+    // ── Zones Mobile Money africain ──────────────────────────────────────────
+    const afriqueOuest = {'XOF', 'XAF', 'GNF', 'CDF', 'MRU', 'SLL', 'GMD', 'CVE', 'LRD'};
+    const afriqueEst   = {'KES', 'TZS', 'UGX', 'RWF', 'BIF', 'DJF', 'ERN', 'SOS', 'ETB'};
+    const afriqueAutre = {'GHS', 'NGN', 'ZAR', 'ZMW', 'MWK', 'BWP', 'NAD', 'MZN', 'AOA', 'MGA'};
+
+    // ── Zones Europe / Amérique / Asie (virements bancaires) ────────────────
+    const europe    = {'EUR', 'GBP', 'CHF', 'NOK', 'SEK', 'DKK', 'PLN', 'CZK', 'HUF', 'RON', 'RUB', 'TRY'};
+    const amerique  = {'USD', 'CAD', 'AUD', 'NZD', 'MXN', 'HTG', 'JMD', 'TTD',
+                        'BRL', 'ARS', 'CLP', 'COP', 'PEN', 'BOB', 'PYG', 'UYU', 'VES'};
+    const moyenOri  = {'SAR', 'AED', 'QAR', 'KWD', 'BHD', 'OMR', 'ILS', 'JOD', 'IQD', 'IRR', 'LBP',
+                        'MAD', 'DZD', 'TND', 'EGP', 'LYD', 'SDG'};
+
+    // ── Mobile Money Afrique de l'Ouest/Centre ───────────────────────────────
+    if (afriqueOuest.contains(devise)) {
+      return [
+        {'id': 'especes',   'label': '💵 Espèces'},
+        {'id': 'orange',    'label': '🟠 Orange Money'},
+        {'id': 'wave',      'label': '🔵 Wave'},
+        {'id': 'mtn',       'label': '🟡 MTN Mobile Money'},
+        {'id': 'moov',      'label': '🟢 Moov Money'},
+        {'id': 'virement',  'label': '🏦 Virement bancaire'},
+      ];
+    }
+
+    // ── Mobile Money Afrique de l'Est (M-Pesa, MTN, Airtel) ─────────────────
+    if (afriqueEst.contains(devise)) {
+      return [
+        {'id': 'especes',   'label': '💵 Espèces'},
+        {'id': 'mpesa',     'label': '🟢 M-Pesa'},
+        {'id': 'mtn',       'label': '🟡 MTN Mobile Money'},
+        {'id': 'airtel',    'label': '🔴 Airtel Money'},
+        {'id': 'virement',  'label': '🏦 Virement bancaire'},
+        {'id': 'carte',     'label': '💳 Carte bancaire'},
+      ];
+    }
+
+    // ── Afrique subsaharienne autre (Ghana, Nigeria, Afrique du Sud…) ────────
+    if (afriqueAutre.contains(devise)) {
+      return [
+        {'id': 'especes',   'label': '💵 Espèces'},
+        {'id': 'mtn',       'label': '🟡 MTN Mobile Money'},
+        {'id': 'mpesa',     'label': '🟢 M-Pesa'},
+        {'id': 'virement',  'label': '🏦 Virement bancaire'},
+        {'id': 'carte',     'label': '💳 Carte bancaire'},
+      ];
+    }
+
+    // ── Europe ────────────────────────────────────────────────────────────────
+    if (europe.contains(devise)) {
+      return [
+        {'id': 'especes',   'label': '💵 Espèces'},
+        {'id': 'virement',  'label': '🏦 Virement bancaire'},
+        {'id': 'carte',     'label': '💳 Carte bancaire'},
+        {'id': 'paypal',    'label': '🔵 PayPal'},
+        {'id': 'lydia',     'label': '🟣 Lydia / Sumeria'},
+        {'id': 'revolut',   'label': '⚫ Revolut'},
+      ];
+    }
+
+    // ── Amérique du Nord / Sud / Océanie ─────────────────────────────────────
+    if (amerique.contains(devise)) {
+      return [
+        {'id': 'especes',   'label': '💵 Espèces'},
+        {'id': 'virement',  'label': '🏦 Virement bancaire'},
+        {'id': 'carte',     'label': '💳 Carte bancaire'},
+        {'id': 'paypal',    'label': '🔵 PayPal'},
+        {'id': 'zelle',     'label': '🟣 Zelle'},
+        {'id': 'venmo',     'label': '🔵 Venmo'},
+      ];
+    }
+
+    // ── Moyen-Orient / Afrique du Nord ───────────────────────────────────────
+    if (moyenOri.contains(devise)) {
+      return [
+        {'id': 'especes',   'label': '💵 Espèces'},
+        {'id': 'virement',  'label': '🏦 Virement bancaire'},
+        {'id': 'carte',     'label': '💳 Carte bancaire'},
+        {'id': 'wise',      'label': '🟢 Wise (TransferWise)'},
+      ];
+    }
+
+    // ── Défaut universel (Asie, autres) ──────────────────────────────────────
+    return [
+      {'id': 'especes',   'label': '💵 Espèces'},
+      {'id': 'virement',  'label': '🏦 Virement bancaire'},
+      {'id': 'carte',     'label': '💳 Carte bancaire'},
+      {'id': 'paypal',    'label': '🔵 PayPal'},
+      {'id': 'wise',      'label': '🟢 Wise'},
+    ];
+  }
+
   /// Liste triée : prioritaires d'abord, puis le reste par ordre alphabétique
   static List<Devise> get listeTrier {
     final prioritaires = codesPrioritaires
