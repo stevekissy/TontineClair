@@ -11,8 +11,8 @@ import '../utils/app_localizations.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Écran principal Espace Admin — Redesign v2
-// Onglets : Vue d'ensemble | Tontines | Stats | Blockchain
-// Supprimé : Soldes, Équipe, Messages, Support, Crypto, KYC, prêts, décaissements, dépenses
+// Onglets : Vue d'ensemble (KPI) | Tontines | Blockchain
+// Supprimé : Stats séparé, Soldes, Équipe, Messages, Support, Crypto, KYC
 // ─────────────────────────────────────────────────────────────────────────────
 
 class AdminScreen extends StatefulWidget {
@@ -36,7 +36,7 @@ class _AdminScreenState extends State<AdminScreen> {
   List<Map<String, dynamic>> _demandes  = [];
   Map<String, dynamic>       _counts    = {};
 
-  // Onglet actif : 0=Vue d'ensemble, 1=Tontines, 2=Stats, 3=Blockchain
+  // Onglet actif : 0=Vue d'ensemble (Stats KPI), 1=Tontines, 2=Blockchain
   int _onglet = 0;
 
   // Filtre tontines
@@ -752,8 +752,7 @@ class _AdminScreenState extends State<AdminScreen> {
     final onglets = [
       _OngletDef(icone: Icons.dashboard_rounded,           label: 'Vue d\'ensemble', badge: nbDemandesPending,  index: 0),
       _OngletDef(icone: Icons.groups_2_outlined,           label: 'Tontines',        badge: nbTontinesBloquees, index: 1),
-      _OngletDef(icone: Icons.bar_chart_rounded,           label: 'Stats',           badge: 0,                  index: 2),
-      _OngletDef(icone: Icons.hexagon_outlined,            label: 'Blockchain',      badge: 0,                  index: 3),
+      _OngletDef(icone: Icons.hexagon_outlined,            label: 'Blockchain',      badge: 0,                  index: 2),
     ];
 
     return Column(
@@ -777,15 +776,10 @@ class _AdminScreenState extends State<AdminScreen> {
         const Divider(height: 1, color: AppColors.lignes),
         Expanded(
           child: switch (_onglet) {
-            0 => _VueDashboard(
-                nbDemandesPending:    nbDemandesPending,
-                nbTontinesBloquees:   nbTontinesBloquees,
-                onNaviguer:           (i) => setState(() => _onglet = i),
-              ),
+            0 => AdminDashboardScreen(cle: _cleEffective),
             1 => _VueTontines(),
-            2 => AdminDashboardScreen(cle: _cleEffective),
-            3 => BlockchainAdminScreen(cleAdmin: _cleEffective),
-            _ => BlockchainAdminScreen(cleAdmin: _cleEffective),
+            2 => BlockchainAdminScreen(cleAdmin: _cleEffective),
+            _ => AdminDashboardScreen(cle: _cleEffective),
           },
         ),
       ],
