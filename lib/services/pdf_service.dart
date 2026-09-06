@@ -14,7 +14,8 @@
 
 // Import conditionnel : web_download_web.dart sur Flutter Web, stub sur mobile
 // Ceci évite l'erreur "dart:html not available" lors de la compilation Android
-import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
+import 'dart:typed_data' show Uint8List;
+import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode, compute;
 import 'package:flutter/material.dart' show debugPrint;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -182,45 +183,59 @@ class PdfService {
     required String nomGestionnaire,
     String langueCode = 'fr',
   }) async {
-    final data = tontine.data;
+    // ── Génération dans un Isolate séparé pour ne pas bloquer le thread UI ──
+    // Avec 100+ entrées journal, la construction du PDF peut prendre 2-5 sec.
+    // compute() déplace tout dans un worker thread → plus de freeze/ANR.
+    final bytes = await compute(
+      _genererReleveBytes,
+      _ReleveParams(
+        tontine: tontine,
+        nomGestionnaire: nomGestionnaire,
+        langueCode: langueCode,
+      ),
+    );
+    final nomFichier = _sanitize(tontine.data.nom).replaceAll(' ', '_');
+    final filename = 'TontineClair_${nomFichier}_${tontine.code}.pdf';
+    final uint8bytes = Uint8List.fromList(bytes);
+    if (kIsWeb) {
+      downloadPdfBytes(uint8bytes, filename);
+    } else {
+      await Printing.sharePdf(bytes: uint8bytes, filename: filename);
+    }
+  }
+
+  /// Fonction top-level-compatible pour compute() — génère les bytes du relevé.
+  static Future<List<int>> _genererReleveBytes(_ReleveParams p) async {
+    final data = p.tontine.data;
     final doc = pw.Document();
 
     // Bug #PDF-FONT : charger NotoSans (UTF-8) avec fallback Helvetica + sanitizer
     final polices = await _chargerPolices();
     final regular = polices.regular;
     final bold    = polices.bold;
-    final san     = polices.usesSanitizer; // flag sanitizer
+    final san     = polices.usesSanitizer;
 
-    final theme = pw.ThemeData.withFont(
-      base: regular,
-      bold: bold,
-    );
+    final theme = pw.ThemeData.withFont(base: regular, bold: bold);
 
     doc.addPage(
       pw.MultiPage(
         theme: theme,
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
-        header: (ctx) => _buildHeader(data, tontine.code, bold, regular, langueCode, san),
-        footer: (ctx) => _buildFooter(ctx, regular, langueCode),
+        header: (ctx) => _buildHeader(data, p.tontine.code, bold, regular, p.langueCode, san),
+        footer: (ctx) => _buildFooter(ctx, regular, p.langueCode),
         build: (ctx) => [
-          _sectionCaisse(data, bold, regular, langueCode, san),
+          _sectionCaisse(data, bold, regular, p.langueCode, san),
           pw.SizedBox(height: 20),
-          _sectionTours(data, bold, regular, langueCode, san),
+          _sectionTours(data, bold, regular, p.langueCode, san),
           pw.SizedBox(height: 20),
-          _sectionPrets(data, bold, regular, langueCode, san),
+          _sectionPrets(data, bold, regular, p.langueCode, san),
           pw.SizedBox(height: 20),
-          _sectionJournal(data, bold, regular, langueCode, san),
+          _sectionJournal(data, bold, regular, p.langueCode, san),
         ],
       ),
     );
-
-    // Nom de fichier : remplacer les caractères spéciaux
-    final nomFichier = _sanitize(data.nom).replaceAll(' ', '_');
-    await _telechargerPdf(
-      doc,
-      'TontineClair_${nomFichier}_${tontine.code}.pdf',
-    );
+    return doc.save();
   }
 
   // ── En-tête de page ─────────────────────────────────────────────────────
@@ -569,13 +584,23 @@ class PdfService {
     String langueCode,
     bool san,
   ) {
-    // Limité à 100 entrées : évite les PDF trop lourds sur tontines très actives
-    final entries = data.journal.take(100).toList();
+    // Limité aux 50 DERNIÈRES entrées (les plus récentes) pour éviter crash
+    // sur tontines actives (ex: 121 ops). Le journal est trié du plus ancien
+    // au plus récent → on prend la fin de la liste.
+    const maxEntrees = 50;
+    final total = data.journal.length;
+    final entries = total > maxEntrees
+        ? data.journal.skip(total - maxEntrees).toList()
+        : data.journal.toList();
+
+    final titre = total > maxEntrees
+        ? "${_t('journal_titre', langueCode)} (${entries.length} dernières sur $total actions)"
+        : "${_t('journal_titre', langueCode)} (${entries.length} actions)";
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        _titreSousSection("${_t('journal_titre', langueCode)} (${entries.length} actions)", bold),
+        _titreSousSection(titre, bold),
         pw.SizedBox(height: 6),
         if (entries.isEmpty)
           pw.Text(
@@ -1017,6 +1042,20 @@ class PdfService {
       ],
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Paramètres pour compute() — doit être sérialisable (pas de closures)
+// ─────────────────────────────────────────────────────────────────────────────
+class _ReleveParams {
+  final Tontine tontine;
+  final String nomGestionnaire;
+  final String langueCode;
+  const _ReleveParams({
+    required this.tontine,
+    required this.nomGestionnaire,
+    required this.langueCode,
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
