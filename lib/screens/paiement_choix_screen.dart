@@ -493,7 +493,18 @@ class _PaiementChoixScreenState extends State<PaiementChoixScreen> {
             ),
             const SizedBox(height: 12),
 
-            // ── Photo de preuve (OPTIONNELLE) ─────────────────────────────
+            // ── Photo de preuve (OBLIGATOIRE) ─────────────────────────────
+            Row(
+              children: [
+                const Text(
+                  'Photo de preuve',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.encre),
+                ),
+                const SizedBox(width: 4),
+                const Text('*', style: TextStyle(color: AppColors.alerte, fontSize: 14, fontWeight: FontWeight.w700)),
+              ],
+            ),
+            const SizedBox(height: 6),
             GestureDetector(
               onTap: _afficherChoixPhoto,
               child: Container(
@@ -502,8 +513,10 @@ class _PaiementChoixScreenState extends State<PaiementChoixScreen> {
                   color: AppColors.fondSecondaire,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: _photoBase64 != null ? AppColors.or : AppColors.lignes,
-                    width: _photoBase64 != null ? 1.5 : 1,
+                    color: _photoBase64 != null
+                        ? AppColors.or
+                        : AppColors.alerte.withValues(alpha: 0.6),
+                    width: _photoBase64 != null ? 1.5 : 1.2,
                   ),
                 ),
                 child: _photoBase64 != null && _photoFichier != null
@@ -591,18 +604,18 @@ class _PaiementChoixScreenState extends State<PaiementChoixScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Joindre une photo de preuve',
+                                    'Ajouter une photo de preuve',
                                     style: TextStyle(
                                         fontSize: 13,
                                         fontWeight: FontWeight.w600,
-                                        color: AppColors.encre),
+                                        color: AppColors.alerte),
                                   ),
                                   SizedBox(height: 2),
                                   Text(
-                                    'Optionnel — capture d\'écran, reçu photo…',
+                                    'Obligatoire — capture d\'écran, reçu photo…',
                                     style: TextStyle(
                                         fontSize: 11.5,
-                                        color: AppColors.texteDoux),
+                                        color: AppColors.alerte),
                                   ),
                                 ],
                               ),
@@ -614,6 +627,20 @@ class _PaiementChoixScreenState extends State<PaiementChoixScreen> {
                       ),
               ),
             ),
+            // Message d'erreur si photo manquante
+            if (_photoBase64 == null) ...[  
+              const SizedBox(height: 6),
+              const Row(
+                children: [
+                  Icon(Icons.error_outline_rounded, size: 14, color: AppColors.alerte),
+                  SizedBox(width: 6),
+                  Text(
+                    'Obligatoire — joignez une photo de preuve',
+                    style: TextStyle(fontSize: 11.5, color: AppColors.alerte, fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 20),
 
             // ── Checkbox confirmation ──────────────────────────────────────
@@ -661,12 +688,12 @@ class _PaiementChoixScreenState extends State<PaiementChoixScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: _confirme && _referenceCtrl.text.trim().isNotEmpty
+                onPressed: _confirme && _referenceCtrl.text.trim().isNotEmpty && _photoBase64 != null
                     ? _confirmerPaiement
-                    : () => setState(() {}),  // force rebuild pour afficher erreur
+                    : () => setState(() {}),  // force rebuild pour afficher erreurs
                 style: ElevatedButton.styleFrom(
                   backgroundColor:
-                      _confirme && _referenceCtrl.text.trim().isNotEmpty
+                      _confirme && _referenceCtrl.text.trim().isNotEmpty && _photoBase64 != null
                           ? AppColors.or
                           : AppColors.lignes,
                   foregroundColor: Colors.white,

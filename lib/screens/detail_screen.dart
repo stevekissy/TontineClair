@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../models/tontine.dart';
 import '../services/tontine_provider.dart';
@@ -1729,9 +1732,33 @@ class _BarreDetail extends StatelessWidget {
     required int             nbPayesClot,
     required int             montantVerse,
   }) async {
-    // ── Étape 1 : saisie de la référence / preuve de décaissement ────────────
+    // ── Étape 1 : saisie de la référence + photo de preuve de décaissement ──────
     final refCtrl = TextEditingController();
     String? refPreuve;
+    XFile?  photoFichier;
+    String? photoBase64;
+
+    // Picker photo — décaissement
+    Future<void> prendrePhotoDecaiss(ImageSource source, StateSetter setSt) async {
+      try {
+        final picker = ImagePicker();
+        final fichier = await picker.pickImage(
+          source: source, imageQuality: 72, maxWidth: 1200,
+        );
+        if (fichier == null) return;
+        final bytes = await fichier.readAsBytes();
+        setSt(() {
+          photoFichier = fichier;
+          photoBase64  = base64Encode(bytes);
+        });
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur photo : $e'), backgroundColor: Colors.red),
+          );
+        }
+      }
+    }
 
     final continuer = await showModalBottomSheet<bool>(
       context:            context,
@@ -1739,7 +1766,9 @@ class _BarreDetail extends StatelessWidget {
       backgroundColor:    Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (sCtx, setSt) {
-          final ok = refCtrl.text.trim().isNotEmpty;
+          final refOk   = refCtrl.text.trim().isNotEmpty;
+          final photoOk = photoBase64 != null;
+          final ok = refOk && photoOk;
           return Container(
             decoration: const BoxDecoration(
               color: AppColors.fondPapier,
@@ -1876,7 +1905,183 @@ class _BarreDetail extends StatelessWidget {
                       errorText: refCtrl.text.trim().isEmpty ? 'Obligatoire — preuve du décaissement' : null,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 16),
+
+                  // ── Photo de preuve (OBLIGATOIRE) ─────────────────────────
+                  Row(
+                    children: [
+                      const Text(
+                        'Photo de preuve',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.encre),
+                      ),
+                      const SizedBox(width: 4),
+                      const Text('*', style: TextStyle(color: AppColors.alerte, fontSize: 14, fontWeight: FontWeight.w700)),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  GestureDetector(
+                    onTap: () => showModalBottomSheet(
+                      context: sCtx,
+                      builder: (bCtx) => SafeArea(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ListTile(
+                              leading: const Icon(Icons.camera_alt_rounded, color: AppColors.or),
+                              title: const Text('Prendre une photo'),
+                              onTap: () {
+                                Navigator.pop(bCtx);
+                                prendrePhotoDecaiss(ImageSource.camera, setSt);
+                              },
+                            ),
+                            ListTile(
+                              leading: const Icon(Icons.photo_library_rounded, color: AppColors.or),
+                              title: const Text('Choisir depuis la galerie'),
+                              onTap: () {
+                                Navigator.pop(bCtx);
+                                prendrePhotoDecaiss(ImageSource.gallery, setSt);
+                              },
+                            ),
+                            if (photoBase64 != null)
+                              ListTile(
+                                leading: const Icon(Icons.delete_outline, color: AppColors.alerte),
+                                title: const Text('Supprimer la photo',
+                                    style: TextStyle(color: AppColors.alerte)),
+                                onTap: () {
+                                  Navigator.pop(bCtx);
+                                  setSt(() { photoFichier = null; photoBase64 = null; });
+                                },
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    child: Container(
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: AppColors.fondSecondaire,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: photoBase64 != null
+                              ? AppColors.or
+                              : AppColors.alerte.withValues(alpha: 0.6),
+                          width: photoBase64 != null ? 1.5 : 1.2,
+                        ),
+                      ),
+                      child: photoBase64 != null && photoFichier != null
+                          // ── Aperçu photo ─────────────────────────────────
+                          ? Stack(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(11),
+                                  child: kIsWeb
+                                      ? Image.memory(
+                                          base64Decode(photoBase64!),
+                                          height: 160,
+                                          width: double.infinity,
+                                          fit: BoxFit.cover,
+                                        )
+                                      : Image.file(
+                                          File(photoFichier!.path),
+                                          height: 160,
+                                          width: double.infinity,
+                                          fit: BoxFit.cover,
+                                        ),
+                                ),
+                                Positioned(
+                                  top: 8, right: 8,
+                                  child: GestureDetector(
+                                    onTap: () => setSt(() {
+                                      photoFichier = null;
+                                      photoBase64  = null;
+                                    }),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(alpha: 0.55),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(Icons.close_rounded,
+                                          size: 16, color: Colors.white),
+                                    ),
+                                  ),
+                                ),
+                                Positioned(
+                                  bottom: 8, right: 8,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.or,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.edit_outlined, size: 12, color: Colors.white),
+                                        SizedBox(width: 4),
+                                        Text('Changer',
+                                            style: TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w600)),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            )
+                          // ── Placeholder obligatoire ───────────────────────
+                          : Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.alerte.withValues(alpha: 0.10),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Icon(Icons.add_a_photo_outlined,
+                                        size: 20, color: AppColors.alerte),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  const Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Ajouter une photo de preuve',
+                                          style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              color: AppColors.alerte),
+                                        ),
+                                        SizedBox(height: 2),
+                                        Text(
+                                          'Obligatoire — capture d\'écran, reçu photo…',
+                                          style: TextStyle(fontSize: 11.5, color: AppColors.alerte),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Icon(Icons.chevron_right_rounded,
+                                      size: 18, color: AppColors.alerte),
+                                ],
+                              ),
+                            ),
+                    ),
+                  ),
+                  if (!photoOk) ...[
+                    const SizedBox(height: 6),
+                    const Row(
+                      children: [
+                        Icon(Icons.error_outline_rounded, size: 14, color: AppColors.alerte),
+                        SizedBox(width: 6),
+                        Text(
+                          'Obligatoire — joignez une photo de preuve',
+                          style: TextStyle(fontSize: 11.5, color: AppColors.alerte, fontWeight: FontWeight.w500),
+                        ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 12),
 
                   // Note informationnelle (pas de PayDunya, pas de frais)
                   Container(
@@ -1900,7 +2105,7 @@ class _BarreDetail extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
 
-                  // Bouton confirmer (bloqué si référence vide)
+                  // Bouton confirmer (bloqué si référence vide OU photo manquante)
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
@@ -1916,7 +2121,9 @@ class _BarreDetail extends StatelessWidget {
                             }
                           : () => setSt(() {}),
                       child: Text(
-                        ok ? 'Continuer avec le PIN' : 'Saisissez la référence',
+                        ok
+                            ? 'Continuer avec le PIN'
+                            : (!refOk ? 'Saisissez la référence' : 'Ajoutez une photo de preuve'),
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
                           fontSize: 14,
@@ -1974,6 +2181,7 @@ class _BarreDetail extends StatelessWidget {
           gestNom:          provider.gestActifNom ?? '',
           montantVerse:     montantVerse,
           benefNom:         benefNom,
+          photoPreuveB64:   photoBase64,
         );
         return provider.ecrire(newData, pin);
       },
@@ -2051,6 +2259,7 @@ class _BarreDetail extends StatelessWidget {
     required String                gestNom,
     required int                   montantVerse,
     required String                benefNom,
+    String?                        photoPreuveB64,  // photo de preuve du décaissement
   }) {
     final newData = data.toJson();
 
@@ -2095,6 +2304,7 @@ class _BarreDetail extends StatelessWidget {
       'par':         gestNom,
       'ref':         ref,
       'date':        DateTime.now().millisecondsSinceEpoch,
+      if (photoPreuveB64 != null) 'photo_preuve': photoPreuveB64,
     });
     newData['historique'] = historique;
 
@@ -2125,6 +2335,7 @@ class _BarreDetail extends StatelessWidget {
       'date':         DateTime.now().toIso8601String(),
       'reference':    ref,
       'devise':       data.devise,
+      if (photoPreuveB64 != null) 'photo_preuve': photoPreuveB64,
     });
     newData['caisse'] = {'mouvements': caisseMvts};
 

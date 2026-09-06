@@ -1431,8 +1431,17 @@ class _CartePret extends StatelessWidget {
                       .toList(),
                   onChanged: (v) => setS(() => methode = v!),
                 ),
-                // ── Photo de preuve ──────────────────────────────────────────
+                // ── Photo de preuve (OBLIGATOIRE) ─────────────────────────────
                 const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Text('Photo de preuve',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.encre)),
+                    const SizedBox(width: 4),
+                    const Text('*', style: TextStyle(color: AppColors.alerte, fontSize: 14, fontWeight: FontWeight.w700)),
+                  ],
+                ),
+                const SizedBox(height: 4),
                 GestureDetector(
                   onTap: afficherChoixPhoto,
                   child: Container(
@@ -1444,17 +1453,17 @@ class _CartePret extends StatelessWidget {
                       border: Border.all(
                         color: photoBase64 != null
                             ? AppColors.or
-                            : AppColors.lignes,
-                        width: photoBase64 != null ? 1.5 : 1,
+                            : AppColors.alerte.withValues(alpha: 0.6),
+                        width: photoBase64 != null ? 1.5 : 1.2,
                       ),
                     ),
-                    child: photoBase64 != null && photoFichier != null
+                    child: photoBase64 != null
                         // ── Aperçu photo ──────────────────────────────────
                         ? Stack(
                             children: [
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(9),
-                                child: kIsWeb
+                                child: (kIsWeb || photoFichier == null)
                                     ? Image.memory(
                                         base64Decode(photoBase64!),
                                         width: double.infinity,
@@ -1506,18 +1515,18 @@ class _CartePret extends StatelessWidget {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: const [
                                     Text(
-                                      'Joindre une photo de preuve',
+                                      'Ajouter une photo de preuve',
                                       style: TextStyle(
                                           fontSize: 14,
                                           fontWeight: FontWeight.w500,
-                                          color: AppColors.encre),
+                                          color: AppColors.alerte),
                                     ),
                                     SizedBox(height: 2),
                                     Text(
-                                      'Optionnel — reçu, capture d\'écran…',
+                                      'Obligatoire — reçu, capture d\'écran…',
                                       style: TextStyle(
                                           fontSize: 11,
-                                          color: AppColors.texteDoux),
+                                          color: AppColors.alerte),
                                     ),
                                   ],
                                 ),
@@ -1526,10 +1535,25 @@ class _CartePret extends StatelessWidget {
                           ),
                   ),
                 ),
+                if (photoBase64 == null) ...[
+                  const SizedBox(height: 6),
+                  const Row(
+                    children: [
+                      Icon(Icons.error_outline_rounded, size: 14, color: AppColors.alerte),
+                      SizedBox(width: 6),
+                      Text(
+                        'Obligatoire — joignez une photo de preuve',
+                        style: TextStyle(fontSize: 11.5, color: AppColors.alerte, fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 16),
                 BtnPrincipal(
-                  label: 'Enregistrer',
-                  onTap: () => Navigator.pop(ctx, true),
+                  label: photoBase64 != null ? 'Enregistrer' : 'Ajoutez une photo de preuve',
+                  onTap: photoBase64 != null
+                      ? () => Navigator.pop(ctx, true)
+                      : () => setS(() {}),
                 ),
                 const SizedBox(height: 8),
                 BtnSecondaire(
