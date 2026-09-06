@@ -277,9 +277,14 @@ class PaiementMethodesService {
   };
 
   // ── Map devise → codes des méthodes disponibles ───────────────────────────
-  // Les méthodes universelles (virement_international, autre) sont toujours
-  // ajoutées en fin de liste dans methodesParDevise().
+  // Les méthodes universelles (paypal, virement_international, autre) sont
+  // toujours ajoutées en fin de liste dans methodesParDevise().
+  // Pour toute devise non listée ici, seules les universelles sont proposées.
   static const Map<String, List<String>> _methodesCodes = {
+
+    // ════════════════════════════════════════════════════════════════════════
+    // AFRIQUE DE L'OUEST
+    // ════════════════════════════════════════════════════════════════════════
 
     // ── XOF — Franc CFA Ouest-Africain ─────────────────────────────────────
     'XOF': [
@@ -287,11 +292,8 @@ class PaiementMethodesService {
       'expresso_money', 'virement_iban',
     ],
 
-    // ── XAF — Franc CFA Centre-Africain ────────────────────────────────────
-    'XAF': [
-      'orange_money', 'mtn_momo', 'momo_cameroun', 'moov_money',
-      'airtel_money', 'virement_iban',
-    ],
+    // ── GNF — Franc guinéen ────────────────────────────────────────────────
+    'GNF': ['orange_money', 'mtn_momo', 'moov_money', 'virement_iban'],
 
     // ── GHS — Cedi ghanéen ─────────────────────────────────────────────────
     'GHS': ['mtn_momo', 'airtel_money', 'tigo_cash', 'virement_iban'],
@@ -299,8 +301,37 @@ class PaiementMethodesService {
     // ── NGN — Naira nigérian ───────────────────────────────────────────────
     'NGN': ['mtn_momo', 'airtel_money', 'virement_iban'],
 
-    // ── GNF — Franc guinéen ───────────────────────────────────────────────
-    'GNF': ['orange_money', 'mtn_momo', 'moov_money', 'virement_iban'],
+    // ── SLL — Leone sierra-léonais ─────────────────────────────────────────
+    'SLL': ['orange_money', 'airtel_money', 'virement_iban'],
+
+    // ── LRD — Dollar libérien ──────────────────────────────────────────────
+    'LRD': ['orange_money', 'virement_iban'],
+
+    // ── CVE — Escudo cap-verdien ───────────────────────────────────────────
+    'CVE': ['virement_iban'],
+
+    // ── GMD — Dalasi gambien ───────────────────────────────────────────────
+    'GMD': ['orange_money', 'virement_iban'],
+
+    // ── MRU — Ouguiya mauritanien ──────────────────────────────────────────
+    'MRU': ['virement_iban'],
+
+    // ════════════════════════════════════════════════════════════════════════
+    // AFRIQUE CENTRALE
+    // ════════════════════════════════════════════════════════════════════════
+
+    // ── XAF — Franc CFA Centre-Africain ────────────────────────────────────
+    'XAF': [
+      'orange_money', 'mtn_momo', 'momo_cameroun', 'moov_money',
+      'airtel_money', 'virement_iban',
+    ],
+
+    // ── CDF — Franc congolais ──────────────────────────────────────────────
+    'CDF': ['airtel_money', 'orange_money', 'virement_iban'],
+
+    // ════════════════════════════════════════════════════════════════════════
+    // AFRIQUE DE L'EST
+    // ════════════════════════════════════════════════════════════════════════
 
     // ── KES — Shilling kényan ──────────────────────────────────────────────
     'KES': ['mpesa', 'airtel_money', 'virement_iban'],
@@ -314,17 +345,74 @@ class PaiementMethodesService {
     // ── RWF — Franc rwandais ───────────────────────────────────────────────
     'RWF': ['mtn_rwanda', 'airtel_money', 'virement_iban'],
 
-    // ── ZAR — Rand sud-africain ────────────────────────────────────────────
-    'ZAR': ['virement_iban'],
+    // ── ETB — Birr éthiopien ───────────────────────────────────────────────
+    'ETB': ['mpesa', 'airtel_money', 'virement_iban'],
 
-    // ── MAD — Dirham marocain ─────────────────────────────────────────────
+    // ── BIF — Franc burundais ──────────────────────────────────────────────
+    'BIF': ['mpesa', 'airtel_money', 'virement_iban'],
+
+    // ── DJF — Franc djiboutien ─────────────────────────────────────────────
+    'DJF': ['virement_iban'],
+
+    // ── ERN — Nakfa érythréen ──────────────────────────────────────────────
+    'ERN': ['virement_iban'],
+
+    // ── SOS — Shilling somalien ────────────────────────────────────────────
+    'SOS': ['virement_iban'],
+
+    // ════════════════════════════════════════════════════════════════════════
+    // AFRIQUE DU NORD
+    // ════════════════════════════════════════════════════════════════════════
+
+    // ── MAD — Dirham marocain ──────────────────────────────────────────────
     'MAD': ['cih_bank', 'attijariwafa', 'virement_iban'],
 
     // ── EGP — Livre égyptienne ────────────────────────────────────────────
     'EGP': ['instapay', 'fawry', 'virement_iban'],
 
-    // ── CDF — Franc congolais ─────────────────────────────────────────────
-    'CDF': ['airtel_money', 'orange_money', 'virement_iban'],
+    // ── DZD — Dinar algérien ───────────────────────────────────────────────
+    'DZD': ['virement_iban'],
+
+    // ── TND — Dinar tunisien ───────────────────────────────────────────────
+    'TND': ['virement_iban'],
+
+    // ── LYD — Dinar libyen ────────────────────────────────────────────────
+    'LYD': ['virement_iban'],
+
+    // ── SDG — Livre soudanaise ─────────────────────────────────────────────
+    'SDG': ['virement_iban'],
+
+    // ════════════════════════════════════════════════════════════════════════
+    // AFRIQUE AUSTRALE
+    // ════════════════════════════════════════════════════════════════════════
+
+    // ── ZAR — Rand sud-africain ────────────────────────────────────────────
+    'ZAR': ['virement_iban'],
+
+    // ── ZMW — Kwacha zambien ──────────────────────────────────────────────
+    'ZMW': ['airtel_money', 'mtn_momo', 'virement_iban'],
+
+    // ── MWK — Kwacha malawien ─────────────────────────────────────────────
+    'MWK': ['airtel_money', 'virement_iban'],
+
+    // ── BWP — Pula botswanais ─────────────────────────────────────────────
+    'BWP': ['orange_money', 'virement_iban'],
+
+    // ── NAD — Dollar namibien ─────────────────────────────────────────────
+    'NAD': ['virement_iban'],
+
+    // ── MZN — Metical mozambicain ─────────────────────────────────────────
+    'MZN': ['mpesa', 'virement_iban'],
+
+    // ── AOA — Kwanza angolais ─────────────────────────────────────────────
+    'AOA': ['virement_iban'],
+
+    // ── MGA — Ariary malgache ─────────────────────────────────────────────
+    'MGA': ['orange_money', 'airtel_money', 'virement_iban'],
+
+    // ════════════════════════════════════════════════════════════════════════
+    // EUROPE
+    // ════════════════════════════════════════════════════════════════════════
 
     // ── EUR — Euro ────────────────────────────────────────────────────────
     'EUR': ['virement_sepa', 'revolut', 'paypal', 'lydia', 'paylib'],
@@ -335,11 +423,58 @@ class PaiementMethodesService {
     // ── CHF — Franc suisse ────────────────────────────────────────────────
     'CHF': ['virement_iban', 'revolut', 'paypal'],
 
+    // ── NOK — Couronne norvégienne ────────────────────────────────────────
+    'NOK': ['virement_iban', 'revolut', 'paypal'],
+
+    // ── SEK — Couronne suédoise ───────────────────────────────────────────
+    'SEK': ['virement_iban', 'revolut', 'paypal'],
+
+    // ── DKK — Couronne danoise ────────────────────────────────────────────
+    'DKK': ['virement_iban', 'revolut', 'paypal'],
+
+    // ── PLN — Zloty polonais ──────────────────────────────────────────────
+    'PLN': ['virement_iban', 'revolut', 'paypal'],
+
+    // ── CZK — Couronne tchèque ────────────────────────────────────────────
+    'CZK': ['virement_iban', 'revolut', 'paypal'],
+
+    // ── HUF — Forint hongrois ─────────────────────────────────────────────
+    'HUF': ['virement_iban', 'revolut', 'paypal'],
+
+    // ── RON — Leu roumain ─────────────────────────────────────────────────
+    'RON': ['virement_iban', 'revolut', 'paypal'],
+
+    // ── RUB — Rouble russe ────────────────────────────────────────────────
+    'RUB': ['virement_iban'],
+
+    // ── TRY — Livre turque ────────────────────────────────────────────────
+    'TRY': ['virement_iban', 'paypal'],
+
+    // ════════════════════════════════════════════════════════════════════════
+    // AMÉRIQUE DU NORD & CARAÏBES
+    // ════════════════════════════════════════════════════════════════════════
+
     // ── USD — Dollar américain ─────────────────────────────────────────────
     'USD': ['zelle', 'cashapp', 'venmo', 'paypal', 'wire_ach'],
 
     // ── CAD — Dollar canadien ─────────────────────────────────────────────
     'CAD': ['interac', 'paypal', 'wire_ach'],
+
+    // ── MXN — Peso mexicain ───────────────────────────────────────────────
+    'MXN': ['paypal', 'virement_iban'],
+
+    // ── HTG — Gourde haïtienne ────────────────────────────────────────────
+    'HTG': ['moncash', 'paypal'],
+
+    // ── JMD — Dollar jamaïcain ────────────────────────────────────────────
+    'JMD': ['paypal', 'virement_iban'],
+
+    // ── TTD — Dollar de Trinité ───────────────────────────────────────────
+    'TTD': ['paypal', 'virement_iban'],
+
+    // ════════════════════════════════════════════════════════════════════════
+    // AMÉRIQUE DU SUD
+    // ════════════════════════════════════════════════════════════════════════
 
     // ── BRL — Réal brésilien ──────────────────────────────────────────────
     'BRL': ['pix', 'paypal'],
@@ -347,35 +482,134 @@ class PaiementMethodesService {
     // ── ARS — Peso argentin ───────────────────────────────────────────────
     'ARS': ['mercadopago', 'paypal'],
 
-    // ── MXN — Peso mexicain ───────────────────────────────────────────────
-    'MXN': ['paypal', 'virement_iban'],
+    // ── CLP — Peso chilien ────────────────────────────────────────────────
+    'CLP': ['mercadopago', 'paypal', 'virement_iban'],
 
-    // ── INR — Roupie indienne ─────────────────────────────────────────────
-    'INR': ['upi', 'paytm', 'paypal', 'virement_iban'],
+    // ── COP — Peso colombien ──────────────────────────────────────────────
+    'COP': ['paypal', 'virement_iban'],
 
-    // ── PHP — Peso philippin ──────────────────────────────────────────────
-    'PHP': ['gcash', 'paypal', 'virement_iban'],
+    // ── PEN — Sol péruvien ────────────────────────────────────────────────
+    'PEN': ['paypal', 'virement_iban'],
 
-    // ── SGD — Dollar singapourien ─────────────────────────────────────────
-    'SGD': ['paynow', 'paypal', 'virement_iban'],
+    // ── BOB — Boliviano bolivien ──────────────────────────────────────────
+    'BOB': ['paypal', 'virement_iban'],
 
-    // ── THB — Baht thaïlandais ────────────────────────────────────────────
-    'THB': ['prompt_pay', 'paypal', 'virement_iban'],
+    // ── PYG — Guaraní paraguayen ──────────────────────────────────────────
+    'PYG': ['paypal', 'virement_iban'],
 
-    // ── CNY — Yuan chinois ────────────────────────────────────────────────
-    'CNY': ['alipay', 'wechat_pay'],
+    // ── UYU — Peso uruguayen ──────────────────────────────────────────────
+    'UYU': ['paypal', 'virement_iban'],
+
+    // ── VES — Bolívar vénézuélien ─────────────────────────────────────────
+    'VES': ['paypal', 'virement_iban'],
+
+    // ════════════════════════════════════════════════════════════════════════
+    // MOYEN-ORIENT
+    // ════════════════════════════════════════════════════════════════════════
 
     // ── SAR — Riyal saoudien ──────────────────────────────────────────────
     'SAR': ['stcpay', 'virement_iban'],
 
-    // ── AED — Dirham EAU ─────────────────────────────────────────────────
+    // ── AED — Dirham des EAU ─────────────────────────────────────────────
     'AED': ['virement_iban', 'paypal'],
+
+    // ── QAR — Riyal qatari ────────────────────────────────────────────────
+    'QAR': ['stcpay', 'virement_iban'],
+
+    // ── KWD — Dinar koweïtien ─────────────────────────────────────────────
+    'KWD': ['virement_iban'],
+
+    // ── BHD — Dinar bahreïni ──────────────────────────────────────────────
+    'BHD': ['virement_iban'],
+
+    // ── OMR — Rial omanais ────────────────────────────────────────────────
+    'OMR': ['virement_iban'],
+
+    // ── ILS — Shekel israélien ────────────────────────────────────────────
+    'ILS': ['paypal', 'virement_iban'],
+
+    // ── JOD — Dinar jordanien ─────────────────────────────────────────────
+    'JOD': ['virement_iban'],
+
+    // ── IQD — Dinar irakien ───────────────────────────────────────────────
+    'IQD': ['virement_iban'],
+
+    // ── IRR — Rial iranien ────────────────────────────────────────────────
+    'IRR': ['virement_iban'],
+
+    // ── LBP — Livre libanaise ─────────────────────────────────────────────
+    'LBP': ['virement_iban'],
+
+    // ════════════════════════════════════════════════════════════════════════
+    // ASIE
+    // ════════════════════════════════════════════════════════════════════════
 
     // ── JPY — Yen japonais ────────────────────────────────────────────────
     'JPY': ['virement_iban', 'paypal'],
 
-    // ── KRW — Won coréen ─────────────────────────────────────────────────
+    // ── CNY — Yuan chinois ────────────────────────────────────────────────
+    'CNY': ['alipay', 'wechat_pay'],
+
+    // ── INR — Roupie indienne ─────────────────────────────────────────────
+    'INR': ['upi', 'paytm', 'paypal', 'virement_iban'],
+
+    // ── KRW — Won sud-coréen ─────────────────────────────────────────────
     'KRW': ['virement_iban', 'paypal'],
+
+    // ── SGD — Dollar singapourien ─────────────────────────────────────────
+    'SGD': ['paynow', 'paypal', 'virement_iban'],
+
+    // ── HKD — Dollar de Hong Kong ────────────────────────────────────────
+    'HKD': ['paypal', 'virement_iban'],
+
+    // ── TWD — Dollar taiwanais ────────────────────────────────────────────
+    'TWD': ['paypal', 'virement_iban'],
+
+    // ── THB — Baht thaïlandais ────────────────────────────────────────────
+    'THB': ['prompt_pay', 'paypal', 'virement_iban'],
+
+    // ── VND — Dong vietnamien ─────────────────────────────────────────────
+    'VND': ['paypal', 'virement_iban'],
+
+    // ── IDR — Roupiah indonésienne ────────────────────────────────────────
+    'IDR': ['paypal', 'virement_iban'],
+
+    // ── MYR — Ringgit malaisien ───────────────────────────────────────────
+    'MYR': ['paypal', 'virement_iban'],
+
+    // ── PHP — Peso philippin ──────────────────────────────────────────────
+    'PHP': ['gcash', 'paypal', 'virement_iban'],
+
+    // ── PKR — Roupie pakistanaise ─────────────────────────────────────────
+    'PKR': ['paypal', 'virement_iban'],
+
+    // ── BDT — Taka bangladais ─────────────────────────────────────────────
+    'BDT': ['bkash', 'virement_iban'],
+
+    // ── LKR — Roupie sri-lankaise ─────────────────────────────────────────
+    'LKR': ['paypal', 'virement_iban'],
+
+    // ── NPR — Roupie népalaise ────────────────────────────────────────────
+    'NPR': ['virement_iban'],
+
+    // ── MMK — Kyat birman ────────────────────────────────────────────────
+    'MMK': ['virement_iban'],
+
+    // ── KHR — Riel cambodgien ─────────────────────────────────────────────
+    'KHR': ['paypal', 'virement_iban'],
+
+    // ── LAK — Kip laotien ────────────────────────────────────────────────
+    'LAK': ['virement_iban'],
+
+    // ── MNT — Tugrik mongol ───────────────────────────────────────────────
+    'MNT': ['virement_iban'],
+
+    // ── KZT — Tenge kazakh ────────────────────────────────────────────────
+    'KZT': ['virement_iban'],
+
+    // ════════════════════════════════════════════════════════════════════════
+    // OCÉANIE
+    // ════════════════════════════════════════════════════════════════════════
 
     // ── AUD — Dollar australien ───────────────────────────────────────────
     'AUD': ['paypal', 'virement_iban'],
@@ -383,18 +617,25 @@ class PaiementMethodesService {
     // ── NZD — Dollar néo-zélandais ────────────────────────────────────────
     'NZD': ['paypal', 'virement_iban'],
 
-    // ── HTG — Gourde haïtienne ────────────────────────────────────────────
-    'HTG': ['moncash', 'paypal'],
+    // ── FJD — Dollar fidjien ──────────────────────────────────────────────
+    'FJD': ['paypal', 'virement_iban'],
 
-    // ── BDT — Taka bangladais ─────────────────────────────────────────────
-    'BDT': ['bkash', 'virement_iban'],
+    // ── PGK — Kina papouasien ─────────────────────────────────────────────
+    'PGK': ['virement_iban'],
   };
 
   /// Retourne la liste des moyens de paiement pour une devise donnée.
-  /// Toujours + virement_international + autre en fin de liste.
+  ///
+  /// • Pour les devises connues → méthodes locales spécifiques, puis universelles.
+  /// • Pour les devises inconnues → méthodes universelles uniquement
+  ///   (PayPal + Virement international + Autre).
+  ///   ⚠️ Plus de fallback XOF : une devise non mappée ne doit jamais
+  ///   afficher des méthodes africaines comme Orange Money ou Wave.
   static List<PaiementMethode> methodesParDevise(String? codeDevise) {
-    final codes = _methodesCodes[codeDevise ?? 'XOF'] ??
-        _methodesCodes['XOF']!; // fallback XOF
+    // Pour devise null ou inconnue → liste vide (seuls les universels seront ajoutés)
+    final codes = codeDevise != null
+        ? (_methodesCodes[codeDevise] ?? const <String>[])
+        : const <String>[];
 
     final methodes = codes
         .map((c) => _toutes[c])
@@ -402,7 +643,7 @@ class PaiementMethodesService {
         .toList();
 
     // Toujours ajouter les méthodes universelles en fin (si pas déjà présentes)
-    for (final universel in ['virement_international', 'autre']) {
+    for (final universel in ['paypal', 'virement_international', 'autre']) {
       if (!codes.contains(universel)) {
         final m = _toutes[universel];
         if (m != null) methodes.add(m);

@@ -1723,7 +1723,7 @@ class _CarteMembreState extends State<_CarteMembre> {
                             ),
                           ),
                         ),
-                        // ── Mobile Money (Premium) ──────────────────────────
+                        // ── Coordonnées de décaissement (Premium) ──────────
                         const SizedBox(height: 12),
                         const Divider(height: 1, color: AppColors.lignes),
                         const SizedBox(height: 12),
