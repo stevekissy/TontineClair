@@ -789,7 +789,20 @@ class _EtatPeutProposer extends StatelessWidget {
           const SizedBox(height: 8),
           CarteTC(
             child: Column(
-              children: data.historique.take(10).map((h) {
+              children: ([...data.historique]
+                  ..sort((a, b) {
+                    final da = a['date'];
+                    final db = b['date'];
+                    final dateA = da is int
+                        ? DateTime.fromMillisecondsSinceEpoch(da)
+                        : DateTime.tryParse(da?.toString() ?? '') ?? DateTime(0);
+                    final dateB = db is int
+                        ? DateTime.fromMillisecondsSinceEpoch(db)
+                        : DateTime.tryParse(db?.toString() ?? '') ?? DateTime(0);
+                    return dateB.compareTo(dateA); // plus récent en premier
+                  }))
+                  .take(10)
+                  .map((h) {
                 final tour = (h['tour'] as num?)?.toInt() ?? '?';
                 final benef = h['beneficiaire'] as String? ?? h['membre'] as String? ?? '?';
                 final montant = (h['totalRecu'] as num?)?.toInt()

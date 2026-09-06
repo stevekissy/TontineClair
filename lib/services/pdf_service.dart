@@ -380,7 +380,19 @@ class PdfService {
     String langueCode,
     bool san,
   ) {
-    final historique = data.historique;
+    // Tri explicite par date décroissante — le plus récent en haut
+    final historique = [...data.historique]
+      ..sort((a, b) {
+        final da = a['date'];
+        final db = b['date'];
+        final dateA = da is int
+            ? DateTime.fromMillisecondsSinceEpoch(da)
+            : DateTime.tryParse(da?.toString() ?? '') ?? DateTime(0);
+        final dateB = db is int
+            ? DateTime.fromMillisecondsSinceEpoch(db)
+            : DateTime.tryParse(db?.toString() ?? '') ?? DateTime(0);
+        return dateB.compareTo(dateA);
+      });
     final nbTours = data.nbTours;
 
     // Construire la liste des widgets de la section
