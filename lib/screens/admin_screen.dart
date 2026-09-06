@@ -1064,7 +1064,7 @@ class _AdminScreenState extends State<AdminScreen> {
 
   // ── Onglet 💰 Décaissements pending ─────────────────────────────────────────
   Future<void> _validerDecaissement(
-      int id, String code, String benefNom, int montantNet, String devise) async {
+      int id, String code, String? beneficiaireId, String benefNom, int montantNet, String devise) async {
     final confirmer = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1088,7 +1088,15 @@ class _AdminScreenState extends State<AdminScreen> {
     );
     if (confirmer != true || !mounted) return;
 
-    final result = await SupabaseService.adminValiderDecaissement(cle: _cle, id: id);
+    final result = await SupabaseService.adminValiderDecaissement(
+      cle            : _cle,
+      id             : id,
+      tontineCode    : code,
+      beneficiaireId : beneficiaireId,
+      beneficiaireNom: benefNom,
+      montant        : montantNet,
+      devise         : devise,
+    );
     if (!mounted) return;
     if (result['ok'] == true) {
       afficherToast(context, '✅ Décaissement validé — caisse débitée !');
@@ -2329,7 +2337,7 @@ class _AdminScreenState extends State<AdminScreen> {
                     label: 'Valider — débiter caisse',
                     icone: Icons.check_circle_rounded,
                     couleur: AppColors.succes,
-                    onTap: () => _validerDecaissement(id, code, benefNom, montantNet, devise),
+                    onTap: () => _validerDecaissement(id, code, d['beneficiaire_id'] as String?, benefNom, montantNet, devise),
                   ),
                 ),
                 const SizedBox(width: 8),

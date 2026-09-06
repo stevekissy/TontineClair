@@ -209,18 +209,22 @@ class TontineProvider extends ChangeNotifier {
     String?  membreId,
     String?  membreNom,
     int?     montantXof,
+    String?  devise,                  // devise réelle — toujours passer via data.devise
     String?  typeOperationBlockchain,
     String?  refInterne,
   }) async {
     if (_courante == null) return false;
     try {
       final code = _courante!.code;
+      // Auto-extraire la devise depuis les data si non fournie explicitement
+      final deviseEffective = devise ?? (data['devise'] as String?)?.trim();
       final ok = await SupabaseService.ecrireTontineSansPIN(
         code:                    code,
         data:                    data,
         membreId:                membreId,
         membreNom:               membreNom,
         montantXof:              montantXof,
+        devise:                  deviseEffective,
         typeOperationBlockchain: typeOperationBlockchain,
         refInterne:              refInterne,
       );
@@ -236,7 +240,7 @@ class TontineProvider extends ChangeNotifier {
     required int montant,
     required String periode,
     required String methodeOrdre,
-    String devise = 'XOF',
+    String devise = '', // jamais XOF par défaut
     required List<String> membres,
     List<String?> membresEmails = const [],  // e-mails membres (Premium uniquement)
     required List<Gestionnaire> gestionnaires,
@@ -314,6 +318,7 @@ class TontineProvider extends ChangeNotifier {
             phase        : res.phase,
             txHash       : res.txHash,
             membreNom    : gestNom,
+            devise       : devise,  // transmet la vraie devise dès la création
           ).catchError((_) {});
         }
       }).catchError((_) {}); // Non-bloquant — la création reste valide même si blockchain KO

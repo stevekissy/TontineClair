@@ -454,6 +454,7 @@ class SupabaseService {
     String?  membreId,
     String?  membreNom,
     int?     montantXof,
+    String?  devise,                  // devise réelle de la tontine — passer toujours
     String?  typeOperationBlockchain, // 'cotisation' | 'apport' | null
     String?  refCoinpayments,
     String?  refInterne,
@@ -491,6 +492,7 @@ class SupabaseService {
                 membreId       : membreId,
                 membreNom      : membreNom ?? '',
                 montantXof     : montantXof,
+                devise         : devise,
                 refCoinpayments: refCoinpayments,
                 refInterne     : refInterne,
               )
@@ -499,6 +501,7 @@ class SupabaseService {
                 membreId       : membreId,
                 membreNom      : membreNom ?? '',
                 montantXof     : montantXof,
+                devise         : devise,
                 refCoinpayments: refCoinpayments,
                 refInterne     : refInterne,
               );
@@ -1914,7 +1917,7 @@ class SupabaseService {
     required String numeroBenef,
     required String gestionnaire,
     required String reference,
-    String devise = 'XOF',
+    String devise = '', // jamais XOF par défaut
   }) async {
     final url = Uri.parse('$_url/rest/v1/decaissements_pending');
     final body = {
@@ -1973,6 +1976,7 @@ class SupabaseService {
     String? beneficiaireId,
     String? beneficiaireNom,
     int?    montant,
+    String? devise,           // devise réelle de la tontine
   }) async {
     try {
       final result = await rpc('admin_valider_decaissement', {
@@ -1987,6 +1991,7 @@ class SupabaseService {
             membreId    : beneficiaireId,
             membreNom   : beneficiaireNom ?? '',
             montantXof  : montant,
+            devise      : devise,
             refInterne  : id.toString(),
           ).catchError((e) {
             if (kDebugMode) debugPrint('[Blockchain] distribution hook erreur: $e');

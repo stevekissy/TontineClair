@@ -684,7 +684,7 @@ class TontineData {
     required this.periode,
     required this.methodeOrdre,
     this.echeance,
-    this.devise = 'XOF',
+    this.devise = '',   // jamais de fallback XOF — chaîne vide si non définie
     this.tourActuel = 0,
     this.cycleTermine = false,
     this.cycleNumero = 1,
@@ -1243,7 +1243,7 @@ class TontineData {
     // On stocke la valeur brute de Supabase sans modification ici.
     // La normalisation (recalcul si passée) est faite dans EcheanceService.
     final echeanceRaw = json['echeance'] as String?;
-    final deviseRaw = json['devise'] as String? ?? 'XOF';
+    final deviseRaw = (json['devise'] as String?)?.trim() ?? ''; // jamais XOF par défaut
 
     // ── KYC ──────────────────────────────────────────────────────────────────
     final kycRaw = json['kyc'] as Map<String, dynamic>?;

@@ -278,7 +278,7 @@ class PaiementService {
   /// Retourne la liste des méthodes disponibles pour une devise.
   /// "especes" est toujours ajouté en dernier.
   static List<MethodePaiement> methodesPour(String? codeDevise) {
-    final code = (codeDevise ?? 'XOF').toUpperCase();
+    final code = (codeDevise ?? '').trim().toUpperCase();
     final codes = _parDevise[code] ?? _fallback;
 
     final liste = codes

@@ -1079,7 +1079,8 @@ class _CarteEntree extends StatelessWidget {
                   children: [
                     if (entree.montantXof != null)
                       Text(
-                        _formatXof(entree.montantXof!),
+                        // Utilise la devise de l'entrée (metadata['devise']) — jamais XOF par défaut
+                        Formatters.montant(entree.montantXof!, devise: entree.devise),
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 14,

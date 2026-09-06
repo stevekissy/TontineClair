@@ -937,6 +937,7 @@ class BlockchainService {
           phase        : res.phase,
           txHash       : res.txHash,
           montantXof   : montantXof,
+          devise       : devise,   // transmet la vraie devise — jamais XOF hardcodé
           membreNom    : membreNom,
         ).catchError((_) {});  // Non-bloquant
       }
