@@ -894,8 +894,16 @@ class BlockchainService {
     try {
       // Enrichir les métadonnées avec la devise pour que PolygonScan
       // affiche la bonne devise (EUR, USD, etc.) et non "XOF" par défaut.
+      // Point 4 fix : ajouter `montant${DEVISE}` dans metadata pour que le
+      // journal interne et le décodage PolygonScan montrent ex. "montantEUR"
+      // au lieu de "montantXof" pour les tontines en devise non-XOF.
+      final deviseUpper = (devise ?? '').trim().toUpperCase();
+      final montantDeviseCle = deviseUpper.isNotEmpty ? 'montant$deviseUpper' : 'montantXOF';
       final metadataEnrichie = <String, dynamic>{
         if (devise != null) 'devise': devise,
+        // Clé dynamique montant${DEVISE} — visible dans PolygonScan refInterne
+        // et dans le journal TontineClair (ex: montantEUR: 150 pour tontine EUR)
+        if (montantXof != null) montantDeviseCle: montantXof,
         ...?metadata,
       };
       final rep = await _appeler({

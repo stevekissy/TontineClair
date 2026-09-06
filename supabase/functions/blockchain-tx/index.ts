@@ -845,16 +845,20 @@ async function actionEnregistrerOperation(
       const refParts: string[] = [codeStr, libelle];  // ← code tontine en tête
       if (memNom) refParts.push(memNom);
       if (refBrut && refBrut !== memNom) refParts.push(refBrut);
-      // ── Montant + Devise visible sur PolygonScan (param3 s'appelle montantXof dans le contrat
-      //    vérifié et ne peut pas être renommé dynamiquement — on enrichit donc refInterne)
-      // Ex: "JX9FKY | Cotisation | Jean Dupont | 9900 EUR"
-      //     "JX9FKY | Cotisation | Jean Dupont | 5000 XOF"
-      //     "JX9FKY | Cotisation | Jean Dupont | 100 NGN"
+      // ── Montant + Devise visible sur PolygonScan ─────────────────────────
+      // Point 4 fix : afficher "montantEUR=9900" au lieu de "montantXof=9900"
+      // pour les tontines en devise non-XOF dans le champ refInterne.
+      // La clé ABI du contrat est fixe (montant uint256) mais refInterne est
+      // une string libre → on y encode la clé dynamique montant${DEVISE}.
+      // Ex: "JX9FKY | Cotisation | Jean Dupont | montantEUR=9900"
+      //     "JX9FKY | Cotisation | Jean Dupont | montantXOF=5000"
+      //     "JX9FKY | Cotisation | Jean Dupont | montantNGN=100"
+      const deviseKey = devise ? `montant${devise}` : "montantXOF";
       if (montantXof > 0 && devise) {
-        refParts.push(`${montantXof} ${devise}`);
+        refParts.push(`${deviseKey}=${montantXof}`);
       } else if (montantXof > 0) {
-        // Pas de devise connue — on affiche le montant brut pour ne rien perdre
-        refParts.push(`${montantXof}`);
+        // Pas de devise connue — on affiche montantXOF pour compatibilité
+        refParts.push(`montantXOF=${montantXof}`);
       } else if (devise) {
         // Montant nul (sync, vote…) — on affiche quand même la devise de la tontine
         refParts.push(devise);

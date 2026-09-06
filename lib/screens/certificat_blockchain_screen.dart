@@ -320,7 +320,7 @@ Future<Uint8List> _genererCertificatBytes(_CertificatParams p) async {
           pw.SizedBox(height: 12),
         ],
 
-        // ── Tableau des opérations ─────────────────────────────────────
+        // ── Tableau des opérations (pw.Table ligne-par-ligne → pas d'OOM) ──
         pw.Text('Journal des operations blockchain',
             style: pw.TextStyle(font: fontBold, fontSize: 12,
                 fontWeight: pw.FontWeight.bold, color: pdfEncre)),
@@ -331,14 +331,15 @@ Future<Uint8List> _genererCertificatBytes(_CertificatParams p) async {
         else
           pw.Table(
             border: pw.TableBorder.all(color: pdfLignes, width: 0.5),
-            columnWidths: {
-              0: const pw.FlexColumnWidth(1.4),
-              1: const pw.FlexColumnWidth(1.6),
-              2: const pw.FlexColumnWidth(2.2),
-              3: const pw.FlexColumnWidth(1.2),
-              4: const pw.FlexColumnWidth(2.6),
+            columnWidths: const {
+              0: pw.FlexColumnWidth(1.4),
+              1: pw.FlexColumnWidth(1.6),
+              2: pw.FlexColumnWidth(2.2),
+              3: pw.FlexColumnWidth(1.2),
+              4: pw.FlexColumnWidth(2.6),
             },
             children: [
+              // En-tête
               pw.TableRow(
                 decoration: const pw.BoxDecoration(color: pdfEncre),
                 children: [
@@ -349,29 +350,33 @@ Future<Uint8List> _genererCertificatBytes(_CertificatParams p) async {
                   cellHeader('TX Hash / Proof'),
                 ],
               ),
-              ...entreedPdf.asMap().entries.map((entry) {
-                final i = entry.key;
-                final e = entry.value;
+              // Lignes de données — générées une par une pour limiter la mémoire
+              for (int i = 0; i < entreedPdf.length; i++) ...() {
+                final e = entreedPdf[i];
                 final estOnChain = phase == 2 && e.txHash != null && e.txHash!.length == 66;
                 final bg = i.isEven ? PdfColors.white : pdfGris;
                 String txLabel = '-';
                 if (e.txHash != null) {
                   final hash = e.txHash!;
-                  final court = hash.length > 16 ? '${hash.substring(0, 8)}...${hash.substring(hash.length - 6)}' : hash;
+                  final court = hash.length > 16
+                      ? '${hash.substring(0, 8)}...${hash.substring(hash.length - 6)}'
+                      : hash;
                   txLabel = pdfSafe(estOnChain ? court : 'SHA-256:$court');
                 }
-                return pw.TableRow(
-                  decoration: pw.BoxDecoration(color: bg),
-                  children: [
-                    cell(fmtDate(e.createdAt)),
-                    cell(pdfSafe(e.typeLabel), gras: true,
-                        couleur: estOnChain ? pdfChain : pdfEncre),
-                    cell(pdfSafe(e.descriptionMetier)),
-                    cell(montantFmt(e.montantXof, e.devise)),
-                    cell(txLabel, couleur: estOnChain ? pdfChain : pdfDoux),
-                  ],
-                );
-              }),
+                return [
+                  pw.TableRow(
+                    decoration: pw.BoxDecoration(color: bg),
+                    children: [
+                      cell(fmtDate(e.createdAt)),
+                      cell(pdfSafe(e.typeLabel), gras: true,
+                          couleur: estOnChain ? pdfChain : pdfEncre),
+                      cell(pdfSafe(e.descriptionMetier)),
+                      cell(montantFmt(e.montantXof, e.devise)),
+                      cell(txLabel, couleur: estOnChain ? pdfChain : pdfDoux),
+                    ],
+                  ),
+                ];
+              }(),
             ],
           ),
         pw.SizedBox(height: 20),
@@ -450,8 +455,9 @@ class _CertificatBlockchainScreenState
   }
 
   // Limite d'entrées chargées : évite l'OOM sur tontines très actives.
-  // Le certificat PDF affiche au maximum _kMaxEntrees lignes dans le tableau.
-  static const int _kMaxEntrees = 150;
+  // Réduite à 75 pour garantir la stabilité mémoire sur tontines avec
+  // de nombreuses TX (chaque ligne PDF = allocation significative).
+  static const int _kMaxEntrees = 75;
 
   Future<void> _charger() async {
     setState(() { _loading = true; _erreur = null; });

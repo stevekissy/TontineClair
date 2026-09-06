@@ -165,6 +165,50 @@ class PdfService {
   }
   static const _texteDoux = PdfColor.fromInt(0xFF6E6C60);
 
+  // ── Anti-crash : remplace pw.TableHelper.fromTextArray() ─────────────────
+  // pw.TableHelper OOM sur 100+ lignes en raison de son layout monolithique.
+  // pw.Table ligne par ligne libère la mémoire au fur-et-à-mesure → pas de crash.
+  static pw.Widget _buildTable({
+    required List<String> headers,
+    required List<List<String>> rows,
+    required pw.Font bold,
+    required pw.Font regular,
+    Map<int, pw.TableColumnWidth>? columnWidths,
+    Map<int, pw.Alignment>? cellAlignments,
+  }) {
+    final headerRow = pw.TableRow(
+      decoration: const pw.BoxDecoration(color: _encre),
+      children: headers.map((h) => pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: pw.Text(h, style: pw.TextStyle(font: bold, fontSize: 9, color: PdfColors.white)),
+      )).toList(),
+    );
+    final dataRows = rows.asMap().entries.map((entry) {
+      final i = entry.key;
+      final row = entry.value;
+      final bg = i.isEven ? PdfColors.white : const PdfColor.fromInt(0xFFF5F5F5);
+      return pw.TableRow(
+        decoration: pw.BoxDecoration(color: bg),
+        children: row.asMap().entries.map((cell) {
+          final align = cellAlignments?[cell.key] ?? pw.Alignment.centerLeft;
+          return pw.Padding(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            child: pw.Align(
+              alignment: align,
+              child: pw.Text(cell.value,
+                  style: pw.TextStyle(font: regular, fontSize: 9)),
+            ),
+          );
+        }).toList(),
+      );
+    }).toList();
+    return pw.Table(
+      border: pw.TableBorder.all(color: const PdfColor.fromInt(0xFFDDDDDD), width: 0.5),
+      columnWidths: columnWidths,
+      children: [headerRow, ...dataRows],
+    );
+  }
+
   // ── Bug #4 : téléchargement PDF unifié Web + Mobile ─────────────────────
   // Web  → downloadPdfBytes() depuis web_download_web.dart (dart:html Blob)
   // Mobile → Printing.sharePdf() sélecteur natif
@@ -356,7 +400,8 @@ class PdfService {
           // Au-delà de ~200 lignes, pw.TableHelper.fromTextArray() épuise la
           // mémoire de l'isolate et plante l'application.
           () {
-            const maxCaisse = 100;
+            // Réduit à 50 pour éviter l'OOM — pw.Table ligne-par-ligne
+            const maxCaisse = 50;
             final total = data.caisse.length;
             final affichees = total > maxCaisse
                 ? data.caisse.skip(total - maxCaisse).toList()
@@ -371,19 +416,18 @@ class PdfService {
                   ),
                   pw.SizedBox(height: 4),
                 ],
-                pw.TableHelper.fromTextArray(
+                _buildTable(
                   headers: [_t('col_date', langueCode), _t('col_motif', langueCode), _t('col_par_qui', langueCode), _t('col_montant', langueCode)],
-                  headerStyle: pw.TextStyle(font: bold, fontSize: 9, color: PdfColors.white),
-                  headerDecoration: const pw.BoxDecoration(color: _encre),
-                  cellStyle: pw.TextStyle(font: regular, fontSize: 9),
-                  cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  bold: bold,
+                  regular: regular,
                   columnWidths: {
                     0: const pw.FixedColumnWidth(70),
                     1: const pw.FlexColumnWidth(2),
                     2: const pw.FlexColumnWidth(1.2),
                     3: const pw.FixedColumnWidth(80),
                   },
-                  data: affichees.map((m) {
+                  cellAlignments: {3: pw.Alignment.centerRight},
+                  rows: affichees.map((m) {
                     final montantPositif = m.montant >= 0;
                     return [
                       Formatters.dateHeure(DateTime.tryParse(m.date)),
@@ -392,9 +436,6 @@ class PdfService {
                       (montantPositif ? '+' : '') + Formatters.montant(m.montant, devise: data.devise),
                     ];
                   }).toList(),
-                  cellAlignments: {
-                    3: pw.Alignment.centerRight,
-                  },
                 ),
               ],
             );
@@ -494,8 +535,8 @@ class PdfService {
         ),
       );
     } else {
-      // ── Limite anti-crash : 60 tours clôturés les plus récents ───────────
-      const maxTours = 60;
+      // ── Limite anti-crash : 40 tours les plus récents (pw.Table ligne-par-ligne) ─
+      const maxTours = 40;
       final totalTours = historique.length;
       final histAffiche = totalTours > maxTours
           ? historique.sublist(0, maxTours) // déjà trié décroissant → les plus récents en tête
@@ -508,13 +549,11 @@ class PdfService {
         contenu.add(pw.SizedBox(height: 4));
       }
       contenu.add(
-        pw.TableHelper.fromTextArray(
+        _buildTable(
           headers: [_t('col_tour', langueCode), _t('col_beneficiaire', langueCode), _t('cotisations', langueCode), _t('col_montant', langueCode), _t('col_date', langueCode)],
-          headerStyle: pw.TextStyle(font: bold, fontSize: 9, color: PdfColors.white),
-          headerDecoration: const pw.BoxDecoration(color: _encre),
-          cellStyle: pw.TextStyle(font: regular, fontSize: 9),
-          cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-          data: histAffiche.asMap().entries.map((e) {
+          bold: bold,
+          regular: regular,
+          rows: histAffiche.asMap().entries.map((e) {
             final h = e.value;
             final numTour = (h['tour'] as num?)?.toInt() ?? (e.key + 1);
             // Résoudre le bénéficiaire : historique → beneficiaireId → 'non désigné'
@@ -617,9 +656,9 @@ class PdfService {
                 ),
                 if (p.remboursements.isNotEmpty) ...[
                   pw.SizedBox(height: 3),
-                  // ── Limite anti-crash : 20 remboursements max par prêt ───
+                  // ── Limite anti-crash : 15 remboursements max par prêt (pw.Table) ─
                   () {
-                    const maxRemb = 20;
+                    const maxRemb = 15;
                     final totalRemb = p.remboursements.length;
                     final rembAffich = totalRemb > maxRemb
                         ? p.remboursements.sublist(totalRemb - maxRemb)
@@ -634,13 +673,11 @@ class PdfService {
                           ),
                           pw.SizedBox(height: 2),
                         ],
-                        pw.TableHelper.fromTextArray(
-                          headers: ['Date', 'Méthode', 'Réf.', 'Montant'],
-                          headerStyle: pw.TextStyle(font: bold, fontSize: 8, color: PdfColors.white),
-                          headerDecoration: const pw.BoxDecoration(color: _encre),
-                          cellStyle: pw.TextStyle(font: regular, fontSize: 8),
-                          cellPadding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 3),
-                          data: rembAffich.map((r) => [
+                        _buildTable(
+                          headers: ['Date', 'Methode', 'Ref.', 'Montant'],
+                          bold: bold,
+                          regular: regular,
+                          rows: rembAffich.map((r) => [
                             Formatters.dateFormatee(DateTime.tryParse(r.date)),
                             _tx(r.methode, san),
                             _tx(r.reference, san),
@@ -667,17 +704,16 @@ class PdfService {
     String langueCode,
     bool san,
   ) {
-    // Limité aux 50 DERNIÈRES entrées (les plus récentes) pour éviter crash
-    // sur tontines actives (ex: 121 ops). Le journal est trié du plus ancien
-    // au plus récent → on prend la fin de la liste.
-    const maxEntrees = 50;
+    // Réduit à 30 DERNIÈRES entrées (pw.Table ligne-par-ligne → pas d'OOM).
+    // Limite drastiquement réduite vs 50 pour garantir la stabilité mémoire.
+    const maxEntrees = 30;
     final total = data.journal.length;
     final entries = total > maxEntrees
         ? data.journal.skip(total - maxEntrees).toList()
         : data.journal.toList();
 
     final titre = total > maxEntrees
-        ? "${_t('journal_titre', langueCode)} (${entries.length} dernières sur $total actions)"
+        ? "${_t('journal_titre', langueCode)} (${entries.length} dernieres sur $total actions)"
         : "${_t('journal_titre', langueCode)} (${entries.length} actions)";
 
     return pw.Column(
@@ -691,18 +727,16 @@ class PdfService {
             style: pw.TextStyle(font: regular, fontSize: 10, color: _texteDoux),
           )
         else
-          pw.TableHelper.fromTextArray(
+          _buildTable(
             headers: [_t('col_date', langueCode), _t('col_action', langueCode), _t('col_auteur', langueCode)],
-            headerStyle: pw.TextStyle(font: bold, fontSize: 9, color: PdfColors.white),
-            headerDecoration: const pw.BoxDecoration(color: _encre),
-            cellStyle: pw.TextStyle(font: regular, fontSize: 8),
-            cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            bold: bold,
+            regular: regular,
             columnWidths: {
               0: const pw.FixedColumnWidth(80),
               1: const pw.FlexColumnWidth(3),
               2: const pw.FlexColumnWidth(1.5),
             },
-            data: entries.map((j) => [
+            rows: entries.map((j) => [
               Formatters.dateHeure(DateTime.tryParse(j.quand)),
               _tx(j.quoi, san),
               _tx(j.gestionnaire, san),
@@ -802,19 +836,17 @@ class PdfService {
               style: pw.TextStyle(font: regular, fontSize: 10, color: _texteDoux),
             )
           else
-            pw.TableHelper.fromTextArray(
+            _buildTable(
               headers: ['#', _t('col_membre', langueCode), _t('col_vote', langueCode), _t('col_horodatage', langueCode)],
-              headerStyle: pw.TextStyle(font: bold, fontSize: 9, color: PdfColors.white),
-              headerDecoration: const pw.BoxDecoration(color: _encre),
-              cellStyle: pw.TextStyle(font: regular, fontSize: 9),
-              cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              bold: bold,
+              regular: regular,
               columnWidths: {
                 0: const pw.FixedColumnWidth(24),
                 1: const pw.FlexColumnWidth(2),
                 2: const pw.FixedColumnWidth(60),
                 3: const pw.FixedColumnWidth(90),
               },
-              data: voixDetaillees.asMap().entries.map((e) {
+              rows: voixDetaillees.asMap().entries.map((e) {
                 final i = e.key + 1;
                 final v = e.value;
                 // Bug #1 fix : prioriser membre_id (clé snake_case de Supabase)
@@ -825,15 +857,13 @@ class PdfService {
                         .where((m) => m.id == membreId)
                         .map((m) => m.nom)
                         .firstOrNull
-                    ?? '—';
-                final choix = v['choix'] as String? ?? '—';
+                    ?? '\u2014';
+                final choix = v['choix'] as String? ?? '\u2014';
                 final choixLabel = choix.toLowerCase() == 'oui'
                     ? _t('oui', langueCode)
                     : choix.toLowerCase() == 'non'
                         ? _t('non', langueCode)
-                        : choix.toLowerCase() == 'abstention'
-                            ? _t('abstention', langueCode)
-                            : _t('abstention', langueCode);
+                        : _t('abstention', langueCode);
 
                 // Timestamp du vote — Bug fix : gérer les deux formats
                 DateTime? ts;
@@ -848,7 +878,7 @@ class PdfService {
                   '$i',
                   membreNom,
                   choixLabel,
-                  ts != null ? Formatters.dateHeure(ts) : '—',
+                  ts != null ? Formatters.dateHeure(ts) : '\u2014',
                 ];
               }).toList(),
             ),
@@ -1242,20 +1272,15 @@ class PdfServiceTestHelper {
             pw.Text(PdfService._t('aucune_voix', langueCode),
                 style: pw.TextStyle(font: regular, fontSize: 10))
           else
-            pw.TableHelper.fromTextArray(
+            PdfService._buildTable(
               headers: [
                 PdfService._t('col_membre', langueCode),
                 PdfService._t('col_vote', langueCode),
                 PdfService._t('col_horodatage', langueCode),
               ],
-              headerStyle: pw.TextStyle(
-                  font: bold, fontSize: 9, color: PdfColors.white),
-              headerDecoration:
-                  const pw.BoxDecoration(color: PdfColor.fromInt(0xFF1C2447)),
-              cellStyle: pw.TextStyle(font: regular, fontSize: 9),
-              cellPadding:
-                  const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-              data: voixDetaillees.map((v) {
+              bold: bold,
+              regular: regular,
+              rows: voixDetaillees.map((v) {
                 final choix = (v['choix'] as String? ?? '').toLowerCase();
                 final label = choix == 'oui'
                     ? 'OUI'
