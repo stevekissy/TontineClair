@@ -914,6 +914,9 @@ class BlockchainService {
         if (membreId        != null) 'membre_id'       : membreId,
         if (membreNom       != null) 'membre_nom'      : membreNom,
         if (montantXof      != null) 'montant_xof'     : montantXof,
+        // devise aussi au niveau RACINE du payload — lue directement par l'Edge Function
+        // pour l'encoder dans refInterne → visible dans Polygonscan Input Data
+        if (devise != null && devise.isNotEmpty) 'devise' : devise,
         if (metadataEnrichie.isNotEmpty) 'metadata'    : metadataEnrichie,
         if (refCoinpayments != null) 'ref_coinpayments': refCoinpayments,
         if (refInterne      != null) 'ref_interne'     : refInterne,

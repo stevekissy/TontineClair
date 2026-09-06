@@ -738,6 +738,12 @@ async function actionEnregistrerOperation(
     montant_xof, ref_coinpayments, ref_interne,
   } = body as Record<string, string | number>;
 
+  // Devise réelle de la tontine — lue depuis body.devise OU body.metadata.devise
+  // Envoyée par Flutter dans _enregistrer() → affichée dans Polygonscan Input Data
+  // devise lue depuis body.devise (racine — priorité) ou body.metadata.devise (fallback)
+  const metadataBody = body.metadata as Record<string, unknown> | undefined;
+  const devise = String(body.devise ?? metadataBody?.devise ?? "").trim().toUpperCase();
+
   const supabaseUrl  = env.SUPABASE_URL;
   const serviceKey   = env.SUPABASE_SERVICE_ROLE_KEY;
   const journalSecret = env.BLOCKCHAIN_JOURNAL_SECRET;
@@ -815,6 +821,9 @@ async function actionEnregistrerOperation(
       const refParts: string[] = [codeStr, libelle];  // ← code tontine en tête
       if (memNom) refParts.push(memNom);
       if (refBrut && refBrut !== memNom) refParts.push(refBrut);
+      // ── Devise visible sur Polygonscan ── toujours en dernier dans refInterne
+      // Ex: "JX9FKY | Cotisation | Jean Dupont | EUR" au lieu de "JX9FKY | Cotisation"
+      if (devise) refParts.push(devise);
       const ref = refParts.join(" | ");
 
       switch (typeOp) {
