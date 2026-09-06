@@ -31,6 +31,7 @@ class _CertificatParams {
   final String nomTontine;
   final String? membreNom;
   final int maxEntrees;
+  final String devise; // devise réelle de la tontine (EUR, USD, XOF…)
 
   const _CertificatParams({
     required this.entrees,
@@ -39,6 +40,7 @@ class _CertificatParams {
     required this.nomTontine,
     required this.membreNom,
     required this.maxEntrees,
+    this.devise = '',
   });
 }
 
@@ -90,9 +92,11 @@ Future<Uint8List> _genererCertificatBytes(_CertificatParams p) async {
   final totalXof = entreesFiltrees
       .where((e) => e.montantXof != null)
       .fold(0, (s, e) => s + (e.montantXof ?? 0));
-  final deviseDetectee = entreesFiltrees
+  // Priorité : devise param (tontine) > première entrée avec devise > ''
+  final deviseEntrees = entreesFiltrees
       .map((e) => e.devise)
       .firstWhere((d) => d.isNotEmpty, orElse: () => '');
+  final deviseDetectee = p.devise.isNotEmpty ? p.devise : deviseEntrees;
 
   final numCert = 'TC-${p.codeTontine}-${now.millisecondsSinceEpoch ~/ 1000}';
 
@@ -371,7 +375,9 @@ Future<Uint8List> _genererCertificatBytes(_CertificatParams p) async {
                       cell(pdfSafe(e.typeLabel), gras: true,
                           couleur: estOnChain ? pdfChain : pdfEncre),
                       cell(pdfSafe(e.descriptionMetier)),
-                      cell(montantFmt(e.montantXof, e.devise)),
+                      cell(montantFmt(e.montantXof,
+                          deviseDetectee.isNotEmpty ? deviseDetectee
+                              : e.devise.isNotEmpty ? e.devise : 'XOF')),
                       cell(txLabel, couleur: estOnChain ? pdfChain : pdfDoux),
                     ],
                   ),
@@ -427,12 +433,14 @@ class CertificatBlockchainScreen extends StatefulWidget {
   final String codeTontine;
   final String nomTontine;
   final String? membreNom; // si null → certificat global tontine
+  final String? devise;    // devise de la tontine (EUR, USD, XOF…) — affichage montants
 
   const CertificatBlockchainScreen({
     super.key,
     required this.codeTontine,
     required this.nomTontine,
     this.membreNom,
+    this.devise,
   });
 
   @override
@@ -447,6 +455,8 @@ class _CertificatBlockchainScreenState
   bool _loading = true;
   bool _generating = false;
   String? _erreur;
+  // Devise résolue : widget.devise (tontine) > première entrée avec devise > ''
+  String _devise = '';
 
   @override
   void initState() {
@@ -480,10 +490,16 @@ class _CertificatBlockchainScreenState
       final entreesTronquees = filtrees.length > _kMaxEntrees
           ? filtrees.sublist(filtrees.length - _kMaxEntrees)
           : filtrees;
+      // Résoudre la devise : paramètre widget > première entrée blockchain
+      final deviseWidget = (widget.devise ?? '').trim();
+      final deviseEntrees = entreesTronquees
+          .map((e) => e.devise)
+          .firstWhere((d) => d.isNotEmpty, orElse: () => '');
       setState(() {
         _entrees = entreesTronquees;
         _contrat = results[1] as Map<String, dynamic>;
         _loading = false;
+        _devise = deviseWidget.isNotEmpty ? deviseWidget : deviseEntrees;
       });
     } catch (e) {
       if (!mounted) return;
@@ -521,6 +537,7 @@ class _CertificatBlockchainScreenState
         nomTontine : widget.nomTontine,
         membreNom  : widget.membreNom,
         maxEntrees : _kMaxEntrees,
+        devise     : _devise,  // transmet la vraie devise tontine au PDF
       ),
     );
   }
@@ -848,6 +865,7 @@ class _CertificatBlockchainScreenState
                           entree: e,
                           estTxOnChain: estTxOnChain,
                           contratAddr: contratAddr,
+                          devise: _devise,
                         );
                       }).toList()),
                       const SizedBox(height: 24),
@@ -963,11 +981,13 @@ class _CarteOperationJournal extends StatelessWidget {
   final BlockchainEntry entree;
   final bool estTxOnChain;
   final String? contratAddr;
+  final String devise; // devise tontine — priorité sur entree.devise
 
   const _CarteOperationJournal({
     required this.entree,
     required this.estTxOnChain,
     this.contratAddr,
+    this.devise = '',
   });
 
   /// Ouvre PolygonScan uniquement pour les vraies TX on-chain (Phase 2)
@@ -1077,7 +1097,10 @@ class _CarteOperationJournal extends StatelessWidget {
                 // Montant
                 if (entree.montantXof != null)
                   Text(
-                    Formatters.montant(entree.montantXof!, devise: entree.devise),
+                    Formatters.montant(entree.montantXof!,
+                        devise: devise.isNotEmpty ? devise
+                            : entree.devise.isNotEmpty ? entree.devise
+                            : null),
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,

@@ -248,6 +248,7 @@ class _VerificationPubliqueScreenState
                   builder: (_) => CertificatBlockchainScreen(
                     codeTontine: _codeActif,
                     nomTontine : _codeActif,
+                    devise     : _devise,  // transmet la vraie devise tontine → plus de FCFA pour EUR
                   ),
                 ),
               ),
