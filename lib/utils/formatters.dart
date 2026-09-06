@@ -13,11 +13,12 @@ class Formatters {
     return '${fcfa.format(montant)} FCFA';
   }
 
-  /// Formate un montant avec la devise de la tontine
-  /// Si devise est null ou vide → retombe sur FCFA
+  /// Formate un montant avec la devise de la tontine.
+  /// Utilise toujours la VRAIE devise — jamais de fallback FCFA hardcodé.
+  /// Si devise est null/vide → format numérique sans symbole (ex: "15 000").
   static String montant(num montant, {String? devise}) {
-    if (devise == null || devise.isEmpty || devise == 'XOF') {
-      return montantFCFA(montant);
+    if (devise == null || devise.isEmpty) {
+      return fcfa.format(montant); // numérique seul, pas de "FCFA" par défaut
     }
     return DeviseService.formaterMontant(montant, devise);
   }

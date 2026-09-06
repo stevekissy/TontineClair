@@ -526,7 +526,7 @@ class _CarteBeneficiaire extends StatelessWidget {
     required this.info,
     required this.code,
     required this.estGest,
-    this.devise = 'XOF',
+    this.devise = '',   // toujours passé depuis data.devise — '' = défaut vide
   });
 
   @override

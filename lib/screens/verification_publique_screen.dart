@@ -10,7 +10,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/blockchain_service.dart';
+import '../services/supabase_service.dart';
 import '../utils/app_colors.dart';
+import '../utils/formatters.dart';
 import 'certificat_blockchain_screen.dart';
 import 'qr_tontine_screen.dart';
 
@@ -19,15 +21,17 @@ class VerificationPubliqueScreen extends StatefulWidget {
   final String? codeTontine;
   /// Nom tontine affiché dans le titre (optionnel)
   final String? nomTontine;
-  /// Solde de caisse réel (en XOF, depuis TontineData.soldeCaisse).
-  /// Si fourni, remplace le calcul "Volume XOF" par le vrai solde.
+  /// Solde de caisse réel. Si fourni, remplace le calcul du volume.
   final int? soldeCaisse;
+  /// Devise réelle de la tontine (passée depuis DetailScreen).
+  final String? devise;
 
   const VerificationPubliqueScreen({
     super.key,
     this.codeTontine,
     this.nomTontine,
     this.soldeCaisse,
+    this.devise,
   });
 
   @override
@@ -44,6 +48,7 @@ class _VerificationPubliqueScreenState
   bool _recherche = false;
   String? _erreur;
   String _codeActif = '';
+  String _devise = ''; // devise réelle de la tontine chargée
 
   @override
   void initState() {
@@ -65,6 +70,9 @@ class _VerificationPubliqueScreenState
     final code = _ctrl.text.trim().toUpperCase();
     if (code.isEmpty) return;
 
+    // Devise déjà connue (passée par le parent) — évite un chargement inutile
+    final deviseInitiale = widget.devise?.trim() ?? '';
+
     setState(() {
       _loading   = true;
       _recherche = true;
@@ -72,24 +80,38 @@ class _VerificationPubliqueScreenState
       _codeActif = code;
       _entrees   = [];
       _contrat   = {};
+      if (deviseInitiale.isNotEmpty) _devise = deviseInitiale;
     });
 
     try {
-      // Charger en parallèle : journal + infos contrat
-      final results = await Future.wait([
+      // Charger journal + contrat en parallèle
+      // + devise si non déjà fournie (lireTontine est léger)
+      final List<Future<dynamic>> futures = [
         BlockchainService.lireJournal(tontineCode: code, limit: 100),
         BlockchainService.contractInfo(),
-      ]);
+        if (deviseInitiale.isEmpty)
+          SupabaseService.lireTontine(code)
+              .then((t) => t.data.devise)
+              .catchError((_) => ''),
+      ];
+      final results = await Future.wait(futures);
 
       if (!mounted) return;
-      // Garde client : ne conserver que les entrées dont tontine_code == code
+
       final toutesEntrees = results[0] as List<BlockchainEntry>;
       final entreesFiltrees = toutesEntrees
           .where((e) => e.tontineCode.trim().toUpperCase() == code)
           .toList();
+
+      // Devise : priorité au paramètre widget, sinon valeur chargée
+      final deviseChargee = deviseInitiale.isNotEmpty
+          ? deviseInitiale
+          : (results.length > 2 ? (results[2] as String?) ?? '' : '');
+
       setState(() {
         _entrees = entreesFiltrees;
         _contrat = results[1] as Map<String, dynamic>;
+        _devise  = deviseChargee;
         _loading = false;
         if (_entrees.isEmpty) {
           _erreur = 'Aucune opération blockchain trouvée pour le code "$code".\n'
@@ -250,6 +272,7 @@ class _VerificationPubliqueScreenState
                             countOnChain   : _countOnChain,
                             totalXof       : _totalXof,
                             soldeCaisse    : widget.soldeCaisse,
+                            devise         : _devise,
                             contratAddress : _contratAddress,
                             onCopier       : _copier,
                             onRefresh      : _rechercher,
@@ -539,6 +562,7 @@ class _VueResultats extends StatelessWidget {
   final int totalXof;
   final int? soldeCaisse;
   final String? contratAddress;
+  final String devise; // devise réelle de la tontine
   final void Function(String, String) onCopier;
   final Future<void> Function() onRefresh;
 
@@ -550,6 +574,7 @@ class _VueResultats extends StatelessWidget {
     required this.totalXof,
     this.soldeCaisse,
     this.contratAddress,
+    this.devise = '',
     required this.onCopier,
     required this.onRefresh,
   });
@@ -572,6 +597,7 @@ class _VueResultats extends StatelessWidget {
             soldeCaisse    : soldeCaisse,
             stats          : stats,
             contratAddress : contratAddress,
+            devise         : devise,
           ),
           const SizedBox(height: 16),
 
@@ -622,6 +648,7 @@ class _CarteResume extends StatelessWidget {
   final int? soldeCaisse;
   final Map<String, int> stats;
   final String? contratAddress;
+  final String devise; // devise réelle de la tontine
 
   const _CarteResume({
     required this.code,
@@ -631,6 +658,7 @@ class _CarteResume extends StatelessWidget {
     this.soldeCaisse,
     required this.stats,
     this.contratAddress,
+    this.devise = '',
   });
 
   @override
@@ -761,19 +789,9 @@ class _CarteResume extends StatelessWidget {
     );
   }
 
-  // Affiche le montant complet formaté avec séparateur de milliers + FCFA
-  // Exemple : 20140 → "20 140 FCFA", 1500000 → "1 500 000 FCFA"
+  // Formate un montant avec la vraie devise de la tontine
   String _formatXof(int xof) {
-    final s = xof.abs().toString();
-    final buf = StringBuffer();
-    int count = 0;
-    for (int i = s.length - 1; i >= 0; i--) {
-      if (count > 0 && count % 3 == 0) buf.write('\u00A0'); // espace fine insécable
-      buf.write(s[i]);
-      count++;
-    }
-    final formatted = buf.toString().split('').reversed.join();
-    return '${xof < 0 ? '-' : ''}$formatted FCFA';
+    return Formatters.montant(xof, devise: devise);
   }
 
   // Traduit un type_operation (y compris sélecteurs hex 0x…) → label lisible.
@@ -1274,19 +1292,10 @@ class _CarteEntree extends StatelessWidget {
     }
   }
 
-  // Montant exact avec séparateur de milliers + FCFA (pas d'abréviation k/M)
-  // Exemple : 20140 → "20 140 FCFA", 0 → "0 FCFA"
+  // Formate un montant — la devise est portée par la carte parente (non dispo ici)
+  // → utilise Formatters.montant sans devise (numérique neutre)
   String _formatXof(int xof) {
-    final s = xof.abs().toString();
-    final buf = StringBuffer();
-    int count = 0;
-    for (int i = s.length - 1; i >= 0; i--) {
-      if (count > 0 && count % 3 == 0) buf.write('\u00A0');
-      buf.write(s[i]);
-      count++;
-    }
-    final formatted = buf.toString().split('').reversed.join();
-    return '${xof < 0 ? '-' : ''}$formatted FCFA';
+    return Formatters.montant(xof);
   }
 
   String _formatDate(DateTime dt) {

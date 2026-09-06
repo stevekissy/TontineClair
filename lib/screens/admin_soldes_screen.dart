@@ -27,7 +27,8 @@ import '../widgets/app_widgets.dart';
 class SoldeTontine {
   final String code;
   final String nom;
-  final int    soldeBrut;       // XOF calculé depuis journal blockchain
+  final String devise;          // devise réelle de la tontine (EUR, USD, XOF…)
+  final int    soldeBrut;       // solde calculé depuis journal blockchain
   final int    totalEntrees;    // cotisations + apports
   final int    totalSorties;    // distributions + prêts + dépenses
   final int    nbOps;           // nombre d'opérations total
@@ -41,6 +42,7 @@ class SoldeTontine {
   const SoldeTontine({
     required this.code,
     required this.nom,
+    this.devise = '',
     required this.soldeBrut,
     required this.totalEntrees,
     required this.totalSorties,
@@ -66,6 +68,7 @@ class SoldeTontine {
   SoldeTontine copyWith({bool? syncEnCours, int? soldeCaisseReel}) => SoldeTontine(
     code            : code,
     nom             : nom,
+    devise          : devise,
     soldeBrut       : soldeBrut,
     totalEntrees    : totalEntrees,
     totalSorties    : totalSorties,
@@ -92,8 +95,9 @@ class SoldeTontine {
   static SoldeTontine depuisEntrees(
     String code,
     String nom,
-    List<BlockchainEntry> entrees,
-  ) {
+    List<BlockchainEntry> entrees, {
+    String devise = '',
+  }) {
     int entree = 0;
     int sortie = 0;
     int onChain = 0;
@@ -127,6 +131,7 @@ class SoldeTontine {
     return SoldeTontine(
       code          : code,
       nom           : nom,
+      devise        : devise,
       soldeBrut     : entree - sortie,
       totalEntrees  : entree,
       totalSorties  : sortie,
@@ -236,10 +241,12 @@ class _AdminSoldesScreenState extends State<AdminSoldesScreen> {
     final parTontine = stats['par_tontine'] as Map<String, dynamic>? ?? {};
 
     for (final t in tontines) {
-      final code = t['code'] as String? ?? '';
-      final nom  = (t['nom'] as String?)?.trim().isNotEmpty == true
+      final code   = t['code'] as String? ?? '';
+      final nom    = (t['nom'] as String?)?.trim().isNotEmpty == true
           ? t['nom'] as String
           : 'Tontine $code';
+      // Devise réelle de la tontine (jamais 'XOF' forcé)
+      final devise = (t['devise'] as String?)?.trim() ?? '';
 
       if (code.isEmpty) continue;
 
@@ -252,6 +259,7 @@ class _AdminSoldesScreenState extends State<AdminSoldesScreen> {
         soldes.add(SoldeTontine(
           code            : code,
           nom             : nom,
+          devise          : devise,
           soldeBrut       : (st['solde'] as num?)?.toInt() ?? 0,
           totalEntrees    : (st['entrees'] as num?)?.toInt() ?? 0,
           totalSorties    : (st['sorties'] as num?)?.toInt() ?? 0,
@@ -271,7 +279,7 @@ class _AdminSoldesScreenState extends State<AdminSoldesScreen> {
           limit      : 200,
         );
         if (entrees.isNotEmpty) {
-          final s = SoldeTontine.depuisEntrees(code, nom, entrees);
+          final s = SoldeTontine.depuisEntrees(code, nom, entrees, devise: devise);
           soldes.add(s.copyWith(soldeCaisseReel: soldeCaisseReel));
         }
       }
@@ -578,7 +586,8 @@ class _AdminSoldesScreenState extends State<AdminSoldesScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              Formatters.montant(_totalSolde, devise: 'XOF'),
+              // Total multi-devises : montant brut sans devise forcée
+              Formatters.montant(_totalSolde),
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 22,
@@ -592,14 +601,14 @@ class _AdminSoldesScreenState extends State<AdminSoldesScreen> {
                 _MiniStat(
                   icone: Icons.arrow_downward_rounded,
                   label: 'Entrées',
-                  valeur: Formatters.montant(_totalEntrees, devise: 'XOF'),
+                  valeur: Formatters.montant(_totalEntrees),
                   couleur: const Color(0xFF4CAF50),
                 ),
                 const SizedBox(width: 12),
                 _MiniStat(
                   icone: Icons.arrow_upward_rounded,
                   label: 'Sorties',
-                  valeur: Formatters.montant(_totalSorties, devise: 'XOF'),
+                  valeur: Formatters.montant(_totalSorties),
                   couleur: const Color(0xFFEF5350),
                 ),
                 const SizedBox(width: 12),
@@ -952,7 +961,7 @@ class _CarteSolde extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      isZero ? '—' : Formatters.montant(solde.soldeBrut.abs(), devise: 'XOF'),
+                      isZero ? '—' : Formatters.montant(solde.soldeBrut.abs(), devise: solde.devise),
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 15,
@@ -983,13 +992,13 @@ class _CarteSolde extends StatelessWidget {
                 children: [
                   _InfoPetite(
                     icone: Icons.arrow_downward_rounded,
-                    label: Formatters.montant(solde.totalEntrees, devise: 'XOF'),
+                    label: Formatters.montant(solde.totalEntrees, devise: solde.devise),
                     couleur: const Color(0xFF4CAF50),
                   ),
                   const SizedBox(width: 12),
                   _InfoPetite(
                     icone: Icons.arrow_upward_rounded,
-                    label: Formatters.montant(solde.totalSorties, devise: 'XOF'),
+                    label: Formatters.montant(solde.totalSorties, devise: solde.devise),
                     couleur: const Color(0xFFEF5350),
                   ),
                   const Spacer(),
@@ -1027,8 +1036,8 @@ class _CarteSolde extends StatelessWidget {
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        'Divergence détectée : blockchain ${Formatters.montant(solde.soldeBrut.abs(), devise: "XOF")} '
-                        'vs réel ${Formatters.montant(solde.soldeCaisseReel!.abs(), devise: "XOF")} '
+                        'Divergence détectée : blockchain ${Formatters.montant(solde.soldeBrut.abs(), devise: solde.devise)} '
+                        'vs réel ${Formatters.montant(solde.soldeCaisseReel!.abs(), devise: solde.devise)} '
                         '(${solde.ecartPourcentage!.toStringAsFixed(1)}%). Synchroniser pour corriger.',
                         style: const TextStyle(
                             fontSize: 11,
@@ -1049,7 +1058,7 @@ class _CarteSolde extends StatelessWidget {
                   const Icon(Icons.verified_rounded, size: 12, color: Color(0xFF4CAF50)),
                   const SizedBox(width: 4),
                   Text(
-                    'Solde Supabase confirmé : ${Formatters.montant(solde.soldeCaisseReel!.abs(), devise: "XOF")}',
+                    'Solde Supabase confirmé : ${Formatters.montant(solde.soldeCaisseReel!.abs(), devise: solde.devise)}',
                     style: const TextStyle(
                         fontSize: 11, color: Color(0xFF4CAF50),
                         fontWeight: FontWeight.w600),

@@ -998,7 +998,7 @@ class _LigneMouvement extends StatelessWidget {
 
   const _LigneMouvement({
     required this.mouvement,
-    this.devise = 'XOF',
+    this.devise = '',   // toujours passé depuis data.devise — '' = défaut vide
     this.soldeAvant,
   });
 

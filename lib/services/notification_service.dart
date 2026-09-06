@@ -470,7 +470,7 @@ class NotificationService {
       final typeResolu  = BlockchainEntry.resoudreType(typeOperation);
       final typeLabel   = _typeLabelAvecEmoji(typeResolu);
       // Afficher le montant avec la VRAIE devise (pas "XOF" en dur)
-      final deviseAffichee = devise ?? 'XOF';
+      final deviseAffichee = devise ?? '';
       final montantStr  = montantXof != null
           ? ' · ${_formatMontant(montantXof)} $deviseAffichee'
           : '';

@@ -17,9 +17,7 @@ import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
 import 'paiement_choix_screen.dart';
 import '../services/email_notif_service.dart';
-
-// ── Opérateurs Mobile Money disponibles ───────────────────────────────────────
-const _operateursPret = ['orange', 'moov', 'mtn', 'wave'];
+import '../services/paiement_service.dart';
 
 // ── Bug #3 fix : StatefulWidget pour permettre le rechargement des membres ──
 class PretsScreen extends StatefulWidget {
@@ -205,7 +203,8 @@ class _PretsScreenState extends State<PretsScreen> {
     // ── Pré-remplir MM depuis le profil du premier emprunteur ────────────────
     Membre? emprunteurCourant() =>
         membresOrdre.where((m) => m.id == emprunteurId).firstOrNull;
-    String? operateur    = emprunteurCourant()?.operateur ?? _operateursPret.first;
+    // Opérateur Mobile Money pré-rempli depuis le profil membre (peut être null)
+    String? operateur    = emprunteurCourant()?.operateur;
     final String numPreRempli = emprunteurCourant()?.numeroBenef ?? '';
 
     final montantCtrl   = TextEditingController();
@@ -265,7 +264,7 @@ class _PretsScreenState extends State<PretsScreen> {
                         // Mettre à jour automatiquement les champs Mobile Money
                         final m = membresOrdre.where((m) => m.id == v).firstOrNull;
                         if (m != null) {
-                          operateur = m.operateur ?? _operateursPret.first;
+                          operateur = m.operateur; // null si pas de profil MM
                           numBenefCtrl.text = m.numeroBenef ?? '';
                           nomBenefCtrl.text = m.nom;
                         }
@@ -633,6 +632,7 @@ class _PretsScreenState extends State<PretsScreen> {
             code:        tontine.code,
             typeFlux:    'pret_octroye',
             montant:     montant,
+            devise:      data.devise,          // ← devise de la tontine
             description: 'Prêt à $nomEmprunteur ($taux% / $durees mois)',
             membreId:    emprunteurId ?? '',
             membreNom:   nomEmprunteur,
@@ -1288,7 +1288,9 @@ class _CartePret extends StatelessWidget {
     );
     // Si montantPre fourni (vient de _rembourserPro via PaiementChoixScreen),
     // on skip le bottom-sheet de saisie et on utilise les valeurs pré-remplies.
-    String methode = methodePre ?? 'especes';
+    // Défaut = 1ère méthode disponible selon la devise (jamais hardcodé 'especes')
+    final _methodeDefaut = PaiementService.methodesPour(data.devise).first.code;
+    String methode = methodePre ?? _methodeDefaut;
     // Photo de preuve : initialisée depuis photoPre (chemin Pro) ou vide (Lite)
     XFile?  photoFichier;
     String? photoBase64 = photoPre;
@@ -1423,10 +1425,10 @@ class _CartePret extends StatelessWidget {
                 DropdownButtonFormField<String>(
                   initialValue: methode,
                   decoration: const InputDecoration(),
-                  items: ['especes', 'orange', 'mtn', 'moov', 'wave']
+                  items: PaiementService.methodesPour(data.devise)
                       .map((m) => DropdownMenuItem(
-                            value: m,
-                            child: Text(Formatters.methodePaiement(m)),
+                            value: m.code,
+                            child: Text('${m.emoji} ${m.label}'),
                           ))
                       .toList(),
                   onChanged: (v) => setS(() => methode = v!),

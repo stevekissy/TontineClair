@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/tontine.dart';
 import '../services/paiement_methodes_service.dart';
+import '../services/paiement_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
 
@@ -61,21 +62,27 @@ class _PaiementChoixScreenState extends State<PaiementChoixScreen> {
   XFile?  _photoFichier;
   String? _photoBase64;
 
-  /// Construit la liste des méthodes à partir de la devise de la tontine.
-  /// Pour retro-compat : si devise nulle → 4 méthodes génériques.
+  /// Construit la liste des méthodes selon la devise de la tontine.
+  /// Utilise PaiementService.methodesPour() — JAMAIS de fallback hardcodé FCFA/XOF.
+  /// Pour rétro-compat avec l'UI (triplet code/titre/sous-titre),
+  /// on construit le triplet depuis PaiementService puis PaiementMethodesService.
   List<(String, String, String)> _buildMethodes() {
     final d = widget.devise;
-    if (d == null || d.isEmpty) {
-      // Fallback générique (pas de devise connue)
-      return [
-        ('virement', '🏦 Virement bancaire', 'Virement ou dépôt bancaire'),
-        ('especes',  '💵 Espèces',           'Paiement en main propre'),
-        ('autre',    '🔗 Autre méthode',     'Chèque, Western Union, etc.'),
-      ];
+    // PaiementService couvre toutes les devises + fallback universel
+    final pm = PaiementService.methodesPour(d);
+    if (pm.isNotEmpty) {
+      return pm.map((m) {
+        // Chercher le hint dans PaiementMethodesService si disponible
+        final detail = PaiementMethodesService.parCode(m.code);
+        final sous   = detail?.hintTexte ?? m.label;
+        return (m.code, '${m.emoji} ${m.label}', sous);
+      }).toList();
     }
-    // Méthodes dynamiques selon la devise
-    final pm = PaiementMethodesService.methodesParDevise(d);
-    return pm.map((m) => (m.code, '${m.icone} ${m.label}', m.hintTexte)).toList();
+    // Fallback absolu (ne devrait jamais arriver)
+    return [
+      ('virement', '🏦 Virement bancaire', 'Virement ou dépôt bancaire'),
+      ('especes',  '💵 Espèces',           'Paiement en main propre'),
+    ];
   }
 
   @override
@@ -246,7 +253,7 @@ class _PaiementChoixScreenState extends State<PaiementChoixScreen> {
   Widget build(BuildContext context) {
     // Montant affiché avec la VRAIE devise de la tontine
     final montantAffiche = widget.montant != null
-        ? Formatters.montant(widget.montant!, devise: widget.devise ?? 'XOF')
+        ? Formatters.montant(widget.montant!, devise: widget.devise ?? '')
         : '—';
     final benef = widget.membreNom ?? widget.membre?.nom;
     final tel   = widget.telephone ?? widget.membre?.numeroBenef;

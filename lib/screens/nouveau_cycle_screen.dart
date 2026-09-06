@@ -351,7 +351,7 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
       titre: 'Démarrer le cycle ${(provider.courante?.data.cycleNumero ?? 1) + 1}',
       sousTitre: 'Confirme la configuration avec ton PIN.',
       recap: [
-        (label: 'Montant', valeur: Formatters.montant(cfg.montant, devise: provider.courante?.data.devise ?? 'XOF')),
+        (label: 'Montant', valeur: Formatters.montant(cfg.montant, devise: provider.courante?.data.devise ?? '')),
         (label: 'Périodicité', valeur: EcheanceService.labelPeriode(cfg.periodicite)),
         (label: 'Ordre', valeur: Formatters.methodeOrdre(cfg.methodeOrdre)),
       ],
