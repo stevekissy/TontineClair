@@ -806,9 +806,13 @@ async function actionEnregistrerOperation(
         "score_modifie"   : "Score modifié",
       };
 
-      // Construire le refInterne lisible : "[Libellé] | [membreNom] | [ref brute si dispo]"
+      // Construire le refInterne lisible — visible dans "Input Data" sur PolygonScan
+      // Format : "CODE_TONTINE | Libellé opération | Membre | ref_optionnelle"
+      // Le code tontine EN PREMIER garantit qu'on sait immédiatement de quelle tontine
+      // il s'agit en lisant les paramètres de la TX sur PolygonScan, même sans contrat vérifié.
       const libelle = LIBELLES[typeOp] || typeOp.replace(/_/g, " ");
-      const refParts: string[] = [libelle];
+      const codeStr = String(tontine_code).toUpperCase();
+      const refParts: string[] = [codeStr, libelle];  // ← code tontine en tête
       if (memNom) refParts.push(memNom);
       if (refBrut && refBrut !== memNom) refParts.push(refBrut);
       const ref = refParts.join(" | ");
