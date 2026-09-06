@@ -625,90 +625,28 @@ class _AdminScreenState extends State<AdminScreen> {
             ),
             const SizedBox(height: 32),
 
-            // ── Sélecteur mode connexion ──────────────────────────────────────
-            Container(
-              decoration: BoxDecoration(
-                color: AppColors.lignes,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              padding: const EdgeInsets.all(4),
-              child: Row(
-                children: [
-                  _TabConnexion(
-                    label: 'Super Admin',
-                    selected: !_loginMembreMode,
-                    onTap: () => setLocalState(() { _loginMembreMode = false; _erreur = null; }),
-                  ),
-                  _TabConnexion(
-                    label: 'Membre équipe',
-                    selected: _loginMembreMode,
-                    onTap: () => setLocalState(() { _loginMembreMode = true; _erreur = null; }),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // ── Formulaire ────────────────────────────────────────────────────
+            // ── Formulaire Super Admin uniquement ─────────────────────────────
             CarteTC(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (!_loginMembreMode) ...[
-                    const ChampLabel(label: 'Clé administrateur'),
-                    TextField(
-                      controller: _cleCtrl,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        hintText: 'Clé secrète admin',
-                        prefixIcon: Icon(Icons.key_rounded, size: 18),
-                      ),
-                      onSubmitted: (_) => _connecter(),
+                  const ChampLabel(label: 'Clé administrateur'),
+                  TextField(
+                    controller: _cleCtrl,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      hintText: 'Clé secrète admin',
+                      prefixIcon: Icon(Icons.key_rounded, size: 18),
                     ),
-                  ] else ...[
-                    const ChampLabel(label: 'Pseudo'),
-                    TextField(
-                      controller: _pseudoCtrl,
-                      decoration: const InputDecoration(
-                        hintText: 'Votre pseudo membre',
-                        prefixIcon: Icon(Icons.person_outline, size: 18),
-                      ),
-                      textInputAction: TextInputAction.next,
-                    ),
-                    const SizedBox(height: 14),
-                    const ChampLabel(label: 'Clé personnelle'),
-                    TextField(
-                      controller: _clePersoCtrl,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        hintText: 'Votre clé secrète',
-                        prefixIcon: Icon(Icons.lock_outline, size: 18),
-                      ),
-                      onSubmitted: (_) => _connecterMembre(),
-                    ),
-                  ],
+                    onSubmitted: (_) => _connecter(),
+                  ),
                   ChampErreur(texte: _erreur),
                   const SizedBox(height: 16),
                   BtnPrincipal(
                     label: 'Accéder',
-                    onTap: _loginMembreMode ? _connecterMembre : _connecter,
+                    onTap: _connecter,
                     loading: _loading,
                   ),
-                  if (_loginMembreMode) ...[
-                    const SizedBox(height: 10),
-                    Row(
-                      children: const [
-                        Icon(Icons.info_outline, size: 12, color: AppColors.texteDoux),
-                        SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            'Accès limité selon votre rôle',
-                            style: TextStyle(fontSize: 11.5, color: AppColors.texteDoux),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
                 ],
               ),
             ),
