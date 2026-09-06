@@ -43,9 +43,6 @@ class _CreationScreenState extends State<CreationScreen> {
   final List<TextEditingController> _gestEmailCtrl    = [TextEditingController()];
   final List<TextEditingController> _gestPrenomCtrl   = [TextEditingController()];
   final List<TextEditingController> _gestNomFamCtrl   = [TextEditingController()];
-  final List<TextEditingController> _gestTelCtrl      = [TextEditingController()];
-  // Confirmation téléphone — double saisie pour TOUS les gestionnaires
-  final List<TextEditingController> _gestTelConfCtrl  = [TextEditingController()];
   // Rôle/titre personnalisé (président, secrétaire, trésorier…)
   final List<TextEditingController> _gestRoleCtrl     = [TextEditingController()];
 
@@ -72,8 +69,6 @@ class _CreationScreenState extends State<CreationScreen> {
     for (final c in _gestEmailCtrl)  { c.dispose(); }
     for (final c in _gestPrenomCtrl)  { c.dispose(); }
     for (final c in _gestNomFamCtrl)  { c.dispose(); }
-    for (final c in _gestTelCtrl)     { c.dispose(); }
-    for (final c in _gestTelConfCtrl) { c.dispose(); }
     for (final c in _gestRoleCtrl)    { c.dispose(); }
     super.dispose();
   }
@@ -104,7 +99,6 @@ class _CreationScreenState extends State<CreationScreen> {
     final gestEmails    = _gestEmailCtrl.map((c) => c.text.trim().toLowerCase()).toList();
     final gestPrenoms   = _gestPrenomCtrl.map((c) => c.text.trim()).toList();
     final gestNomsFam   = _gestNomFamCtrl.map((c) => c.text.trim()).toList();
-    final gestTels      = _gestTelCtrl.map((c) => c.text.trim()).toList();
     final gestRoles     = _gestRoleCtrl.map((c) => c.text.trim()).toList();
 
     // Validations
@@ -191,36 +185,6 @@ class _CreationScreenState extends State<CreationScreen> {
         setState(() => _erreur = 'Nom de famille du gestionnaire ${i + 1} manquant.');
         return;
       }
-      // ── Téléphone obligatoire + format ───────────────────────────────────
-      final tel = gestTels[i];
-      if (tel.isEmpty) {
-        setState(() => _erreur = 'Numéro de téléphone du gestionnaire ${i + 1} manquant.');
-        return;
-      }
-      // Accepte : +225XXXXXXXXXX ou 00225XXXXXXXXXX ou local 07XXXXXXXX (min 8 chiffres)
-      final telReg = RegExp(r'^\+?[0-9]{8,15}$');
-      final telNorm = tel.replaceAll(RegExp(r'[\s\-\.]'), '');
-      if (!telReg.hasMatch(telNorm)) {
-        setState(() => _erreur =
-            'Numéro de téléphone du gestionnaire ${i + 1} invalide.\n'
-            'Format accepté : +225XXXXXXXXXX ou 07XXXXXXXX (8 à 15 chiffres).');
-        return;
-      }
-      // ── Double saisie téléphone — TOUS les gestionnaires ─────────────────
-      {
-        final telConf = _gestTelConfCtrl[i].text.trim().replaceAll(RegExp(r'[\s\-\.]'), '');
-        if (telConf.isEmpty) {
-          setState(() => _erreur =
-              'Confirmez le numéro de téléphone du gestionnaire ${i + 1}.');
-          return;
-        }
-        if (telNorm != telConf) {
-          setState(() => _erreur =
-              'Les deux numéros du gestionnaire ${i + 1} ne correspondent pas.\n'
-              'Vérifiez la saisie.');
-          return;
-        }
-      }
       // ── PIN ──────────────────────────────────────────────────────────────
       final pin = gestPins[i];
       if (pin.length < 4) {
@@ -280,7 +244,6 @@ class _CreationScreenState extends State<CreationScreen> {
         email:      gestEmails[i],
         prenom:     gestPrenoms[i],
         nomFamille: gestNomsFam[i],
-        telephone:  gestTels[i].replaceAll(RegExp(r'[\s\-\.]'), ''), // normalisé
         role:       i < gestRoles.length ? gestRoles[i] : '',
       ),
     );
@@ -352,8 +315,6 @@ class _CreationScreenState extends State<CreationScreen> {
       _gestEmailCtrl.add(TextEditingController());
       _gestPrenomCtrl.add(TextEditingController());
       _gestNomFamCtrl.add(TextEditingController());
-      _gestTelCtrl.add(TextEditingController());
-      _gestTelConfCtrl.add(TextEditingController());
       _gestRoleCtrl.add(TextEditingController());
       _emailVerifie.add(false);
       _emailVerifieAddr.add('');
@@ -366,8 +327,6 @@ class _CreationScreenState extends State<CreationScreen> {
     _gestEmailCtrl[i].dispose();
     _gestPrenomCtrl[i].dispose();
     _gestNomFamCtrl[i].dispose();
-    _gestTelCtrl[i].dispose();
-    _gestTelConfCtrl[i].dispose();
     _gestRoleCtrl[i].dispose();
     setState(() {
       _gestNomCtrl.removeAt(i);
@@ -375,8 +334,6 @@ class _CreationScreenState extends State<CreationScreen> {
       _gestEmailCtrl.removeAt(i);
       _gestPrenomCtrl.removeAt(i);
       _gestNomFamCtrl.removeAt(i);
-      _gestTelCtrl.removeAt(i);
-      _gestTelConfCtrl.removeAt(i);
       _gestRoleCtrl.removeAt(i);
       if (i < _emailVerifie.length)    _emailVerifie.removeAt(i);
       if (i < _emailVerifieAddr.length) _emailVerifieAddr.removeAt(i);
@@ -648,7 +605,7 @@ class _CreationScreenState extends State<CreationScreen> {
                         ),
                         const ChampAide(
                             texte:
-                                'Prénom, nom de famille, téléphone et email obligatoires. PIN personnel (4-6 chiffres) pour valider les opérations.'),
+                                'Prénom, nom de famille et email obligatoires. PIN personnel (4-6 chiffres) pour valider les opérations.'),
                         const SizedBox(height: 12),
                         ...List.generate(
                           _gestNomCtrl.length,
@@ -658,8 +615,6 @@ class _CreationScreenState extends State<CreationScreen> {
                             emailCtrl:      _gestEmailCtrl[i],
                             prenomCtrl:     _gestPrenomCtrl[i],
                             nomFamCtrl:     _gestNomFamCtrl[i],
-                            telCtrl:        _gestTelCtrl[i],
-                            telConfCtrl:    _gestTelConfCtrl[i],
                             roleCtrl:       i < _gestRoleCtrl.length ? _gestRoleCtrl[i] : TextEditingController(),
                             index:          i,
                             emailVerifie:   i < _emailVerifie.length ? _emailVerifie[i] : false,
@@ -891,7 +846,6 @@ class _LigneMembre extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
 // _LigneGestionnaire — uniforme pour TOUS les gestionnaires
-//  • Double saisie téléphone (confirmation anti-typo)
 //  • Vérification email par code OTP (6 chiffres via EmailService)
 // ─────────────────────────────────────────────────────────────────────────────
 class _LigneGestionnaire extends StatefulWidget {
@@ -900,8 +854,6 @@ class _LigneGestionnaire extends StatefulWidget {
   final TextEditingController emailCtrl;
   final TextEditingController prenomCtrl;
   final TextEditingController nomFamCtrl;
-  final TextEditingController telCtrl;
-  final TextEditingController telConfCtrl;
   final TextEditingController roleCtrl;
   final int index;
   final bool emailVerifie;
@@ -915,8 +867,6 @@ class _LigneGestionnaire extends StatefulWidget {
     required this.emailCtrl,
     required this.prenomCtrl,
     required this.nomFamCtrl,
-    required this.telCtrl,
-    required this.telConfCtrl,
     required this.roleCtrl,
     required this.index,
     required this.emailVerifie,
@@ -932,8 +882,6 @@ class _LigneGestionnaire extends StatefulWidget {
 class _LigneGestionnaireState extends State<_LigneGestionnaire> {
 
   bool _emailEnCours = false;  // spinner pendant envoi code
-  bool _telIdentique = false;  // les deux numéros sont identiques
-  bool _telSaisiConf = false;  // le champ confirmation a été touché
 
   @override
   void initState() {
@@ -941,17 +889,12 @@ class _LigneGestionnaireState extends State<_LigneGestionnaire> {
     // Auto-alimenter nomCtrl depuis Prénom + Nom de famille
     widget.prenomCtrl.addListener(_majNomAffiche);
     widget.nomFamCtrl.addListener(_majNomAffiche);
-    // Feedback temps réel sur la confirmation téléphone
-    widget.telCtrl.addListener(_verifierTel);
-    widget.telConfCtrl.addListener(_verifierTel);
   }
 
   @override
   void dispose() {
     widget.prenomCtrl.removeListener(_majNomAffiche);
     widget.nomFamCtrl.removeListener(_majNomAffiche);
-    widget.telCtrl.removeListener(_verifierTel);
-    widget.telConfCtrl.removeListener(_verifierTel);
     super.dispose();
   }
 
@@ -962,19 +905,6 @@ class _LigneGestionnaireState extends State<_LigneGestionnaire> {
     final compose = [prenom, nom].where((s) => s.isNotEmpty).join(' ');
     if (widget.nomCtrl.text != compose) {
       widget.nomCtrl.text = compose;
-    }
-  }
-
-  /// Compare les deux numéros de téléphone et met à jour l'état visuel
-  void _verifierTel() {
-    final t1 = widget.telCtrl.text.trim().replaceAll(RegExp(r'[\s\-\.]'), '');
-    final t2 = widget.telConfCtrl.text.trim().replaceAll(RegExp(r'[\s\-\.]'), '');
-    final confEstRempli = t2.isNotEmpty;
-    if (!_telSaisiConf && confEstRempli) {
-      setState(() => _telSaisiConf = true);
-    }
-    if (_telSaisiConf) {
-      setState(() => _telIdentique = (t1 == t2 && t1.isNotEmpty));
     }
   }
 
@@ -1184,76 +1114,6 @@ class _LigneGestionnaireState extends State<_LigneGestionnaire> {
             style: const TextStyle(
               fontWeight: FontWeight.w700,
               letterSpacing: 0.15,
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // ── Téléphone + Confirmation (double saisie — TOUS) ────────────
-          TextField(
-            controller: widget.telCtrl,
-            keyboardType: TextInputType.phone,
-            autocorrect: false,
-            maxLength: 20,
-            decoration: InputDecoration(
-              hintText: estPrincipal
-                  ? 'Votre téléphone (+2250700000000)'
-                  : 'Téléphone (ex: +2250700000000)',
-              prefixIcon: const Icon(Icons.phone_outlined, size: 18),
-              counterText: '',
-              helperText: estPrincipal
-                  ? 'Indicatif obligatoire : +225, +33, +1…'
-                  : 'Avec indicatif pays : +225, +33, +1…',
-              helperStyle: const TextStyle(fontSize: 11, color: AppColors.encreDoux),
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: widget.telConfCtrl,
-            keyboardType: TextInputType.phone,
-            autocorrect: false,
-            maxLength: 20,
-            decoration: InputDecoration(
-              hintText: 'Confirmer le téléphone',
-              prefixIcon: Icon(
-                Icons.phone_callback_outlined,
-                size: 18,
-                color: _telSaisiConf
-                    ? (_telIdentique ? AppColors.succes : AppColors.alerte)
-                    : null,
-              ),
-              counterText: '',
-              // Message en temps réel : vert si identiques, rouge si différents
-              helperText: _telSaisiConf
-                  ? (_telIdentique
-                      ? '✓ Numéros identiques'
-                      : '✗ Les numéros ne correspondent pas')
-                  : 'Retapez le même numéro pour confirmer',
-              helperStyle: TextStyle(
-                fontSize: 11,
-                fontWeight: _telSaisiConf ? FontWeight.w600 : FontWeight.normal,
-                color: _telSaisiConf
-                    ? (_telIdentique ? AppColors.succes : AppColors.alerte)
-                    : AppColors.encreDoux,
-              ),
-              // Bordure colorée selon l'état
-              enabledBorder: _telSaisiConf
-                  ? OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide(
-                        color: _telIdentique ? AppColors.succes : AppColors.alerte,
-                        width: 1.5,
-                      ),
-                    )
-                  : null,
-              focusedBorder: _telSaisiConf
-                  ? OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide(
-                        color: _telIdentique ? AppColors.succes : AppColors.alerte,
-                        width: 2.0,
-                      ),
-                    )
-                  : null,
             ),
           ),
           const SizedBox(height: 8),
