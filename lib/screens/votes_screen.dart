@@ -14,6 +14,7 @@ import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
 import '../services/feature_gate_service.dart';
+import '../services/email_notif_service.dart';
 
 class VotesScreen extends StatefulWidget {
   final String code;
@@ -407,6 +408,15 @@ class _VotesScreenState extends State<VotesScreen> {
         titre: tVoteOuvert['titre']!,
         message: tVoteOuvert['message']!,
       );
+      // ── Email temps réel à TOUS les membres (Point 10) ──
+      EmailNotifService.diffuserTous(
+        code      : provider.courante!.code,
+        data      : Provider.of<TontineProvider>(context, listen: false).courante!.data,
+        icone     : '🗳️',
+        action    : 'Vote ouvert',
+        message   : EmailNotifService.msgVoteOuvert(question),
+        gestActif : provider.gestActifNom ?? '',
+      );
       await _chargerVoix();
     }
   }
@@ -643,6 +653,15 @@ class _VotesScreenState extends State<VotesScreen> {
             message: tVoter['message'] ?? '',
             donneesExtra: {'vote_id': vote.id},
           );
+          // ── Email temps réel à TOUS les membres (Point 11) ──
+          EmailNotifService.diffuserTous(
+            code      : codeNotif,
+            data      : Provider.of<TontineProvider>(context, listen: false).courante!.data,
+            icone     : '🗳️',
+            action    : 'Vote enregistré',
+            message   : EmailNotifService.msgVoteEnregistre(vote.question),
+            gestActif : provider.gestActifNom ?? '',
+          );
         }
         await _chargerVoix();
       } else {
@@ -854,6 +873,15 @@ class _VotesScreenState extends State<VotesScreen> {
             titre: tMembre['titre']!,
             message: tMembre['message']!,
           );
+          // ── Email temps réel à TOUS les membres (Point 12) ──
+          EmailNotifService.diffuserTous(
+            code      : widget.code,
+            data      : provider.courante!.data,
+            icone     : '🎉',
+            action    : 'Nouveau membre admis',
+            message   : EmailNotifService.msgNouveauMembre(vote.nouveauMembreNom ?? ''),
+            gestActif : provider.gestActifNom ?? '',
+          );
         }
 
         // ── Vote de retrait adopté → passer le membre en "Retiré" ─────────
@@ -993,6 +1021,15 @@ class _VotesScreenState extends State<VotesScreen> {
         titre: titreClos,
         message: tClos['message']!,
         donneesExtra: {'vote_id': vote.id},
+      );
+      // ── Email temps réel à TOUS les membres (Point 13) ──
+      EmailNotifService.diffuserTous(
+        code      : provider.courante!.code,
+        data      : provider.courante!.data,
+        icone     : adopte ? '✅' : '❌',
+        action    : adopte ? 'Vote adopté' : 'Vote rejeté',
+        message   : EmailNotifService.msgVoteClos(vote.question, adopte),
+        gestActif : provider.gestActifNom ?? '',
       );
       await _chargerVoix();
     }

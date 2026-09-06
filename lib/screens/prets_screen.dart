@@ -16,6 +16,7 @@ import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
 import 'paiement_choix_screen.dart';
+import '../services/email_notif_service.dart';
 
 // ── Opérateurs Mobile Money disponibles ───────────────────────────────────────
 const _operateursPret = ['orange', 'moov', 'mtn', 'wave'];
@@ -756,6 +757,20 @@ class _PretsScreenState extends State<PretsScreen> {
       SupabaseService.envoyerNotification(
         code: widget.code, type: 'pret', titre: t['titre']!, message: t['message']!,
       );
+      // ── Email temps réel à TOUS les membres (Point 7) ──
+      EmailNotifService.diffuserTous(
+        code      : widget.code,
+        data      : data,
+        icone     : '💸',
+        action    : 'Prêt accordé',
+        message   : EmailNotifService.msgPret(
+                      nomEmprunteur,
+                      Formatters.montant(montant, devise: data.devise),
+                      taux,
+                      durees,
+                    ),
+        gestActif : provider.gestActifNom ?? '',
+      );
     }
   }
 }
@@ -1076,6 +1091,19 @@ class _CartePret extends StatelessWidget {
           type: 'annulation_remboursement',
           titre: t['titre']!,
           message: t['message']!,
+        );
+        // ── Email temps réel à TOUS les membres (Point 8) ──
+        EmailNotifService.diffuserTous(
+          code      : tontineCode,
+          data      : data,
+          icone     : '↩️',
+          action    : 'Remboursement annulé',
+          message   : EmailNotifService.msgAnnulationRemboursement(
+                        pret.emprunteurNom,
+                        Formatters.montant(remb.montant, devise: data.devise),
+                        remb.reference,
+                      ),
+          gestActif : provider.gestActifNom ?? '',
         );
       }
     }
@@ -1679,6 +1707,20 @@ class _CartePret extends StatelessWidget {
           type: typeNotif2,
           titre: t2['titre']!,
           message: t2['message']!,
+        );
+        // ── Email temps réel à TOUS les membres (Point 9) ──
+        EmailNotifService.diffuserTous(
+          code      : tontineCode,
+          data      : data,
+          icone     : pretSolde ? '✅' : '💳',
+          action    : pretSolde ? 'Prêt soldé' : 'Remboursement enregistré',
+          message   : EmailNotifService.msgRemboursement(
+                        pret.emprunteurNom,
+                        Formatters.montant(montant, devise: data.devise),
+                        Formatters.montant(resteApres, devise: data.devise),
+                        solde: pretSolde,
+                      ),
+          gestActif : provider.gestActifNom ?? '',
         );
       }
 

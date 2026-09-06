@@ -17,6 +17,7 @@ import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
 import '../services/blockchain_service.dart';
 import '../services/notification_service.dart';
+import '../services/email_notif_service.dart';
 
 import 'paiement_choix_screen.dart';
 
@@ -365,6 +366,16 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
           message: t['message']!,
           donneesExtra: {'membre': membre.nom},
         );
+        // ── Email temps réel à TOUS les membres + gestionnaires ──────────────
+        final montantStr = Formatters.montant(data.montant, devise: data.devise);
+        EmailNotifService.diffuserTous(
+          code:      provider.courante!.code,
+          data:      data,
+          icone:     '💰',
+          action:    'Cotisation enregistrée',
+          message:   EmailNotifService.msgCotisation(membre.nom, montantStr, data.nom),
+          gestActif: provider.gestActifNom ?? '',
+        );
 
         // Bug #6 : proposer le reçu WhatsApp après validation
         final membreActualise = Membre(
@@ -491,6 +502,16 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
           titre: tNotif['titre']!,
           message: tNotif['message']!,
           donneesExtra: {'membre': membre.nom},
+        );
+        // ── Email temps réel ──────────────────────────────────────────────────
+        final montantAnnul = Formatters.montant(data.montant, devise: data.devise);
+        EmailNotifService.diffuserTous(
+          code:      provider.courante!.code,
+          data:      data,
+          icone:     '↩️',
+          action:    'Cotisation annulée',
+          message:   EmailNotifService.msgCotisationAnnulee(membre.nom, montantAnnul, data.numerTour),
+          gestActif: provider.gestActifNom ?? '',
         );
       }
     }
@@ -640,6 +661,19 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
           message     : msgNotif,
           donneesExtra: {'membre': membre.nom, 'statut': 'approuve'},
         );
+        // ── Email temps réel à TOUS les membres (Point 3) ──
+        EmailNotifService.diffuserTous(
+          code      : codeNotif,
+          data      : data,
+          icone     : '✅',
+          action    : 'Cotisation enregistrée',
+          message   : EmailNotifService.msgCotisation(
+                        membre.nom,
+                        Formatters.montant(data.montant, devise: data.devise),
+                        data.nom,
+                      ),
+          gestActif : declareParGest,
+        );
         // Notification locale immédiate — le gestionnaire reçoit aussi le feedback
         NotificationService.afficherLocale(
           titre  : titreNotif,
@@ -676,6 +710,15 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
           titre       : t['titre']!,
           message     : '${membre.nom} a déclaré sa cotisation — en attente d\'approbation',
           donneesExtra: {'membre': membre.nom, 'statut': 'en_attente'},
+        );
+        // ── Email temps réel à TOUS les membres (Point 4) ──
+        EmailNotifService.diffuserTous(
+          code      : provider.courante!.code,
+          data      : data,
+          icone     : '⏳',
+          action    : 'Cotisation en attente',
+          message   : EmailNotifService.msgCotisationEnAttente(membre.nom, data.nom),
+          gestActif : provider.gestActifNom ?? '',
         );
       }
     } else {
@@ -821,6 +864,19 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
         titre       : titreApprob,
         message     : msgApprob,
         donneesExtra: {'membre': membre.nom, 'statut': 'approuve'},
+      );
+      // ── Email temps réel à TOUS les membres (Point 5) ──
+      EmailNotifService.diffuserTous(
+        code      : codeApprob,
+        data      : data,
+        icone     : '✅',
+        action    : 'Cotisation approuvée',
+        message   : EmailNotifService.msgCotisationApprouvee(
+                      membre.nom,
+                      Formatters.montant(data.montant, devise: data.devise),
+                      provider.gestActifNom ?? '',
+                    ),
+        gestActif : provider.gestActifNom ?? '',
       );
       // Notification locale immédiate — le gestionnaire reçoit aussi le feedback
       NotificationService.afficherLocale(
@@ -977,6 +1033,19 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
         titre       : '❌ Cotisation annulée',
         message     : 'La cotisation de ${membre.nom} (Tour ${data.numerTour}) a été annulée par ${provider.gestActifNom}',
         donneesExtra: {'membre': membre.nom},
+      );
+      // ── Email temps réel à TOUS les membres (Point 6) ──
+      EmailNotifService.diffuserTous(
+        code      : provider.courante!.code,
+        data      : data,
+        icone     : '❌',
+        action    : 'Cotisation annulée',
+        message   : EmailNotifService.msgCotisationAnnulee(
+                      membre.nom,
+                      Formatters.montant(data.montant, devise: data.devise),
+                      data.numerTour,
+                    ),
+        gestActif : provider.gestActifNom ?? '',
       );
     }
   }

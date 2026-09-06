@@ -23,6 +23,7 @@ import '../utils/formatters.dart';
 import '../widgets/app_widgets.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
+import '../services/email_notif_service.dart';
 
 class NouveauCycleScreen extends StatefulWidget {
   final String code;
@@ -346,7 +347,6 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
     Vote vote,
     _ConfigNouveauCycle cfg,
   ) async {
-    final data = provider.courante?.data;
     final pin = await _demanderPin(
       titre: 'Démarrer le cycle ${(provider.courante?.data.cycleNumero ?? 1) + 1}',
       sousTitre: 'Confirme la configuration avec ton PIN.',
@@ -391,6 +391,16 @@ class _NouveauCycleScreenState extends State<NouveauCycleScreen> {
           type: 'nouveau_cycle',
           titre: t['titre']!,
           message: t['message']!,
+        );
+        // ── Email temps réel à TOUS les membres (Point 14) ──
+        final dataCycle = provider.courante!.data;
+        EmailNotifService.diffuserTous(
+          code      : widget.code,
+          data      : dataCycle,
+          icone     : '🎉',
+          action    : 'Nouveau cycle démarré',
+          message   : EmailNotifService.msgNouveauCycle(cycleNum, dataCycle.nom),
+          gestActif : provider.gestActifNom ?? '',
         );
         Navigator.of(context).pop();
       }
