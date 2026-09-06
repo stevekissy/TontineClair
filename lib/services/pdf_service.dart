@@ -17,6 +17,7 @@
 import 'dart:typed_data' show Uint8List;
 import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode, compute;
 import 'package:flutter/material.dart' show debugPrint;
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -206,6 +207,11 @@ class PdfService {
 
   /// Fonction top-level-compatible pour compute() — génère les bytes du relevé.
   static Future<List<int>> _genererReleveBytes(_ReleveParams p) async {
+    // ── Isolate fix : initializeDateFormatting doit être appelé dans chaque Isolate.
+    // Les Isolates Flutter ne partagent pas la mémoire → les données de locale
+    // initialisées dans main() ne sont pas disponibles ici.
+    await initializeDateFormatting('fr_FR', null);
+
     final data = p.tontine.data;
     final doc = pw.Document();
 
