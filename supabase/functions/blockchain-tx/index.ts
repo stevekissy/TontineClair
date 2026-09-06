@@ -757,10 +757,16 @@ async function actionEnregistrerOperation(
   body       : Record<string, unknown>,
   env        : Record<string, string>
 ): Promise<Record<string, unknown>> {
-  const {
-    tontine_code, type_operation, membre_id, membre_nom,
-    montant_xof, ref_coinpayments, ref_interne,
-  } = body as Record<string, string | number>;
+  // FIX: utiliser ?? "" pour éviter "undefined" JavaScript quand la clé est absente du body
+  // Flutter envoie les clés uniquement si la valeur est non-null (if (membreId != null))
+  // → si membreId est null côté Flutter, la clé n'arrive pas → JS destructuring = undefined
+  const tontine_code     = String(body.tontine_code    ?? "").toUpperCase();
+  const type_operation   = String(body.type_operation  ?? "");
+  const membre_id        = String(body.membre_id        ?? "");   // ← jamais "undefined"
+  const membre_nom       = String(body.membre_nom       ?? "");   // ← jamais vide par erreur
+  const montant_xof      = body.montant_xof;
+  const ref_coinpayments = body.ref_coinpayments;
+  const ref_interne      = body.ref_interne;
 
   // Devise réelle de la tontine — lue depuis body.devise OU body.metadata.devise
   // Envoyée par Flutter dans _enregistrer() → affichée dans Polygonscan Input Data
@@ -1260,6 +1266,183 @@ async function actionStatsSoldes(
 
 // ── Action : contract_info ─────────────────────────────────────────────────────
 
+// ── Action : verifier_contrat_polygonscan ─────────────────────────────────────
+// Soumet le code source de TontineVaultV4 à PolygonScan pour vérification.
+// Une fois vérifié : PolygonScan affiche le nom des fonctions ("enregistrerCotisation"
+// au lieu de "0x4aaf7eb7") ET les noms des paramètres (tontineCode, membreId, montant, devise…)
+// Nécessite un secret POLYGONSCAN_API_KEY dans Supabase.
+async function actionVerifierContratPolygonscan(
+  env: Record<string, string>
+): Promise<Record<string, unknown>> {
+  const contractAddr   = env.TONTINE_CONTRACT_ADDRESS || "";
+  const polygonscanKey = env.POLYGONSCAN_API_KEY || "";
+
+  if (!contractAddr) {
+    return { ok: false, erreur: "TONTINE_CONTRACT_ADDRESS non configuré" };
+  }
+
+  // Code source de TontineVaultV4 — doit correspondre exactement au bytecode déployé
+  // compilé avec: solc 0.8.20 --optimize --runs 200
+  const sourceCode = `// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+contract TontineVaultV4 {
+
+    address public admin;
+    string  public version = "4.0.0";
+    uint256 public totalOperations;
+
+    event OperationEnregistree(
+        string indexed tontineCode,
+        string typeOperation,
+        string membreId,
+        string membreNom,
+        uint256 montant,
+        string devise,
+        string refInterne,
+        bytes32 payloadHash,
+        uint256 timestamp
+    );
+
+    event AdminTransfere(address indexed ancien, address indexed nouveau, uint256 timestamp);
+
+    modifier onlyAdmin() {
+        require(msg.sender == admin, "Acces refuse: admin uniquement");
+        _;
+    }
+
+    constructor() {
+        admin = msg.sender;
+        emit AdminTransfere(address(0), msg.sender, block.timestamp);
+    }
+
+    function _enregistrer(
+        string memory tontineCode,
+        string memory typeOperation,
+        string memory membreId,
+        string memory membreNom,
+        uint256 montant,
+        string memory devise,
+        string memory refInterne,
+        bytes32 payloadHash
+    ) internal {
+        totalOperations++;
+        emit OperationEnregistree(tontineCode, typeOperation, membreId, membreNom, montant, devise, refInterne, payloadHash, block.timestamp);
+    }
+
+    function enregistrerCotisation(string memory tontineCode, string memory membreId, string memory membreNom, uint256 montant, string memory devise, string memory refInterne, bytes32 payloadHash) external {
+        _enregistrer(tontineCode, "cotisation", membreId, membreNom, montant, devise, refInterne, payloadHash);
+    }
+    function enregistrerDistribution(string memory tontineCode, string memory membreId, string memory membreNom, uint256 montant, string memory devise, string memory refInterne, bytes32 payloadHash) external {
+        _enregistrer(tontineCode, "distribution", membreId, membreNom, montant, devise, refInterne, payloadHash);
+    }
+    function enregistrerDecaissement(string memory tontineCode, string memory membreId, string memory membreNom, uint256 montant, string memory devise, string memory refInterne, bytes32 payloadHash) external {
+        _enregistrer(tontineCode, "decaissement", membreId, membreNom, montant, devise, refInterne, payloadHash);
+    }
+    function enregistrerDepot(string memory tontineCode, string memory membreId, string memory membreNom, uint256 montant, string memory devise, string memory refInterne, bytes32 payloadHash) external {
+        _enregistrer(tontineCode, "depot", membreId, membreNom, montant, devise, refInterne, payloadHash);
+    }
+    function enregistrerPret(string memory tontineCode, string memory membreId, string memory membreNom, uint256 montant, string memory devise, string memory refInterne, bytes32 payloadHash) external {
+        _enregistrer(tontineCode, "pret", membreId, membreNom, montant, devise, refInterne, payloadHash);
+    }
+    function enregistrerRemboursement(string memory tontineCode, string memory membreId, string memory membreNom, uint256 montant, string memory devise, string memory refInterne, bytes32 payloadHash) external {
+        _enregistrer(tontineCode, "remboursement", membreId, membreNom, montant, devise, refInterne, payloadHash);
+    }
+    function enregistrerPenalite(string memory tontineCode, string memory membreId, string memory membreNom, uint256 montant, string memory devise, string memory refInterne, bytes32 payloadHash) external {
+        _enregistrer(tontineCode, "penalite", membreId, membreNom, montant, devise, refInterne, payloadHash);
+    }
+    function enregistrerRetrait(string memory tontineCode, string memory membreId, string memory membreNom, uint256 montant, string memory devise, string memory refInterne, bytes32 payloadHash) external {
+        _enregistrer(tontineCode, "retrait", membreId, membreNom, montant, devise, refInterne, payloadHash);
+    }
+    function enregistrerApport(string memory tontineCode, string memory membreId, string memory membreNom, uint256 montant, string memory devise, string memory refInterne, bytes32 payloadHash) external {
+        _enregistrer(tontineCode, "apport", membreId, membreNom, montant, devise, refInterne, payloadHash);
+    }
+    function enregistrerSynchronisation(string memory tontineCode, string memory membreId, string memory membreNom, uint256 montant, string memory devise, string memory refInterne, bytes32 payloadHash) external {
+        _enregistrer(tontineCode, "synchronisation", membreId, membreNom, montant, devise, refInterne, payloadHash);
+    }
+    function enregistrerVoteCree(string memory tontineCode, string memory membreId, string memory membreNom, string memory refVote, bytes32 payloadHash) external {
+        _enregistrer(tontineCode, "vote_cree", membreId, membreNom, 0, "", refVote, payloadHash);
+    }
+    function enregistrerVoteClos(string memory tontineCode, string memory membreId, string memory membreNom, string memory refVote, bytes32 payloadHash) external {
+        _enregistrer(tontineCode, "vote_clos", membreId, membreNom, 0, "", refVote, payloadHash);
+    }
+    function enregistrerVoteIndividuel(string memory tontineCode, string memory membreId, string memory membreNom, string memory refVote, bytes32 payloadHash) external {
+        _enregistrer(tontineCode, "vote", membreId, membreNom, 0, "", refVote, payloadHash);
+    }
+    function enregistrerRetraitPropose(string memory tontineCode, string memory membreId, string memory membreNom, string memory refVote, bytes32 payloadHash) external {
+        _enregistrer(tontineCode, "retrait_propose", membreId, membreNom, 0, "", refVote, payloadHash);
+    }
+    function enregistrerCreation(string memory tontineCode, string memory membreId, string memory membreNom, string memory nomTontine, bytes32 payloadHash) external {
+        _enregistrer(tontineCode, "creation", membreId, membreNom, 0, "", nomTontine, payloadHash);
+    }
+    function enregistrerUpgradePro(string memory tontineCode, string memory membreId, string memory membreNom, bytes32 payloadHash) external {
+        _enregistrer(tontineCode, "upgrade_pro", membreId, membreNom, 0, "", "", payloadHash);
+    }
+    function enregistrerNouveauCycle(string memory tontineCode, string memory membreId, string memory membreNom, string memory details, bytes32 payloadHash) external {
+        _enregistrer(tontineCode, "nouveau_cycle", membreId, membreNom, 0, "", details, payloadHash);
+    }
+    function enregistrerScoreModifie(string memory tontineCode, string memory membreId, string memory membreNom, string memory details, bytes32 payloadHash) external {
+        _enregistrer(tontineCode, "score_modifie", membreId, membreNom, 0, "", details, payloadHash);
+    }
+
+    function transfererAdmin(address nouvelAdmin) external onlyAdmin {
+        require(nouvelAdmin != address(0), "Adresse invalide");
+        emit AdminTransfere(admin, nouvelAdmin, block.timestamp);
+        admin = nouvelAdmin;
+    }
+
+    function getInfo() external view returns (address, string memory, uint256, uint256) {
+        return (admin, version, totalOperations, block.timestamp);
+    }
+}`;
+
+  try {
+    const body = new URLSearchParams({
+      apikey             : polygonscanKey || "YourApiKeyToken",
+      module             : "contract",
+      action             : "verifysourcecode",
+      contractaddress    : contractAddr,
+      sourceCode,
+      codeformat         : "solidity-single-file",
+      contractname       : "TontineVaultV4",
+      compilerversion    : "v0.8.20+commit.a1b79de6",
+      optimizationUsed   : "1",
+      runs               : "200",
+      licenseType        : "3",  // MIT
+    });
+
+    const resp = await fetch("https://api.polygonscan.com/api", {
+      method : "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body   : body.toString(),
+      signal : AbortSignal.timeout(30000),
+    });
+
+    const result = await resp.json() as { status: string; message: string; result: string };
+
+    if (result.status === "1") {
+      // Vérification soumise — PolygonScan va vérifier de façon asynchrone
+      return {
+        ok     : true,
+        guid   : result.result,  // GUID pour vérifier le statut
+        message: "Vérification soumise à PolygonScan. Vérifiez le statut dans 1-2 minutes.",
+        check_status_url: `https://api.polygonscan.com/api?module=contract&action=checkverifystatus&guid=${result.result}&apikey=${polygonscanKey || "YourApiKeyToken"}`,
+        explorer: `${EXPLORER_BASE}/address/${contractAddr}#code`,
+      };
+    } else {
+      return {
+        ok     : false,
+        erreur : result.result || result.message,
+        conseil: result.result?.includes("Already Verified")
+          ? "Le contrat est déjà vérifié sur PolygonScan ✅"
+          : "Vérifier que le bytecode compilé correspond au contrat déployé",
+      };
+    }
+  } catch (err) {
+    return { ok: false, erreur: String(err) };
+  }
+}
+
 async function actionContractInfo(env: Record<string, string>): Promise<Record<string, unknown>> {
   const rpcUrl      = env.ALCHEMY_POLYGON_AMOY_URL || RPC_FALLBACK;
   const contractAddr = env.TONTINE_CONTRACT_ADDRESS || "";
@@ -1462,9 +1645,12 @@ Deno.serve(async (req) => {
         break;
       case "deploy_v4":
         // 🚀 Déploie TontineVaultV4 sur Polygon Mainnet
-        // Utilise MASTER_WALLET_PRIVATE_KEY pour signer la TX de déploiement
-        // → Retourne l'adresse du nouveau contrat à mettre dans TONTINE_CONTRACT_ADDRESS
         result = await actionDeployV4(env);
+        break;
+      case "verifier_contrat":
+        // 🔍 Vérifie TontineVaultV4 sur PolygonScan → noms fonctions + paramètres lisibles
+        // Nécessite secret POLYGONSCAN_API_KEY dans Supabase
+        result = await actionVerifierContratPolygonscan(env);
         break;
       case "debug_env":
         // Action de diagnostic : expose les longueurs des secrets (pas les valeurs)
