@@ -1047,35 +1047,37 @@ class _CarteOperationJournal extends StatelessWidget {
     this.contratAddr,
   });
 
+  /// Ouvre PolygonScan uniquement pour les vraies TX on-chain (Phase 2)
   Future<void> _ouvrirPolygonScan(BuildContext ctx) async {
-    final String urlStr;
-    if (estTxOnChain && entree.txHash != null) {
-      // Phase 2 : TX Ethereum directe → ouvrir la transaction
-      urlStr = 'https://polygonscan.com/tx/${entree.txHash}';
-    } else if (contratAddr != null) {
-      // Phase 1 avec contrat connu → ouvrir l'adresse du contrat
-      urlStr = 'https://polygonscan.com/address/$contratAddr';
-    } else if (entree.txHash != null && entree.txHash!.isNotEmpty) {
-      // Phase 1 sans contrat : hash SHA-256 local → copier dans le presse-papier
-      await _copierHash(ctx);
-      return;
-    } else {
-      return;
-    }
-    final url = Uri.parse(urlStr);
+    if (!estTxOnChain || entree.txHash == null) return;
+    final url = Uri.parse('https://polygonscan.com/tx/${entree.txHash}');
     if (await canLaunchUrl(url)) {
       await launchUrl(url, mode: LaunchMode.externalApplication);
     }
   }
 
+  /// Copie le TX hash complet dans le presse-papier
   Future<void> _copierHash(BuildContext ctx) async {
-    if (entree.txHash == null) return;
+    if (entree.txHash == null || entree.txHash!.isEmpty) return;
     await Clipboard.setData(ClipboardData(text: entree.txHash!));
     if (ctx.mounted) {
       ScaffoldMessenger.of(ctx).showSnackBar(
-        const SnackBar(
-          content: Text('Hash copié dans le presse-papier'),
-          duration: Duration(seconds: 2),
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white, size: 16),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'ID copié : ${entree.txHash!.substring(0, 18)}...${entree.txHash!.substring(entree.txHash!.length - 6)}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFF1A237E),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
         ),
       );
     }
@@ -1084,8 +1086,8 @@ class _CarteOperationJournal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool aHash       = entree.txHash != null && entree.txHash!.isNotEmpty;
-    // aLienExtern = true si on peut ouvrir une URL externe OU copier un hash
-    final bool aLienExtern = estTxOnChain || contratAddr != null || aHash;
+    // aLienExtern = true uniquement pour les vraies TX on-chain (Polygonscan)
+    final bool aLienExtern = estTxOnChain && aHash;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1163,14 +1165,14 @@ class _CarteOperationJournal extends StatelessWidget {
             ),
           ),
 
-          // ── Ligne TX hash + bouton PolygonScan ─────────────────────────────
+          // ── Ligne TX hash + boutons ─────────────────────────────────────
           if (aHash) ...[
             const Divider(height: 1, thickness: 0.6, color: AppColors.lignes),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Row(
                 children: [
-                  // Hash cliquable (copie si pas de lien)
+                  // ── Hash abrégé cliquable → ouvre PolygonScan (on-chain) ────
                   GestureDetector(
                     onTap: () => aLienExtern
                         ? _ouvrirPolygonScan(context)
@@ -1179,15 +1181,11 @@ class _CarteOperationJournal extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          estTxOnChain
-                              ? Icons.open_in_new
-                              : (contratAddr != null ? Icons.link : Icons.fingerprint),
+                          aLienExtern ? Icons.open_in_new : Icons.fingerprint,
                           size: 13,
                           color: estTxOnChain
                               ? const Color(0xFF00C853)
-                              : (contratAddr != null
-                                  ? AppColors.encreDoux
-                                  : AppColors.texteDoux),
+                              : AppColors.texteDoux,
                         ),
                         const SizedBox(width: 5),
                         Text(
@@ -1199,80 +1197,69 @@ class _CarteOperationJournal extends StatelessWidget {
                             fontFamily: 'monospace',
                             color: estTxOnChain
                                 ? const Color(0xFF00C853)
-                                : (contratAddr != null
-                                    ? AppColors.encreDoux
-                                    : AppColors.texteDoux),
+                                : AppColors.texteDoux,
                             fontWeight: FontWeight.w600,
                             decoration: aLienExtern
                                 ? TextDecoration.underline
                                 : TextDecoration.none,
-                            decorationColor: estTxOnChain
-                                ? const Color(0xFF00C853)
-                                : AppColors.encreDoux,
+                            decorationColor: const Color(0xFF00C853),
                           ),
                         ),
-                        const SizedBox(width: 4),
-                        Icon(
-                          aLienExtern ? Icons.open_in_new : Icons.copy,
-                          size: 11,
-                          color: estTxOnChain
-                              ? const Color(0xFF00C853)
-                              : AppColors.texteDoux,
-                        ),
+                        if (aLienExtern) ...[
+                          const SizedBox(width: 4),
+                          const Icon(
+                            Icons.open_in_new,
+                            size: 11,
+                            color: Color(0xFF00C853),
+                          ),
+                        ],
                       ],
                     ),
                   ),
                   const Spacer(),
-                  // ── Bouton PolygonScan ──────────────────────────────────────
-                  if (aLienExtern)
-                    GestureDetector(
-                      onTap: () => _ouvrirPolygonScan(context),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 9, vertical: 4),
-                        decoration: BoxDecoration(
+                  // ── Bouton Copier TX ID — toujours visible si hash présent ──
+                  GestureDetector(
+                    onTap: () => _copierHash(context),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 9, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: estTxOnChain
+                            ? const Color(0xFF00C853).withValues(alpha: 0.12)
+                            : AppColors.encreDoux.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
                           color: estTxOnChain
-                              ? const Color(0xFF00C853).withValues(alpha: 0.12)
-                              : AppColors.encreDoux.withValues(alpha: 0.10),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: estTxOnChain
-                                ? const Color(0xFF00C853).withValues(alpha: 0.35)
-                                : AppColors.encreDoux.withValues(alpha: 0.25),
-                            width: 0.8,
-                          ),
+                              ? const Color(0xFF00C853).withValues(alpha: 0.35)
+                              : AppColors.encreDoux.withValues(alpha: 0.25),
+                          width: 0.8,
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              estTxOnChain
-                                  ? Icons.open_in_new
-                                  : (contratAddr != null
-                                      ? Icons.open_in_new
-                                      : Icons.copy_rounded),
-                              size: 10,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.copy_rounded,
+                            size: 10,
+                            color: estTxOnChain
+                                ? const Color(0xFF00C853)
+                                : AppColors.encreDoux,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Copier ID',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
                               color: estTxOnChain
                                   ? const Color(0xFF00C853)
                                   : AppColors.encreDoux,
                             ),
-                            const SizedBox(width: 4),
-                            Text(
-                              estTxOnChain
-                                  ? 'PolygonScan'
-                                  : (contratAddr != null ? 'Contrat' : 'Copier'),
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: estTxOnChain
-                                    ? const Color(0xFF00C853)
-                                    : AppColors.encreDoux,
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
+                  ),
                 ],
               ),
             ),

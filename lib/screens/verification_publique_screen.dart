@@ -130,12 +130,27 @@ class _VerificationPubliqueScreenState
   // ── Copie dans le presse-papiers ───────────────────────────────────────────
   void _copier(String texte, String label) {
     Clipboard.setData(ClipboardData(text: texte));
+    // Affiche un aperçu abrégé du hash copié
+    final apercu = texte.length > 20
+        ? '${texte.substring(0, 10)}...${texte.substring(texte.length - 6)}'
+        : texte;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('$label copié'),
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.white, size: 16),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '$label copié : $apercu',
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+          ],
+        ),
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 2),
-        backgroundColor: AppColors.succes,
+        backgroundColor: const Color(0xFF1A237E),
       ),
     );
   }
@@ -1099,36 +1114,24 @@ class _CarteEntree extends StatelessWidget {
           ),
 
           // TX Hash (si présent)
-          if (entree.txHash != null) ...[
+          if (entree.txHash != null && entree.txHash!.isNotEmpty) ...[
             const Divider(height: 1, color: AppColors.lignes),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               child: Row(
                 children: [
-                  // ── Hash TX / Proof cliquable ──────────────────────────────
-                  // • Phase 2 (TX on-chain confirmée)  → ouvre TX directement
-                  // • Phase 1 (Proof SHA-256) + contrat → ouvre adresse contrat
-                  // • Phase 1 (Proof SHA-256) sans contrat → copie le hash
+                  // ── Hash TX / Proof cliquable — ouvre PolygonScan si on-chain
                   GestureDetector(
                     onTap: () async {
                       if (_estOnChain) {
-                        // Phase 2 : ouvre la TX directement sur PolygonScan
                         final url = Uri.parse(
                           'https://polygonscan.com/tx/${entree.txHash}',
                         );
                         if (await canLaunchUrl(url)) {
                           await launchUrl(url, mode: LaunchMode.externalApplication);
                         }
-                      } else if (contratAddress != null) {
-                        // Phase 1 : preuve locale — ouvre les TX du contrat
-                        final url = Uri.parse(
-                          'https://polygonscan.com/address/$contratAddress',
-                        );
-                        if (await canLaunchUrl(url)) {
-                          await launchUrl(url, mode: LaunchMode.externalApplication);
-                        }
                       } else {
-                        // Phase 1 sans contrat connu : copier le proof SHA-256
+                        // Phase 1 : copie le proof SHA-256
                         onCopier(entree.txHash!, 'Proof');
                       }
                     },
@@ -1136,17 +1139,11 @@ class _CarteEntree extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          _estOnChain
-                              ? Icons.open_in_new
-                              : (contratAddress != null
-                                  ? Icons.link
-                                  : Icons.fingerprint),
+                          _estOnChain ? Icons.open_in_new : Icons.fingerprint,
                           size: 14,
                           color: _estOnChain
                               ? const Color(0xFF00C853)
-                              : (contratAddress != null
-                                  ? AppColors.encreDoux
-                                  : AppColors.texteDoux),
+                              : AppColors.texteDoux,
                         ),
                         const SizedBox(width: 6),
                         Text(
@@ -1158,90 +1155,69 @@ class _CarteEntree extends StatelessWidget {
                             fontFamily: 'monospace',
                             color: _estOnChain
                                 ? const Color(0xFF00C853)
-                                : (contratAddress != null
-                                    ? AppColors.encreDoux
-                                    : AppColors.texteDoux),
+                                : AppColors.texteDoux,
                             fontWeight: FontWeight.w600,
-                            // Souligné si cliquable (Phase 2 ou Phase 1 avec contrat)
-                            decoration: (_estOnChain || contratAddress != null)
+                            decoration: _estOnChain
                                 ? TextDecoration.underline
                                 : TextDecoration.none,
-                            decorationColor: _estOnChain
-                                ? const Color(0xFF00C853)
-                                : AppColors.encreDoux,
+                            decorationColor: const Color(0xFF00C853),
                           ),
                         ),
-                        const SizedBox(width: 4),
-                        Icon(
-                          _estOnChain
-                              ? Icons.open_in_new
-                              : (contratAddress != null
-                                  ? Icons.open_in_new
-                                  : Icons.copy),
-                          size: 13,
-                          color: _estOnChain
-                              ? const Color(0xFF00C853)
-                              : (contratAddress != null
-                                  ? AppColors.encreDoux
-                                  : AppColors.texteDoux),
-                        ),
+                        if (_estOnChain) ...[
+                          const SizedBox(width: 4),
+                          const Icon(
+                            Icons.open_in_new,
+                            size: 11,
+                            color: Color(0xFF00C853),
+                          ),
+                        ],
                       ],
                     ),
                   ),
                   const Spacer(),
-                  // ── Bouton PolygonScan à droite ────────────────────────────
-                  // Phase 2 → TX directe  |  Phase 1 → adresse contrat
-                  if (_estOnChain || contratAddress != null)
-                    GestureDetector(
-                      onTap: () async {
-                        final urlStr = _estOnChain
-                            ? 'https://polygonscan.com/tx/${entree.txHash}'
-                            : 'https://polygonscan.com/address/$contratAddress';
-                        final url = Uri.parse(urlStr);
-                        if (await canLaunchUrl(url)) {
-                          await launchUrl(url, mode: LaunchMode.externalApplication);
-                        }
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
+                  // ── Bouton Copier ID — toujours visible pour partager ──────
+                  GestureDetector(
+                    onTap: () => onCopier(entree.txHash!, 'ID transaction'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: _estOnChain
+                            ? const Color(0xFF00C853).withValues(alpha: 0.12)
+                            : AppColors.encreDoux.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
                           color: _estOnChain
-                              ? const Color(0xFF00C853).withValues(alpha: 0.12)
-                              : AppColors.encreDoux.withValues(alpha: 0.10),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: _estOnChain
-                                ? const Color(0xFF00C853).withValues(alpha: 0.3)
-                                : AppColors.encreDoux.withValues(alpha: 0.25),
-                            width: 0.8,
-                          ),
+                              ? const Color(0xFF00C853).withValues(alpha: 0.3)
+                              : AppColors.encreDoux.withValues(alpha: 0.25),
+                          width: 0.8,
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.open_in_new,
-                              size: 11,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.copy_rounded,
+                            size: 11,
+                            color: _estOnChain
+                                ? const Color(0xFF00C853)
+                                : AppColors.encreDoux,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Copier ID',
+                            style: TextStyle(
+                              fontSize: 11,
                               color: _estOnChain
                                   ? const Color(0xFF00C853)
                                   : AppColors.encreDoux,
+                              fontWeight: FontWeight.w700,
                             ),
-                            const SizedBox(width: 4),
-                            Text(
-                              _estOnChain ? 'PolygonScan' : 'Contrat',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: _estOnChain
-                                    ? const Color(0xFF00C853)
-                                    : AppColors.encreDoux,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
+                  ),
                 ],
               ),
             ),
