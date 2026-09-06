@@ -485,11 +485,16 @@ class _MembresScreenState extends State<MembresScreen> {
             setSt(() { saving = true; erreur = null; });
 
             try {
-              // ── Vérifier le PIN gestionnaire ─────────────────────────────
+              // ── Vérifier le PIN gestionnaire via Supabase RPC ────────────
+              // ⚠️ data.gestionnaires[].pin est toujours vide côté client
+              // (jamais retourné par lire_tontine pour raisons de sécurité).
+              // Il FAUT appeler verifierGestionnaire() qui hash-compare côté serveur.
               final provider = ctx.read<TontineProvider>();
               final gestNom  = provider.gestActifNom ?? '';
-              final pinOk    = data.gestionnaires.any(
-                (g) => g.nom == gestNom && g.pin == pin,
+              final pinOk    = await SupabaseService.verifierGestionnaire(
+                code: code,
+                nom:  gestNom,
+                pin:  pin,
               );
               if (!pinOk) {
                 setSt(() {
