@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/tontine.dart';
 import '../models/score_modeles.dart';
 import '../services/score_service.dart';
@@ -98,7 +99,10 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
   void initState() {
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _charger());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _charger();
+      _chargerPreuves(); // ← auto-load dès l'ouverture de la fiche membre
+    });
   }
 
   @override
@@ -1410,7 +1414,13 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
   }
 
   // ── Preuves de paiement : upload ─────────────────────────────────────────
-  Future<void> _uploaderPreuve(BuildContext ctx) async {
+  /// [numTour]      : numéro du tour en cours (ex. 3) — pour la description
+  /// [typePaiement] : "cotisation", "remboursement", etc. — pour la description
+  Future<void> _uploaderPreuve(
+    BuildContext ctx, {
+    int? numTour,
+    String? typePaiement,
+  }) async {
     final picker = ImagePicker();
     final source = await showModalBottomSheet<ImageSource>(
       context: ctx,
@@ -1477,8 +1487,18 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
 
     try {
       final Uint8List bytes = await image.readAsBytes();
-      final now = DateTime.now();
-      final desc = 'Preuve_${now.day}-${now.month}-${now.year}';
+
+      // Description contextuelle : Tour3_cotisation ou Preuve_01-07-2025
+      final String desc;
+      if (numTour != null && typePaiement != null) {
+        desc = 'Tour${numTour}_${typePaiement}';
+      } else if (numTour != null) {
+        desc = 'Tour${numTour}_preuve';
+      } else {
+        final now = DateTime.now();
+        desc = 'Preuve_${now.day.toString().padLeft(2, '0')}-'
+               '${now.month.toString().padLeft(2, '0')}-${now.year}';
+      }
 
       final url = await PreuvePaiementService.uploaderPreuve(
         tontineCode: widget.code,
@@ -1556,12 +1576,13 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
 
         // Contenu
         if (!_preuvesChargees)
-          Center(
-            child: TextButton.icon(
-              onPressed: _chargerPreuves,
-              icon: const Icon(Icons.cloud_download_rounded, size: 14),
-              label: const Text('Voir mes preuves', style: TextStyle(fontSize: 11)),
-              style: TextButton.styleFrom(foregroundColor: AppColors.encreDoux),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Center(
+              child: SizedBox(
+                width: 16, height: 16,
+                child: CircularProgressIndicator(strokeWidth: 1.5),
+              ),
             ),
           )
         else if (_preuves.isEmpty)
@@ -1616,28 +1637,51 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
             Expanded(
               child: ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(7)),
-                child: Image.network(
-                  preuve.url,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  errorBuilder: (_, __, ___) => const Center(
-                    child: Icon(Icons.broken_image_rounded, size: 28,
-                        color: AppColors.texteDoux),
-                  ),
-                  loadingBuilder: (_, child, progress) =>
-                      progress == null ? child :
-                      const Center(child: SizedBox(
-                        width: 16, height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 1.5),
-                      )),
-                ),
+                child: preuve.estPdf
+                    // PDF : icône descriptive
+                    ? Container(
+                        color: AppColors.fondCode,
+                        child: const Center(
+                          child: Icon(Icons.picture_as_pdf_rounded,
+                              size: 32, color: Color(0xFFD32F2F)),
+                        ),
+                      )
+                    : Image.network(
+                        preuve.url,
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        errorBuilder: (_, __, ___) => const Center(
+                          child: Icon(Icons.broken_image_rounded, size: 28,
+                              color: AppColors.texteDoux),
+                        ),
+                        loadingBuilder: (_, child, progress) =>
+                            progress == null ? child :
+                            const Center(child: SizedBox(
+                              width: 16, height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 1.5),
+                            )),
+                      ),
+              ),
+            ),
+            // Description contextuelle (ex: "Tour3 cotisation") + date
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 3, 4, 2),
+              child: Text(
+                preuve.description.isNotEmpty
+                    ? preuve.description
+                    : Formatters.dateFormatee(preuve.uploadedAt),
+                style: const TextStyle(fontSize: 8.5, color: AppColors.encre,
+                    fontWeight: FontWeight.w600),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
               ),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 3),
               child: Text(
                 Formatters.dateFormatee(preuve.uploadedAt),
-                style: const TextStyle(fontSize: 9, color: AppColors.texteDoux),
+                style: const TextStyle(fontSize: 8, color: AppColors.texteDoux),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
@@ -1664,7 +1708,7 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                 onPressed: () => Navigator.pop(dc),
               ),
               title: Text(
-                preuve.description,
+                preuve.description.isNotEmpty ? preuve.description : preuve.nom,
                 style: const TextStyle(color: Colors.white, fontSize: 13),
               ),
               actions: [
@@ -1688,15 +1732,49 @@ class _ScoreMembreScreenState extends State<ScoreMembreScreen>
                   ),
               ],
             ),
-            InteractiveViewer(
-              child: Image.network(
-                preuve.url,
-                errorBuilder: (_, __, ___) => const Padding(
-                  padding: EdgeInsets.all(32),
-                  child: Icon(Icons.broken_image_rounded, color: Colors.white, size: 48),
-                ),
-              ),
-            ),
+            // Contenu : image ou icône PDF avec bouton ouvrir
+            preuve.estPdf
+                ? Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      children: [
+                        const Icon(Icons.picture_as_pdf_rounded,
+                            size: 64, color: Color(0xFFD32F2F)),
+                        const SizedBox(height: 16),
+                        Text(
+                          preuve.nom,
+                          style: const TextStyle(color: Colors.white70, fontSize: 12),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 20),
+                        ElevatedButton.icon(
+                          onPressed: () async {
+                            final uri = Uri.tryParse(preuve.url);
+                            if (uri != null) {
+                              // ignore: deprecated_member_use
+                              await launchUrl(uri,
+                                  mode: LaunchMode.externalApplication);
+                            }
+                          },
+                          icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                          label: const Text('Ouvrir le PDF'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFD32F2F),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : InteractiveViewer(
+                    child: Image.network(
+                      preuve.url,
+                      errorBuilder: (_, __, ___) => const Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Icon(Icons.broken_image_rounded,
+                            color: Colors.white, size: 48),
+                      ),
+                    ),
+                  ),
             Padding(
               padding: const EdgeInsets.all(12),
               child: Text(
