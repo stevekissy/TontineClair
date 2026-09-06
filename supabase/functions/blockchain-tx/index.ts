@@ -219,7 +219,7 @@ function stripZeros(b: Uint8Array): Uint8Array {
 
 // Signer une TX Legacy (type 0) pour Polygon Amoy
 async function signTransaction(params: {
-  to       : string;
+  to       : string;  // "" ou "0x" pour création de contrat
   data     : string;
   nonce    : number;
   gasPrice : bigint;
@@ -229,14 +229,19 @@ async function signTransaction(params: {
 }): Promise<string> {
   const { to, data, nonce, gasPrice, gasLimit, chainId, privKey } = params;
 
+  // `to` vide = création de contrat (EIP-155)
+  const toBytes = (to && to !== "0x" && to.replace("0x","").length === 40)
+    ? hexToBytes(to.toLowerCase().slice(2))
+    : new Uint8Array(0);  // ← adresse vide pour deploy
+
   // EIP-155 legacy TX fields
   const fields: Uint8Array[] = [
     stripZeros(hexToBytes(numberToHex(nonce))),       // nonce
     stripZeros(hexToBytes(numberToHex(gasPrice))),    // gasPrice
     stripZeros(hexToBytes(numberToHex(gasLimit))),    // gas
-    hexToBytes(to.toLowerCase().slice(2)),            // to
+    toBytes,                                          // to (vide si deploy)
     new Uint8Array(0),                                // value (0)
-    hexToBytes(data.startsWith("0x") ? data.slice(2) : data), // data
+    hexToBytes(data.startsWith("0x") ? data.slice(2) : data), // data/bytecode
     stripZeros(hexToBytes(numberToHex(chainId))),     // v = chainId
     new Uint8Array(0),                                // r = 0
     new Uint8Array(0),                                // s = 0
@@ -255,7 +260,7 @@ async function signTransaction(params: {
     stripZeros(hexToBytes(numberToHex(nonce))),
     stripZeros(hexToBytes(numberToHex(gasPrice))),
     stripZeros(hexToBytes(numberToHex(gasLimit))),
-    hexToBytes(to.toLowerCase().slice(2)),
+    toBytes,
     new Uint8Array(0),
     hexToBytes(data.startsWith("0x") ? data.slice(2) : data),
     stripZeros(hexToBytes(numberToHex(v))),
@@ -267,33 +272,39 @@ async function signTransaction(params: {
 }
 
 // ── Keccak4 selector ────────────────────────────────────────────────────────────
-// TontineVaultV3 — sélecteurs calculés avec web3.py (keccak256 des signatures ABI)
-// Une fonction par action métier → noms lisibles sur PolygonScan
+// TontineVaultV4 — sélecteurs calculés (keccak256 des signatures ABI)
+// NOUVEAUTÉ v4 : fonctions financières ont `string devise` après uint256 montant
+// → PolygonScan affiche "montant" + "devise" séparément (lisible par devise réelle)
 
 const SELECTORS: Record<string, string> = {
+  // ── Admin / lecture ────────────────────────────────────────────────────────
   "admin()": "0xf851a440",
-  "enregistrerApport(string,string,string,uint256,string,bytes32)": "0xe8309f9d",
-  "enregistrerCotisation(string,string,string,uint256,string,bytes32)": "0xa3980ee2",
-  "enregistrerCreation(string,string,string,string,bytes32)": "0x69d1a0f8",
-  "enregistrerDecaissement(string,string,string,uint256,string,bytes32)": "0x7948515e",
-  "enregistrerDepot(string,string,string,uint256,string,bytes32)": "0x3a34a193",
-  "enregistrerDistribution(string,string,string,uint256,string,bytes32)": "0x5ee35c39",
-  "enregistrerNouveauCycle(string,string,string,string,bytes32)": "0x19c2cd10",
-  "enregistrerPenalite(string,string,string,uint256,string,bytes32)": "0x1d00f9ce",
-  "enregistrerPret(string,string,string,uint256,string,bytes32)": "0x3bfe5ba7",
-  "enregistrerRemboursement(string,string,string,uint256,string,bytes32)": "0x673efd5f",
-  "enregistrerRetrait(string,string,string,uint256,string,bytes32)": "0x566519de",
-  "enregistrerRetraitPropose(string,string,string,string,bytes32)": "0x49b4279e",
-  "enregistrerScoreModifie(string,string,string,string,bytes32)": "0x89808c56",
-  "enregistrerSynchronisation(string,string,string,uint256,string,bytes32)": "0x54ce7c65",
-  "enregistrerUpgradePro(string,string,string,bytes32)": "0x0496be90",
-  "enregistrerVoteClos(string,string,string,string,bytes32)": "0xf4ef3be9",
-  "enregistrerVoteCree(string,string,string,string,bytes32)": "0x05797094",
-  "enregistrerVoteIndividuel(string,string,string,string,bytes32)": "0xace3c9ee",
   "getInfo()": "0x5a9b0b89",
   "totalOperations()": "0xed232029",
   "transfererAdmin(address)": "0xb38ff71f",
   "version()": "0x54fd4d50",
+  // ── Finances V4 (string,string,string,uint256,string,string,bytes32) ───────
+  // Paramètres: tontineCode, membreId, membreNom, montant, devise, refInterne, payloadHash
+  "enregistrerCotisation(string,string,string,uint256,string,string,bytes32)": "0x4aaf7eb7",
+  "enregistrerDistribution(string,string,string,uint256,string,string,bytes32)": "0x2d024ca9",
+  "enregistrerDecaissement(string,string,string,uint256,string,string,bytes32)": "0x309cf62d",
+  "enregistrerDepot(string,string,string,uint256,string,string,bytes32)": "0x4eb4f9b2",
+  "enregistrerPret(string,string,string,uint256,string,string,bytes32)": "0x80a8d536",
+  "enregistrerRemboursement(string,string,string,uint256,string,string,bytes32)": "0x3f83aea8",
+  "enregistrerPenalite(string,string,string,uint256,string,string,bytes32)": "0xbf24a357",
+  "enregistrerRetrait(string,string,string,uint256,string,string,bytes32)": "0xc438e7d5",
+  "enregistrerApport(string,string,string,uint256,string,string,bytes32)": "0x9f8dae2b",
+  "enregistrerSynchronisation(string,string,string,uint256,string,string,bytes32)": "0x95bf6b66",
+  // ── Votes (inchangées — même signature V3) ─────────────────────────────────
+  "enregistrerVoteCree(string,string,string,string,bytes32)": "0x05797094",
+  "enregistrerVoteClos(string,string,string,string,bytes32)": "0xf4ef3be9",
+  "enregistrerVoteIndividuel(string,string,string,string,bytes32)": "0xace3c9ee",
+  "enregistrerRetraitPropose(string,string,string,string,bytes32)": "0x49b4279e",
+  // ── Système (inchangées — même signature V3) ───────────────────────────────
+  "enregistrerCreation(string,string,string,string,bytes32)": "0x69d1a0f8",
+  "enregistrerUpgradePro(string,string,string,bytes32)": "0x0496be90",
+  "enregistrerNouveauCycle(string,string,string,string,bytes32)": "0x19c2cd10",
+  "enregistrerScoreModifie(string,string,string,string,bytes32)": "0x89808c56",
 };
 
 function functionSelector(sig: string): string {
@@ -451,49 +462,62 @@ function _encStr(s: string): string {
 }
 
 /**
- * Finance v3 : (string tontineCode, string membreId, string membreNom,
- *               uint256 montantXof, string refInterne, bytes32 payloadHash)
+ * Finance V4 : (string tontineCode, string membreId, string membreNom,
+ *               uint256 montant, string devise, string refInterne, bytes32 payloadHash)
+ *
+ * NOUVEAUTÉ v4 : `devise` est un paramètre string séparé → PolygonScan affiche :
+ *   - param3 "montant"   : 9900          ← valeur numérique
+ *   - param4 "devise"    : "EUR"         ← devise réelle de la tontine ✅
+ *   - param5 "refInterne": "JX9FKY | Cotisation | Jean | 9900 EUR"
+ *
  * Utilisé par : enregistrerCotisation, enregistrerDistribution, enregistrerDecaissement,
  *               enregistrerDepot, enregistrerPret, enregistrerRemboursement,
  *               enregistrerPenalite, enregistrerRetrait, enregistrerApport,
  *               enregistrerSynchronisation
  */
-function buildFinanceCalldata_v3(
+function buildFinanceCalldata_v4(
   tontineCode : string | number,
   membreId    : string | number,
   membreNom   : string | number,
-  montantXof  : number,
-  montantUsdt : number,  // non utilisé dans v3 (simplifié) — gardé pour compatibilité
+  montant     : number,
+  devise      : string,          // ← NOUVEAU : "EUR", "USD", "XOF", "NGN"…
+  montantUsdt : number,          // non utilisé dans le contrat — gardé pour compatibilité interne
   refInterne  : string,
   funcName    : string,
   payloadHash : Uint8Array
 ): string {
-  const sig = `${funcName}(string,string,string,uint256,string,bytes32)`;
+  // Signature V4 : 7 params (string×3 + uint256 + string×2 + bytes32)
+  const sig = `${funcName}(string,string,string,uint256,string,string,bytes32)`;
   const sel = functionSelector(sig);
 
   const s1  = _encStr(String(tontineCode));
   const s2  = _encStr(String(membreId));
   const s3  = _encStr(String(membreNom || ""));
-  const s4  = _encStr(refInterne);
+  const s4  = _encStr(devise || "XOF");  // devise string (param4 = dynamic)
+  const s5  = _encStr(refInterne);       // refInterne string (param5 = dynamic)
   const ph  = bytesToHex(payloadHash).padEnd(64, "0");
 
-  // 6 params: string(dyn) string(dyn) string(dyn) uint256(static) string(dyn) bytes32(static)
-  // Offsets: param0,1,2 = dynamic offsets | param3 = uint256 static | param4 = dynamic offset | param5 = bytes32 static
-  const base  = 6 * 32;  // 192 bytes = 6 slots
-  const o0    = base;
-  const o1    = o0 + s1.length / 2;
-  const o2    = o1 + s2.length / 2;
-  const o4    = o2 + s3.length / 2;  // après param3 (uint256 static, pas d'offset)
+  // 7 params: string(dyn) string(dyn) string(dyn) uint256(static) string(dyn) string(dyn) bytes32(static)
+  // Slots tête: 7 × 32 = 224 bytes
+  // param0 offset, param1 offset, param2 offset, montant (uint256), param4 offset, param5 offset, payloadHash (bytes32)
+  const base = 7 * 32;  // 224 bytes = 7 slots
+  const o0   = base;
+  const o1   = o0 + s1.length / 2;
+  const o2   = o1 + s2.length / 2;
+  // param3 = uint256 montant (static — pas d'offset)
+  const o4   = o2 + s3.length / 2;  // offset de devise (après param3 static)
+  const o5   = o4 + s4.length / 2;  // offset de refInterne
 
   const staticPart =
-    encodeUint256(o0) +          // param0: tontineCode offset
-    encodeUint256(o1) +          // param1: membreId offset
-    encodeUint256(o2) +          // param2: membreNom offset
-    encodeUint256(montantXof) +  // param3: montantXof (static)
-    encodeUint256(o4) +          // param4: refInterne offset
-    ph;                          // param5: payloadHash (static bytes32)
+    encodeUint256(o0) +     // param0: tontineCode offset
+    encodeUint256(o1) +     // param1: membreId offset
+    encodeUint256(o2) +     // param2: membreNom offset
+    encodeUint256(montant) + // param3: montant (static uint256)
+    encodeUint256(o4) +     // param4: devise offset
+    encodeUint256(o5) +     // param5: refInterne offset
+    ph;                     // param6: payloadHash (static bytes32)
 
-  return sel + staticPart + s1 + s2 + s3 + s4;
+  return sel + staticPart + s1 + s2 + s3 + s4 + s5;
 }
 
 /**
@@ -856,32 +880,35 @@ async function actionEnregistrerOperation(
           calldata = buildSysCalldata_v3(tontine_code, membre_id, memNom, ref, "enregistrerNouveauCycle", payloadBytes); break;
         case "score_modifie":
           calldata = buildSysCalldata_v3(tontine_code, membre_id, memNom, ref, "enregistrerScoreModifie", payloadBytes); break;
-        // ── Finances ─────────────────────────────────────────────────────────
+        // ── Finances V4 (avec devise) ─────────────────────────────────────────
+        // buildFinanceCalldata_v4 encode: tontineCode, membreId, membreNom,
+        //   montant (uint256), devise (string), refInterne (string), payloadHash
+        // → PolygonScan affiche: montant=9900 | devise="EUR" | refInterne="JX9FKY|..."
         case "cotisation":
-          calldata = buildFinanceCalldata_v3(tontine_code, membre_id, memNom, montantXof, montantUsdt, ref, "enregistrerCotisation", payloadBytes); break;
+          calldata = buildFinanceCalldata_v4(tontine_code, membre_id, memNom, montantXof, devise, montantUsdt, ref, "enregistrerCotisation", payloadBytes); break;
         case "distribution":
-          calldata = buildFinanceCalldata_v3(tontine_code, membre_id, memNom, montantXof, montantUsdt, ref, "enregistrerDistribution", payloadBytes); break;
+          calldata = buildFinanceCalldata_v4(tontine_code, membre_id, memNom, montantXof, devise, montantUsdt, ref, "enregistrerDistribution", payloadBytes); break;
         case "decaissement":
-          calldata = buildFinanceCalldata_v3(tontine_code, membre_id, memNom, montantXof, montantUsdt, ref, "enregistrerDecaissement", payloadBytes); break;
+          calldata = buildFinanceCalldata_v4(tontine_code, membre_id, memNom, montantXof, devise, montantUsdt, ref, "enregistrerDecaissement", payloadBytes); break;
         case "depot":
-          calldata = buildFinanceCalldata_v3(tontine_code, membre_id, memNom, montantXof, montantUsdt, ref, "enregistrerDepot", payloadBytes); break;
+          calldata = buildFinanceCalldata_v4(tontine_code, membre_id, memNom, montantXof, devise, montantUsdt, ref, "enregistrerDepot", payloadBytes); break;
         case "pret":
-          calldata = buildFinanceCalldata_v3(tontine_code, membre_id, memNom, montantXof, montantUsdt, ref, "enregistrerPret", payloadBytes); break;
+          calldata = buildFinanceCalldata_v4(tontine_code, membre_id, memNom, montantXof, devise, montantUsdt, ref, "enregistrerPret", payloadBytes); break;
         case "remboursement":
         case "remboursement_pret":
-          calldata = buildFinanceCalldata_v3(tontine_code, membre_id, memNom, montantXof, montantUsdt, ref, "enregistrerRemboursement", payloadBytes); break;
+          calldata = buildFinanceCalldata_v4(tontine_code, membre_id, memNom, montantXof, devise, montantUsdt, ref, "enregistrerRemboursement", payloadBytes); break;
         case "penalite":
-          calldata = buildFinanceCalldata_v3(tontine_code, membre_id, memNom, montantXof, montantUsdt, ref, "enregistrerPenalite", payloadBytes); break;
+          calldata = buildFinanceCalldata_v4(tontine_code, membre_id, memNom, montantXof, devise, montantUsdt, ref, "enregistrerPenalite", payloadBytes); break;
         case "retrait":
-          calldata = buildFinanceCalldata_v3(tontine_code, membre_id, memNom, montantXof, montantUsdt, ref, "enregistrerRetrait", payloadBytes); break;
+          calldata = buildFinanceCalldata_v4(tontine_code, membre_id, memNom, montantXof, devise, montantUsdt, ref, "enregistrerRetrait", payloadBytes); break;
         case "apport":
-          calldata = buildFinanceCalldata_v3(tontine_code, membre_id, memNom, montantXof, montantUsdt, ref, "enregistrerApport", payloadBytes); break;
+          calldata = buildFinanceCalldata_v4(tontine_code, membre_id, memNom, montantXof, devise, montantUsdt, ref, "enregistrerApport", payloadBytes); break;
         case "sync_balance":
         case "synchronisation":
-          calldata = buildFinanceCalldata_v3(tontine_code, membre_id, memNom, montantXof, montantUsdt, ref, "enregistrerSynchronisation", payloadBytes); break;
+          calldata = buildFinanceCalldata_v4(tontine_code, membre_id, memNom, montantXof, devise, montantUsdt, ref, "enregistrerSynchronisation", payloadBytes); break;
         default:
           // Fallback : type inconnu → enregistrerSynchronisation
-          calldata = buildFinanceCalldata_v3(tontine_code, membre_id, memNom, montantXof, montantUsdt, ref, "enregistrerSynchronisation", payloadBytes); break;
+          calldata = buildFinanceCalldata_v4(tontine_code, membre_id, memNom, montantXof, devise, montantUsdt, ref, "enregistrerSynchronisation", payloadBytes); break;
       }
 
       const onChain = await sendOnChainTx(rpcUrl, contractAddr, calldata, privKey, fromAddr);
@@ -1267,6 +1294,112 @@ async function actionContractInfo(env: Record<string, string>): Promise<Record<s
   }
 }
 
+
+// ── Action : deploy_v4 — Déploie TontineVaultV4 sur Polygon Mainnet ───────────
+// Bytecode compilé de TontineVaultV4.sol (solc 0.8.20 --optimize 200)
+// NOUVEAUTÉ v4 : param `montant` (uint256) + `devise` (string) dans les fonctions
+// financières → PolygonScan affiche la devise réelle de chaque tontine.
+const TONTINE_VAULT_V4_BYTECODE = "0x60c060405260056080908152640342e302e360dc1b60a05260019062000026908262000123565b5034801562000033575f80fd5b505f80546001600160a01b0319163390811782556040514281529091907f017157264e61ac54ef1bcfc8259e7eb3473c3d76e3461c0c0d360a140233b7c89060200160405180910390a3620001eb565b634e487b7160e01b5f52604160045260245ffd5b600181811c90821680620000ac57607f821691505b602082108103620000cb57634e487b7160e01b5f52602260045260245ffd5b50919050565b601f8211156200011e575f81815260208120601f850160051c81016020861015620000f95750805b601f850160051c820191505b818110156200011a5782815560010162000105565b5050505b505050565b81516001600160401b038111156200013f576200013f62000083565b620001578162000150845462000097565b84620000d1565b602080601f8311600181146200018d575f8415620001755750858301515b5f19600386901b1c1916600185901b1785556200011a565b5f85815260208120601f198616915b82811015620001bd578886015182559484019460019091019084016200019c565b5085821015620001db57878501515f19600388901b60f8161c191681555b5050505050600190811b01905550565b61183480620001f95f395ff3fe608060405234801561000f575f80fd5b5060043610610148575f3560e01c806369d1a0f8116100bf578063b38ff71f11610079578063b38ff71f146102a1578063bf24a357146102b4578063c438e7d5146102c7578063ed232029146102da578063f4ef3be9146102f1578063f851a44014610304575f80fd5b806369d1a0f81461022f57806380a8d5361461024257806389808c561461025557806395bf6b66146102685780639f8dae2b1461027b578063ace3c9ee1461028e575f80fd5b80633f83aea8116101105780633f83aea8146101ad57806349b4279e146101c05780634aaf7eb7146101d35780634eb4f9b2146101e657806354fd4d50146101f95780635a9b0b8914610217575f80fd5b80630496be901461014c578063057970941461016157806319c2cd10146101745780632d024ca914610187578063309cf62d1461019a575b5f80fd5b61015f61015a366004610ef3565b61032e565b005b61015f61016f366004610f8e565b6103c3565b61015f610182366004610f8e565b610455565b61015f610195366004611050565b6104d4565b61015f6101a8366004611050565b61056f565b61015f6101bb366004611050565b6105f4565b61015f6101ce366004610f8e565b610679565b61015f6101e1366004611050565b6106f8565b61015f6101f4366004611050565b61077d565b610201610802565b60405161020e91906111aa565b60405180910390f35b61021f61088e565b60405161020e94939291906111c3565b61015f61023d366004610f8e565b610949565b61015f610250366004611050565b6109c8565b61015f610263366004610f8e565b610a4d565b61015f610276366004611050565b610acc565b61015f610289366004611050565b610b51565b61015f61029c366004610f8e565b610bd6565b61015f6102af3660046111f9565b610c55565b61015f6102c2366004611050565b610d25565b61015f6102d5366004611050565b610daa565b6102e360025481565b60405190815260200161020e565b61015f6102ff366004610f8e565b610e2f565b5f54610316906001600160a01b031681565b6040516001600160a01b03909116815260200161020e565b5f546001600160a01b031633146103605760405162461bcd60e51b81526004016103579061121f565b60405180910390fd5b60028054905f61036f83611256565b9190505550868660405161038492919061127a565b60405180910390205f805160206117df8339815191528686868686426040516103b2969594939291906112b1565b60405180910390a250505050505050565b5f546001600160a01b031633146103ec5760405162461bcd60e51b81526004016103579061121f565b60028054905f6103fb83611256565b9190505550888860405161041092919061127a565b60405180910390205f8051602061179f8339815191528888888888888842604051610442989796959493929190611320565b60405180910390a2505050505050505050565b5f546001600160a01b0316331461047e5760405162461bcd60e51b81526004016103579061121f565b60028054905f61048d83611256565b919050555088886040516104a292919061127a565b60405180910390205f805160206117df8339815191528888888888888842604051610442989796959493929190611396565b5f546001600160a01b031633146104fd5760405162461bcd60e51b81526004016103579061121f565b60028054905f61050c83611256565b91905055508b8b60405161052192919061127a565b60405180910390205f805160206117bf8339815191528b8b8b8b8b8b8b8b8b8b426040516105599b9a999897969594939291906113ce565b60405180910390a2505050505050505050505050565b5f546001600160a01b031633146105985760405162461bcd60e51b81526004016103579061121f565b60028054905f6105a783611256565b91905055508b8b6040516105bc92919061127a565b60405180910390205f805160206117bf8339815191528b8b8b8b8b8b8b8b8b8b426040516105599b9a99989796959493929190611467565b5f546001600160a01b0316331461061d5760405162461bcd60e51b81526004016103579061121f565b60028054905f61062c83611256565b91905055508b8b60405161064192919061127a565b60405180910390205f805160206117bf8339815191528b8b8b8b8b8b8b8b8b8b426040516105599b9a999897969594939291906114a2565b5f546001600160a01b031633146106a25760405162461bcd60e51b81526004016103579061121f565b60028054905f6106b183611256565b919050555088886040516106c692919061127a565b60405180910390205f8051602061179f83398151915288888888888888426040516104429897969594939291906114de565b5f546001600160a01b031633146107215760405162461bcd60e51b81526004016103579061121f565b60028054905f61073083611256565b91905055508b8b60405161074592919061127a565b60405180910390205f805160206117bf8339815191528b8b8b8b8b8b8b8b8b8b426040516105599b9a99989796959493929190611518565b5f546001600160a01b031633146107a65760405162461bcd60e51b81526004016103579061121f565b60028054905f6107b583611256565b91905055508b8b6040516107ca92919061127a565b60405180910390205f805160206117bf8339815191528b8b8b8b8b8b8b8b8b8b426040516105599b9a99989796959493929190611551565b6001805461080f90611585565b80601f016020809104026020016040519081016040528092919081815260200182805461083b90611585565b80156108865780601f1061085d57610100808354040283529160200191610886565b820191905f5260205f20905b81548152906001019060200180831161086957829003601f168201915b505050505081565b5f60605f805f4690505f8054906101000a90046001600160a01b03166001600254838280546108bc90611585565b80601f01602080910402602001604051908101604052809291908181526020018280546108e890611585565b80156109335780601f1061090a57610100808354040283529160200191610933565b820191905f5260205f20905b81548152906001019060200180831161091657829003601f168201915b5050505050925094509450945094505090919293565b5f546001600160a01b031633146109725760405162461bcd60e51b81526004016103579061121f565b60028054905f61098183611256565b9190505550888860405161099692919061127a565b60405180910390205f805160206117df83398151915288888888888888426040516104429897969594939291906115bd565b5f546001600160a01b031633146109f15760405162461bcd60e51b81526004016103579061121f565b60028054905f610a0083611256565b91905055508b8b604051610a1592919061127a565b60405180910390205f805160206117bf8339815191528b8b8b8b8b8b8b8b8b8b426040516105599b9a999897969594939291906115f0565b5f546001600160a01b03163314610a765760405162461bcd60e51b81526004016103579061121f565b60028054905f610a8583611256565b91905055508888604051610a9a92919061127a565b60405180910390205f805160206117df8339815191528888888888888842604051610442989796959493929190611623565b5f546001600160a01b03163314610af55760405162461bcd60e51b81526004016103579061121f565b60028054905f610b0483611256565b91905055508b8b604051610b1992919061127a565b60405180910390205f805160206117bf8339815191528b8b8b8b8b8b8b8b8b8b426040516105599b9a9998979695949392919061165b565b5f546001600160a01b03163314610b7a5760405162461bcd60e51b81526004016103579061121f565b60028054905f610b8983611256565b91905055508b8b604051610b9e92919061127a565b60405180910390205f805160206117bf8339815191528b8b8b8b8b8b8b8b8b8b426040516105599b9a99989796959493929190611699565b5f546001600160a01b03163314610bff5760405162461bcd60e51b81526004016103579061121f565b60028054905f610c0e83611256565b91905055508888604051610c2392919061127a565b60405180910390205f8051602061179f83398151915288888888888888426040516104429897969594939291906116ce565b5f546001600160a01b03163314610c7e5760405162461bcd60e51b81526004016103579061121f565b6001600160a01b038116610cc35760405162461bcd60e51b815260206004820152600c60248201526b7a65726f206164647265737360a01b6044820152606401610357565b5f80546001600160a01b038381166001600160a01b0319831681179093556040519116919082907f017157264e61ac54ef1bcfc8259e7eb3473c3d76e3461c0c0d360a140233b7c890610d199042815260200190565b60405180910390a35050565b5f546001600160a01b03163314610d4e5760405162461bcd60e51b81526004016103579061121f565b60028054905f610d5d83611256565b91905055508b8b604051610d7292919061127a565b60405180910390205f805160206117bf8339815191528b8b8b8b8b8b8b8b8b8b426040516105599b9a999897969594939291906116fd565b5f546001600160a01b03163314610dd35760405162461bcd60e51b81526004016103579061121f565b60028054905f610de283611256565b91905055508b8b604051610df792919061127a565b60405180910390205f805160206117bf8339815191528b8b8b8b8b8b8b8b8b8b426040516105599b9a99989796959493929190611734565b5f546001600160a01b03163314610e585760405162461bcd60e51b81526004016103579061121f565b60028054905f610e6783611256565b91905055508888604051610e7c92919061127a565b60405180910390205f8051602061179f833981519152888888888888884260405161044298979695949392919061176a565b5f8083601f840112610ebe575f80fd5b50813567ffffffffffffffff811115610ed5575f80fd5b602083019150836020828501011115610eec575f80fd5b9250929050565b5f805f805f805f6080888a031215610f09575f80fd5b873567ffffffffffffffff80821115610f20575f80fd5b610f2c8b838c01610eae565b909950975060208a0135915080821115610f44575f80fd5b610f508b838c01610eae565b909750955060408a0135915080821115610f68575f80fd5b50610f758a828b01610eae565b989b979a50959894979596606090950135949350505050565b5f805f805f805f805f60a08a8c031215610fa6575f80fd5b893567ffffffffffffffff80821115610fbd575f80fd5b610fc98d838e01610eae565b909b50995060208c0135915080821115610fe1575f80fd5b610fed8d838e01610eae565b909950975060408c0135915080821115611005575f80fd5b6110118d838e01610eae565b909750955060608c0135915080821115611029575f80fd5b506110368c828d01610eae565b9a9d999c50979a9699959894979660800135949350505050565b5f805f805f805f805f805f8060e08d8f03121561106b575f80fd5b67ffffffffffffffff8d351115611080575f80fd5b61108d8e8e358f01610eae565b909c509a5067ffffffffffffffff60208e013511156110aa575f80fd5b6110ba8e60208f01358f01610eae565b909a50985067ffffffffffffffff60408e013511156110d7575f80fd5b6110e78e60408f01358f01610eae565b909850965060608d0135955067ffffffffffffffff60808e0135111561110b575f80fd5b61111b8e60808f01358f01610eae565b909550935067ffffffffffffffff60a08e01351115611138575f80fd5b6111488e60a08f01358f01610eae565b819450809350505060c08d013590509295989b509295989b509295989b565b5f81518084525f5b8181101561118b5760208185018101518683018201520161116f565b505f602082860101526020601f19601f83011685010191505092915050565b602081525f6111bc6020830184611167565b9392505050565b6001600160a01b03851681526080602082018190525f906111e690830186611167565b6040830194909452506060015292915050565b5f60208284031215611209575f80fd5b81356001600160a01b03811681146111bc575f80fd5b60208082526017908201527f546f6e74696e655661756c743a206e6f742061646d696e000000000000000000604082015260600190565b5f6001820161127357634e487b7160e01b5f52601160045260245ffd5b5060010190565b818382375f9101908152919050565b81835281816020850137505f828201602090810191909152601f909101601f19169091010190565b60c08152600b60c08201526a757067726164655f70726f60a81b60e08201525f6101008060208401526112e7818401898b611289565b905082810360408401526112fc818789611289565b83810360608501525f81526080840195909552505060a00152602001949350505050565b60c08152600960c082015268766f74655f6372656560b81b60e08201525f6101008060208401526113548184018b8d611289565b9050828103604084015261136981898b611289565b9050828103606084015261137e818789611289565b6080840195909552505060a001529695505050505050565b60c08152600d60c08201526c6e6f75766561755f6379636c6560981b60e08201525f6101008060208401526113548184018b8d611289565b6101008152600c6101008201526b3234b9ba3934b13aba34b7b760a11b61012082015261014060208201525f61140961014083018d8f611289565b828103604084015261141c818c8e611289565b9050896060840152828103608084015261143781898b611289565b905082810360a084015261144c818789611289565b60c0840195909552505060e001529998505050505050505050565b6101008152600c6101008201526b191958d85a5cdcd95b595b9d60a21b61012082015261014060208201525f61140961014083018d8f611289565b6101008152600d6101008201526c1c995b589bdd5c9cd95b595b9d609a1b61012082015261014060208201525f61140961014083018d8f611289565b60c08152600f60c08201526e726574726169745f70726f706f736560881b60e08201525f6101008060208401526113548184018b8d611289565b6101008152600a6101008201526931b7ba34b9b0ba34b7b760b11b61012082015261014060208201525f61140961014083018d8f611289565b610100815260056101008201526419195c1bdd60da1b61012082015261014060208201525f61140961014083018d8f611289565b600181811c9082168061159957607f821691505b6020821081036115b757634e487b7160e01b5f52602260045260245ffd5b50919050565b60c08152600860c08201526731b932b0ba34b7b760c11b60e08201525f6101008060208401526113548184018b8d611289565b61010081526004610100820152631c1c995d60e21b61012082015261014060208201525f61140961014083018d8f611289565b60c08152600d60c08201526c73636f72655f6d6f646966696560981b60e08201525f6101008060208401526113548184018b8d611289565b6101008152600f6101008201526e39bcb731b43937b734b9b0ba34b7b760891b61012082015261014060208201525f61140961014083018d8f611289565b6101008152600661010082015265185c1c1bdc9d60d21b61012082015261014060208201525f61140961014083018d8f611289565b60c08152600460c082015263766f746560e01b60e08201525f6101008060208401526113548184018b8d611289565b610100815260086101008201526770656e616c69746560c01b61012082015261014060208201525f61140961014083018d8f611289565b61010081526007610100820152661c995d1c985a5d60ca1b61012082015261014060208201525f61140961014083018d8f611289565b60c08152600960c082015268766f74655f636c6f7360b81b60e08201525f6101008060208401526113548184018b8d61128956feb797f5a1c298e9fa465cc27d238378a854bac85755795e076f88e9417977c2712f03445ddef18283f6e86f77b12ac2062698069b0fc835265fd66dfc27bac473f0c94a9cb604f1f3df367f16e0972fe815912af7e137fc0749c8194084751f3ea2646970667358221220cf2c18587a8cdbe22e9e68e7085fea7b717d18183fd32933126f23f442e5c5f464736f6c63430008140033";
+
+async function actionDeployV4(env: Record<string, string>): Promise<Record<string, unknown>> {
+  const rpcUrl   = env.ALCHEMY_POLYGON_AMOY_URL || RPC_FALLBACK;
+  const privKey  = env.MASTER_WALLET_PRIVATE_KEY || "";
+  const fromAddr = env.MASTER_WALLET_ADDRESS || "";
+
+  if (!privKey || !fromAddr) {
+    return { ok: false, erreur: "MASTER_WALLET secrets manquants" };
+  }
+
+  try {
+    // Nonce
+    const nonce = parseInt(
+      await rpcCall(rpcUrl, "eth_getTransactionCount", [fromAddr, "latest"]) as string, 16
+    );
+
+    // Gas price +20%
+    const gasPriceHex = await rpcCall(rpcUrl, "eth_gasPrice", []) as string;
+    const gasPrice = BigInt(gasPriceHex) * 120n / 100n;
+
+    // Gas limit estimation pour déploiement (pas de `to`)
+    let gasLimit = 3_000_000n; // valeur par défaut généreuse pour déploiement
+    try {
+      const gasEst = await rpcCall(rpcUrl, "eth_estimateGas", [{
+        from: fromAddr,
+        data: TONTINE_VAULT_V4_BYTECODE,
+      }]) as string;
+      gasLimit = BigInt(gasEst) * 130n / 100n;
+      console.log(`[deploy_v4] Gas estimé: ${gasEst} → limite: ${gasLimit}`);
+    } catch (e) {
+      console.warn(`[deploy_v4] Gas estimation échouée, utilisation du défaut 3M: ${e}`);
+    }
+
+    // Signer la TX de déploiement (to = "" = création de contrat)
+    const rawTx = await signTransaction({
+      to      : "",  // ← création de contrat
+      data    : TONTINE_VAULT_V4_BYTECODE,
+      nonce,
+      gasPrice,
+      gasLimit,
+      chainId : CHAIN_ID,
+      privKey,
+    });
+
+    // Broadcast via Ankr (accepte les writes depuis Supabase)
+    const broadcastUrls = [ANKR_RPC, ...RPC_BROADCAST_FALLBACKS];
+    let txHash = "";
+    let broadcastError = "";
+
+    for (const url of broadcastUrls) {
+      try {
+        console.log(`[deploy_v4] Broadcast via ${url}`);
+        const result = await rpcCall(url, "eth_sendRawTransaction", [rawTx]) as string;
+        if (result && result.startsWith("0x") && result.length === 66) {
+          txHash = result;
+          console.log(`[deploy_v4] ✅ TX envoyée: ${txHash}`);
+          break;
+        }
+      } catch (e) {
+        broadcastError = String(e);
+        console.warn(`[deploy_v4] Broadcast échoué sur ${url}: ${e}`);
+      }
+    }
+
+    if (!txHash) {
+      return { ok: false, erreur: `Broadcast échoué: ${broadcastError}` };
+    }
+
+    // Attendre le receipt (déploiement — on attend jusqu'à 30s max)
+    let contractAddress = "";
+    for (let i = 0; i < 10; i++) {
+      await new Promise(r => setTimeout(r, 3000));
+      try {
+        const receipt = await rpcCall(rpcUrl, "eth_getTransactionReceipt", [txHash]) as Record<string, string> | null;
+        if (receipt && receipt.contractAddress) {
+          contractAddress = receipt.contractAddress;
+          console.log(`[deploy_v4] ✅ Contrat déployé à: ${contractAddress}`);
+          break;
+        }
+      } catch (_) { /* pas encore miné */ }
+      console.log(`[deploy_v4] Attente confirmation... (${i+1}/10)`);
+    }
+
+    return {
+      ok              : true,
+      tx_hash         : txHash,
+      contract_address: contractAddress || "(en attente — vérifier le tx_hash sur PolygonScan)",
+      explorer_tx     : `${EXPLORER_BASE}/tx/${txHash}`,
+      explorer_contract: contractAddress ? `${EXPLORER_BASE}/address/${contractAddress}` : "",
+      note            : contractAddress
+        ? "✅ TontineVaultV4 déployé! Mettre TONTINE_CONTRACT_ADDRESS dans les secrets Supabase."
+        : "⏳ TX broadcastée — vérifier PolygonScan pour l'adresse du contrat.",
+    };
+
+  } catch (err) {
+    console.error(`[deploy_v4] Erreur: ${err}`);
+    return { ok: false, erreur: String(err) };
+  }
+}
+
 // ── Main handler ───────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -1280,7 +1413,7 @@ Deno.serve(async (req) => {
   }
 
   // ── Identifiant de version déployée (pour vérifier que le bon code tourne)
-  const DEPLOYED_VERSION = "v10-membre-id-fix";
+  const DEPLOYED_VERSION = "v11-tontine-vault-v4";  // V4: montant+devise sur PolygonScan
 
   try {
     const env: Record<string, string> = {
@@ -1322,6 +1455,12 @@ Deno.serve(async (req) => {
         break;
       case "stats_soldes":
         result = await actionStatsSoldes(env);
+        break;
+      case "deploy_v4":
+        // 🚀 Déploie TontineVaultV4 sur Polygon Mainnet
+        // Utilise MASTER_WALLET_PRIVATE_KEY pour signer la TX de déploiement
+        // → Retourne l'adresse du nouveau contrat à mettre dans TONTINE_CONTRACT_ADDRESS
+        result = await actionDeployV4(env);
         break;
       case "debug_env":
         // Action de diagnostic : expose les longueurs des secrets (pas les valeurs)
