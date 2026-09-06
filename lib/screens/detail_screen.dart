@@ -2519,6 +2519,7 @@ class _BadgeBlockchainState extends State<_BadgeBlockchain> {
           codeTontine: widget.code,
           nomTontine : widget.nom,
           soldeCaisse: soldeCaisse,
+          devise     : tontineData?.devise,
         ),
       ),
     );
