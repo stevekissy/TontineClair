@@ -6,6 +6,7 @@
 
 import 'dart:convert';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -22,6 +23,7 @@ import 'score_membre_screen.dart';
 import 'classement_screen.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
+import '../services/email_service.dart' as email_svc;
 
 // ─── Constantes couleurs score ────────────────────────────────────────────────
 const _scoreExcellent = Color(0xFF2E7D5B); // ≥80
@@ -436,6 +438,327 @@ class _MembresScreenState extends State<MembresScreen> {
     );
   }
 
+  // ── Modal : Modifier l'e-mail d'un membre (gestionnaire uniquement) ────────
+  // Valide le PIN gestionnaire, met à jour data.membres[].email via
+  // ecrireTontineSansPIN, puis envoie un e-mail de confirmation au nouvel email.
+  void _afficherModalEmailMembre(
+    BuildContext ctx,
+    Membre membre,
+    TontineData data,
+    String code,
+  ) {
+    final emailCtrl = TextEditingController(
+      text: membre.email ?? '',
+    );
+    final pinCtrl = TextEditingController();
+    String? erreur;
+    bool saving = false;
+
+    showModalBottomSheet(
+      context: ctx,
+      isScrollControlled: true,
+      backgroundColor: AppColors.fondPapier,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (bCtx) => StatefulBuilder(
+        builder: (bCtx, setSt) {
+          Future<void> sauvegarder() async {
+            final nouvelEmail = emailCtrl.text.trim().toLowerCase();
+            final pin         = pinCtrl.text.trim();
+            final emailReg    = RegExp(r'^[\w.+\-]+@[\w\-]+\.[\w.]+$');
+
+            // ── Validations locales ──────────────────────────────────────
+            if (nouvelEmail.isEmpty) {
+              setSt(() => erreur = 'Saisissez un e-mail valide.');
+              return;
+            }
+            if (!emailReg.hasMatch(nouvelEmail)) {
+              setSt(() => erreur = 'Format invalide (ex: awa@gmail.com).');
+              return;
+            }
+            if (pin.length < 4) {
+              setSt(() => erreur = 'PIN gestionnaire requis (4 chiffres min.).');
+              return;
+            }
+
+            setSt(() { saving = true; erreur = null; });
+
+            try {
+              // ── Vérifier le PIN gestionnaire ─────────────────────────────
+              final provider = ctx.read<TontineProvider>();
+              final gestNom  = provider.gestActifNom ?? '';
+              final pinOk    = data.gestionnaires.any(
+                (g) => g.nom == gestNom && g.pin == pin,
+              );
+              if (!pinOk) {
+                setSt(() {
+                  saving = false;
+                  erreur = 'PIN gestionnaire incorrect.';
+                });
+                return;
+              }
+
+              // ── Mettre à jour data.membres[] en mémoire ──────────────────
+              final ancienEmail = membre.email ?? '';
+              final newMembres = data.membres.map((m) {
+                if (m.id == membre.id) {
+                  return Membre(
+                    id:                    m.id,
+                    nom:                   m.nom,
+                    tel:                   m.tel,
+                    role:                  m.role,
+                    email:                 nouvelEmail.isNotEmpty ? nouvelEmail : null,
+                    paye:                  m.paye,
+                    datePaiement:          m.datePaiement,
+                    methodePaiement:       m.methodePaiement,
+                    referencePaiement:     m.referencePaiement,
+                    score:                 m.score,
+                    pinVote:               m.pinVote,
+                    scoreOverride:         m.scoreOverride,
+                    motifOverride:         m.motifOverride,
+                    dateOverride:          m.dateOverride,
+                    adminOverride:         m.adminOverride,
+                    moyenPaiementCode:     m.moyenPaiementCode,
+                    coordonneesPaiement:   m.coordonneesPaiement,
+                    operateur:             m.operateur,
+                    numeroBenef:           m.numeroBenef,
+                    validePar:             m.validePar,
+                    paiementStatut:        m.paiementStatut,
+                    paiementDeclareParGest: m.paiementDeclareParGest,
+                    photoPreuveBase64:     m.photoPreuveBase64,
+                  );
+                }
+                return m;
+              }).toList();
+
+              final newData = data.toJson();
+              newData['membres'] = newMembres.map((m) => m.toJson()).toList();
+
+              // ── Écrire dans Supabase ──────────────────────────────────────
+              await SupabaseService.ecrireTontineSansPIN(
+                code: code,
+                data: newData,
+              );
+
+              // ── Recharger les données locales ────────────────────────────
+              await provider.chargerTontine(code, silencieux: true);
+
+              // ── Fermer le modal ──────────────────────────────────────────
+              if (bCtx.mounted) Navigator.of(bCtx).pop();
+
+              // ── Toast de confirmation ─────────────────────────────────────
+              if (ctx.mounted) {
+                afficherToast(ctx, '✅ E-mail de ${membre.nom} mis à jour !');
+              }
+
+              // ── Envoyer e-mail de confirmation au NOUVEL email ─────────
+              // Non-bloquant (fire-and-forget)
+              final d = DateTime.now();
+              final dateStr =
+                  '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}'
+                  ' à ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+
+              final msgHtml = ancienEmail.isNotEmpty
+                  ? 'Votre adresse e-mail dans la tontine <strong>${data.nom}</strong> '
+                    'a été mise à jour le $dateStr.<br><br>'
+                    'Ancien e-mail : <strong>$ancienEmail</strong><br>'
+                    'Nouvel e-mail : <strong>$nouvelEmail</strong><br><br>'
+                    'Vous recevrez désormais toutes les notifications de mouvement '
+                    'à cette adresse.'
+                  : 'Votre adresse e-mail a été enregistrée dans la tontine '
+                    '<strong>${data.nom}</strong> le $dateStr.<br><br>'
+                    'E-mail : <strong>$nouvelEmail</strong><br><br>'
+                    'Vous recevrez désormais toutes les notifications de mouvement '
+                    'à cette adresse.';
+
+              email_svc.EmailService.envoyerAlerteSecurite(
+                destinataire: nouvelEmail,
+                nom:          membre.nom,
+                action:       '✅ Votre e-mail TontineClair a été enregistré',
+                message:      msgHtml,
+                tontine:      data.nom,
+                tontineCode:  code,
+                gestNom:      gestNom,
+              ).then((r) {
+                if (r.ok) {
+                  if (kDebugMode) debugPrint('[EmailMembre] ✓ Confirmation envoyée à $nouvelEmail');
+                } else {
+                  if (kDebugMode) debugPrint('[EmailMembre] ✗ Échec : ${r.erreur}');
+                }
+              }).catchError((Object e) {
+                if (kDebugMode) debugPrint('[EmailMembre] ✗ Exception : $e');
+              });
+
+            } catch (e) {
+              setSt(() {
+                saving = false;
+                erreur = 'Erreur : $e';
+              });
+            }
+          }
+
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 20, right: 20, top: 20,
+              bottom: MediaQuery.of(bCtx).viewInsets.bottom + 24,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── En-tête ──────────────────────────────────────────────
+                Row(
+                  children: [
+                    Container(
+                      width: 40, height: 40,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1C2447).withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Center(
+                        child: Text('📧', style: TextStyle(fontSize: 18)),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'E-mail de ${membre.nom}',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                              color: AppColors.encre,
+                            ),
+                          ),
+                          Text(
+                            'Notifications en temps réel',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: AppColors.texteDoux,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+
+                // ── Champ e-mail ──────────────────────────────────────────
+                Text(
+                  'Adresse e-mail du membre',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    color: AppColors.encre,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: emailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: 'ex : awa@gmail.com',
+                    prefixIcon: const Icon(
+                      Icons.email_outlined,
+                      size: 18,
+                      color: AppColors.texteDoux,
+                    ),
+                    errorText: erreur != null &&
+                            !erreur!.contains('PIN')
+                        ? erreur
+                        : null,
+                  ),
+                  onChanged: (_) => setSt(() => erreur = null),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '📬 Ce membre recevra un e-mail de confirmation après la mise à jour.',
+                  style: GoogleFonts.inter(
+                    fontSize: 11.5,
+                    color: AppColors.texteDoux,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // ── PIN gestionnaire ──────────────────────────────────────
+                Text(
+                  'PIN gestionnaire (confirmation)',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    color: AppColors.encre,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: pinCtrl,
+                  obscureText: true,
+                  keyboardType: TextInputType.number,
+                  maxLength: 6,
+                  decoration: InputDecoration(
+                    hintText: 'PIN gestionnaire',
+                    counterText: '',
+                    prefixIcon: const Icon(
+                      Icons.lock_outline,
+                      size: 18,
+                      color: AppColors.texteDoux,
+                    ),
+                    errorText: erreur != null &&
+                            erreur!.contains('PIN')
+                        ? erreur
+                        : null,
+                  ),
+                  onChanged: (_) => setSt(() => erreur = null),
+                ),
+                const SizedBox(height: 20),
+
+                // ── Bouton sauvegarder ────────────────────────────────────
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: saving ? null : sauvegarder,
+                    icon: saving
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.save_outlined,
+                            size: 16, color: Colors.white),
+                    label: Text(
+                      saving ? 'Enregistrement…' : 'Enregistrer l\'e-mail',
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: Colors.white,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.encre,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   // ── Modal : Changer mon PIN (membre) ──────────────────────────────────────
   void _afficherChangerPin(BuildContext ctx, TontineData data) {
     String? membreSelectionne;
@@ -794,6 +1117,14 @@ class _MembresScreenState extends State<MembresScreen> {
                                       ),
                                     ),
                                   ),
+                                  onModifierEmail: estGest
+                                      ? () => _afficherModalEmailMembre(
+                                            context,
+                                            m,
+                                            data,
+                                            widget.code,
+                                          )
+                                      : null,
                                 );
                               }),
 
@@ -872,6 +1203,7 @@ class _CarteMembre extends StatefulWidget {
   final VoidCallback? onAttribuerPin;
   final VoidCallback? onEnvoyerWhatsApp;
   final VoidCallback? onVoirScore;
+  final VoidCallback? onModifierEmail; // gestionnaire uniquement
 
   const _CarteMembre({
     required this.membre,
@@ -886,6 +1218,7 @@ class _CarteMembre extends StatefulWidget {
     this.onAttribuerPin,
     this.onEnvoyerWhatsApp,
     this.onVoirScore,
+    this.onModifierEmail,
   });
 
   @override
@@ -1330,6 +1663,66 @@ class _CarteMembreState extends State<_CarteMembre> {
                             ),
                           ),
                         ],
+                        // ── E-mail membre (Premium) ─────────────────────────
+                        const SizedBox(height: 10),
+                        const Divider(height: 1, color: AppColors.lignes),
+                        const SizedBox(height: 10),
+                        // Affichage de l'email actuel
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.email_outlined,
+                              size: 14,
+                              color: AppColors.texteDoux,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                m.email != null && m.email!.isNotEmpty
+                                    ? m.email!
+                                    : 'Aucun e-mail enregistré',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12.5,
+                                  color: m.email != null && m.email!.isNotEmpty
+                                      ? AppColors.encre
+                                      : AppColors.texteDoux,
+                                  fontStyle: m.email == null || m.email!.isEmpty
+                                      ? FontStyle.italic
+                                      : FontStyle.normal,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: widget.onModifierEmail,
+                            icon: const Icon(
+                              Icons.edit_outlined,
+                              size: 15,
+                            ),
+                            label: Text(
+                              m.email != null && m.email!.isNotEmpty
+                                  ? 'Modifier l\'e-mail'
+                                  : 'Ajouter un e-mail',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13.5,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.encre,
+                              side: const BorderSide(color: AppColors.encreDoux),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                          ),
+                        ),
                         // ── Mobile Money (Premium) ──────────────────────────
                         const SizedBox(height: 12),
                         const Divider(height: 1, color: AppColors.lignes),
