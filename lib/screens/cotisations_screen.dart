@@ -913,6 +913,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
   // ── Annuler une cotisation (gestionnaire uniquement) ────────────────────────
   /// Fonctionne sur statut 'en_attente' ET 'approuve'.
   /// Si approuvée : contre-passe la caisse.
+  /// Exige une raison obligatoire avant la saisie du PIN.
   Future<void> _annulerCotisation(
     BuildContext context,
     TontineProvider provider,
@@ -928,6 +929,90 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
 
     String refAnnulCapture = '';
 
+    // ── Étape 1 : saisie obligatoire de la raison d'annulation ──────────────
+    final raisonCtrl = TextEditingController();
+    final raison = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.fondPapier,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Row(
+          children: [
+            Icon(Icons.cancel_outlined, color: AppColors.alerte, size: 22),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Raison de l\'annulation',
+                style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.encre, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Cotisation de ${membre.nom} — Tour ${data.numerTour}',
+              style: TextStyle(color: AppColors.texte, fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: raisonCtrl,
+              autofocus: true,
+              maxLines: 3,
+              maxLength: 200,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: InputDecoration(
+                hintText: 'Ex : Erreur de saisie, paiement non reçu...',
+                hintStyle: TextStyle(color: AppColors.texte.withValues(alpha: 0.4), fontSize: 13),
+                filled: true,
+                fillColor: AppColors.fondSecondaire,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: AppColors.alerte, width: 1.5),
+                ),
+                counterStyle: TextStyle(color: AppColors.texte.withValues(alpha: 0.5), fontSize: 11),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Annuler', style: TextStyle(color: AppColors.texte)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.alerte,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () {
+              final val = raisonCtrl.text.trim();
+              if (val.isEmpty) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  SnackBar(content: const Text('La raison est obligatoire.'),
+                      backgroundColor: AppColors.alerte),
+                );
+                return;
+              }
+              Navigator.pop(ctx, val);
+            },
+            child: const Text('Continuer'),
+          ),
+        ],
+      ),
+    );
+    raisonCtrl.dispose();
+    if (raison == null || raison.isEmpty) return; // Utilisateur a annulé
+
+    // ── Étape 2 : modale PIN habituelle ─────────────────────────────────────
     final ok = await afficherModalePin(
       context,
       titre: 'Annuler la cotisation',
@@ -940,6 +1025,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
         (label: 'Statut',   valeur: estApprouve ? 'Approuvée ↩ contre-passée' : 'En attente'),
         (label: 'Réf.',     valeur: refOrig),
         (label: 'Tour',     valeur: 'N° ${data.numerTour}'),
+        (label: 'Raison',   valeur: raison),
       ],
       onValider: (pin) async {
         final newData = data.toJson();
@@ -983,7 +1069,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
             'id'          : 'ANNUL_${refOrig}_C',
             'type'        : 'depense',
             'montant'     : -data.montant,
-            'description' : 'Annulation cotisation approuvée ${membre.nom} — Tour ${data.numerTour}',
+            'description' : 'Annulation cotisation approuvée ${membre.nom} — Tour ${data.numerTour} — Raison : $raison',
             'gestionnaire': provider.gestActifNom ?? '',
             'date'        : nowStr,
             'reference'   : refAnnul,
@@ -998,7 +1084,7 @@ class _CotisationsScreenState extends State<CotisationsScreen> {
           (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
         );
         journal.insert(0, {
-          'quoi'       : 'ANNULATION_COTISATION — ${membre.nom} — Tour ${data.numerTour} — Réf: $refOrig — Par: ${provider.gestActifNom}${estApprouve ? ' (caisse contre-passée)' : ' (en attente annulée)'}',
+          'quoi'       : 'ANNULATION_COTISATION — ${membre.nom} — Tour ${data.numerTour} — Réf: $refOrig — Par: ${provider.gestActifNom}${estApprouve ? ' (caisse contre-passée)' : ' (en attente annulée)'} — Raison : $raison',
           'gestionnaire': provider.gestActifNom ?? '',
           'quand'      : nowStr,
           'reference'  : refAnnulCapture,

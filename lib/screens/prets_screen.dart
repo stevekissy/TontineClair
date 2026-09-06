@@ -966,7 +966,90 @@ class _CartePret extends StatelessWidget {
     BuildContext context,
     Remboursement remb,
   ) async {
-    // ── Annulation autorisée ─────────────────────────────────────────────────
+    // ── Étape 1 : saisie obligatoire de la raison d'annulation ──────────────
+    final raisonCtrl = TextEditingController();
+    final raison = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.fondPapier,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Row(
+          children: [
+            Icon(Icons.cancel_outlined, color: AppColors.alerte, size: 22),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Raison de l\'annulation',
+                style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.encre, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Remboursement de ${pret.emprunteurNom} — ${Formatters.montant(remb.montant, devise: data.devise)}',
+              style: TextStyle(color: AppColors.texte, fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: raisonCtrl,
+              autofocus: true,
+              maxLines: 3,
+              maxLength: 200,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: InputDecoration(
+                hintText: 'Ex : Erreur de montant, doublon de saisie...',
+                hintStyle: TextStyle(color: AppColors.texte.withValues(alpha: 0.4), fontSize: 13),
+                filled: true,
+                fillColor: AppColors.fondSecondaire,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: AppColors.alerte, width: 1.5),
+                ),
+                counterStyle: TextStyle(color: AppColors.texte.withValues(alpha: 0.5), fontSize: 11),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Annuler', style: TextStyle(color: AppColors.texte)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.alerte,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () {
+              final val = raisonCtrl.text.trim();
+              if (val.isEmpty) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  SnackBar(content: const Text('La raison est obligatoire.'),
+                      backgroundColor: AppColors.alerte),
+                );
+                return;
+              }
+              Navigator.pop(ctx, val);
+            },
+            child: const Text('Continuer'),
+          ),
+        ],
+      ),
+    );
+    raisonCtrl.dispose();
+    if (raison == null || raison.isEmpty) return; // Utilisateur a annulé
+
+    // ── Étape 2 : modale PIN habituelle ─────────────────────────────────────
     final ok = await afficherModalePin(
       context,
       titre: 'Annuler ce remboursement',
@@ -976,6 +1059,7 @@ class _CartePret extends StatelessWidget {
         (label: 'Montant annulé', valeur: Formatters.montant(remb.montant, devise: data.devise)),
         (label: 'Date initiale', valeur: Formatters.dateFormatee(DateTime.tryParse(remb.date))),
         (label: 'Réf.', valeur: remb.reference),
+        (label: 'Raison', valeur: raison),
       ],
       labelValider: 'Confirmer l\'annulation',
       onValider: (pin) async {
@@ -1039,7 +1123,7 @@ class _CartePret extends StatelessWidget {
           'id': '${ref}A',
           'type': 'depense',
           'montant': remb.montant,
-          'description': 'Annulation remb. ${pret.emprunteurNom} (réf. ${remb.reference})',
+          'description': 'Annulation remb. ${pret.emprunteurNom} (réf. ${remb.reference}) — Raison : $raison',
           'gestionnaire': provider.gestActifNom ?? '',
           'date': now,
           'reference': ref,
@@ -1051,7 +1135,7 @@ class _CartePret extends StatelessWidget {
           (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
         );
         journal.insert(0, {
-          'quoi': 'ANNULATION REMBOURSEMENT — ${pret.emprunteurNom} — ${Formatters.montant(remb.montant, devise: data.devise)} — Réf: ${remb.reference}',
+          'quoi': 'ANNULATION REMBOURSEMENT — ${pret.emprunteurNom} — ${Formatters.montant(remb.montant, devise: data.devise)} — Réf: ${remb.reference} — Raison : $raison',
           'gestionnaire': provider.gestActifNom ?? '',
           'quand': now,
           'reference': ref,

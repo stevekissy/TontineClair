@@ -6,7 +6,7 @@
 // Partageable via share_plus.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, compute;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
@@ -19,6 +19,404 @@ import 'dart:io' if (dart.library.html) 'dart:io';
 import '../services/blockchain_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/formatters.dart';
+
+// ── Paramètres sérialisables pour compute() ───────────────────────────────
+// compute() transfère les données dans un isolate Dart séparé ; seuls les
+// types primitifs + Dart purs sont autorisés (pas de BuildContext, pas de
+// fonctions fermées). Cette classe encapsule tout ce qu'il faut au PDF.
+class _CertificatParams {
+  final List<BlockchainEntry> entrees;
+  final Map<String, dynamic> contrat;
+  final String codeTontine;
+  final String nomTontine;
+  final String? membreNom;
+  final int maxEntrees;
+
+  const _CertificatParams({
+    required this.entrees,
+    required this.contrat,
+    required this.codeTontine,
+    required this.nomTontine,
+    required this.membreNom,
+    required this.maxEntrees,
+  });
+}
+
+// Fonction top-level compatible compute() — génère les bytes PDF dans un isolate
+Future<Uint8List> _genererCertificatBytes(_CertificatParams p) async {
+  // Charger polices avec timeout 8 s → fallback Helvetica si réseau lent
+  Future<({pw.Font regular, pw.Font bold})> chargerPolicesIsolate() async {
+    try {
+      final results = await Future.wait([
+        PdfGoogleFonts.notoSansRegular(),
+        PdfGoogleFonts.notoSansBold(),
+      ]).timeout(const Duration(seconds: 8));
+      return (regular: results[0], bold: results[1]);
+    } catch (_) {
+      return (regular: pw.Font.helvetica(), bold: pw.Font.helveticaBold());
+    }
+  }
+  final polices  = await chargerPolicesIsolate();
+  final fontReg  = polices.regular;
+  final fontBold = polices.bold;
+  final doc  = pw.Document();
+  final now  = DateTime.now();
+  final phase = (p.contrat['phase'] as num?)?.toInt() ?? 1;
+  final contratAddr = p.contrat['contract_address'] as String?
+      ?? p.contrat['address'] as String?;
+
+  // Filtrer par membre si demandé
+  final entreesFiltrees = p.membreNom != null
+      ? p.entrees.where((e) =>
+            e.membreNom?.toLowerCase() == p.membreNom!.toLowerCase() ||
+            e.membreId?.toLowerCase() == p.membreNom!.toLowerCase())
+          .toList()
+      : p.entrees;
+
+  // Sécurité finale : cap strict à maxEntrees lignes dans le PDF
+  final entreedPdf = entreesFiltrees.length > p.maxEntrees
+      ? entreesFiltrees.sublist(entreesFiltrees.length - p.maxEntrees)
+      : entreesFiltrees;
+  final tronque = entreesFiltrees.length > p.maxEntrees;
+  final totalReel = entreesFiltrees.length;
+
+  // Comptage on-chain
+  int computeCountOnChain(List<BlockchainEntry> lst, int ph) {
+    if (ph == 2) return lst.where((e) => e.txHash != null && e.txHash!.length == 66).length;
+    return lst.where((e) => e.txHash != null && e.txHash!.isNotEmpty).length;
+  }
+
+  final countOnChain = computeCountOnChain(entreesFiltrees, phase);
+  final totalXof = entreesFiltrees
+      .where((e) => e.montantXof != null)
+      .fold(0, (s, e) => s + (e.montantXof ?? 0));
+  final deviseDetectee = entreesFiltrees
+      .map((e) => e.devise)
+      .firstWhere((d) => d.isNotEmpty, orElse: () => '');
+
+  final numCert = 'TC-${p.codeTontine}-${now.millisecondsSinceEpoch ~/ 1000}';
+
+  // ── Helpers locaux (même logique que la classe mais top-level) ────────────
+  String pdfSafe(String texte) => texte
+      .replaceAll('\u2026', '...')
+      .replaceAll('\u2019', "'")
+      .replaceAll('\u2018', "'")
+      .replaceAll('\u201C', '"')
+      .replaceAll('\u201D', '"')
+      .replaceAll('\u202F', ' ')
+      .replaceAll('\u00B7', '.')
+      .replaceAll('\u2013', '-')
+      .replaceAll('\u2014', '-')
+      .replaceAll('✓', 'OK')
+      .replaceAll('✗', 'X')
+      .replaceAll('❓', '?')
+      .replaceAll('❌', '[retire]')
+      .replaceAll('✅', '[OK]')
+      .split('').where((ch) => ch.codeUnitAt(0) <= 0x024F).join();
+
+  String fmtDate(DateTime dt) =>
+      '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+
+  const pdfEncre  = PdfColor.fromInt(0xFF1C2447);
+  const pdfOr     = PdfColor.fromInt(0xFFD99A2B);
+  const pdfGris   = PdfColor.fromInt(0xFFF7F7F4);
+  const pdfLignes = PdfColor.fromInt(0xFFE4E1D6);
+  const pdfTexte  = PdfColor.fromInt(0xFF26251F);
+  const pdfDoux   = PdfColor.fromInt(0xFF6E6C60);
+  const pdfChain  = PdfColor.fromInt(0xFF00C853);
+
+  pw.Widget cellHeader(String text) => pw.Padding(
+        padding: const pw.EdgeInsets.all(6),
+        child: pw.Text(text,
+            style: pw.TextStyle(font: fontBold, fontSize: 8,
+                fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
+      );
+
+  pw.Widget cell(String text, {bool gras = false, PdfColor? couleur, bool mono = false}) =>
+      pw.Padding(
+        padding: const pw.EdgeInsets.all(5),
+        child: pw.Text(text,
+            style: pw.TextStyle(
+              font: gras ? fontBold : fontReg,
+              fontSize: 7,
+              fontWeight: gras ? pw.FontWeight.bold : pw.FontWeight.normal,
+              color: couleur ?? pdfTexte,
+            )),
+      );
+
+  String montantFmt(int? xof, String devise) {
+    if (xof == null) return '-';
+    return Formatters.montant(xof, devise: devise.isNotEmpty ? devise : null);
+  }
+
+  doc.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.all(32),
+      // ── En-tête ─────────────────────────────────────────────────────
+      header: (ctx) => pw.Container(
+        decoration: const pw.BoxDecoration(
+          border: pw.Border(bottom: pw.BorderSide(color: pdfOr, width: 2)),
+        ),
+        padding: const pw.EdgeInsets.only(bottom: 8),
+        child: pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+              pw.Text('TontineClair',
+                  style: pw.TextStyle(font: fontBold, fontSize: 18, color: pdfEncre)),
+              pw.Text('Certificat Blockchain',
+                  style: pw.TextStyle(font: fontReg, fontSize: 10, color: pdfDoux)),
+            ]),
+            pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
+              pw.Text('N° $numCert',
+                  style: pw.TextStyle(font: fontReg, fontSize: 8, color: pdfDoux)),
+              pw.Text(
+                'Emis le ${fmtDate(now)} a ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}',
+                style: pw.TextStyle(font: fontReg, fontSize: 8, color: pdfDoux),
+              ),
+              pw.Container(
+                margin: const pw.EdgeInsets.only(top: 4),
+                padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: pw.BoxDecoration(
+                  color: phase == 2 ? pdfChain : pdfOr,
+                  borderRadius: pw.BorderRadius.circular(8),
+                ),
+                child: pw.Text(
+                  phase == 2 ? 'ON-CHAIN POLYGON MAINNET' : 'JOURNAL INTERNE',
+                  style: pw.TextStyle(font: fontBold, fontSize: 7,
+                      color: PdfColors.white, fontWeight: pw.FontWeight.bold),
+                ),
+              ),
+            ]),
+          ],
+        ),
+      ),
+      // ── Pied de page ────────────────────────────────────────────────
+      footer: (ctx) => pw.Container(
+        decoration: const pw.BoxDecoration(
+          border: pw.Border(top: pw.BorderSide(color: pdfLignes, width: 1)),
+        ),
+        padding: const pw.EdgeInsets.only(top: 6),
+        child: pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text('TontineClair - Certificat confidentiel - $numCert',
+                style: pw.TextStyle(font: fontReg, fontSize: 7, color: pdfDoux)),
+            pw.Text('Page ${ctx.pageNumber}/${ctx.pagesCount}',
+                style: pw.TextStyle(font: fontReg, fontSize: 7, color: pdfDoux)),
+          ],
+        ),
+      ),
+      build: (ctx) => [
+        // ── Titre ─────────────────────────────────────────────────────
+        pw.Container(
+          padding: const pw.EdgeInsets.all(20),
+          decoration: pw.BoxDecoration(
+            gradient: const pw.LinearGradient(
+              colors: [pdfEncre, PdfColor.fromInt(0xFF35407A)],
+            ),
+            borderRadius: pw.BorderRadius.circular(12),
+          ),
+          child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+            pw.Text(
+              p.membreNom != null
+                  ? 'CERTIFICAT DE PARTICIPATION'
+                  : 'CERTIFICAT DE TRANSPARENCE BLOCKCHAIN',
+              style: pw.TextStyle(font: fontBold, fontSize: 16,
+                  fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+            ),
+            pw.SizedBox(height: 4),
+            pw.Text(
+              p.membreNom != null
+                  ? 'Membre : ${pdfSafe(p.membreNom!)} - Tontine : ${pdfSafe(p.nomTontine)} (${p.codeTontine})'
+                  : 'Tontine : ${pdfSafe(p.nomTontine)} - Code : ${p.codeTontine}',
+              style: pw.TextStyle(font: fontReg, fontSize: 10, color: PdfColors.white),
+            ),
+            if (contratAddr != null) ...[
+              pw.SizedBox(height: 8),
+              pw.Text('Smart Contract : $contratAddr',
+                  style: pw.TextStyle(font: fontReg, fontSize: 8, color: PdfColors.white,
+                      fontStyle: pw.FontStyle.italic)),
+              pw.Text('Reseau : Polygon Mainnet (chainId 137) - TontineVault.sol v2.0.0',
+                  style: pw.TextStyle(font: fontReg, fontSize: 8, color: PdfColors.white)),
+            ],
+          ]),
+        ),
+        pw.SizedBox(height: 16),
+
+        // ── Métriques ──────────────────────────────────────────────────
+        pw.Row(children: [
+          pw.Expanded(child: pw.Container(
+            padding: const pw.EdgeInsets.all(10),
+            decoration: pw.BoxDecoration(color: pdfGris, borderRadius: pw.BorderRadius.circular(8),
+                border: pw.Border.all(color: pdfLignes)),
+            child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+              pw.Text('Code tontine', style: pw.TextStyle(font: fontReg, fontSize: 8, color: pdfDoux)),
+              pw.SizedBox(height: 4),
+              pw.Text(p.codeTontine, style: pw.TextStyle(font: fontBold, fontSize: 14,
+                  fontWeight: pw.FontWeight.bold, color: pdfEncre)),
+            ]),
+          )),
+          pw.SizedBox(width: 8),
+          pw.Expanded(child: pw.Container(
+            padding: const pw.EdgeInsets.all(10),
+            decoration: pw.BoxDecoration(color: pdfGris, borderRadius: pw.BorderRadius.circular(8),
+                border: pw.Border.all(color: pdfLignes)),
+            child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+              pw.Text(tronque ? 'Operations (${entreedPdf.length}/$totalReel)' : 'Total operations',
+                  style: pw.TextStyle(font: fontReg, fontSize: 8, color: pdfDoux)),
+              pw.SizedBox(height: 4),
+              pw.Text('${entreedPdf.length}', style: pw.TextStyle(font: fontBold, fontSize: 14,
+                  fontWeight: pw.FontWeight.bold, color: pdfEncre)),
+            ]),
+          )),
+          pw.SizedBox(width: 8),
+          pw.Expanded(child: pw.Container(
+            padding: const pw.EdgeInsets.all(10),
+            decoration: pw.BoxDecoration(color: pdfGris, borderRadius: pw.BorderRadius.circular(8),
+                border: pw.Border.all(color: pdfLignes)),
+            child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+              pw.Text(phase == 2 ? 'On-chain' : 'Proof SHA-256',
+                  style: pw.TextStyle(font: fontReg, fontSize: 8, color: pdfDoux)),
+              pw.SizedBox(height: 4),
+              pw.Text(phase == 2 ? '$countOnChain' : '${entreedPdf.length}',
+                  style: pw.TextStyle(font: fontBold, fontSize: 14,
+                      fontWeight: pw.FontWeight.bold, color: phase == 2 ? pdfChain : pdfOr)),
+            ]),
+          )),
+          pw.SizedBox(width: 8),
+          pw.Expanded(child: pw.Container(
+            padding: const pw.EdgeInsets.all(10),
+            decoration: pw.BoxDecoration(color: pdfGris, borderRadius: pw.BorderRadius.circular(8),
+                border: pw.Border.all(color: pdfLignes)),
+            child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+              pw.Text(deviseDetectee.isNotEmpty ? 'Volume $deviseDetectee' : 'Volume',
+                  style: pw.TextStyle(font: fontReg, fontSize: 8, color: pdfDoux)),
+              pw.SizedBox(height: 4),
+              pw.Text(montantFmt(totalXof, deviseDetectee),
+                  style: pw.TextStyle(font: fontBold, fontSize: 12,
+                      fontWeight: pw.FontWeight.bold, color: pdfEncre)),
+            ]),
+          )),
+        ]),
+        pw.SizedBox(height: 16),
+
+        // ── Avertissement troncature ──────────────────────────────────
+        if (tronque) ...[
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: pw.BoxDecoration(
+              color: PdfColor.fromInt(0xFFFFF8E1),
+              borderRadius: pw.BorderRadius.circular(6),
+              border: pw.Border.all(color: pdfOr, width: 0.8),
+            ),
+            child: pw.Text(
+              'Document tronque : ${entreedPdf.length} operations les plus recentes sur $totalReel au total. '
+              'Toutes les operations sont enregistrees dans TontineClair.',
+              style: pw.TextStyle(font: fontReg, fontSize: 8, color: PdfColor.fromInt(0xFF7B5800)),
+            ),
+          ),
+          pw.SizedBox(height: 12),
+        ],
+
+        // ── Tableau des opérations ─────────────────────────────────────
+        pw.Text('Journal des operations blockchain',
+            style: pw.TextStyle(font: fontBold, fontSize: 12,
+                fontWeight: pw.FontWeight.bold, color: pdfEncre)),
+        pw.SizedBox(height: 8),
+        if (entreedPdf.isEmpty)
+          pw.Text('Aucune operation trouvee.',
+              style: pw.TextStyle(font: fontReg, fontSize: 10, color: pdfDoux))
+        else
+          pw.Table(
+            border: pw.TableBorder.all(color: pdfLignes, width: 0.5),
+            columnWidths: {
+              0: const pw.FlexColumnWidth(1.4),
+              1: const pw.FlexColumnWidth(1.6),
+              2: const pw.FlexColumnWidth(2.2),
+              3: const pw.FlexColumnWidth(1.2),
+              4: const pw.FlexColumnWidth(2.6),
+            },
+            children: [
+              pw.TableRow(
+                decoration: const pw.BoxDecoration(color: pdfEncre),
+                children: [
+                  cellHeader('Date'),
+                  cellHeader('Type'),
+                  cellHeader('Description'),
+                  cellHeader('Montant'),
+                  cellHeader('TX Hash / Proof'),
+                ],
+              ),
+              ...entreedPdf.asMap().entries.map((entry) {
+                final i = entry.key;
+                final e = entry.value;
+                final estOnChain = phase == 2 && e.txHash != null && e.txHash!.length == 66;
+                final bg = i.isEven ? PdfColors.white : pdfGris;
+                String txLabel = '-';
+                if (e.txHash != null) {
+                  final hash = e.txHash!;
+                  final court = hash.length > 16 ? '${hash.substring(0, 8)}...${hash.substring(hash.length - 6)}' : hash;
+                  txLabel = pdfSafe(estOnChain ? court : 'SHA-256:$court');
+                }
+                return pw.TableRow(
+                  decoration: pw.BoxDecoration(color: bg),
+                  children: [
+                    cell(fmtDate(e.createdAt)),
+                    cell(pdfSafe(e.typeLabel), gras: true,
+                        couleur: estOnChain ? pdfChain : pdfEncre),
+                    cell(pdfSafe(e.descriptionMetier)),
+                    cell(montantFmt(e.montantXof, e.devise)),
+                    cell(txLabel, couleur: estOnChain ? pdfChain : pdfDoux),
+                  ],
+                );
+              }),
+            ],
+          ),
+        pw.SizedBox(height: 20),
+
+        // ── Section vérification ───────────────────────────────────────
+        pw.Container(
+          padding: const pw.EdgeInsets.all(14),
+          decoration: pw.BoxDecoration(
+            color: pdfGris,
+            borderRadius: pw.BorderRadius.circular(8),
+            border: pw.Border.all(color: pdfOr, width: 1),
+          ),
+          child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+            pw.Text('Comment verifier ce certificat',
+                style: pw.TextStyle(font: fontBold, fontSize: 10,
+                    fontWeight: pw.FontWeight.bold, color: pdfEncre)),
+            pw.SizedBox(height: 8),
+            pw.Text(
+              phase == 2
+                  ? '1. Ouvrez TontineClair > Verifier blockchain\n'
+                    '2. Saisissez le code : ${p.codeTontine}\n'
+                    '3. Chaque TX hash est verifiable sur https://polygonscan.com\n'
+                    '${contratAddr != null ? "4. Smart Contract : https://polygonscan.com/address/$contratAddr" : ""}'
+                  : '1. Ouvrez TontineClair > Verifier blockchain\n'
+                    '2. Saisissez le code : ${p.codeTontine}\n'
+                    '3. Les preuves SHA-256 garantissent l\'integrite des donnees.\n'
+                    '4. La verification on-chain est disponible via Polygon Mainnet.',
+              style: pw.TextStyle(font: fontReg, fontSize: 8, color: pdfTexte, lineSpacing: 3),
+            ),
+            pw.SizedBox(height: 8),
+            pw.Text(
+              'Certificat N. $numCert - Document genere automatiquement par TontineClair - Non modifiable',
+              style: pw.TextStyle(font: fontReg, fontSize: 7, color: pdfDoux,
+                  fontStyle: pw.FontStyle.italic),
+            ),
+          ]),
+        ),
+      ],
+    ),
+  );
+
+  return Uint8List.fromList(await doc.save());
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 class CertificatBlockchainScreen extends StatefulWidget {
   final String codeTontine;
@@ -45,20 +443,15 @@ class _CertificatBlockchainScreenState
   bool _generating = false;
   String? _erreur;
 
-  // Couleurs PDF
-  static const _pdfEncre    = PdfColor.fromInt(0xFF1C2447);
-  static const _pdfOr       = PdfColor.fromInt(0xFFD99A2B);
-  static const _pdfGris     = PdfColor.fromInt(0xFFF7F7F4);
-  static const _pdfLignes   = PdfColor.fromInt(0xFFE4E1D6);
-  static const _pdfTexte    = PdfColor.fromInt(0xFF26251F);
-  static const _pdfDoux     = PdfColor.fromInt(0xFF6E6C60);
-  static const _pdfChain    = PdfColor.fromInt(0xFF00C853);
-
   @override
   void initState() {
     super.initState();
     _charger();
   }
+
+  // Limite d'entrées chargées : évite l'OOM sur tontines très actives.
+  // Le certificat PDF affiche au maximum _kMaxEntrees lignes dans le tableau.
+  static const int _kMaxEntrees = 150;
 
   Future<void> _charger() async {
     setState(() { _loading = true; _erreur = null; });
@@ -66,7 +459,7 @@ class _CertificatBlockchainScreenState
       final results = await Future.wait([
         BlockchainService.lireJournal(
           tontineCode: widget.codeTontine,
-          limit: 200,
+          limit: _kMaxEntrees,   // on ne charge que ce qu'on affichera
         ),
         BlockchainService.contractInfo(),
       ]);
@@ -74,27 +467,21 @@ class _CertificatBlockchainScreenState
       // Garde client : seules les entrées de cette tontine sont conservées
       final codeCible = widget.codeTontine.trim().toUpperCase();
       final toutesEntrees = results[0] as List<BlockchainEntry>;
+      final filtrees = toutesEntrees
+          .where((e) => e.tontineCode.trim().toUpperCase() == codeCible)
+          .toList();
+      // Sécurité supplémentaire : tronquer côté client si le service retourne plus
+      final entreesTronquees = filtrees.length > _kMaxEntrees
+          ? filtrees.sublist(filtrees.length - _kMaxEntrees)
+          : filtrees;
       setState(() {
-        _entrees = toutesEntrees
-            .where((e) => e.tontineCode.trim().toUpperCase() == codeCible)
-            .toList();
+        _entrees = entreesTronquees;
         _contrat = results[1] as Map<String, dynamic>;
         _loading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() { _loading = false; _erreur = 'Erreur: $e'; });
-    }
-  }
-
-  // ── Chargement polices PDF (NotoSans → Helvetica en fallback) ────────────
-  static Future<({pw.Font regular, pw.Font bold})> _chargerPolices() async {
-    try {
-      final regular = await PdfGoogleFonts.notoSansRegular();
-      final bold    = await PdfGoogleFonts.notoSansBold();
-      return (regular: regular, bold: bold);
-    } catch (_) {
-      return (regular: pw.Font.helvetica(), bold: pw.Font.helveticaBold());
     }
   }
 
@@ -114,455 +501,20 @@ class _CertificatBlockchainScreenState
     }
   }
 
-  // ── Génération PDF ─────────────────────────────────────────────────────────
+  // ── Génération PDF via isolate (compute) ──────────────────────────────────
+  // Déplacée dans la fonction top-level _genererCertificatBytes() pour que
+  // compute() puisse la sérialiser dans un isolate Dart séparé.
+  // → Plus de freeze UI / crash mémoire sur tontines avec de nombreuses TX.
   Future<Uint8List> _genererPdf() async {
-    // Charger les polices AVANT de construire le document
-    // (Helvetica intégrée ne supporte pas les accents UTF-8 → crash)
-    final polices  = await _chargerPolices();
-    final fontReg  = polices.regular;
-    final fontBold = polices.bold;
-
-    final doc = pw.Document();
-    final now = DateTime.now();
-    final phase = (_contrat['phase'] as num?)?.toInt() ?? 1;
-    final contratAddr = _contrat['contract_address'] as String?
-        ?? _contrat['address'] as String?;
-
-    // Filtrer par membre si demandé
-    final entreesFiltrees = widget.membreNom != null
-        ? _entrees
-            .where((e) =>
-                e.membreNom?.toLowerCase() ==
-                    widget.membreNom!.toLowerCase() ||
-                e.membreId?.toLowerCase() ==
-                    widget.membreNom!.toLowerCase())
-            .toList()
-        : _entrees;
-
-    // Comptage unifié Phase-aware (même logique que le build Flutter)
-    final countOnChain = _computeCountOnChain(entreesFiltrees, phase);
-    final totalXof = entreesFiltrees
-        .where((e) => e.montantXof != null)
-        .fold(0, (s, e) => s + (e.montantXof ?? 0));
-    // Devise dominante des entrées (la première non-vide trouvée)
-    final deviseDetectee = entreesFiltrees
-        .map((e) => e.devise)
-        .firstWhere((d) => d.isNotEmpty, orElse: () => '');
-
-    // Numéro de certificat basé sur timestamp
-    final numCert = 'TC-${widget.codeTontine}-${now.millisecondsSinceEpoch ~/ 1000}';
-
-    doc.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(32),
-        header: (ctx) => _buildHeader(ctx, now, numCert, phase, fontReg, fontBold),
-        footer: (ctx) => _buildFooter(ctx, numCert, contratAddr, fontReg),
-        build: (ctx) => [
-          // Titre certificat
-          _buildTitre(phase, contratAddr, fontReg, fontBold),
-          pw.SizedBox(height: 16),
-
-          // Infos tontine
-          _buildInfosTontine(now, phase, countOnChain, entreesFiltrees.length, totalXof, deviseDetectee, fontReg, fontBold),
-          pw.SizedBox(height: 16),
-
-          // Stats blockchain
-          _buildStatsBlockchain(entreesFiltrees, countOnChain, phase, fontReg, fontBold),
-          pw.SizedBox(height: 20),
-
-          // Tableau des opérations
-          _buildTableauOperations(entreesFiltrees, phase, fontReg, fontBold),
-          pw.SizedBox(height: 20),
-
-          // Section vérification
-          _buildSectionVerification(numCert, contratAddr, phase, fontReg, fontBold),
-        ],
-      ),
-    );
-
-    return doc.save();
-  }
-
-  // ── Widgets PDF ────────────────────────────────────────────────────────────
-
-  pw.Widget _buildHeader(pw.Context ctx, DateTime now, String numCert, int phase, pw.Font fontReg, pw.Font fontBold) {
-    return pw.Container(
-      decoration: const pw.BoxDecoration(
-        border: pw.Border(bottom: pw.BorderSide(color: _pdfOr, width: 2)),
-      ),
-      padding: const pw.EdgeInsets.only(bottom: 8),
-      child: pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-        children: [
-          pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text('TontineClair',
-                  style: pw.TextStyle(
-                      font: fontBold,
-                      fontSize: 18,
-                      fontWeight: pw.FontWeight.bold,
-                      color: _pdfEncre)),
-              pw.Text('Certificat Blockchain',
-                  style: pw.TextStyle(font: fontReg, fontSize: 10, color: _pdfDoux)),
-            ],
-          ),
-          pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.end,
-            children: [
-              pw.Text('N° $numCert',
-                  style: pw.TextStyle(font: fontReg, fontSize: 8, color: _pdfDoux)),
-              pw.Text(
-                'Emis le ${_fmtDate(now)} a ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}',
-                style: pw.TextStyle(font: fontReg, fontSize: 8, color: _pdfDoux),
-              ),
-              pw.Container(
-                margin: const pw.EdgeInsets.only(top: 4),
-                padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: pw.BoxDecoration(
-                  color: phase == 2 ? _pdfChain : _pdfOr,
-                  borderRadius: pw.BorderRadius.circular(8),
-                ),
-                child: pw.Text(
-                  phase == 2 ? 'ON-CHAIN POLYGON MAINNET' : 'JOURNAL INTERNE',
-                  style: pw.TextStyle(
-                      font: fontBold,
-                      fontSize: 7,
-                      color: PdfColors.white,
-                      fontWeight: pw.FontWeight.bold),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  pw.Widget _buildFooter(pw.Context ctx, String numCert, String? contratAddr, pw.Font fontReg) {
-    return pw.Container(
-      decoration: const pw.BoxDecoration(
-        border: pw.Border(top: pw.BorderSide(color: _pdfLignes, width: 1)),
-      ),
-      padding: const pw.EdgeInsets.only(top: 6),
-      child: pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-        children: [
-          pw.Text(
-            'TontineClair - Certificat confidentiel - $numCert',
-            style: pw.TextStyle(font: fontReg, fontSize: 7, color: _pdfDoux),
-          ),
-          pw.Text(
-            'Page ${ctx.pageNumber}/${ctx.pagesCount}',
-            style: pw.TextStyle(font: fontReg, fontSize: 7, color: _pdfDoux),
-          ),
-        ],
-      ),
-    );
-  }
-
-  pw.Widget _buildTitre(int phase, String? contratAddr, pw.Font fontReg, pw.Font fontBold) {
-    return pw.Container(
-      padding: const pw.EdgeInsets.all(20),
-      decoration: pw.BoxDecoration(
-        gradient: const pw.LinearGradient(
-          colors: [_pdfEncre, PdfColor.fromInt(0xFF35407A)],
-        ),
-        borderRadius: pw.BorderRadius.circular(12),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text(
-            widget.membreNom != null
-                ? 'CERTIFICAT DE PARTICIPATION'
-                : 'CERTIFICAT DE TRANSPARENCE BLOCKCHAIN',
-            style: pw.TextStyle(
-              font: fontBold,
-              fontSize: 16,
-              fontWeight: pw.FontWeight.bold,
-              color: PdfColors.white,
-            ),
-          ),
-          pw.SizedBox(height: 4),
-          pw.Text(
-            widget.membreNom != null
-                ? 'Membre : ${_pdfSafe(widget.membreNom!)} - Tontine : ${_pdfSafe(widget.nomTontine)} (${widget.codeTontine})'
-                : 'Tontine : ${_pdfSafe(widget.nomTontine)} - Code : ${widget.codeTontine}',
-            style: pw.TextStyle(font: fontReg, fontSize: 10, color: PdfColors.white),
-          ),
-          if (contratAddr != null) ...[
-            pw.SizedBox(height: 8),
-            pw.Text(
-              'Smart Contract : $contratAddr',
-              style: pw.TextStyle(
-                  font: fontReg,
-                  fontSize: 8,
-                  color: PdfColors.white,
-                  fontStyle: pw.FontStyle.italic),
-            ),
-            pw.Text(
-              'Reseau : Polygon Mainnet (chainId 137) - TontineVault.sol v2.0.0',
-              style: pw.TextStyle(font: fontReg, fontSize: 8, color: PdfColors.white),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  pw.Widget _buildInfosTontine(DateTime now, int phase, int onChain, int total, int xof, String devise, pw.Font fontReg, pw.Font fontBold) {
-    // Label volume : utilise la vraie devise, jamais XOF par défaut
-    final labelVolume = devise.isNotEmpty ? 'Volume $devise' : 'Volume';
-    final valeurVolume = devise.isNotEmpty
-        ? Formatters.montant(xof, devise: devise)
-        : _formatXof(xof);
-    return pw.Row(
-      children: [
-        _metriqueBox('Code tontine', widget.codeTontine, fontReg, fontBold),
-        pw.SizedBox(width: 8),
-        _metriqueBox('Total operations', '$total', fontReg, fontBold),
-        pw.SizedBox(width: 8),
-        _metriqueBox(
-          phase == 2 ? 'On-chain' : 'Proof SHA-256',
-          phase == 2 ? '$onChain' : '$total',
-          fontReg, fontBold,
-          couleur: phase == 2 ? _pdfChain : _pdfOr,
-        ),
-        pw.SizedBox(width: 8),
-        _metriqueBox(labelVolume, valeurVolume, fontReg, fontBold),
-      ],
-    );
-  }
-
-  pw.Widget _metriqueBox(String label, String valeur, pw.Font fontReg, pw.Font fontBold, {PdfColor? couleur}) {
-    return pw.Expanded(
-      child: pw.Container(
-        padding: const pw.EdgeInsets.all(10),
-        decoration: pw.BoxDecoration(
-          color: _pdfGris,
-          borderRadius: pw.BorderRadius.circular(8),
-          border: pw.Border.all(color: _pdfLignes),
-        ),
-        child: pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.Text(label,
-                style: pw.TextStyle(font: fontReg, fontSize: 8, color: _pdfDoux)),
-            pw.SizedBox(height: 4),
-            pw.Text(valeur,
-                style: pw.TextStyle(
-                    font: fontBold,
-                    fontSize: 14,
-                    fontWeight: pw.FontWeight.bold,
-                    color: couleur ?? _pdfEncre)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  pw.Widget _buildStatsBlockchain(
-      List<BlockchainEntry> entrees, int onChain, int phase, pw.Font fontReg, pw.Font fontBold) {
-    final byType = <String, int>{};
-    for (final e in entrees) {
-      byType[e.typeLabel] = (byType[e.typeLabel] ?? 0) + 1;
-    }
-
-    return pw.Container(
-      padding: const pw.EdgeInsets.all(14),
-      decoration: pw.BoxDecoration(
-        color: phase == 2
-            ? PdfColor.fromInt(0xFFE8FAF0)
-            : PdfColor.fromInt(0xFFEEF1FB),
-        borderRadius: pw.BorderRadius.circular(8),
-        border: pw.Border.all(
-            color: phase == 2 ? _pdfChain : _pdfEncre, width: 0.5),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text(
-            phase == 2
-                ? 'Operations ancrees on-chain - verifiables sur Polygon Mainnet'
-                : 'Operations securisees par preuve cryptographique SHA-256 (journal interne TontineClair)',
-            style: pw.TextStyle(
-                font: fontBold,
-                fontSize: 10,
-                fontWeight: pw.FontWeight.bold,
-                color: phase == 2 ? _pdfChain : _pdfEncre),
-          ),
-          pw.SizedBox(height: 8),
-          pw.Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: byType.entries.map((e) {
-              return pw.Container(
-                padding:
-                    const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: pw.BoxDecoration(
-                  color: PdfColors.white,
-                  borderRadius: pw.BorderRadius.circular(12),
-                  border: pw.Border.all(color: _pdfLignes),
-                ),
-                child: pw.Text(
-                  '${_pdfSafe(e.key)} : ${e.value}',
-                  style: pw.TextStyle(font: fontReg, fontSize: 8, color: _pdfTexte),
-                ),
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  pw.Widget _buildTableauOperations(List<BlockchainEntry> entrees, int phase, pw.Font fontReg, pw.Font fontBold) {
-    if (entrees.isEmpty) {
-      return pw.Text('Aucune operation trouvee.',
-          style: pw.TextStyle(font: fontReg, fontSize: 10, color: _pdfDoux));
-    }
-
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Text(
-          'Journal des operations blockchain',
-          style: pw.TextStyle(
-              font: fontBold,
-              fontSize: 12,
-              fontWeight: pw.FontWeight.bold,
-              color: _pdfEncre),
-        ),
-        pw.SizedBox(height: 8),
-        pw.Table(
-          border: pw.TableBorder.all(color: _pdfLignes, width: 0.5),
-          columnWidths: {
-            0: const pw.FlexColumnWidth(1.4),  // Date
-            1: const pw.FlexColumnWidth(1.6),  // Type
-            2: const pw.FlexColumnWidth(2.2),  // Description
-            3: const pw.FlexColumnWidth(1.2),  // Montant
-            4: const pw.FlexColumnWidth(2.6),  // TX Hash
-          },
-          children: [
-            // En-tête
-            pw.TableRow(
-              decoration: const pw.BoxDecoration(color: _pdfEncre),
-              children: [
-                _cellHeader('Date', fontBold),
-                _cellHeader('Type', fontBold),
-                _cellHeader('Description', fontBold),
-                _cellHeader('Montant XOF', fontBold),
-                _cellHeader('TX Hash / Proof', fontBold),
-              ],
-            ),
-            // Lignes
-            ...entrees.asMap().entries.map((entry) {
-              final i = entry.key;
-              final e = entry.value;
-              // En Phase 1, le txHash est un proof SHA-256 local — pas un TX Polygon
-              final estOnChain = phase == 2 && e.txHash != null && e.txHash!.length == 66;
-              final bg = i.isEven ? PdfColors.white : _pdfGris;
-              return pw.TableRow(
-                decoration: pw.BoxDecoration(color: bg),
-                children: [
-                  _cell(_fmtDate(e.createdAt), fontReg, fontBold),
-                  _cell(_pdfSafe(e.typeLabel), fontReg, fontBold,
-                      gras: true,
-                      couleur: estOnChain ? _pdfChain : _pdfEncre),
-                  _cell(_pdfSafe(e.descriptionMetier), fontReg, fontBold),
-                  _cell(e.montantXof != null
-                      ? Formatters.montant(e.montantXof!, devise: e.devise)
-                      : '-', fontReg, fontBold),
-                  _cell(
-                    e.txHash != null
-                        ? _pdfSafe(estOnChain
-                            ? e.txHashCourt
-                            : 'SHA-256:${e.txHashCourt}')
-                        : '-',
-                    fontReg, fontBold,
-                    mono: true,
-                    couleur: estOnChain ? _pdfChain : _pdfDoux,
-                    suffix: '',
-                  ),
-                ],
-              );
-            }),
-          ],
-        ),
-      ],
-    );
-  }
-
-  pw.Widget _cellHeader(String text, pw.Font fontBold) => pw.Padding(
-        padding: const pw.EdgeInsets.all(6),
-        child: pw.Text(text,
-            style: pw.TextStyle(
-                font: fontBold,
-                fontSize: 8,
-                fontWeight: pw.FontWeight.bold,
-                color: PdfColors.white)),
-      );
-
-  pw.Widget _cell(String text, pw.Font fontReg, pw.Font fontBold,
-      {bool gras = false,
-      PdfColor? couleur,
-      bool mono = false,
-      String suffix = ''}) =>
-      pw.Padding(
-        padding: const pw.EdgeInsets.all(5),
-        child: pw.Text(
-          text + suffix,
-          style: pw.TextStyle(
-            font: gras ? fontBold : fontReg,
-            fontSize: 7,
-            fontWeight: gras ? pw.FontWeight.bold : pw.FontWeight.normal,
-            color: couleur ?? _pdfTexte,
-          ),
-        ),
-      );
-
-  pw.Widget _buildSectionVerification(
-      String numCert, String? contratAddr, int phase, pw.Font fontReg, pw.Font fontBold) {
-    return pw.Container(
-      padding: const pw.EdgeInsets.all(14),
-      decoration: pw.BoxDecoration(
-        color: _pdfGris,
-        borderRadius: pw.BorderRadius.circular(8),
-        border: pw.Border.all(color: _pdfOr, width: 1),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text(
-            'Comment verifier ce certificat',
-            style: pw.TextStyle(
-                font: fontBold,
-                fontSize: 10,
-                fontWeight: pw.FontWeight.bold,
-                color: _pdfEncre),
-          ),
-          pw.SizedBox(height: 8),
-          pw.Text(
-            phase == 2
-                ? '1. Ouvrez TontineClair > Verifier blockchain\n'
-                  '2. Saisissez le code : ${widget.codeTontine}\n'
-                  '3. Chaque TX hash est verifiable sur https://polygonscan.com\n'
-                  '${contratAddr != null ? "4. Smart Contract : https://polygonscan.com/address/$contratAddr" : ""}'
-                : '1. Ouvrez TontineClair > Verifier blockchain\n'
-                  '2. Saisissez le code : ${widget.codeTontine}\n'
-                  '3. Les preuves SHA-256 sont des empreintes cryptographiques internes.\n'
-                  '   Elles garantissent l\'integrite des donnees mais ne sont pas des transactions Polygon.\n'
-                  '4. La verification on-chain est disponible via Polygon Mainnet.',
-            style: pw.TextStyle(font: fontReg, fontSize: 8, color: _pdfTexte, lineSpacing: 3),
-          ),
-          pw.SizedBox(height: 8),
-          pw.Text(
-            'Certificat N. $numCert - Document genere automatiquement par TontineClair - Non modifiable',
-            style: pw.TextStyle(font: fontReg, fontSize: 7, color: _pdfDoux, fontStyle: pw.FontStyle.italic),
-          ),
-        ],
+    return compute(
+      _genererCertificatBytes,
+      _CertificatParams(
+        entrees    : _entrees,
+        contrat    : _contrat,
+        codeTontine: widget.codeTontine,
+        nomTontine : widget.nomTontine,
+        membreNom  : widget.membreNom,
+        maxEntrees : _kMaxEntrees,
       ),
     );
   }
@@ -663,41 +615,6 @@ class _CertificatBlockchainScreenState
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
-
-  /// Rend un texte "PDF-safe" : supprime les emojis et caractères Unicode
-  /// non supportés par le renderer PDF Flutter (police Helvetica intégrée).
-  /// Conserve le Latin étendu (accents : é è à ç ù ô î, etc.).
-  static String _pdfSafe(String texte) {
-    return texte
-        .replaceAll('\u2026', '...')  // ellipse → ...
-        .replaceAll('\u2019', "'")    // apostrophe typographique
-        .replaceAll('\u2018', "'")    // guillemet ouvert
-        .replaceAll('\u201C', '"')    // guillemet double ouvert
-        .replaceAll('\u201D', '"')    // guillemet double fermé
-        .replaceAll('\u202F', ' ')    // espace fine insécable
-        .replaceAll('\u00B7', '.')    // point médian
-        .replaceAll('\u2013', '-')    // tiret demi-cadratin
-        .replaceAll('\u2014', '-')    // tiret cadratin
-        .replaceAll('✓', 'OK')
-        .replaceAll('✗', 'X')
-        .replaceAll('❓', '?')
-        .replaceAll('❌', '[retire]')
-        .replaceAll('✅', '[OK]')
-        // Filtre général : garde ASCII + Latin-1 + Latin Extended-A/B (≤ U+024F)
-        // Supprime tout emoji, symbole CJK, dingbat > U+024F
-        .split('')
-        .where((ch) => ch.codeUnitAt(0) <= 0x024F)
-        .join();
-  }
-
-  String _fmtDate(DateTime dt) =>
-      '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
-
-  String _formatXof(int xof) {
-    if (xof >= 1000000) return '${(xof / 1000000).toStringAsFixed(1)}M';
-    if (xof >= 1000) return '${(xof / 1000).toStringAsFixed(0)}k';
-    return '$xof';
-  }
 
   // ── Build ──────────────────────────────────────────────────────────────────
   @override
@@ -1269,20 +1186,4 @@ class _CarteOperationJournal extends StatelessWidget {
     );
   }
 
-  static String _formatMontant(int xof) {
-    if (xof >= 1000000) return '${(xof / 1000000).toStringAsFixed(1)}M';
-    if (xof >= 1000) {
-      final k = xof / 1000;
-      return k == k.roundToDouble() ? '${k.round()}k' : '${k.toStringAsFixed(1)}k';
-    }
-    // Formattage avec espace mille
-    final s = xof.toString();
-    if (s.length <= 3) return s;
-    final buf = StringBuffer();
-    for (int i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) buf.write(' ');
-      buf.write(s[i]);
-    }
-    return buf.toString();
-  }
 }

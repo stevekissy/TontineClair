@@ -69,10 +69,14 @@ class PdfService {
   // retombe sur Helvetica avec _sanitize() appliqué à toutes les chaînes.
   static Future<({pw.Font regular, pw.Font bold, bool usesSanitizer})>
       _chargerPolices() async {
+    // Timeout explicite de 8 s pour éviter un hang infini dans l'isolate
+    // si le réseau est absent ou lent (cause de crash sur certains appareils).
     try {
-      final regular = await PdfGoogleFonts.notoSansRegular();
-      final bold    = await PdfGoogleFonts.notoSansBold();
-      return (regular: regular, bold: bold, usesSanitizer: false);
+      final results = await Future.wait([
+        PdfGoogleFonts.notoSansRegular(),
+        PdfGoogleFonts.notoSansBold(),
+      ]).timeout(const Duration(seconds: 8));
+      return (regular: results[0], bold: results[1], usesSanitizer: false);
     } catch (e) {
       if (kDebugMode) debugPrint('[PdfService] NotoSans indisponible, fallback Helvetica: $e');
       return (
@@ -185,9 +189,12 @@ class PdfService {
     String langueCode = 'fr',
   }) async {
     // ── Génération dans un Isolate séparé pour ne pas bloquer le thread UI ──
-    // Avec 100+ entrées journal, la construction du PDF peut prendre 2-5 sec.
     // compute() déplace tout dans un worker thread → plus de freeze/ANR.
-    final bytes = await compute(
+    // L'isolate retourne directement un Uint8List pour éviter la double
+    // allocation mémoire qui survenait avec Uint8List.fromList(List<int>).
+    // Pour de gros PDFs (500+ lignes) cela évitait un OOM en maintenant
+    // simultanément la liste source ET le Uint8List en mémoire.
+    final uint8bytes = await compute(
       _genererReleveBytes,
       _ReleveParams(
         tontine: tontine,
@@ -197,7 +204,6 @@ class PdfService {
     );
     final nomFichier = _sanitize(tontine.data.nom).replaceAll(' ', '_');
     final filename = 'TontineClair_${nomFichier}_${tontine.code}.pdf';
-    final uint8bytes = Uint8List.fromList(bytes);
     if (kIsWeb) {
       downloadPdfBytes(uint8bytes, filename);
     } else {
@@ -206,7 +212,8 @@ class PdfService {
   }
 
   /// Fonction top-level-compatible pour compute() — génère les bytes du relevé.
-  static Future<List<int>> _genererReleveBytes(_ReleveParams p) async {
+  /// Retourne un Uint8List directement pour éviter la double allocation mémoire.
+  static Future<Uint8List> _genererReleveBytes(_ReleveParams p) async {
     // ── Isolate fix : initializeDateFormatting doit être appelé dans chaque Isolate.
     // Les Isolates Flutter ne partagent pas la mémoire → les données de locale
     // initialisées dans main() ne sont pas disponibles ici.
@@ -241,7 +248,9 @@ class PdfService {
         ],
       ),
     );
-    return doc.save();
+    // Retourne Uint8List directement → évite la double allocation mémoire
+    // qui survenait avec Uint8List.fromList(await doc.save()) dans l'appelant.
+    return Uint8List.fromList(await doc.save());
   }
 
   // ── En-tête de page ─────────────────────────────────────────────────────
@@ -342,32 +351,55 @@ class PdfService {
             _t('aucun_mouvement', langueCode),
             style: pw.TextStyle(font: regular, fontSize: 10, color: _texteDoux),
           )
-        else
-          pw.TableHelper.fromTextArray(
-            headers: [_t('col_date', langueCode), _t('col_motif', langueCode), _t('col_par_qui', langueCode), _t('col_montant', langueCode)],
-            headerStyle: pw.TextStyle(font: bold, fontSize: 9, color: PdfColors.white),
-            headerDecoration: const pw.BoxDecoration(color: _encre),
-            cellStyle: pw.TextStyle(font: regular, fontSize: 9),
-            cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            columnWidths: {
-              0: const pw.FixedColumnWidth(70),
-              1: const pw.FlexColumnWidth(2),
-              2: const pw.FlexColumnWidth(1.2),
-              3: const pw.FixedColumnWidth(80),
-            },
-            data: data.caisse.map((m) {
-              final montantPositif = m.montant >= 0;
-              return [
-                Formatters.dateHeure(DateTime.tryParse(m.date)),
-                _tx(m.description.isNotEmpty ? m.description : m.type, san),
-                _tx(m.gestionnaire, san),
-                (montantPositif ? '+' : '') + Formatters.montant(m.montant, devise: data.devise),
-              ];
-            }).toList(),
-            cellAlignments: {
-              3: pw.Alignment.centerRight,
-            },
-          ),
+        else ...[
+          // ── Limite anti-crash : 100 entrées les plus récentes ────────────
+          // Au-delà de ~200 lignes, pw.TableHelper.fromTextArray() épuise la
+          // mémoire de l'isolate et plante l'application.
+          () {
+            const maxCaisse = 100;
+            final total = data.caisse.length;
+            final affichees = total > maxCaisse
+                ? data.caisse.skip(total - maxCaisse).toList()
+                : data.caisse;
+            return pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                if (total > maxCaisse) ...[
+                  pw.Text(
+                    '($maxCaisse derniers mouvements sur $total — relevé tronqué)',
+                    style: pw.TextStyle(font: regular, fontSize: 8, color: _texteDoux),
+                  ),
+                  pw.SizedBox(height: 4),
+                ],
+                pw.TableHelper.fromTextArray(
+                  headers: [_t('col_date', langueCode), _t('col_motif', langueCode), _t('col_par_qui', langueCode), _t('col_montant', langueCode)],
+                  headerStyle: pw.TextStyle(font: bold, fontSize: 9, color: PdfColors.white),
+                  headerDecoration: const pw.BoxDecoration(color: _encre),
+                  cellStyle: pw.TextStyle(font: regular, fontSize: 9),
+                  cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  columnWidths: {
+                    0: const pw.FixedColumnWidth(70),
+                    1: const pw.FlexColumnWidth(2),
+                    2: const pw.FlexColumnWidth(1.2),
+                    3: const pw.FixedColumnWidth(80),
+                  },
+                  data: affichees.map((m) {
+                    final montantPositif = m.montant >= 0;
+                    return [
+                      Formatters.dateHeure(DateTime.tryParse(m.date)),
+                      _tx(m.description.isNotEmpty ? m.description : m.type, san),
+                      _tx(m.gestionnaire, san),
+                      (montantPositif ? '+' : '') + Formatters.montant(m.montant, devise: data.devise),
+                    ];
+                  }).toList(),
+                  cellAlignments: {
+                    3: pw.Alignment.centerRight,
+                  },
+                ),
+              ],
+            );
+          }(),
+        ],
       ],
     );
   }
@@ -462,6 +494,19 @@ class PdfService {
         ),
       );
     } else {
+      // ── Limite anti-crash : 60 tours clôturés les plus récents ───────────
+      const maxTours = 60;
+      final totalTours = historique.length;
+      final histAffiche = totalTours > maxTours
+          ? historique.sublist(0, maxTours) // déjà trié décroissant → les plus récents en tête
+          : historique;
+      if (totalTours > maxTours) {
+        contenu.add(pw.Text(
+          '($maxTours tours les plus récents sur $totalTours — relevé tronqué)',
+          style: pw.TextStyle(font: regular, fontSize: 8, color: _texteDoux),
+        ));
+        contenu.add(pw.SizedBox(height: 4));
+      }
       contenu.add(
         pw.TableHelper.fromTextArray(
           headers: [_t('col_tour', langueCode), _t('col_beneficiaire', langueCode), _t('cotisations', langueCode), _t('col_montant', langueCode), _t('col_date', langueCode)],
@@ -469,7 +514,7 @@ class PdfService {
           headerDecoration: const pw.BoxDecoration(color: _encre),
           cellStyle: pw.TextStyle(font: regular, fontSize: 9),
           cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-          data: historique.asMap().entries.map((e) {
+          data: histAffiche.asMap().entries.map((e) {
             final h = e.value;
             final numTour = (h['tour'] as num?)?.toInt() ?? (e.key + 1);
             // Résoudre le bénéficiaire : historique → beneficiaireId → 'non désigné'
@@ -572,19 +617,39 @@ class PdfService {
                 ),
                 if (p.remboursements.isNotEmpty) ...[
                   pw.SizedBox(height: 3),
-                  pw.TableHelper.fromTextArray(
-                    headers: ['Date', 'Méthode', 'Réf.', 'Montant'],
-                    headerStyle: pw.TextStyle(font: bold, fontSize: 8, color: PdfColors.white),
-                    headerDecoration: const pw.BoxDecoration(color: _encre),
-                    cellStyle: pw.TextStyle(font: regular, fontSize: 8),
-                    cellPadding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 3),
-                    data: p.remboursements.map((r) => [
-                      Formatters.dateFormatee(DateTime.tryParse(r.date)),
-                      _tx(r.methode, san),
-                      _tx(r.reference, san),
-                      Formatters.montant(r.montant, devise: data.devise),
-                    ]).toList(),
-                  ),
+                  // ── Limite anti-crash : 20 remboursements max par prêt ───
+                  () {
+                    const maxRemb = 20;
+                    final totalRemb = p.remboursements.length;
+                    final rembAffich = totalRemb > maxRemb
+                        ? p.remboursements.sublist(totalRemb - maxRemb)
+                        : p.remboursements;
+                    return pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        if (totalRemb > maxRemb) ...[
+                          pw.Text(
+                            '($maxRemb derniers remboursements sur $totalRemb)',
+                            style: pw.TextStyle(font: regular, fontSize: 7, color: _texteDoux),
+                          ),
+                          pw.SizedBox(height: 2),
+                        ],
+                        pw.TableHelper.fromTextArray(
+                          headers: ['Date', 'Méthode', 'Réf.', 'Montant'],
+                          headerStyle: pw.TextStyle(font: bold, fontSize: 8, color: PdfColors.white),
+                          headerDecoration: const pw.BoxDecoration(color: _encre),
+                          cellStyle: pw.TextStyle(font: regular, fontSize: 8),
+                          cellPadding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+                          data: rembAffich.map((r) => [
+                            Formatters.dateFormatee(DateTime.tryParse(r.date)),
+                            _tx(r.methode, san),
+                            _tx(r.reference, san),
+                            Formatters.montant(r.montant, devise: data.devise),
+                          ]).toList(),
+                        ),
+                      ],
+                    );
+                  }(),
                 ],
                 pw.SizedBox(height: 8),
               ],

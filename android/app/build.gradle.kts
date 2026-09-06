@@ -22,7 +22,7 @@ if (keyPropertiesFile.exists()) {
 fun keyProp(key: String): String = (keyProperties[key] as? String)?.trim() ?: ""
 
 android {
-    namespace = "com.tontineclair.tontine"
+    namespace = "com.tontineconnect.tontine"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -89,6 +89,7 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
+
 
 
 
