@@ -24,6 +24,7 @@ import 'supprimer_tontine_screen.dart';
 import '../utils/app_localizations.dart';
 import '../services/locale_service.dart';
 import '../services/notification_service.dart';
+import '../services/email_notif_service.dart';
 import 'securite_screen.dart';
 import 'verification_publique_screen.dart';
 
@@ -1986,6 +1987,7 @@ class _BarreDetail extends StatelessWidget {
         membreNom  : benefNom,
         montantXof : montantVerse,
         refInterne : refPreuve!,
+        devise     : data.devise,
       ).catchError((e) {
         if (kDebugMode) debugPrint('[Blockchain] distribution erreur: $e');
         return BlockchainResultat(ok: false, erreur: '$e', phase: 1);
@@ -2019,6 +2021,21 @@ class _BarreDetail extends StatelessWidget {
         message: msgDecaiss,
         code   : codeDecaiss,
         type   : 'decaissement',
+      );
+      // ── EMAIL broadcast à tous les membres — décaissement / cagnotte ─────────
+      final isCagnotte = data.cycleTermine;
+      EmailNotifService.diffuserTous(
+        code:       codeDecaiss,
+        data:       data,
+        icone:      isCagnotte ? '💸' : '💰',
+        action:     isCagnotte
+            ? 'Décaissement cagnotte (cycle terminé)'
+            : 'Décaissement Tour $numerTourAffiche',
+        message:    isCagnotte
+            ? '🎊 Cycle terminé — ${Formatters.montant(montantVerse, devise: data.devise)} versés à $benefNom. Chaque membre a été servi !'
+            : '💸 Tour $numerTourAffiche clôturé — ${Formatters.montant(montantVerse, devise: data.devise)} versés à $benefNom.',
+        gestActif:  provider.gestActifNom ?? '',
+        devise:     data.devise,
       );
     }
   }
@@ -2093,14 +2110,21 @@ class _BarreDetail extends StatelessWidget {
     } else {
       caisseMvts = [];
     }
+    // Type 'decaissement_cagnotte' pour le dernier tour (cagnotte finale versée)
+    // Type 'decaissement' pour les tours intermédiaires
+    final typeMvt = cycleTermineNow ? 'decaissement_cagnotte' : 'decaissement';
+    final descMvt = cycleTermineNow
+        ? 'Décaissement cagnotte — Tour $numerTourAffiche (dernier) — $benefNom'
+        : 'Décaissement Tour $numerTourAffiche — $benefNom';
     caisseMvts.insert(0, {
       'id':           '${ref}D',
-      'type':         'decaissement',
+      'type':         typeMvt,
       'montant':      total,
-      'description':  'Décaissement Tour $numerTourAffiche — $benefNom',
+      'description':  descMvt,
       'gestionnaire': gestNom,
       'date':         DateTime.now().toIso8601String(),
       'reference':    ref,
+      'devise':       data.devise,
     });
     newData['caisse'] = {'mouvements': caisseMvts};
 
@@ -2108,8 +2132,11 @@ class _BarreDetail extends StatelessWidget {
     final journal = List<Map<String, dynamic>>.from(
       (newData['journal'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
     );
+    final libelleJournal = cycleTermineNow
+        ? 'DECAISSEMENT CAGNOTTE — Cycle terminé · Tour $numerTourAffiche — ${Formatters.montant(montantVerse, devise: data.devise)} pour $benefNom (blockchain)'
+        : 'DECAISSEMENT — Tour $numerTourAffiche clôturé — ${Formatters.montant(montantVerse, devise: data.devise)} pour $benefNom (décaissement manuel · blockchain)';
     journal.insert(0, {
-      'quoi':         'DECAISSEMENT — Tour $numerTourAffiche clôturé — ${Formatters.montant(montantVerse, devise: data.devise)} pour $benefNom (décaissement manuel · blockchain)',
+      'quoi':         libelleJournal,
       'gestionnaire': gestNom,
       'quand':        DateTime.now().toIso8601String(),
       'reference':    ref,

@@ -238,7 +238,7 @@ class _CaisseScreenState extends State<CaisseScreen> {
                     // m.montant est TOUJOURS stocké en valeur absolue positive ;
                     // c'est le type qui détermine le signe réel dans la caisse.
                     const sorties = {
-                      'depense', 'decaissement', 'pret', 'retrait',
+                      'depense', 'decaissement', 'decaissement_cagnotte', 'pret', 'retrait',
                     };
                     // Retourne le montant avec le bon signe selon le type
                     int signe(m) => sorties.contains(m.type)
@@ -814,6 +814,7 @@ class _LigneMouvement extends StatelessWidget {
       mouvement.type == 'cotisation' ||
       mouvement.type == 'penalite' ||
       mouvement.type == 'remboursement';
+  // Note: 'decaissement', 'decaissement_cagnotte', 'depense', 'pret', 'retrait' = sorties
 
   /// Libellé lisible du type de mouvement (jamais de chaîne technique)
   String get _typeLabel {
@@ -825,7 +826,8 @@ class _LigneMouvement extends StatelessWidget {
       case 'remboursement':  return 'Remboursement';
       case 'pret':           return 'Prêt';
       case 'correction':     return 'Correction';
-      case 'decaissement':   return 'Décaissement';
+      case 'decaissement':          return 'Décaissement';
+      case 'decaissement_cagnotte': return '💸 Cagnotte versée';
       default:               return Formatters.capitaliser(mouvement.type);
     }
   }

@@ -1015,6 +1015,7 @@ class TontineData {
           total += m.montant.abs();
         case 'depense':
         case 'decaissement':
+        case 'decaissement_cagnotte':
         case 'pret':
         case 'retrait':
         case 'correction':

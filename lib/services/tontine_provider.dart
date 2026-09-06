@@ -177,7 +177,7 @@ class TontineProvider extends ChangeNotifier {
               .where((m) => ['apport','cotisation','depot','remboursement'].contains(m.type))
               .fold<int>(0, (s, m) => s + m.montant.abs());
           final totalSorties = td.caisse
-              .where((m) => ['depense','decaissement','pret','retrait'].contains(m.type))
+              .where((m) => ['depense','decaissement','decaissement_cagnotte','pret','retrait'].contains(m.type))
               .fold<int>(0, (s, m) => s + m.montant.abs());
           Future.delayed(const Duration(seconds: 3), () {
             BlockchainService.syncBalanceTontine(
