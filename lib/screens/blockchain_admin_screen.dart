@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/blockchain_service.dart';
 import '../utils/app_colors.dart';
+import '../utils/formatters.dart';
 
 class BlockchainAdminScreen extends StatefulWidget {
   final String cleAdmin;
@@ -456,7 +457,7 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
           ])),
           const SizedBox(width: 8),
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text(e.montantXof != null ? '${_formatNumber(e.montantXof!)} XOF' : '—',
+            Text(e.montantXof != null ? Formatters.montant(e.montantXof!, devise: e.devise.isNotEmpty ? e.devise : null) : '—',
                 style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: AppColors.encre)),
             const SizedBox(height: 3),
             _badgeStatut(e.statut),
@@ -552,8 +553,9 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
         const SizedBox(height: 8),
         // ── Infos essentielles ───────────────────────────────────────────────
         if (e.montantXof != null)
-          _ligneInfo('Montant', '${_formatNumber(e.montantXof!)} XOF'
-              '${e.montantUsdt != null ? "  ≈  ${e.montantUsdt!.toStringAsFixed(4)} USDT" : ""}'),
+          _ligneInfo('Montant', Formatters.montant(e.montantXof!, devise: e.devise.isNotEmpty ? e.devise : null)
+              + (e.montantUsdt != null ? '  ≈  ${e.montantUsdt!.toStringAsFixed(4)} USDT' : '')),
+
         Row(children: [
           const Text('Date : ', style: TextStyle(fontSize: 11, color: AppColors.texteDoux)),
           Expanded(child: Text(_formatDate(e.createdAt),
@@ -657,8 +659,9 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
                     _detailLigne('Tontine', e.tontineCode),
                     if (e.membreNom != null) _detailLigne('Membre', e.membreNom!),
                     if (e.montantXof != null)
-                      _detailLigne('Montant', '${_formatNumber(e.montantXof!)} XOF'
-                          '${e.montantUsdt != null ? " ≈ ${e.montantUsdt!.toStringAsFixed(4)} USDT" : ""}'),
+                      _detailLigne('Montant', Formatters.montant(e.montantXof!, devise: e.devise.isNotEmpty ? e.devise : null)
+                          + (e.montantUsdt != null ? ' ≈ ${e.montantUsdt!.toStringAsFixed(4)} USDT' : '')),
+
                     _detailLigne('Statut', e.statutLabel),
                     _detailLigne('Réseau', e.reseau),
                     _detailLigne('Bloc', e.blockNumber != null ? '#${_formatNumber(e.blockNumber!)}' : '—'),
@@ -915,7 +918,7 @@ class _BlockchainAdminScreenState extends State<BlockchainAdminScreen>
                       fontWeight: FontWeight.w700, color: AppColors.encre)),
             ]),
           ),
-        if (r['montant_xof'] != null) _ligneInfo('Montant', '${r['montant_xof']} XOF'),
+        if (r['montant_xof'] != null) _ligneInfo('Montant', '${r['montant_xof']} XOF'),  // vérification TX — devise inconnue ici (raw hash lookup)
         _ligneInfo('Statut', statut),
         if (r['block_number'] != null) _ligneInfo('Bloc', '#${r['block_number']}'),
         if (r['confirmed_at'] != null) _ligneInfo('Confirmé le', r['confirmed_at'] as String),

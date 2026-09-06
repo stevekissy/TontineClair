@@ -23,6 +23,7 @@ class NotificationService {
     String?  txHash,
     int?     montantXof,
     String?  membreNom,
+    String?  devise,
   }) async {
     if (kDebugMode) {
       debugPrint('[NotificationService] Admin stub — opération blockchain: '

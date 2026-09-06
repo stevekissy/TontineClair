@@ -103,6 +103,9 @@ class BlockchainEntry {
   String get explorerUrl =>
       txHash != null ? 'https://polygonscan.com/tx/$txHash' : '';
 
+  /// Devise réelle de la tontine — lue dans metadata['devise'].
+  String get devise => (metadata['devise'] as String?)?.trim() ?? '';
+
   // ── Mapper métier complet ─────────────────────────────────────────────────
   static const _metier = <String, Map<String, String>>{
     'cotisation'      : {'icone': '💰', 'label': 'Cotisation',             'desc': 'Cotisation mensuelle'},
@@ -284,6 +287,7 @@ class BlockchainService {
     String? refCoinpayments,
     String? refInterne,
     String? walletTontine,
+    String? devise,
   }) async {
     return _enregistrer(
       tontineCode    : tontineCode,
@@ -294,6 +298,7 @@ class BlockchainService {
       refCoinpayments: refCoinpayments,
       refInterne     : refInterne,
       walletTontine  : walletTontine,
+      devise         : devise,
     );
   }
 
@@ -306,6 +311,7 @@ class BlockchainService {
     String? walletMembre,
     String? walletTontine,
     String? refInterne,
+    String? devise,
   }) async {
     return _enregistrer(
       tontineCode  : tontineCode,
@@ -316,6 +322,7 @@ class BlockchainService {
       walletMembre : walletMembre,
       walletTontine: walletTontine,
       refInterne   : refInterne,
+      devise       : devise,
     );
   }
 
@@ -328,6 +335,7 @@ class BlockchainService {
     String? refInterne,
     String? walletTontine,
     Map<String, dynamic>? metadata,
+    String? devise,
   }) async {
     return _enregistrer(
       tontineCode  : tontineCode,
@@ -338,6 +346,7 @@ class BlockchainService {
       refInterne   : refInterne,
       walletTontine: walletTontine,
       metadata     : metadata,
+      devise       : devise,
     );
   }
 
@@ -349,6 +358,7 @@ class BlockchainService {
     required int    montantXof,
     String? refInterne,
     String? walletTontine,
+    String? devise,
   }) async {
     return _enregistrer(
       tontineCode  : tontineCode,
@@ -358,6 +368,7 @@ class BlockchainService {
       montantXof   : montantXof,
       refInterne   : refInterne,
       walletTontine: walletTontine,
+      devise       : devise,
     );
   }
 
@@ -405,6 +416,7 @@ class BlockchainService {
     required int    montantXof,
     String? refCoinpayments,
     String? refInterne,
+    String? devise,
   }) async {
     return _enregistrer(
       tontineCode    : tontineCode,
@@ -414,6 +426,7 @@ class BlockchainService {
       montantXof     : montantXof,
       refCoinpayments: refCoinpayments,
       refInterne     : refInterne,
+      devise         : devise,
     );
   }
 
@@ -642,8 +655,13 @@ class BlockchainService {
     String?  walletTontine,
     String?  walletMembre,
     Map<String, dynamic>? metadata,
+    String?  devise,
   }) async {
     try {
+      final metadataEnrichie = <String, dynamic>{
+        if (devise != null && devise.isNotEmpty) 'devise': devise,
+        ...?metadata,
+      };
       final rep = await _appeler({
         'action'         : 'enregistrer_operation',
         'tontine_code'   : tontineCode,
@@ -655,7 +673,8 @@ class BlockchainService {
         if (refInterne      != null) 'ref_interne'     : refInterne,
         if (walletTontine   != null) 'wallet_tontine'  : walletTontine,
         if (walletMembre    != null) 'wallet_membre'   : walletMembre,
-        if (metadata        != null) 'metadata'        : metadata,
+        if (devise != null && devise.isNotEmpty) 'devise': devise,
+        'metadata'        : metadataEnrichie,
       }, timeout: _timeoutPhase2); // 75s pour laisser la TX se confirmer
 
       final res = BlockchainResultat.fromJson(rep);
@@ -675,6 +694,7 @@ class BlockchainService {
           txHash       : res.txHash,
           montantXof   : montantXof,
           membreNom    : membreNom,
+          devise       : devise,
         ).catchError((_) {});  // Non-bloquant
       }
 

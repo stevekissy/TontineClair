@@ -1,11 +1,11 @@
 {
-    "name": "tontine_admin",
-    "short_name": "tontine_admin",
+    "name": "TC Admin — TontineClair",
+    "short_name": "TC Admin",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#1A237E",
+    "theme_color": "#1A237E",
+    "description": "Tableau de bord administrateur TontineClair",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
