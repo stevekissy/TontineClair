@@ -89,6 +89,12 @@
 		</dict>
 	</array>
 
+	<!-- ── Chiffrement Apple (App Store Connect requis) ────────────────── -->
+	<!-- TontineClair utilise uniquement HTTPS/TLS standard (chiffrement exempt) -->
+	<!-- Aucune documentation de chiffrement non-standard requise -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+
 	<!-- ── Sécurité réseau ───────────────────────────────────────────── -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
