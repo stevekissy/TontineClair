@@ -2695,8 +2695,8 @@ class _AdminScreenState extends State<AdminScreen> {
             icone: Icons.workspace_premium_outlined,
             label: 'Formule',
             valeur: formule == 'annuel'
-                ? 'Annuel — 25 000 FCFA/an'
-                : 'Mensuel — 2 500 FCFA/mois',
+                ? 'Annuel — 69,99 €/an'
+                : 'Mensuel — 7,99 €/mois',
           ),
           _InfoLigneDemande(
             icone: Icons.calendar_today_outlined,

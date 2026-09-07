@@ -673,7 +673,7 @@ class SupabaseService {
   /// [code]    : code de la tontine
   /// [nom]     : nom complet du demandeur
   /// [contact] : WhatsApp ou email
-  /// [formule] : 'mensuel' (2 500 FCFA) | 'annuel' (25 000 FCFA)
+  /// [formule] : 'mensuel' (7,99 €) | 'annuel' (69,99 €)
   /// [pin]     : ignoré — conservé pour compatibilité signature existante
   ///
   /// Anti-doublon géré côté SQL : si une demande 'en_attente' existe déjà

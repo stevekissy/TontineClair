@@ -1066,13 +1066,13 @@ class _UpgradeDialog extends StatelessWidget {
                 children: [
                   _LigneTarif(
                     label: 'Mensuel',
-                    prix: '2 500 FCFA / mois',
+                    prix: '7,99 € / mois',
                     badge: null,
                   ),
                   const SizedBox(height: 8),
                   _LigneTarif(
                     label: 'Annuel',
-                    prix: '25 000 FCFA / an',
+                    prix: '69,99 € / an',
                     badge: '2 mois offerts',
                   ),
                 ],

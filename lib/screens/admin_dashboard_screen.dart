@@ -2201,7 +2201,7 @@ class _FicheTontine extends StatelessWidget {
             // ── Actions ────────────────────────────────────────────────
             if (!isPrem)
               BtnPrincipal(
-                label: '★ Activer Premium (1 mois — 2 500 FCFA)',
+                label: '★ Activer Premium (1 mois — 7,99 €)',
                 onTap: () {
                   Navigator.pop(context);
                   onActiver(code);

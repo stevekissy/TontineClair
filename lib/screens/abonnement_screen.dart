@@ -172,7 +172,7 @@ class _AbonnementScreenState extends State<AbonnementScreen> {
                       Expanded(
                         child: _CarteTarif(
                           label: 'Mensuel',
-                          prix: '2 500 FCFA / mois',
+                          prix: '7,99 € / mois',
                           description: 'Flexible, sans engagement',
                           badge: null,
                           selected: _formule == 'mensuel',
@@ -183,7 +183,7 @@ class _AbonnementScreenState extends State<AbonnementScreen> {
                       Expanded(
                         child: _CarteTarif(
                           label: 'Annuel',
-                          prix: '25 000 FCFA / an',
+                          prix: '69,99 € / an',
                           description: '2 mois offerts vs mensuel',
                           badge: '−17%',
                           selected: _formule == 'annuel',
@@ -319,7 +319,7 @@ class _AbonnementScreenState extends State<AbonnementScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                'Formule : ${_formule == "annuel" ? "Annuel — 25 000 FCFA/an" : "Mensuel — 2 500 FCFA/mois"}\n'
+                'Formule : ${_formule == "annuel" ? "Annuel — 69,99 €/an" : "Mensuel — 7,99 €/mois"}\n'
                 'Code tontine : $code',
                 style: GoogleFonts.inter(fontSize: 13, color: AppColors.texteDoux),
               ),
@@ -591,7 +591,7 @@ class _SectionWeb extends StatelessWidget {
   }
 
   void _ouvrirWhatsApp(BuildContext ctx, String f) {
-    final montant = f == 'annuel' ? '25 000 FCFA/an' : '2 500 FCFA/mois';
+    final montant = f == 'annuel' ? '69,99 €/an' : '7,99 €/mois';
     final msg = Uri.encodeComponent(
       'Bonjour, je souhaite activer Premium TontineClair ($montant) pour la tontine $code.',
     );
@@ -664,8 +664,8 @@ class _SectionAndroidState extends State<_SectionAndroid> {
   @override
   Widget build(BuildContext context) {
     final prixLabel = widget.formule == 'annuel'
-        ? '25 000 FCFA / an'
-        : '2 500 FCFA / mois';
+        ? '69,99 € / an'
+        : '7,99 € / mois';
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -784,8 +784,8 @@ class _SectionIOSState extends State<_SectionIOS> {
   @override
   Widget build(BuildContext context) {
     final prixLabel = widget.formule == 'annuel'
-        ? '25 000 FCFA / an'
-        : '2 500 FCFA / mois';
+        ? '69,99 € / an'
+        : '7,99 € / mois';
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1624,7 +1624,7 @@ class _EcranTontineGratuite extends StatelessWidget {
                         Expanded(
                           child: _CarteFormulaLectureSeule(
                             label: 'Mensuel',
-                            prix: '2 500 FCFA / mois',
+                            prix: '7,99 € / mois',
                             description: 'Flexible, sans engagement',
                             badge: null,
                             highlighted: true,
@@ -1634,7 +1634,7 @@ class _EcranTontineGratuite extends StatelessWidget {
                         Expanded(
                           child: _CarteFormulaLectureSeule(
                             label: 'Annuel',
-                            prix: '25 000 FCFA / an',
+                            prix: '69,99 € / an',
                             description: '2 mois offerts vs mensuel',
                             badge: '-17%',
                             highlighted: false,

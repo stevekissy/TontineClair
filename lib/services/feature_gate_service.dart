@@ -21,12 +21,12 @@ class FeatureGate {
   static const String googlePlayYearly  = 'tontineclair_premium_yearly';
 
   // Apple App Store
-  static const String appleMonthly = 'tontineclair.premium.monthly';
-  static const String appleYearly  = 'tontineclair.premium.yearly';
+  static const String appleMonthly = 'com.tontineclair.app.premium_monthly';
+  static const String appleYearly  = 'com.tontineclair.app.premium_yearly';
 
   // ─── Prix affichés (fallback si store indisponible) ──────────────────────
-  static const int prixMensuelFCFA = 2500;
-  static const int prixAnnuelFCFA  = 25000;
+  static const String prixMensuelEur = '7,99 €';
+  static const String prixAnnuelEur  = '69,99 €';
 
   // ─── Fonctionnalités par plan ────────────────────────────────────────────
 

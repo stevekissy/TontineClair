@@ -9,9 +9,10 @@
 //  • Si abonnement expiré → fonctionnalités Premium bloquées automatiquement
 //  • KYC vérifié une seule fois pour toute la durée de l'abonnement
 //
-// PRODUCT IDs (à remplacer dans Google Play Console / App Store Connect) :
-//  • tontineclair_premium_monthly  → 2 500 FCFA/mois
-//  • tontineclair_premium_yearly   → 25 000 FCFA/an
+// PRODUCT IDs :
+//  Android : tontineclair_premium_monthly / tontineclair_premium_yearly
+//  iOS     : com.tontineclair.app.premium_monthly / com.tontineclair.app.premium_yearly
+// TARIFS   : 7,99 €/mois — 69,99 €/an
 // ═══════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
@@ -22,13 +23,26 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'feature_gate_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Product IDs — à remplacer par les vrais IDs Google Play Console
+// Product IDs — par plateforme
+//  Android (Google Play) : tontineclair_premium_monthly / tontineclair_premium_yearly
+//  iOS     (App Store)   : com.tontineclair.app.premium_monthly / com.tontineclair.app.premium_yearly
 // ─────────────────────────────────────────────────────────────────────────────
 class SubscriptionProductIds {
-  static const String mensuel = 'tontineclair_premium_monthly';
-  static const String annuel  = 'tontineclair_premium_yearly';
+  // Android — Google Play Console
+  static const String mensuelAndroid = 'tontineclair_premium_monthly';
+  static const String annuelAndroid  = 'tontineclair_premium_yearly';
 
-  static const Set<String> tous = {mensuel, annuel};
+  // iOS — App Store Connect
+  static const String mensuelIos = 'com.tontineclair.app.premium_monthly';
+  static const String annuelIos  = 'com.tontineclair.app.premium_yearly';
+
+  // Alias dynamiques selon la plateforme courante
+  static String get mensuel =>
+      defaultTargetPlatform == TargetPlatform.iOS ? mensuelIos : mensuelAndroid;
+  static String get annuel =>
+      defaultTargetPlatform == TargetPlatform.iOS ? annuelIos  : annuelAndroid;
+
+  static Set<String> get tous => {mensuel, annuel};
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -126,8 +140,8 @@ class SubscriptionInfo {
 
   String get prixLabel {
     switch (planCode) {
-      case 'premium_monthly': return '2 500 FCFA / mois';
-      case 'premium_yearly':  return '25 000 FCFA / an';
+      case 'premium_monthly': return '7,99 € / mois';
+      case 'premium_yearly':  return '69,99 € / an';
       default:                return 'Gratuit';
     }
   }
